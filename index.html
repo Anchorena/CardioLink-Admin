@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CardioLink Admin v2.5.5.1</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<aside class="sidebar">
+  <div class="brand">
+    <div class="brand-main">CardioLink Admin <span>v2.5.5.1</span></div>
+    <div class="brand-by">by Matías Anchorena</div>
+  </div>
+  <button class="nav active" data-section="dashboard">Dashboard</button>
+  <button class="nav" data-section="carga">Carga de turno/atención</button>
+  <button class="nav" data-section="listado">Listado / filtros</button>
+  <button class="nav" data-section="config">Configuración</button>
+  <button id="btnDark" class="dark-toggle">🌙 Modo oscuro</button>
+</aside>
+
+<main class="main">
+  <header class="topbar">
+    <div>
+      <h1 id="tituloBienvenida">Vista General / Administración</h1>
+      <p id="subtituloPerfil">Todos los profesionales</p>
+      <p class="datetime" id="fechaHoraPanel"></p>
+    </div>
+    <div class="profile-box">
+      <label>Perfil activo</label>
+      <select id="perfilActivo"></select>
+    </div>
+  </header>
+
+  <section id="dashboard" class="section visible">
+    <div class="stats">
+      <div class="card"><span>Atenciones perfil</span><strong id="statTotal">•••</strong><button type="button" id="btnToggleConteo" class="mini-link">Mostrar</button></div>
+      <div class="card"><span>Hoy</span><strong id="statHoy">0</strong></div>
+      <div class="card"><span>Pendientes</span><strong id="statPendientes">0</strong></div>
+      <div class="card money"><span>Caja hoy particular</span><strong id="statParticular">$0</strong></div>
+      <div class="card money"><span>Caja hoy copagos</span><strong id="statCopagos">$0</strong></div>
+      <div class="card money"><span>Caja hoy total</span><strong id="statTotalCaja">$0</strong></div>
+    </div>
+    <div class="card">
+      <h2>Resumen del perfil activo</h2>
+      <p id="dashboardDetalle">La caja visible es solo del día. El dinero de períodos queda protegido.</p>
+      <button class="primary" id="btnIrCarga">Ir a carga rápida</button>
+    </div>
+  </section>
+
+  <section id="carga" class="section">
+    <div class="card">
+      <h2>Carga de turno/atención de atención</h2>
+      <form id="formAtencion" class="form-grid">
+        <div><label>Fecha</label><input type="date" id="fecha" required></div>
+        <div><label>Paciente</label><input type="text" id="paciente" required placeholder="Apellido y nombre"></div>
+        <div><label>DNI</label><input type="text" id="dni" placeholder="Opcional"></div>
+        <div><label>Obra social / cobertura</label><select id="obraSocial"></select></div>
+        <div><label>Profesional actuante</label><select id="profesional"></select></div>
+        <div><label>Prestación</label><select id="prestacion"></select></div>
+
+        <div><label>Consulta se contabiliza a</label><select id="consultaA">
+          <option>Matías</option><option>Rogelio</option><option>No aplica</option><option>A definir</option>
+        </select></div>
+
+        <div><label>Estudio/prestación se contabiliza a</label><select id="prestacionA">
+          <option>Matías</option><option>Rogelio</option><option>No aplica</option><option>A definir</option>
+        </select></div>
+
+        <div><label>Circuito / facturación</label><select id="facturador">
+          <option>Matías</option><option>Rogelio</option><option>Fold2 / FEMEBA</option><option>Círculo Médico</option><option>Particular</option><option>A definir</option>
+        </select></div>
+
+        <div><label>Tipo de cobro</label><select id="tipoCobro">
+          <option>Sin cobro en caja</option><option>Copago</option><option>Particular</option><option>Particular + copago</option>
+        </select></div>
+
+        <div><label>Forma de pago</label><select id="formaPago">
+          <option>No aplica</option><option>Efectivo</option><option>Transferencia</option><option>Mixto</option>
+        </select></div>
+
+        <div><label>Monto consulta particular</label><input type="number" id="montoConsulta" min="0"></div>
+        <div><label>Monto estudio particular</label><input type="number" id="montoEstudio" min="0"></div>
+        <div><label>Monto copago</label><input type="number" id="montoCopago" min="0"></div>
+        <div><label>Total calculado</label><input type="number" id="montoTotal" readonly></div>
+
+        <div class="checks">
+          <label><input type="checkbox" id="bonoConsulta"> Bono consulta requerido</label>
+          <label><input type="checkbox" id="bonoEstudio"> Bono estudio requerido</label>
+          <label><input type="checkbox" id="bonoFirmado"> Bono firmado</label>
+          <label><input type="checkbox" id="copiaImpresa"> Copia estudio impresa</label>
+          <label><input type="checkbox" id="fold2"> Fold2</label>
+          <label><input type="checkbox" id="planilla"> Planilla</label>
+        </div>
+
+        <div class="full rule-box" id="reglaInfo">Regla automática: sin aplicar.</div>
+        <div class="full"><label>Observaciones</label><textarea id="observaciones" rows="2"></textarea></div>
+        <div class="full actions">
+          <button class="primary" type="submit">Guardar atención</button>
+          <button class="primary" type="button" id="btnGuardarNuevo">Guardar y nuevo registro</button>
+          <button class="secondary" type="button" id="btnNuevoRegistro">Nuevo registro</button>
+          <button class="secondary" type="button" id="btnLimpiar">Limpiar</button>
+        </div>
+      </form>
+    </div>
+  </section>
+
+  <section id="listado" class="section">
+    <div class="card">
+      <h2>Listado, filtros y caja</h2>
+      <div class="filters">
+        <input type="date" id="fDesde">
+        <input type="date" id="fHasta">
+        <select id="fOS"></select>
+        <select id="fProfesional"></select>
+        <select id="fPrestacion"></select>
+        <input type="text" id="fPaciente" placeholder="Buscar paciente">
+        <select id="fDestino"><option value="">Todos los destinos</option><option>Matías</option><option>Rogelio</option></select>
+        <button class="secondary" id="btnHoy">Hoy</button>
+        <button class="secondary" id="btnMes">Mes</button>
+        <button class="secondary" id="btnPeriodo20">20 al 20</button>
+        <button class="primary" id="btnFiltrar">Filtrar</button>
+        <button class="secondary" id="btnResetFiltros">Limpiar</button>
+        <button class="primary" id="btnPrint">Imprimir / PDF</button>
+        <button class="primary" id="btnExportExcel">Exportar Excel</button>
+        <label class="print-values no-print"><input type="checkbox" id="incluirValoresImpresion"> Incluir valores</label>
+      </div>
+
+      <div id="printArea">
+        <div class="print-title">
+          <h2>CardioLink Admin v2.5.5.1</h2>
+          <p>by Matías Anchorena — Listado filtrado</p>
+          <p id="printMeta"></p>
+        </div>
+
+        <div class="resumen-caja">
+          <div><span>Consultas</span><strong id="rConsultas">0</strong></div>
+          <div><span>Estudios</span><strong id="rEstudios">0</strong></div>
+          <div><span>Bono consulta</span><strong id="rBonoConsulta">0</strong></div>
+          <div><span>Bono estudio</span><strong id="rBonoEstudio">0</strong></div>
+          <div><span>Caja HOY particular</span><strong id="rParticular">$0</strong></div>
+          <div><span>Caja HOY copago</span><strong id="rCopago">$0</strong></div>
+          <div><span>Caja HOY total</span><strong id="rTotal">$0</strong></div>
+        </div>
+
+        <div class="money-lock no-print">
+          <strong>Panel administrativo avanzado</strong>
+          <span>Acceso administrativo restringido</span>
+          <input type="date" id="adminDesde" title="Desde">
+          <input type="date" id="adminHasta" title="Hasta">
+          <input type="password" id="claveDinero" placeholder="Clave administrador">
+          <button class="primary" id="btnVerDineroPeriodo">Ver</button>
+          <button class="secondary" id="btnOcultarDineroPeriodo">Ocultar</button>
+          <div id="dineroPeriodoResultado" class="money-result"></div>
+        </div>
+
+        <table>
+          <thead>
+          <tr>
+            <th>Fecha</th><th>Paciente</th><th>OS</th><th>Profesional</th><th>Prestación</th>
+            <th>Consulta a</th><th>Estudio a</th><th>Tipo cobro</th><th>Forma pago</th>
+            <th class="money-col">Particular</th><th class="money-col">Copago</th><th class="money-col">Total</th><th>Estado</th><th class="no-print"></th>
+          </tr>
+          </thead>
+          <tbody id="tablaAtenciones"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <section id="config" class="section">
+    <div class="card">
+      <h2>Configuración</h2>
+      <div class="config-grid">
+        <div>
+          <h3>Valores por profesional</h3>
+          <label>Profesional</label><select id="cfgProfesionalValores"></select>
+          <label>Consulta particular</label><input type="number" id="cfgConsultaParticular">
+          <label>Electrocardiograma particular</label><input type="number" id="cfgElectroParticular">
+          <label>Estudios particulares / imágenes</label><input type="number" id="cfgEstudioParticular">
+          <button class="primary" id="btnGuardarValores">Guardar valores</button>
+        </div>
+
+        <div>
+          <h3>Reglas por obra social</h3>
+          <label>Obra social</label><select id="cfgReglaOS"></select>
+          <label>Tipo de regla</label><select id="cfgTipoRegla">
+            <option value="GENERAL_CONSULTA_EXTRA">General: estudio suma consulta + estudio</option>
+            <option value="IOMA_OSPRERA">IOMA/OSPRERA</option>
+            <option value="SANCOR_PREVENCION">Sancor/Prevención</option>
+            <option value="OSDE">OSDE: estudio como Holter a Rogelio</option>
+            <option value="INTEGRAL">Integral: no agrega consulta al estudio</option>
+            <option value="TODO_MATIAS">Todo a Matías</option>
+            <option value="SIN_REGLA">Sin regla automática</option>
+          </select>
+          <button class="primary" id="btnGuardarReglaOS">Guardar regla</button>
+        </div>
+
+        <div>
+          <h3>Profesionales</h3>
+          <div class="inline-form">
+            <input id="nuevoProfesional" placeholder="Nuevo profesional">
+            <input id="nuevaArea" placeholder="Área">
+            <button class="primary" id="btnAddProfesional">Agregar</button>
+          </div>
+          <ul id="listaProfesionales"></ul>
+        </div>
+
+        <div>
+          <h3>Obras sociales</h3>
+          <div class="inline-form">
+            <input id="nuevaOS" placeholder="Nueva OS">
+            <button class="primary" id="btnAddOS">Agregar</button>
+          </div>
+          <ul id="listaOS"></ul>
+        </div>
+
+        <div>
+          <h3>Prestaciones</h3>
+          <div class="inline-form">
+            <input id="nuevaPrestacion" placeholder="Nueva prestación">
+            <select id="profPrestacion"></select>
+            <button class="primary" id="btnAddPrestacion">Agregar</button>
+          </div>
+          <ul id="listaPrestaciones"></ul>
+        </div>
+
+        <div>
+          <h3>Backup / traslado</h3>
+          <button class="primary" id="btnExportBackup">Exportar backup completo</button>
+          <label>Importar backup JSON</label>
+          <input type="file" id="inputImportBackup" accept=".json,application/json">
+          <button class="secondary" id="btnImportBackup">Importar backup</button>
+          <p class="danger-text">Importar reemplaza la base de esta computadora.</p>
+          <button class="danger" id="btnBorrarDatos">Borrar atenciones de prueba</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+<script src="app.js"></script>
+</body>
+</html>
