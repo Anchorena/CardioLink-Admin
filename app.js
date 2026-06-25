@@ -13,6 +13,108 @@ try {
 } catch (error) {
   console.error("Error conectando Supabase:", error);
 }
+let usuarioSupabase = null;
+let cargandoDesdeNube = false;
+let syncTimer = null;
+
+async function loginSupabase() {
+  if (!supabaseClient) return false;
+
+  const sesionActual = await supabaseClient.auth.getSession();
+
+  if (sesionActual?.data?.session?.user) {
+    usuarioSupabase = sesionActual.data.session.user;
+    console.log("Usuario Supabase ya logueado:", usuarioSupabase.email);
+    return true;
+  }
+
+  const email = prompt("Email de usuario CardioLink:");
+  if (!email) return false;
+
+  const password = prompt("Contraseña de CardioLink:");
+  if (!password) return false;
+
+  const { data, error } = await supabaseClient.auth.signInWithPassword({
+    email,
+    password
+  });
+
+  if (error) {
+    alert("No se pudo iniciar sesión en Supabase: " + error.message);
+    console.error(error);
+    return false;
+  }
+
+  usuarioSupabase = data.user;
+  console.log("Usuario Supabase logueado:", usuarioSupabase.email);
+  return true;
+}
+
+async function cargarAtencionesDesdeSupabase() {
+  if (!supabaseClient || !usuarioSupabase) return;
+
+  const { data: rows, error } = await supabaseClient
+    .from("cardiolink_atenciones")
+    .select("id, payload, updated_at")
+    .order("updated_at", { ascending: false });
+
+  if (error) {
+    console.error("Error cargando atenciones desde Supabase:", error);
+    alert("No se pudieron cargar las atenciones desde Supabase. La app sigue en modo local.");
+    return;
+  }
+
+  cargandoDesdeNube = true;
+  atenciones = (rows || []).map(row => row.payload);
+  localStorage.setItem(storageAtenciones, JSON.stringify(atenciones));
+  cargandoDesdeNube = false;
+
+  console.log("Atenciones cargadas desde Supabase:", atenciones.length);
+}
+
+function programarSyncSupabase() {
+  if (!supabaseClient || !usuarioSupabase || cargandoDesdeNube) return;
+
+  clearTimeout(syncTimer);
+  syncTimer = setTimeout(sincronizarAtencionesSupabase, 700);
+}
+
+async function sincronizarAtencionesSupabase() {
+  if (!supabaseClient || !usuarioSupabase || cargandoDesdeNube) return;
+
+  const rows = atenciones.map(a => ({
+    id: String(a.id),
+    payload: a,
+    updated_at: new Date().toISOString()
+  }));
+
+  const { error: deleteError } = await supabaseClient
+    .from("cardiolink_atenciones")
+    .delete()
+    .neq("id", "__nunca__");
+
+  if (deleteError) {
+    console.error("Error limpiando tabla Supabase:", deleteError);
+    return;
+  }
+
+  if (!rows.length) {
+    console.log("Supabase sincronizado sin atenciones.");
+    return;
+  }
+
+  const { error: insertError } = await supabaseClient
+    .from("cardiolink_atenciones")
+    .insert(rows);
+
+  if (insertError) {
+    console.error("Error sincronizando atenciones con Supabase:", insertError);
+    alert("No se pudo sincronizar con Supabase. Revisar conexión.");
+    return;
+  }
+
+  console.log("Supabase sincronizado:", rows.length, "atenciones");
+}
 const CLAVE_DINERO_PERIODO='matias2026';
 const OS_FACTURA_ROGELIO=['IOMA','OSDE','Sancor','Prevención Salud','OSPRERA'];
 const FILTRO_FACTURA_ROGELIO='__FACTURA_ROGELIO__';
