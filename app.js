@@ -13,35 +13,43 @@ try {
 } catch (error) {
   console.error("Error conectando Supabase:", error);
 }
+
 let usuarioSupabase = null;
 let cargandoDesdeNube = false;
 let syncTimer = null;
 
 async function loginSupabase() {
-  if (!supabaseClient) return false;
+  if (!supabaseClient) {
+    alert("Supabase no está conectado. Revisá index.html, SUPABASE_URL y SUPABASE_KEY.");
+    return false;
+  }
 
-  const sesionActual = await supabaseClient.auth.getSession();
+  const { data: sessionData, error: sessionError } = await supabaseClient.auth.getSession();
 
-  if (sesionActual?.data?.session?.user) {
-    usuarioSupabase = sesionActual.data.session.user;
+  if (sessionError) {
+    console.error("Error revisando sesión Supabase:", sessionError);
+  }
+
+  if (sessionData?.session?.user) {
+    usuarioSupabase = sessionData.session.user;
     console.log("Usuario Supabase ya logueado:", usuarioSupabase.email);
     return true;
   }
 
   const email = prompt("Email de usuario CardioLink:");
-  if (!email) return false;
+  if (!email || !email.trim()) return false;
 
   const password = prompt("Contraseña de CardioLink:");
   if (!password) return false;
 
   const { data, error } = await supabaseClient.auth.signInWithPassword({
-    email,
-    password
+    email: email.trim(),
+    password: password
   });
 
   if (error) {
-    alert("No se pudo iniciar sesión en Supabase: " + error.message);
-    console.error(error);
+    alert("Login Supabase falló: " + error.message);
+    console.error("Login Supabase falló:", error);
     return false;
   }
 
@@ -51,7 +59,9 @@ async function loginSupabase() {
 }
 
 async function cargarAtencionesDesdeSupabase() {
-  if (!supabaseClient || !usuarioSupabase) return;
+  if (!supabaseClient || !usuarioSupabase) {
+    throw new Error("No hay conexión o usuario Supabase activo.");
+  }
 
   const { data: rows, error } = await supabaseClient
     .from("cardiolink_atenciones")
@@ -60,29 +70,50 @@ async function cargarAtencionesDesdeSupabase() {
 
   if (error) {
     console.error("Error cargando atenciones desde Supabase:", error);
-    alert("No se pudieron cargar las atenciones desde Supabase. La app sigue en modo local.");
-    return;
+    alert("No se pudieron cargar las atenciones desde Supabase: " + error.message);
+    throw error;
   }
 
-  cargandoDesdeNube = true;
-  atenciones = (rows || []).map(row => row.payload);
-  localStorage.setItem(storageAtenciones, JSON.stringify(atenciones));
-  cargandoDesdeNube = false;
+  const remotas = (rows || []).map(row => row.payload).filter(Boolean);
 
-  console.log("Atenciones cargadas desde Supabase:", atenciones.length);
+  cargandoDesdeNube = true;
+
+  if (remotas.length > 0) {
+    atenciones = remotas;
+    localStorage.setItem(storageAtenciones, JSON.stringify(atenciones));
+    console.log("Atenciones cargadas desde Supabase:", atenciones.length);
+  } else if (Array.isArray(atenciones) && atenciones.length > 0) {
+    console.log("Supabase está vacío. Se migran atenciones locales a la nube:", atenciones.length);
+    cargandoDesdeNube = false;
+    await sincronizarAtencionesSupabase(true);
+    return;
+  } else {
+    atenciones = [];
+    localStorage.setItem(storageAtenciones, JSON.stringify(atenciones));
+    console.log("Supabase sin atenciones. Base inicial vacía.");
+  }
+
+  cargandoDesdeNube = false;
 }
 
 function programarSyncSupabase() {
   if (!supabaseClient || !usuarioSupabase || cargandoDesdeNube) return;
 
   clearTimeout(syncTimer);
-  syncTimer = setTimeout(sincronizarAtencionesSupabase, 700);
+  syncTimer = setTimeout(() => {
+    sincronizarAtencionesSupabase(false);
+  }, 700);
 }
 
-async function sincronizarAtencionesSupabase() {
-  if (!supabaseClient || !usuarioSupabase || cargandoDesdeNube) return;
+async function sincronizarAtencionesSupabase(forzar = false) {
+  if (!supabaseClient || !usuarioSupabase) {
+    console.warn("No se sincroniza: falta Supabase o usuario.");
+    return false;
+  }
 
-  const rows = atenciones.map(a => ({
+  if (cargandoDesdeNube && !forzar) return false;
+
+  const rows = (atenciones || []).map(a => ({
     id: String(a.id),
     payload: a,
     updated_at: new Date().toISOString()
@@ -95,12 +126,13 @@ async function sincronizarAtencionesSupabase() {
 
   if (deleteError) {
     console.error("Error limpiando tabla Supabase:", deleteError);
-    return;
+    alert("No se pudo limpiar/sincronizar Supabase: " + deleteError.message);
+    return false;
   }
 
   if (!rows.length) {
-    console.log("Supabase sincronizado sin atenciones.");
-    return;
+    console.log("Supabase sincronizado: 0 atenciones.");
+    return true;
   }
 
   const { error: insertError } = await supabaseClient
@@ -109,12 +141,25 @@ async function sincronizarAtencionesSupabase() {
 
   if (insertError) {
     console.error("Error sincronizando atenciones con Supabase:", insertError);
-    alert("No se pudo sincronizar con Supabase. Revisar conexión.");
-    return;
+    alert("No se pudo sincronizar con Supabase: " + insertError.message);
+    return false;
   }
 
   console.log("Supabase sincronizado:", rows.length, "atenciones");
+  return true;
 }
+
+function bloquearAppPorLogin() {
+  document.body.innerHTML = `
+    <div style="font-family: Arial, sans-serif; padding: 30px; max-width: 620px; margin: auto; line-height: 1.5;">
+      <h2>CardioLink Admin</h2>
+      <p><strong>No se inició sesión en Supabase.</strong></p>
+      <p>Para evitar que esta computadora o celular cargue datos separados en modo local, la app queda bloqueada.</p>
+      <p>Recargá la página e ingresá email y contraseña de CardioLink.</p>
+    </div>
+  `;
+}
+
 const CLAVE_DINERO_PERIODO='matias2026';
 const OS_FACTURA_ROGELIO=['IOMA','OSDE','Sancor','Prevención Salud','OSPRERA'];
 const FILTRO_FACTURA_ROGELIO='__FACTURA_ROGELIO__';
@@ -354,23 +399,25 @@ function addPrestacion(){const n=$('nuevaPrestacion').value.trim(),pid=$('profPr
 function delPrestacion(enc){const n=decodeURIComponent(enc);if(!confirm('Borrar prestación de todos los perfiles?'))return;data.profesionales.forEach(p=>p.prestaciones=(p.prestaciones||[]).filter(x=>x!==n));saveConfig();refreshSelects();renderConfig();actualizarPrestaciones()}
 
 window.editarAtencion=editarAtencion;window.guardarEdicion=guardarEdicion;window.cancelarEdicion=cancelarEdicion;window.eliminarAtencion=eliminarAtencion;window.delProfesional=delProfesional;window.delOS=delOS;window.delPrestacion=delPrestacion;
+
 async function iniciarCardioLink() {
   const loginOk = await loginSupabase();
 
   if (!loginOk) {
-    alert("No se pudo iniciar sesión en Supabase. La app no se abrirá para evitar carga local separada.");
-    document.body.innerHTML = `
-      <div style="font-family: Arial; padding: 30px; max-width: 600px; margin: auto;">
-        <h2>CardioLink Admin</h2>
-        <p>No se inició sesión en Supabase.</p>
-        <p>Recargá la página e ingresá email y contraseña.</p>
-      </div>
-    `;
+    bloquearAppPorLogin();
     return;
   }
 
-  await cargarAtencionesDesdeSupabase();
+  try {
+    await cargarAtencionesDesdeSupabase();
+  } catch (error) {
+    bloquearAppPorLogin();
+    return;
+  }
+
   init();
 }
+
+iniciarCardioLink();
 
 iniciarCardioLink();
