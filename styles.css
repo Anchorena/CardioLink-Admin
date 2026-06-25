@@ -37,3 +37,6 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px
  body:not(.print-money) .money-card{display:none!important}
  .factura-rogelio-box{border:1px solid #999;background:white}
 }
+#dashboardDetalle {
+  display: none !important;
+}
