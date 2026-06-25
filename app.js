@@ -355,7 +355,20 @@ function delPrestacion(enc){const n=decodeURIComponent(enc);if(!confirm('Borrar 
 
 window.editarAtencion=editarAtencion;window.guardarEdicion=guardarEdicion;window.cancelarEdicion=cancelarEdicion;window.eliminarAtencion=eliminarAtencion;window.delProfesional=delProfesional;window.delOS=delOS;window.delPrestacion=delPrestacion;
 async function iniciarCardioLink() {
-  await loginSupabase();
+  const loginOk = await loginSupabase();
+
+  if (!loginOk) {
+    alert("No se pudo iniciar sesión en Supabase. La app no se abrirá para evitar carga local separada.");
+    document.body.innerHTML = `
+      <div style="font-family: Arial; padding: 30px; max-width: 600px; margin: auto;">
+        <h2>CardioLink Admin</h2>
+        <p>No se inició sesión en Supabase.</p>
+        <p>Recargá la página e ingresá email y contraseña.</p>
+      </div>
+    `;
+    return;
+  }
+
   await cargarAtencionesDesdeSupabase();
   init();
 }
