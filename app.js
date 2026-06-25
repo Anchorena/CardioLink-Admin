@@ -149,7 +149,10 @@ function loadAtenciones(){
  return [];
 }
 function saveConfig(){localStorage.setItem(storageConfig,JSON.stringify(data))}
-function saveAtenciones(){localStorage.setItem(storageAtenciones,JSON.stringify(atenciones))}
+function saveAtenciones(){
+  localStorage.setItem(storageAtenciones, JSON.stringify(atenciones));
+  programarSyncSupabase();
+}
 function todayISO(){const d=new Date();const off=d.getTimezoneOffset()*60000;return new Date(d-off).toISOString().slice(0,10)}
 function formatFecha(iso){if(!iso)return'';const [y,m,d]=iso.split('-');return `${d}/${m}/${y}`}
 function money(n){return '$'+Number(n||0).toLocaleString('es-AR')}
@@ -351,4 +354,10 @@ function addPrestacion(){const n=$('nuevaPrestacion').value.trim(),pid=$('profPr
 function delPrestacion(enc){const n=decodeURIComponent(enc);if(!confirm('Borrar prestación de todos los perfiles?'))return;data.profesionales.forEach(p=>p.prestaciones=(p.prestaciones||[]).filter(x=>x!==n));saveConfig();refreshSelects();renderConfig();actualizarPrestaciones()}
 
 window.editarAtencion=editarAtencion;window.guardarEdicion=guardarEdicion;window.cancelarEdicion=cancelarEdicion;window.eliminarAtencion=eliminarAtencion;window.delProfesional=delProfesional;window.delOS=delOS;window.delPrestacion=delPrestacion;
-init();
+async function iniciarCardioLink() {
+  await loginSupabase();
+  await cargarAtencionesDesdeSupabase();
+  init();
+}
+
+iniciarCardioLink();
