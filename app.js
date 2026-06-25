@@ -1,7 +1,18 @@
-const SUPABASE_URL = "https://tupacclmhaqiahhlttyz.supabase.co/rest/v1/";
+const SUPABASE_URL = "https://tupacclmhaqiahhlttyz.supabase.co";
 const SUPABASE_KEY = "sb_publishable_tPUUUmp_cR11FSEiF0vhNw_EXaTvv12";
 
-const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+let supabaseClient = null;
+
+try {
+  if (window.supabase && typeof window.supabase.createClient === "function") {
+    supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    console.log("Supabase conectado correctamente");
+  } else {
+    console.warn("Supabase no cargó. CardioLink sigue funcionando en modo local.");
+  }
+} catch (error) {
+  console.error("Error conectando Supabase:", error);
+}
 const CLAVE_DINERO_PERIODO='matias2026';
 const OS_FACTURA_ROGELIO=['IOMA','OSDE','Sancor','Prevención Salud','OSPRERA'];
 const FILTRO_FACTURA_ROGELIO='__FACTURA_ROGELIO__';
