@@ -53,7 +53,7 @@ function mostrarPantallaLogin() {
         <button id="btnLoginCardioLink">Entrar</button>
 
         <p id="loginError" class="login-error"></p>
-        <p class="login-help">Ejemplo: escribí <strong>secretaria</strong>, no hace falta poner el mail completo.</p>
+        <p class="login-help"></p>
       </div>
     `;
 
