@@ -20,15 +20,11 @@ let syncTimer = null;
 
 async function loginSupabase() {
   if (!supabaseClient) {
-    alert("Supabase no está conectado. Revisá index.html, SUPABASE_URL y SUPABASE_KEY.");
+    alert("Supabase no está conectado. Revisar URL, publishable key o script de Supabase.");
     return false;
   }
 
-  const { data: sessionData, error: sessionError } = await supabaseClient.auth.getSession();
-
-  if (sessionError) {
-    console.error("Error revisando sesión Supabase:", sessionError);
-  }
+  const { data: sessionData } = await supabaseClient.auth.getSession();
 
   if (sessionData?.session?.user) {
     usuarioSupabase = sessionData.session.user;
@@ -36,28 +32,208 @@ async function loginSupabase() {
     return true;
   }
 
-  const email = prompt("Email de usuario CardioLink:");
-  if (!email || !email.trim()) return false;
-
-  const password = prompt("Contraseña de CardioLink:");
-  if (!password) return false;
-
-  const { data, error } = await supabaseClient.auth.signInWithPassword({
-    email: email.trim(),
-    password: password
-  });
-
-  if (error) {
-    alert("Login Supabase falló: " + error.message);
-    console.error("Login Supabase falló:", error);
-    return false;
-  }
-
-  usuarioSupabase = data.user;
-  console.log("Usuario Supabase logueado:", usuarioSupabase.email);
-  return true;
+  return mostrarPantallaLogin();
 }
 
+function mostrarPantallaLogin() {
+  return new Promise((resolve) => {
+    const overlay = document.createElement("div");
+    overlay.id = "loginOverlay";
+    overlay.innerHTML = `
+      <div class="login-card">
+        <h1>CardioLink Admin</h1>
+        <p class="login-subtitle">Ingresar al sistema</p>
+
+        <label>Usuario</label>
+        <input id="loginUsuario" type="text" placeholder="matias / secretaria / rogelio" autocomplete="username">
+
+        <label>Contraseña</label>
+        <input id="loginPassword" type="password" placeholder="Contraseña" autocomplete="current-password">
+
+        <button id="btnLoginCardioLink">Entrar</button>
+
+        <p id="loginError" class="login-error"></p>
+        <p class="login-help">Ejemplo: escribí <strong>secretaria</strong>, no hace falta poner el mail completo.</p>
+      </div>
+    `;
+
+    const style = document.createElement("style");
+    style.id = "loginStyle";
+    style.textContent = `
+      #loginOverlay {
+        position: fixed;
+        inset: 0;
+        z-index: 99999;
+        background: linear-gradient(135deg, #0f172a, #1e293b);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: Arial, sans-serif;
+      }
+
+      .login-card {
+        width: 92%;
+        max-width: 390px;
+        background: white;
+        border-radius: 18px;
+        padding: 28px;
+        box-shadow: 0 20px 60px rgba(0,0,0,.35);
+      }
+
+      .login-card h1 {
+        margin: 0 0 6px;
+        font-size: 26px;
+        color: #0f172a;
+      }
+
+      .login-subtitle {
+        margin: 0 0 22px;
+        color: #64748b;
+      }
+
+      .login-card label {
+        display: block;
+        margin: 14px 0 6px;
+        font-weight: 700;
+        color: #334155;
+      }
+
+      .login-card input {
+        width: 100%;
+        box-sizing: border-box;
+        padding: 13px;
+        border-radius: 10px;
+        border: 1px solid #cbd5e1;
+        font-size: 16px;
+      }
+
+      .login-card button {
+        width: 100%;
+        margin-top: 20px;
+        padding: 14px;
+        border: none;
+        border-radius: 12px;
+        background: #2563eb;
+        color: white;
+        font-size: 16px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .login-card button:hover {
+        background: #1d4ed8;
+      }
+
+      .login-error {
+        margin-top: 14px;
+        color: #dc2626;
+        font-weight: 700;
+        min-height: 20px;
+      }
+
+      .login-help {
+        margin-top: 12px;
+        color: #64748b;
+        font-size: 13px;
+      }
+    `;
+
+    document.body.appendChild(style);
+    document.body.appendChild(overlay);
+
+    setTimeout(() => {
+      const inputUsuario = document.getElementById("loginUsuario");
+      if (inputUsuario) inputUsuario.focus();
+    }, 100);
+
+    async function intentarLogin() {
+      let email = document.getElementById("loginUsuario").value.trim().toLowerCase();
+      const password = document.getElementById("loginPassword").value;
+      const errorBox = document.getElementById("loginError");
+
+      errorBox.textContent = "";
+
+      if (!email) {
+        errorBox.textContent = "Ingresá un usuario.";
+        return;
+      }
+
+      if (!password) {
+        errorBox.textContent = "Ingresá la contraseña.";
+        return;
+      }
+
+      if (!email.includes("@")) {
+        email = email + "@cardiolink.local";
+      }
+
+      const { data, error } = await supabaseClient.auth.signInWithPassword({
+        email,
+        password
+      });
+
+      if (error) {
+        console.error("Login Supabase falló:", error);
+        errorBox.textContent = "Usuario o contraseña incorrectos.";
+        return;
+      }
+
+      usuarioSupabase = data.user;
+
+      overlay.remove();
+      const loginStyle = document.getElementById("loginStyle");
+      if (loginStyle) loginStyle.remove();
+
+      resolve(true);
+    }
+
+    document.getElementById("btnLoginCardioLink").addEventListener("click", intentarLogin);
+
+    document.getElementById("loginPassword").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") intentarLogin();
+    });
+
+    document.getElementById("loginUsuario").addEventListener("keydown", (e) => {
+      if (e.key === "Enter") document.getElementById("loginPassword").focus();
+    });
+  });
+}
+async function cerrarSesionSupabase() {
+  if (!supabaseClient) return;
+
+  await supabaseClient.auth.signOut();
+  localStorage.removeItem("sb-session");
+
+  location.reload();
+}
+
+function agregarBotonCerrarSesion() {
+  if (document.getElementById("btnCerrarSesion")) return;
+
+  const btn = document.createElement("button");
+  btn.id = "btnCerrarSesion";
+  btn.textContent = "Cerrar sesión";
+  btn.style.position = "fixed";
+  btn.style.right = "14px";
+  btn.style.bottom = "14px";
+  btn.style.zIndex = "9999";
+  btn.style.padding = "10px 14px";
+  btn.style.borderRadius = "10px";
+  btn.style.border = "none";
+  btn.style.background = "#334155";
+  btn.style.color = "white";
+  btn.style.fontWeight = "700";
+  btn.style.cursor = "pointer";
+  btn.style.boxShadow = "0 6px 20px rgba(0,0,0,.25)";
+
+  btn.addEventListener("click", async () => {
+    if (confirm("¿Cerrar sesión en CardioLink?")) {
+      await cerrarSesionSupabase();
+    }
+  });
+
+  document.body.appendChild(btn);
+}
 async function cargarAtencionesDesdeSupabase() {
   if (!supabaseClient || !usuarioSupabase) {
     throw new Error("No hay conexión o usuario Supabase activo.");
@@ -404,20 +580,19 @@ async function iniciarCardioLink() {
   const loginOk = await loginSupabase();
 
   if (!loginOk) {
-    bloquearAppPorLogin();
+    document.body.innerHTML = `
+      <div style="font-family: Arial; padding: 30px; max-width: 600px; margin: auto;">
+        <h2>CardioLink Admin</h2>
+        <p>No se inició sesión en Supabase.</p>
+        <p>Recargá la página e ingresá usuario y contraseña.</p>
+      </div>
+    `;
     return;
   }
 
-  try {
-    await cargarAtencionesDesdeSupabase();
-  } catch (error) {
-    bloquearAppPorLogin();
-    return;
-  }
-
+  await cargarAtencionesDesdeSupabase();
   init();
+  agregarBotonCerrarSesion();
 }
-
-iniciarCardioLink();
 
 iniciarCardioLink();
