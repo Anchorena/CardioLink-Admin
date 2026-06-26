@@ -45,7 +45,7 @@ function mostrarPantallaLogin() {
         <p class="login-subtitle">Ingresar al sistema</p>
 
         <label>Usuario</label>
-        <input id="loginUsuario" type="text" placeholder="matias / secretaria / rogelio" autocomplete="username">
+        <input id="loginUsuario" type="text" placeholder="Usuario" autocomplete="username">
 
         <label>Contraseña</label>
         <input id="loginPassword" type="password" placeholder="Contraseña" autocomplete="current-password">
