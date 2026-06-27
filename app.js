@@ -620,6 +620,36 @@ function delPrestacion(enc){const n=decodeURIComponent(enc);if(!confirm('Borrar 
 
 window.editarAtencion=editarAtencion;window.guardarEdicion=guardarEdicion;window.cancelarEdicion=cancelarEdicion;window.eliminarAtencion=eliminarAtencion;window.delProfesional=delProfesional;window.delOS=delOS;window.delPrestacion=delPrestacion;
 
+async function refrescarDesdeSupabaseAutomatico() {
+  if (!supabaseClient || !usuarioSupabase) return;
+
+  // No refrescar si alguien está editando una atención
+  if (typeof editandoId !== "undefined" && editandoId) return;
+
+  try {
+    await cargarAtencionesDesdeSupabase();
+
+    if (typeof renderTabla === "function") renderTabla();
+    if (typeof renderStats === "function") renderStats();
+
+    console.log("Refresco automático Supabase OK:", new Date().toLocaleTimeString());
+  } catch (error) {
+    console.error("Error en refresco automático:", error);
+  }
+}
+
+function iniciarRefrescoAutomatico() {
+  if (window.cardioLinkRefreshInterval) {
+    clearInterval(window.cardioLinkRefreshInterval);
+  }
+
+  window.cardioLinkRefreshInterval = setInterval(() => {
+    refrescarDesdeSupabaseAutomatico();
+  }, 30000);
+
+  console.log("Refresco automático activado cada 30 segundos");
+}
+
 async function iniciarCardioLink() {
   const loginOk = await loginSupabase();
 
@@ -637,6 +667,7 @@ async function iniciarCardioLink() {
   await cargarAtencionesDesdeSupabase();
   init();
   agregarBotonCerrarSesion();
+  iniciarRefrescoAutomatico();
 }
 
 iniciarCardioLink();
