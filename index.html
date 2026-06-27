@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CardioLink Admin v2.5.5.1</title>
+<title>CardioLink Admin v2.5.6</title>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <aside class="sidebar">
   <div class="brand">
-    <div class="brand-main">CardioLink Admin <span>v2.5.5.1</span></div>
+    <div class="brand-main">CardioLink Admin <span>v2.5.6</span></div>
     <div class="brand-by">by Matías Anchorena</div>
   </div>
   <button class="nav active" data-section="dashboard">Dashboard</button>
@@ -91,6 +91,14 @@
           <label><input type="checkbox" id="copiaImpresa"> Copia estudio impresa</label>
           <label><input type="checkbox" id="fold2"> Fold2</label>
           <label><input type="checkbox" id="planilla"> Planilla</label>
+          <label><input type="checkbox" id="colocacionLiquidable"> Colocación liquidable Holter / MAPA / ECG</label>
+          <label>Colocador/a
+            <select id="colocador">
+              <option value="Geraldine">Geraldine</option>
+              <option value="Secretaría">Secretaría</option>
+              <option value="Otro">Otro</option>
+            </select>
+          </label>
         </div>
 
         <div class="full rule-box" id="reglaInfo">Regla automática: sin aplicar.</div>
@@ -128,12 +136,12 @@
 
       <div id="printArea">
         <div class="print-title">
-          <h2>CardioLink Admin v2.5.5.1</h2>
+          <h2>CardioLink Admin v2.5.6</h2>
           <p>by Matías Anchorena — Listado filtrado</p>
           <p id="printMeta"></p>
         </div>
 
-        <div class="resumen-caja">
+        <div class="resumen-caja hidden" id="resumenCaja">
           <div><span>Consultas</span><strong id="rConsultas">0</strong></div>
           <div><span>Estudios</span><strong id="rEstudios">0</strong></div>
           <div><span>Bono consulta</span><strong id="rBonoConsulta">0</strong></div>
@@ -141,6 +149,18 @@
           <div><span>Caja HOY particular</span><strong id="rParticular">$0</strong></div>
           <div><span>Caja HOY copago</span><strong id="rCopago">$0</strong></div>
           <div><span>Caja HOY total</span><strong id="rTotal">$0</strong></div>
+        </div>
+
+        <div class="liquidacion-box no-print hidden" id="liquidacionBox">
+          <strong>Liquidación colocación Holter / MAPA / ECG</strong>
+          <span>Cuenta solo registros marcados como colocación liquidable.</span>
+          <div class="liquidacion-grid">
+            <label>Valor Holter <input type="number" id="valorColocacionHolter" min="0" value="10000"></label>
+            <label>Valor MAPA <input type="number" id="valorColocacionMapa" min="0" value="10000"></label>
+            <label>Valor ECG <input type="number" id="valorColocacionEcg" min="0" value="0"></label>
+            <button class="primary" id="btnCalcularLiquidacion" type="button">Calcular liquidación</button>
+          </div>
+          <div id="liquidacionResultado" class="money-result"></div>
         </div>
 
         <div class="money-lock no-print">
