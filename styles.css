@@ -40,3 +40,28 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px
 #dashboardDetalle {
   display: none !important;
 }
+
+
+.hidden{display:none!important}
+.liquidacion-box{
+  margin:14px 0;
+  padding:14px;
+  border:1px solid var(--line);
+  background:rgba(14,116,144,.08);
+  border-radius:14px;
+  display:grid;
+  gap:10px;
+}
+.liquidacion-box strong{font-size:16px}
+.liquidacion-box span{color:var(--muted);font-size:13px}
+.liquidacion-grid{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(160px,1fr));
+  gap:10px;
+  align-items:end;
+}
+.liquidacion-grid label{font-weight:700;font-size:13px}
+.liquidacion-grid input{margin-top:5px}
+.checks select{width:100%;margin-top:6px}
+@media(max-width:950px){.liquidacion-grid{grid-template-columns:1fr}.liquidacion-box{grid-template-columns:1fr}}
+@media print{.liquidacion-box{display:none!important}}
