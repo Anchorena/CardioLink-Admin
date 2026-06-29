@@ -535,7 +535,36 @@ function filtrar(){const desde=$('fDesde').value,hasta=$('fHasta').value,os=$('f
 function consultaComputada(a){const t=tipoPrest(a.prestacion),r=a.reglaOS||getRegla(a.obraSocial);if(t==='CONSULTA'||t==='CONSULTA_ECG')return true;if(t==='ECG'&&r==='IOMA_OSPRERA')return true;if(t!=='CONSULTA'){return ['GENERAL_CONSULTA_EXTRA','SANCOR_PREVENCION','IOMA_OSPRERA','OSDE'].includes(r)}return !!a.bonoConsulta}
 function resumen(datos){return datos.reduce((r,a)=>{if(consultaComputada(a))r.consultas++;if(tipoPrest(a.prestacion)!=='CONSULTA')r.estudios++;if(a.bonoConsulta||consultaComputada(a))r.bonoConsulta++;if(a.bonoEstudio||tipoPrest(a.prestacion)!=='CONSULTA')r.bonoEstudio++;const particular=Number(a.montoConsulta||0)+Number(a.montoEstudio||0);const copago=Number(a.montoCopago||0);r.particular+=particular;r.copago+=copago;r.total+=particular+copago;return r},{consultas:0,estudios:0,bonoConsulta:0,bonoEstudio:0,particular:0,copago:0,total:0})}
 function dineroVisible(a){const p=perfilObj(),cp=a.cajaPerfil||a.profesionalId;if(p.id==='rogelio'&&cp!=='rogelio')return {particular:0,copago:0,total:0};if(p.id==='matias'&&cp!=='matias')return {particular:0,copago:0,total:0};const particular=Number(a.montoConsulta||0)+Number(a.montoEstudio||0);const copago=Number(a.montoCopago||0);return {particular,copago,total:particular+copago}}
-function cajaHoy(datos){return datos.filter(a=>a.fecha===todayISO()).reduce((r,a)=>{const m=dineroVisible(a);r.particular+=m.particular;r.copago+=m.copago;r.total+=m.total;return r},{particular:0,copago:0,total:0})}
+function atencionesCajaDelPerfil(datos = atenciones) {
+  const p = perfilObj();
+
+  // En vista general / administración NO se mezclan cajas
+  if (p.id === 'general') {
+    return [];
+  }
+
+  return datos.filter(a => {
+    const caja = a.cajaPerfil || a.profesionalId;
+    return caja === p.id;
+  });
+}
+
+function cajaHoy(datos = atenciones) {
+  const datosCaja = atencionesCajaDelPerfil(datos);
+
+  return datosCaja
+    .filter(a => a.fecha === todayISO())
+    .reduce((r, a) => {
+      const particular = Number(a.montoConsulta || 0) + Number(a.montoEstudio || 0);
+      const copago = Number(a.montoCopago || 0);
+
+      r.particular += particular;
+      r.copago += copago;
+      r.total += particular + copago;
+
+      return r;
+    }, { particular: 0, copago: 0, total: 0 });
+}
 function evaluarEstado(a){const f=new Set();if((a.bonoConsulta||a.bonoEstudio)&&!a.bonoFirmado)f.add('firma');if((a.bonoEstudio||a.requiereCopiaImpresa)&&!a.copiaImpresa)f.add('copia');return f.size?{txt:'Falta: '+Array.from(f).join(' + '),cls:'bad'}:{txt:'OK',cls:'ok'}}
 
 function prestacionContable(a){const r=a.reglaOS||getRegla(a.obraSocial);if(perfilObj().id==='rogelio'&&a.prestacionA==='Rogelio'&&['OSDE','IOMA_OSPRERA'].includes(r)&&tipoPrest(a.prestacion)!=='CONSULTA')return 'Holter';return a.prestacion}
