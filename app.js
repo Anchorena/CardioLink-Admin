@@ -40,103 +40,202 @@ function mostrarPantallaLogin() {
     const overlay = document.createElement("div");
     overlay.id = "loginOverlay";
     overlay.innerHTML = `
-      <div class="login-card">
-        <h1>CardioLink Admin</h1>
-        <p class="login-subtitle">Ingresar al sistema</p>
-
-        <label>Usuario</label>
-        <input id="loginUsuario" type="text" placeholder="Usuario" autocomplete="username">
-
-        <label>Contraseña</label>
-        <input id="loginPassword" type="password" placeholder="Contraseña" autocomplete="current-password">
-
-        <button id="btnLoginCardioLink">Entrar</button>
-
-        <p id="loginError" class="login-error"></p>
-        <p class="login-help"></p>
+  <div class="login-card">
+    <div class="login-brand">
+      <div class="login-logo">
+        <svg viewBox="0 0 220 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M5 45 
+                   L35 45 
+                   L48 45 
+                   L58 20 
+                   L72 62 
+                   L86 35 
+                   L100 45 
+                   L215 45"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="6"
+                stroke-linecap="round"
+                stroke-linejoin="round"/>
+        </svg>
       </div>
-    `;
+
+      <h1>CardioLink Admin</h1>
+      <p class="login-subtitle">by Matías Anchorena</p>
+      <p class="login-meta">Versión 2.5.6 · 2026</p>
+    </div>
+
+    <div class="login-fields">
+      <label>Usuario</label>
+      <input id="loginUsuario" type="text" placeholder="Usuario" autocomplete="username">
+
+      <label>Contraseña</label>
+      <input id="loginPassword" type="password" placeholder="Contraseña" autocomplete="current-password">
+
+      <button id="btnLoginCardioLink">Entrar</button>
+
+      <p id="loginError" class="login-error"></p>
+    </div>
+  </div>
+`;
 
     const style = document.createElement("style");
     style.id = "loginStyle";
-    style.textContent = `
-      #loginOverlay {
-        position: fixed;
-        inset: 0;
-        z-index: 99999;
-        background: linear-gradient(135deg, #0f172a, #1e293b);
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        font-family: Arial, sans-serif;
-      }
+  style.textContent = `
+  #loginOverlay {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    background:
+      radial-gradient(circle at top right, rgba(79,70,229,.25), transparent 30%),
+      radial-gradient(circle at bottom left, rgba(14,165,233,.20), transparent 30%),
+      linear-gradient(135deg, #0b132b, #111c44 55%, #0f172a);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: Arial, sans-serif;
+    padding: 24px;
+  }
 
-      .login-card {
-        width: 92%;
-        max-width: 390px;
-        background: white;
-        border-radius: 18px;
-        padding: 28px;
-        box-shadow: 0 20px 60px rgba(0,0,0,.35);
-      }
+  .login-card {
+    width: 100%;
+    max-width: 460px;
+    background: rgba(255,255,255,0.96);
+    border-radius: 26px;
+    padding: 34px 30px 28px;
+    box-shadow: 0 24px 80px rgba(0,0,0,.35);
+    border: 1px solid rgba(255,255,255,.25);
+    backdrop-filter: blur(6px);
+  }
 
-      .login-card h1 {
-        margin: 0 0 6px;
-        font-size: 26px;
-        color: #0f172a;
-      }
+  .login-brand {
+    text-align: center;
+    margin-bottom: 26px;
+  }
 
-      .login-subtitle {
-        margin: 0 0 22px;
-        color: #64748b;
-      }
+  .login-logo {
+    width: 180px;
+    margin: 0 auto 16px;
+    color: #2563eb;
+  }
 
-      .login-card label {
-        display: block;
-        margin: 14px 0 6px;
-        font-weight: 700;
-        color: #334155;
-      }
+  .login-logo svg {
+    width: 100%;
+    height: auto;
+    display: block;
+  }
 
-      .login-card input {
-        width: 100%;
-        box-sizing: border-box;
-        padding: 13px;
-        border-radius: 10px;
-        border: 1px solid #cbd5e1;
-        font-size: 16px;
-      }
+  .login-card h1 {
+    margin: 0;
+    font-size: 42px;
+    line-height: 1.05;
+    color: #0f172a;
+    font-weight: 800;
+    letter-spacing: -1px;
+  }
 
-      .login-card button {
-        width: 100%;
-        margin-top: 20px;
-        padding: 14px;
-        border: none;
-        border-radius: 12px;
-        background: #2563eb;
-        color: white;
-        font-size: 16px;
-        font-weight: 700;
-        cursor: pointer;
-      }
+  .login-subtitle {
+    margin: 10px 0 4px;
+    color: #334155;
+    font-size: 19px;
+    font-weight: 700;
+  }
 
-      .login-card button:hover {
-        background: #1d4ed8;
-      }
+  .login-meta {
+    margin: 0;
+    color: #64748b;
+    font-size: 14px;
+    font-weight: 600;
+  }
 
-      .login-error {
-        margin-top: 14px;
-        color: #dc2626;
-        font-weight: 700;
-        min-height: 20px;
-      }
+  .login-fields label {
+    display: block;
+    margin: 16px 0 7px;
+    font-weight: 800;
+    color: #1e293b;
+    font-size: 15px;
+  }
 
-      .login-help {
-        margin-top: 12px;
-        color: #64748b;
-        font-size: 13px;
-      }
-    `;
+  .login-fields input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 16px 18px;
+    border-radius: 16px;
+    border: 2px solid #cbd5e1;
+    font-size: 18px;
+    color: #0f172a;
+    background: #fff;
+    outline: none;
+    transition: .2s ease;
+  }
+
+  .login-fields input:focus {
+    border-color: #4f46e5;
+    box-shadow: 0 0 0 4px rgba(79,70,229,.12);
+  }
+
+  .login-fields button {
+    width: 100%;
+    margin-top: 24px;
+    padding: 17px;
+    border: none;
+    border-radius: 16px;
+    background: linear-gradient(90deg, #4f46e5, #3b82f6);
+    color: white;
+    font-size: 20px;
+    font-weight: 800;
+    cursor: pointer;
+    box-shadow: 0 14px 30px rgba(59,130,246,.28);
+    transition: transform .15s ease, box-shadow .15s ease, opacity .15s ease;
+  }
+
+  .login-fields button:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 18px 34px rgba(59,130,246,.35);
+  }
+
+  .login-fields button:active {
+    transform: translateY(0);
+  }
+
+  .login-error {
+    margin-top: 14px;
+    color: #dc2626;
+    font-weight: 700;
+    min-height: 22px;
+    text-align: center;
+    font-size: 14px;
+  }
+
+  @media (max-width: 600px) {
+    .login-card {
+      padding: 26px 22px 24px;
+      border-radius: 22px;
+    }
+
+    .login-card h1 {
+      font-size: 34px;
+    }
+
+    .login-subtitle {
+      font-size: 17px;
+    }
+
+    .login-fields input {
+      font-size: 17px;
+      padding: 15px 16px;
+    }
+
+    .login-fields button {
+      font-size: 18px;
+      padding: 15px;
+    }
+
+    .login-logo {
+      width: 150px;
+    }
+  }
+`;
 
     document.body.appendChild(style);
     document.body.appendChild(overlay);
