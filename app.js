@@ -44,14 +44,7 @@ function mostrarPantallaLogin() {
     <div class="login-brand">
       <div class="login-logo">
         <svg viewBox="0 0 220 80" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-          <path d="M5 45 
-                   L35 45 
-                   L48 45 
-                   L58 20 
-                   L72 62 
-                   L86 35 
-                   L100 45 
-                   L215 45"
+          <path d="M5 45 L35 45 L48 45 L58 20 L72 62 L86 35 L100 45 L215 45"
                 fill="none"
                 stroke="currentColor"
                 stroke-width="6"
