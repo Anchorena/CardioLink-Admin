@@ -17,7 +17,7 @@ try {
 let usuarioSupabase = null;
 let cargandoDesdeNube = false;
 let syncTimer = null;
-const TAMANIO_PAGINA_LISTADO = 100;
+const TAMANIO_PAGINA_LISTADO = 50;
 let paginaListado = 1;
 const INACTIVIDAD_MS = 30 * 60 * 1000;
 let timerInactividad = null;
@@ -795,10 +795,10 @@ function actualizarPaginacionListado(totalRegistros,totalPaginas){
  if(!box||!info||!prev||!next)return;
  const desde=totalRegistros?((paginaListado-1)*TAMANIO_PAGINA_LISTADO+1):0;
  const hasta=Math.min(paginaListado*TAMANIO_PAGINA_LISTADO,totalRegistros);
- info.textContent=`Mostrando ${desde}-${hasta} de ${totalRegistros} · Página ${paginaListado} de ${totalPaginas}`;
+ info.textContent=`Hoja ${paginaListado}/${totalPaginas} · Mostrando ${desde}-${hasta} de ${totalRegistros} registros`;
  prev.disabled=paginaListado<=1;
  next.disabled=paginaListado>=totalPaginas;
- box.classList.toggle('hidden',totalRegistros<=TAMANIO_PAGINA_LISTADO);
+ box.classList.remove('hidden');
 }
 function renderResumenCaja(datos=filtrar()){const r=resumen(datos),c=cajaHoy(datos);$('rConsultas').textContent=r.consultas;$('rEstudios').textContent=r.estudios;$('rBonoConsulta').textContent=r.bonoConsulta;$('rBonoEstudio').textContent=r.bonoEstudio;$('rParticular').textContent=money(c.particular);$('rCopago').textContent=money(c.copago);$('rTotal').textContent=money(c.total)}
 function renderStats(){const datos=atencionesPerfil(),c=cajaHoy(datos);$('statTotal').textContent=mostrarConteoDashboard?datos.length:'•••';if($('btnToggleConteo'))$('btnToggleConteo').textContent=mostrarConteoDashboard?'Ocultar':'Mostrar';$('statHoy').textContent=datos.filter(a=>a.fecha===todayISO()).length;$('statPendientes').textContent=datos.filter(a=>evaluarEstado(a).cls==='bad').length;$('statParticular').textContent=money(c.particular);$('statCopagos').textContent=money(c.copago);$('statTotalCaja').textContent=money(c.total);if($('dashboardDetalle'))$('dashboardDetalle').textContent=''}
@@ -807,8 +807,113 @@ function selectHTML(id,items,selected){return `<select id="${id}">`+items.map(x=
 function opcionesDestinos(extra){const base=['Matías','Rogelio','No aplica','A definir'];data.profesionales.filter(p=>p.id!=='general').forEach(p=>base.push(p.nombre));if(extra)base.push(extra);return [...new Set(base.filter(Boolean))];}
 function selectProfesionalesHTML(id,selected){return `<select id="${id}">`+data.profesionales.filter(p=>p.id!=='general').map(p=>`<option value="${p.id}" ${p.id===selected?'selected':''}>${escapeHtml(p.nombre)}</option>`).join('')+'</select>'}
 function selectPrestacionesHTML(id,prof,selected){const p=data.profesionales.find(x=>x.id===prof);const items=p?.prestaciones?.length?p.prestaciones:allPrestaciones();return selectHTML(id,items,selected)}
-function editarAtencion(id){editandoId=id;renderTabla()}function cancelarEdicion(){editandoId=null;renderTabla()}
-function guardarEdicion(id){const a=atenciones.find(x=>x.id===id);if(!a)return;const profId=$('e_prof_'+id).value,prof=data.profesionales.find(p=>p.id===profId),prest=$('e_prest_'+id).value,tipo=$('e_tipoCobro_'+id).value,part=Number($('e_particular_'+id).value||0),cop=Number($('e_copago_'+id).value||0);let total=0;if(tipo.includes('Particular'))total+=part;if(tipo.includes('Copago')||tipo.includes('copago'))total+=cop;a.fecha=$('e_fecha_'+id).value;a.paciente=$('e_paciente_'+id).value.trim();a.observaciones=$('e_obs_'+id).value.trim();a.obraSocial=$('e_os_'+id).value;a.profesionalId=profId;a.profesional=prof?.nombre||'';a.prestacion=prest;a.consultaA=$('e_consultaA_'+id).value;a.prestacionA=$('e_prestacionA_'+id).value;a.tipoCobro=tipo;a.formaPago=$('e_formaPago_'+id).value;a.cajaPerfil=profId;a.montoConsulta=esConsulta(prest)?part:0;a.montoEstudio=esConsulta(prest)?0:part;a.montoCopago=cop;a.montoTotal=total;a.bonoConsulta=$('e_bonoConsulta_'+id).checked;a.bonoEstudio=$('e_bonoEstudio_'+id).checked;a.bonoFirmado=$('e_bonoFirmado_'+id).checked;a.copiaImpresa=$('e_copiaImpresa_'+id).checked;a.requiereCopiaImpresa=a.bonoEstudio;a.fold2=$('e_fold2_'+id).checked;a.planilla=$('e_planilla_'+id).checked;a.colocacionLiquidable=$('e_colocacionLiquidable_'+id)?.checked||false;a.colocador=$('e_colocador_'+id)?.value||'';a.reglaOS=getRegla(a.obraSocial);saveAtenciones();editandoId=null;renderTabla();renderStats();if(resumenFiltrosVisible)calcularLiquidacionColocaciones()}
+function editarAtencion(id){abrirModalEdicion(id)}
+function cancelarEdicion(){cerrarModalEdicion()}
+
+function abrirModalEdicion(id){
+  const a=atenciones.find(x=>x.id===id);
+  if(!a)return;
+  cerrarModalEdicion();
+  const overlay=document.createElement('div');
+  overlay.id='modalEdicionAtencion';
+  const particular=Number(a.montoConsulta||0)+Number(a.montoEstudio||0);
+  const copago=Number(a.montoCopago||0);
+  overlay.innerHTML=`
+    <div class="modal-edit-card">
+      <div class="modal-edit-header">
+        <div>
+          <h2>Editar atención</h2>
+          <p>${escapeHtml(a.paciente||'Paciente sin nombre')} · ${formatFecha(a.fecha||'')}</p>
+        </div>
+        <button type="button" class="modal-close" onclick="cerrarModalEdicion()">×</button>
+      </div>
+      <div class="form-grid modal-form-grid">
+        <div><label>Fecha</label><input type="date" id="m_fecha" value="${a.fecha||''}"></div>
+        <div><label>Paciente</label><input id="m_paciente" value="${escapeHtml(a.paciente||'')}"></div>
+        <div><label>DNI</label><input id="m_dni" value="${escapeHtml(a.dni||'')}"></div>
+        <div><label>Obra social</label>${selectHTML('m_os',data.obrasSociales,a.obraSocial)}</div>
+        <div><label>Profesional</label>${selectProfesionalesHTML('m_prof',a.profesionalId)}</div>
+        <div><label>Prestación</label>${selectPrestacionesHTML('m_prest',a.profesionalId,a.prestacion)}</div>
+        <div><label>Consulta a</label>${selectHTML('m_consultaA',opcionesDestinos(a.consultaA),a.consultaA)}</div>
+        <div><label>Estudio/prestación a</label>${selectHTML('m_prestacionA',opcionesDestinos(a.prestacionA),a.prestacionA)}</div>
+        <div><label>Tipo de cobro</label>${selectHTML('m_tipoCobro',['Sin cobro en caja','Copago','Particular','Particular + copago'],a.tipoCobro||'Sin cobro en caja')}</div>
+        <div><label>Forma de pago</label>${selectHTML('m_formaPago',['No aplica','Efectivo','Transferencia','Mixto'],a.formaPago||'No aplica')}</div>
+        <div><label>Particular</label><input type="number" id="m_particular" value="${particular}"></div>
+        <div><label>Copago</label><input type="number" id="m_copago" value="${copago}"></div>
+        <div class="checks modal-checks">
+          <label><input type="checkbox" id="m_bonoConsulta" ${a.bonoConsulta?'checked':''}> Bono consulta</label>
+          <label><input type="checkbox" id="m_bonoEstudio" ${a.bonoEstudio?'checked':''}> Bono estudio</label>
+          <label><input type="checkbox" id="m_bonoFirmado" ${a.bonoFirmado?'checked':''}> Bono firmado</label>
+          <label><input type="checkbox" id="m_copiaImpresa" ${a.copiaImpresa?'checked':''}> Copia impresa</label>
+          <label><input type="checkbox" id="m_fold2" ${a.fold2?'checked':''}> Fold2</label>
+          <label><input type="checkbox" id="m_planilla" ${a.planilla?'checked':''}> Planilla</label>
+          <label><input type="checkbox" id="m_colocacionLiquidable" ${a.colocacionLiquidable?'checked':''}> Colocación liquidable</label>
+          <label>Colocador/a ${selectHTML('m_colocador',['Geraldine','Secretaría','Otro'],a.colocador||'Geraldine')}</label>
+        </div>
+        <div class="full"><label>Observaciones</label><textarea id="m_obs" rows="3">${escapeHtml(a.observaciones||'')}</textarea></div>
+      </div>
+      <div class="modal-actions">
+        <button class="secondary" type="button" onclick="cerrarModalEdicion()">Cancelar</button>
+        <button class="primary" type="button" onclick="guardarEdicionModal(${id})">Guardar cambios</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+function cerrarModalEdicion(){
+  const modal=document.getElementById('modalEdicionAtencion');
+  if(modal)modal.remove();
+  editandoId=null;
+}
+
+function guardarEdicionModal(id){
+  const a=atenciones.find(x=>x.id===id);
+  if(!a)return;
+  const profId=$('m_prof').value;
+  const prof=data.profesionales.find(p=>p.id===profId);
+  const prest=$('m_prest').value;
+  const tipo=$('m_tipoCobro').value;
+  const part=Number($('m_particular').value||0);
+  const cop=Number($('m_copago').value||0);
+  let total=0;
+  if(tipo.includes('Particular'))total+=part;
+  if(tipo.includes('Copago')||tipo.includes('copago'))total+=cop;
+  a.fecha=$('m_fecha').value;
+  a.paciente=$('m_paciente').value.trim();
+  a.dni=$('m_dni').value.trim();
+  a.observaciones=$('m_obs').value.trim();
+  a.obraSocial=$('m_os').value;
+  a.profesionalId=profId;
+  a.profesional=prof?.nombre||'';
+  a.prestacion=prest;
+  a.consultaA=$('m_consultaA').value;
+  a.prestacionA=$('m_prestacionA').value;
+  a.tipoCobro=tipo;
+  a.formaPago=$('m_formaPago').value;
+  a.cajaPerfil=profId;
+  a.montoConsulta=esConsulta(prest)?part:0;
+  a.montoEstudio=esConsulta(prest)?0:part;
+  a.montoCopago=cop;
+  a.montoTotal=total;
+  a.bonoConsulta=$('m_bonoConsulta').checked;
+  a.bonoEstudio=$('m_bonoEstudio').checked;
+  a.bonoFirmado=$('m_bonoFirmado').checked;
+  a.copiaImpresa=$('m_copiaImpresa').checked;
+  a.requiereCopiaImpresa=a.bonoEstudio;
+  a.fold2=$('m_fold2').checked;
+  a.planilla=$('m_planilla').checked;
+  a.colocacionLiquidable=$('m_colocacionLiquidable')?.checked||false;
+  a.colocador=$('m_colocador')?.value||'';
+  a.reglaOS=getRegla(a.obraSocial);
+  saveAtenciones();
+  cerrarModalEdicion();
+  renderTabla();
+  renderStats();
+  if(resumenFiltrosVisible)calcularLiquidacionColocaciones();
+}
+
+function guardarEdicion(id){guardarEdicionModal(id)}
 function eliminarAtencion(id){if(!confirm('¿Borrar esta atención?'))return;atenciones=atenciones.filter(a=>a.id!==id);saveAtenciones();renderTabla();renderStats()}
 
 function setPeriodo20(){const d=new Date();let y=d.getFullYear(),m=d.getMonth()+1,day=d.getDate(),dy=y,dm=m,hy=y,hm=m+1;if(day<20){dm=m-1;hm=m}if(dm<1){dm=12;dy--}if(hm>12){hm=1;hy++}$('fDesde').value=`${dy}-${String(dm).padStart(2,'0')}-20`;$('fHasta').value=`${hy}-${String(hm).padStart(2,'0')}-20`;paginaListado=1;mostrarResumenFiltros();renderTabla();calcularLiquidacionColocaciones()}
@@ -854,7 +959,7 @@ function verDineroPeriodo(){
 }
 function ocultarDineroPeriodo(){$('dineroPeriodoResultado').textContent='';$('claveDinero').value=''}
 function setPrintMeta(){$('printMeta').textContent=`Perfil: ${perfilObj().nombre} | Registros: ${filtrar().length} | ${formatFecha(todayISO())}`}
-function exportarCSV(){const datos=filtrar();if(!datos.length){alert('No hay datos');return}const r=resumen(datos);const incluirValoresExport=!!$('incluirValoresImpresion')?.checked;const filas=[['CardioLink Admin v2.5.7'],['Perfil',perfilObj().nombre],['Consultas',r.consultas],['Estudios',r.estudios],[],['Fecha','Paciente','OS','Profesional','Prestación','Consulta a','Estudio a','Tipo','Forma','Particular visible','Copago visible','Total visible','Estado']];datos.forEach(a=>{const m=dineroVisible(a),e=evaluarEstado(a);filas.push([formatFecha(a.fecha),a.paciente,a.obraSocial,a.profesional,prestacionContable(a),a.consultaA,a.prestacionA,a.tipoCobro,a.formaPago,incluirValoresExport?m.particular:'',incluirValoresExport?m.copago:'',incluirValoresExport?m.total:'',e.txt])});const csv=filas.map(r=>r.map(c=>`"${String(c??'').replaceAll('"','""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_listado.csv';a.click()}
+function exportarCSV(){const datos=filtrar();if(!datos.length){alert('No hay datos');return}const r=resumen(datos);const incluirValoresExport=!!$('incluirValoresImpresion')?.checked;const filas=[['CardioLink Admin v2.5.9'],['Perfil',perfilObj().nombre],['Consultas',r.consultas],['Estudios',r.estudios],[],['Fecha','Paciente','OS','Profesional','Prestación','Consulta a','Estudio a','Tipo','Forma','Particular visible','Copago visible','Total visible','Estado']];datos.forEach(a=>{const m=dineroVisible(a),e=evaluarEstado(a);filas.push([formatFecha(a.fecha),a.paciente,a.obraSocial,a.profesional,prestacionContable(a),a.consultaA,a.prestacionA,a.tipoCobro,a.formaPago,incluirValoresExport?m.particular:'',incluirValoresExport?m.copago:'',incluirValoresExport?m.total:'',e.txt])});const csv=filas.map(r=>r.map(c=>`"${String(c??'').replaceAll('"','""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_listado.csv';a.click()}
 function exportarBackup(){const b={app:'CardioLink Admin',version:'2.5.7',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
 function importarBackup(){const inp=$('inputImportBackup');if(!inp.files[0]){alert('Elegí archivo');return}if(!confirm('Reemplaza la base actual. ¿Continuar?'))return;const rd=new FileReader();rd.onload=e=>{try{const b=JSON.parse(e.target.result);if(!b.config||!b.atenciones)throw new Error();data=b.config;atenciones=b.atenciones;saveConfig();saveAtenciones();refreshSelects();renderConfig();cambiarPerfil('general');alert('Backup importado')}catch{alert('Backup inválido')}};rd.readAsText(inp.files[0])}
 function renderConfig(){cargarValoresConfig();cargarReglaConfig();$('listaProfesionales').innerHTML=data.profesionales.map(p=>`<li><strong>${p.nombre}</strong> — ${p.area} ${p.id!=='general'?`<button class="small-btn" onclick="delProfesional('${p.id}')">Borrar</button>`:''}</li>`).join('');$('listaOS').innerHTML=data.obrasSociales.map(o=>`<li>${o} <button class="small-btn" onclick="delOS('${escapeHtml(o)}')">Borrar</button></li>`).join('');$('listaPrestaciones').innerHTML=allPrestaciones().map(p=>`<li>${p} <button class="small-btn" onclick="delPrestacion('${encodeURIComponent(p)}')">Borrar</button></li>`).join('')}
@@ -897,7 +1002,7 @@ function delOS(n){if(!confirm('Borrar OS?'))return;data.obrasSociales=data.obras
 function addPrestacion(){const n=$('nuevaPrestacion').value.trim(),pid=$('profPrestacion').value;if(!n)return;const p=data.profesionales.find(x=>x.id===pid);if(p&&!p.prestaciones.includes(n))p.prestaciones.push(n);saveConfig();refreshSelects();renderConfig();actualizarPrestaciones()}
 function delPrestacion(enc){const n=decodeURIComponent(enc);if(!confirm('Borrar prestación de todos los perfiles?'))return;data.profesionales.forEach(p=>p.prestaciones=(p.prestaciones||[]).filter(x=>x!==n));saveConfig();refreshSelects();renderConfig();actualizarPrestaciones()}
 
-window.editarAtencion=editarAtencion;window.guardarEdicion=guardarEdicion;window.cancelarEdicion=cancelarEdicion;window.eliminarAtencion=eliminarAtencion;window.delProfesional=delProfesional;window.delOS=delOS;window.delPrestacion=delPrestacion;
+window.editarAtencion=editarAtencion;window.guardarEdicion=guardarEdicion;window.guardarEdicionModal=guardarEdicionModal;window.cerrarModalEdicion=cerrarModalEdicion;window.cancelarEdicion=cancelarEdicion;window.eliminarAtencion=eliminarAtencion;window.delProfesional=delProfesional;window.delOS=delOS;window.delPrestacion=delPrestacion;
 
 async function refrescarDesdeSupabaseAutomatico() {
   if (!supabaseClient || !usuarioSupabase) return;

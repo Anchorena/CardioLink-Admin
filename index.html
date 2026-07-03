@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CardioLink Admin v2.5.6</title>
+<title>CardioLink Admin v2.5.9</title>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <aside class="sidebar">
   <div class="brand">
-    <div class="brand-main">CardioLink Admin <span>v2.5.6</span></div>
+    <div class="brand-main">CardioLink Admin <span>v2.5.9</span></div>
     <div class="brand-by">by Matías Anchorena</div>
   </div>
   <button class="nav active" data-section="dashboard">Dashboard</button>
@@ -45,6 +45,20 @@
       <h2>Resumen del perfil activo</h2>
       <p id="dashboardDetalle" style="display:none !important;"></p>
       <button class="primary" id="btnIrCarga">Ir a carga rápida</button>
+    </div>
+
+    <div class="card instructivo-general" id="instructivoPerfiles">
+      <h2>Instructivo paso a paso: agregar nuevos perfiles</h2>
+      <ol>
+        <li>Entrá a <strong>Configuración</strong> desde el menú lateral.</li>
+        <li>En <strong>Profesionales</strong>, cargá el nombre del nuevo profesional y su área. Tocá <strong>Agregar</strong>.</li>
+        <li>En <strong>Valores por profesional</strong>, elegí ese profesional y cargá sus valores propios: consulta particular, ECG/electro, estudio, copago consulta, copago ECG y copago estudio. Tocá <strong>Guardar valores</strong>.</li>
+        <li>En <strong>Prestaciones</strong>, escribí cada prestación que realiza ese profesional, elegí su perfil en el desplegable y tocá <strong>Agregar</strong>.</li>
+        <li>En <strong>Obras sociales</strong>, agregá una cobertura solo si todavía no existe en la lista general.</li>
+        <li>Recordatorio: las <strong>reglas especiales por obra social</strong> aplican solo a Matías. Los demás profesionales facturan para sí mismos, salvo que más adelante se configure algo distinto.</li>
+        <li>Probá con una atención ficticia, revisá que la caja quede en el perfil correcto y luego borrá la prueba.</li>
+      </ol>
+      <p class="muted">Consejo: no uses espacios ni tildes en IDs internos; la app los genera sola cuando agregás desde esta pantalla.</p>
     </div>
   </section>
 
@@ -136,7 +150,7 @@
 
       <div id="printArea">
         <div class="print-title">
-          <h2>CardioLink Admin v2.5.6</h2>
+          <h2>CardioLink Admin v2.5.9</h2>
           <p>by Matías Anchorena — Listado filtrado</p>
           <p id="printMeta"></p>
         </div>
@@ -184,6 +198,12 @@
           </thead>
           <tbody id="tablaAtenciones"></tbody>
         </table>
+
+        <div class="pagination no-print" id="paginacionListado">
+          <button class="secondary" type="button" id="btnPaginaAnterior">Anterior</button>
+          <span id="paginaInfo">Página 1 de 1</span>
+          <button class="secondary" type="button" id="btnPaginaSiguiente">Siguiente</button>
+        </div>
       </div>
     </div>
   </section>
@@ -198,11 +218,16 @@
           <label>Consulta particular</label><input type="number" id="cfgConsultaParticular">
           <label>Electrocardiograma particular</label><input type="number" id="cfgElectroParticular">
           <label>Estudios particulares / imágenes</label><input type="number" id="cfgEstudioParticular">
+          <label>Copago consulta</label><input type="number" id="cfgCopagoConsulta">
+          <label>Copago ECG/electro</label><input type="number" id="cfgCopagoElectro">
+          <label>Copago estudio</label><input type="number" id="cfgCopagoEstudio">
+          <p class="muted">Estos valores son propios de cada perfil. Solo Matías usa reglas especiales con Rogelio/Fold2.</p>
           <button class="primary" id="btnGuardarValores">Guardar valores</button>
         </div>
 
         <div>
           <h3>Reglas por obra social</h3>
+          <p class="muted">Reglas especiales aplicadas solo al perfil Matías. Los demás profesionales facturan para sí mismos.</p>
           <label>Obra social</label><select id="cfgReglaOS"></select>
           <label>Tipo de regla</label><select id="cfgTipoRegla">
             <option value="GENERAL_CONSULTA_EXTRA">General: estudio suma consulta + estudio</option>
