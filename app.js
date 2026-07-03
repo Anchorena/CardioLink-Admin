@@ -17,6 +17,10 @@ try {
 let usuarioSupabase = null;
 let cargandoDesdeNube = false;
 let syncTimer = null;
+const TAMANIO_PAGINA_LISTADO = 100;
+let paginaListado = 1;
+const INACTIVIDAD_MS = 30 * 60 * 1000;
+let timerInactividad = null;
 
 async function loginSupabase() {
   if (!supabaseClient) {
@@ -55,7 +59,7 @@ function mostrarPantallaLogin() {
 
       <h1>CardioLink Admin</h1>
       <p class="login-subtitle">by Matías Anchorena</p>
-      <p class="login-meta">Versión 2.5.6 · 2026</p>
+      <p class="login-meta">Versión 2.5.7 · 2026</p>
     </div>
 
     <div class="login-fields">
@@ -290,6 +294,29 @@ function mostrarPantallaLogin() {
     });
   });
 }
+function reiniciarTemporizadorInactividad() {
+  clearTimeout(timerInactividad);
+  timerInactividad = setTimeout(cerrarPorInactividad, INACTIVIDAD_MS);
+}
+
+function iniciarControlInactividad() {
+  ['click','keydown','mousemove','touchstart','scroll','input'].forEach(evt => {
+    window.addEventListener(evt, reiniciarTemporizadorInactividad, { passive: true });
+  });
+  reiniciarTemporizadorInactividad();
+}
+
+async function cerrarPorInactividad() {
+  try {
+    if (window.cardioLinkRefreshInterval) clearInterval(window.cardioLinkRefreshInterval);
+    if (supabaseClient) await supabaseClient.auth.signOut();
+  } catch (error) {
+    console.error('Error cerrando sesión por inactividad:', error);
+  }
+  alert('Sesión cerrada por 30 minutos de inactividad. Volvé a iniciar sesión.');
+  location.reload();
+}
+
 async function cerrarSesionSupabase() {
   if (!supabaseClient) return;
 
@@ -439,11 +466,11 @@ const storageAtenciones='cardiolink_atenciones_v25';
 
 const defaults={
  profesionales:[
-  {id:'general',nombre:'Vista General / Administración',area:'Todos los profesionales',prestaciones:[],valores:{consulta:0,electro:0,estudio:0}},
-  {id:'matias',nombre:'Dr. Matías Anchorena',area:'Cardiología / Medicina Crítica',prestaciones:['Consulta','Electrocardiograma','ECG','Ecocardiograma Doppler','Holter','MAPA','Consulta + ECG','Consulta + Eco'],valores:{consulta:35000,electro:35000,estudio:60000}},
-  {id:'rogelio',nombre:'Dr. Rogelio Anchorena',area:'Cardiología',prestaciones:['Consulta','Electrocardiograma','ECG','Ecocardiograma Doppler','Holter','MAPA','Consulta + ECG','Consulta + Eco'],valores:{consulta:35000,electro:35000,estudio:60000}},
-  {id:'humberto_drago',nombre:'Dr. Fernández Drago Humberto',area:'Diagnóstico por Imágenes',prestaciones:['Ecografía abdominal','Ecografía renal','Ecografía tiroidea','Ecografía mamaria','Doppler arterial','Doppler venoso','Mamografía'],valores:{consulta:0,electro:0,estudio:60000}},
-  {id:'lucas_drago',nombre:'Dr. Drago Lucas',area:'Diagnóstico por Imágenes',prestaciones:['Ecografía abdominal','Ecografía renal','Ecografía tiroidea','Ecografía mamaria','Doppler arterial','Doppler venoso','Mamografía'],valores:{consulta:0,electro:0,estudio:60000}}
+  {id:'general',nombre:'Vista General / Administración',area:'Todos los profesionales',prestaciones:[],valores:{consulta:0,electro:0,estudio:0,copagoConsulta:0,copagoElectro:0,copagoEstudio:0}},
+  {id:'matias',nombre:'Dr. Matías Anchorena',area:'Cardiología / Medicina Crítica',prestaciones:['Consulta','Electrocardiograma','ECG','Ecocardiograma Doppler','Holter','MAPA','Consulta + ECG','Consulta + Eco'],valores:{consulta:35000,electro:35000,estudio:60000,copagoConsulta:35000,copagoElectro:35000,copagoEstudio:50000}},
+  {id:'rogelio',nombre:'Dr. Rogelio Anchorena',area:'Cardiología',prestaciones:['Consulta','Electrocardiograma','ECG','Ecocardiograma Doppler','Holter','MAPA','Consulta + ECG','Consulta + Eco'],valores:{consulta:35000,electro:35000,estudio:60000,copagoConsulta:35000,copagoElectro:35000,copagoEstudio:50000}},
+  {id:'humberto_drago',nombre:'Dr. Fernández Drago Humberto',area:'Diagnóstico por Imágenes',prestaciones:['Ecografía abdominal','Ecografía renal','Ecografía tiroidea','Ecografía mamaria','Doppler arterial','Doppler venoso','Mamografía'],valores:{consulta:0,electro:0,estudio:60000,copagoConsulta:0,copagoElectro:0,copagoEstudio:0}},
+  {id:'lucas_drago',nombre:'Dr. Drago Lucas',area:'Diagnóstico por Imágenes',prestaciones:['Ecografía abdominal','Ecografía renal','Ecografía tiroidea','Ecografía mamaria','Doppler arterial','Doppler venoso','Mamografía'],valores:{consulta:0,electro:0,estudio:60000,copagoConsulta:0,copagoElectro:0,copagoEstudio:0}}
  ],
  obrasSociales:['Particular','OSDE','Swiss Medical','Medicus','Galeno','Omint','William Hope','Banco Provincia','OSMATA','OSPEGYPE','OSPE','Medifé','Luz Médica','OPIM / Ensalud','IOMA','OSPRERA','Sancor','Prevención Salud','Integral','Otra'],
  reglasOS:{'IOMA':'IOMA_OSPRERA','OSPRERA':'IOMA_OSPRERA','OSDE':'OSDE','Sancor':'SANCOR_PREVENCION','Prevención Salud':'SANCOR_PREVENCION','Integral':'INTEGRAL'}
@@ -502,11 +529,13 @@ $('btnToggleConteo').addEventListener('click',()=>{mostrarConteoDashboard=!mostr
  $('btnGuardarNuevo').addEventListener('click',()=>{guardarYContinuar=true;$('formAtencion').requestSubmit()});
  $('btnNuevoRegistro').addEventListener('click',()=>{limpiarForm();showSection('carga')});
  $('btnLimpiar').addEventListener('click',limpiarForm);
- $('btnHoy').addEventListener('click',()=>{const h=todayISO();$('fDesde').value=h;$('fHasta').value=h;mostrarResumenFiltros();renderTabla();calcularLiquidacionColocaciones()});
- $('btnMes').addEventListener('click',()=>{const d=new Date();const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');$('fDesde').value=`${y}-${m}-01`;$('fHasta').value=todayISO();mostrarResumenFiltros();renderTabla();calcularLiquidacionColocaciones()});
+ $('btnHoy').addEventListener('click',()=>{const h=todayISO();$('fDesde').value=h;$('fHasta').value=h;paginaListado=1;mostrarResumenFiltros();renderTabla();calcularLiquidacionColocaciones()});
+ $('btnMes').addEventListener('click',()=>{const d=new Date();const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');$('fDesde').value=`${y}-${m}-01`;$('fHasta').value=todayISO();paginaListado=1;mostrarResumenFiltros();renderTabla();calcularLiquidacionColocaciones()});
  $('btnPeriodo20').addEventListener('click',setPeriodo20);
- $('btnFiltrar').addEventListener('click',()=>{mostrarResumenFiltros();renderTabla();calcularLiquidacionColocaciones()});
+ $('btnFiltrar').addEventListener('click',()=>{paginaListado=1;mostrarResumenFiltros();renderTabla();calcularLiquidacionColocaciones()});
  $('btnResetFiltros').addEventListener('click',resetFiltros);
+ if($('btnPaginaAnterior'))$('btnPaginaAnterior').addEventListener('click',()=>{if(paginaListado>1){paginaListado--;renderTabla();}});
+ if($('btnPaginaSiguiente'))$('btnPaginaSiguiente').addEventListener('click',()=>{paginaListado++;renderTabla();});
  $('btnPrint').addEventListener('click',()=>{setPrintMeta();document.body.classList.toggle('print-money',!!$('incluirValoresImpresion')?.checked);window.print();setTimeout(()=>document.body.classList.remove('print-money'),500)});
  $('btnExportExcel').addEventListener('click',exportarCSV);
  const vc=valoresColocacion();
@@ -545,33 +574,115 @@ $('fOS').appendChild(optFacturaRogelio);
  llenarSelect($('cfgReglaOS'),data.obrasSociales);
 }
 function showSection(id){document.querySelectorAll('.section').forEach(s=>s.classList.remove('visible'));$(id).classList.add('visible');document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.section===id))}
-function cambiarPerfil(id){$('perfilActivo').value=id;const p=perfilObj();$('tituloBienvenida').textContent=p.id==='general'?'Vista General / Administración':`Bienvenido ${p.nombre}`;$('subtituloPerfil').textContent=p.area;$('profesional').value=p.id==='general'?'matias':p.id;actualizarPrestaciones();aplicarRegla();renderTabla();renderStats()}
+function cambiarPerfil(id){$('perfilActivo').value=id;const p=perfilObj();$('tituloBienvenida').textContent=p.id==='general'?'Vista General / Administración':`Bienvenido ${p.nombre}`;$('subtituloPerfil').textContent=p.area;$('profesional').value=p.id==='general'?'matias':p.id;if($('instructivoPerfiles'))$('instructivoPerfiles').classList.toggle('hidden',p.id!=='general');paginaListado=1;actualizarPrestaciones();aplicarRegla();renderTabla();renderStats()}
 function actualizarHora(){const a=new Date();$('fechaHoraPanel').textContent=a.toLocaleDateString('es-AR',{weekday:'long',day:'2-digit',month:'2-digit',year:'numeric'})+' · '+a.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}
 function actualizarPrestaciones(){const p=profesionalCarga();llenarSelect($('prestacion'),p?.prestaciones?.length?p.prestaciones:allPrestaciones())}
-function valorPrestacionActual(){const p=profesionalCarga();const prest=$('prestacion').value;if(!p)return 0;if(esConsulta(prest))return Number(p.valores?.consulta||0);if(esElectro(prest))return Number(p.valores?.electro||0);return Number(p.valores?.estudio||0)}
+function valoresDelProfesional(p){
+  const v = p?.valores || {};
+  return {
+    consulta: Number(v.consulta || 0),
+    electro: Number(v.electro || 0),
+    estudio: Number(v.estudio || 0),
+    copagoConsulta: Number(v.copagoConsulta || 0),
+    copagoElectro: Number(v.copagoElectro || 0),
+    copagoEstudio: Number(v.copagoEstudio || 0)
+  };
+}
+function valorPrestacionActual(){const p=profesionalCarga();const prest=$('prestacion').value;if(!p)return 0;const v=valoresDelProfesional(p);if(esConsulta(prest))return v.consulta;if(esElectro(prest))return v.electro;return v.estudio}
+function copagoPrestacionActual(){
+  const p=profesionalCarga();const prest=$('prestacion').value;if(!p)return 0;const v=valoresDelProfesional(p);const t=tipoPrest(prest);
+  if(t==='CONSULTA'||t==='CONSULTA_ECG')return v.copagoConsulta;
+  if(t==='ECG')return v.copagoElectro || v.copagoConsulta;
+  return v.copagoEstudio;
+}
+function ensureSelectOption(sel, value){
+  if(!sel || value==null || value==='') return;
+  const exists = Array.from(sel.options).some(o=>o.value===value);
+  if(!exists){
+    const o=document.createElement('option');
+    o.value=value;
+    o.textContent=value;
+    sel.appendChild(o);
+  }
+}
+function setSelectValue(id,value){
+  const sel=$(id);
+  ensureSelectOption(sel,value);
+  if(sel) sel.value=value;
+}
+function nombreProfesionalPorId(id){
+  return data.profesionales.find(p=>p.id===id)?.nombre || id || '';
+}
+function aplicarReglaProfesionalSimple(){
+  const os=$('obraSocial').value, profId=$('profesional').value, prest=$('prestacion').value, prof=profesionalCarga(), nombre=prof?.nombre||profId;
+  const t=tipoPrest(prest);
+  setSelectValue('consultaA', esConsulta(prest) ? nombre : 'No aplica');
+  setSelectValue('prestacionA', nombre);
+  setSelectValue('facturador', nombre);
+  $('tipoCobro').value='Sin cobro en caja';
+  $('formaPago').value='No aplica';
+  $('montoConsulta').value='';
+  $('montoEstudio').value='';
+  $('montoCopago').value='';
+  $('bonoConsulta').checked=false;
+  $('bonoEstudio').checked=false;
+  $('copiaImpresa').checked=false;
 
+  if(os==='Particular'){
+    $('tipoCobro').value='Particular';
+    $('formaPago').value='Efectivo';
+    if(esConsulta(prest)) $('montoConsulta').value=valorPrestacionActual();
+    else $('montoEstudio').value=valorPrestacionActual();
+    $('reglaInfo').textContent=`${nombre}: particular ${money(valorPrestacionActual())}.`;
+  } else {
+    const copago=copagoPrestacionActual();
+    if(copago>0){
+      $('tipoCobro').value='Copago';
+      $('formaPago').value='Efectivo';
+      $('montoCopago').value=copago;
+    }
+    if(esConsulta(prest) || t==='CONSULTA_ECG') $('bonoConsulta').checked=true;
+    if(!esConsulta(prest) || t==='CONSULTA_ECG') $('bonoEstudio').checked=true;
+    $('reglaInfo').textContent=`${nombre}: ${os}. Factura/circuito propio del profesional${copago>0?` + copago ${money(copago)}`:''}.`;
+  }
+  calcularCajaCarga();
+}
 function aplicarRegla(){
  const os=$('obraSocial').value, prof=$('profesional').value, prest=$('prestacion').value, t=tipoPrest(prest), regla=getRegla(os);
- $('consultaA').value='Matías'; $('prestacionA').value=prof==='rogelio'?'Rogelio':'Matías'; $('facturador').value=prof==='rogelio'?'Rogelio':'Matías';
+
+ // Regla general: solo Matías usa circuito especial con Rogelio/Fold2.
+ // El resto de los profesionales facturan y contabilizan para sí mismos.
+ if(prof!=='matias'){
+   aplicarReglaProfesionalSimple();
+   return;
+ }
+
+ setSelectValue('consultaA','Matías'); setSelectValue('prestacionA',prof==='rogelio'?'Rogelio':'Matías'); setSelectValue('facturador',prof==='rogelio'?'Rogelio':'Matías');
  $('tipoCobro').value='Sin cobro en caja'; $('formaPago').value='No aplica'; $('montoConsulta').value=''; $('montoEstudio').value=''; $('montoCopago').value='';
  $('bonoConsulta').checked=false; $('bonoEstudio').checked=false; $('copiaImpresa').checked=false;
+ const v=valoresDelProfesional(profesionalCarga());
+ const copConsulta=v.copagoConsulta||35000, copElectro=v.copagoElectro||copConsulta, copEstudio=v.copagoEstudio||50000;
  let info=`Regla automática: ${regla}.`;
- if(os==='Particular'){ $('tipoCobro').value='Particular';$('formaPago').value='Efectivo';$('facturador').value='Particular'; if(esConsulta(prest))$('montoConsulta').value=valorPrestacionActual(); else $('montoEstudio').value=valorPrestacionActual(); info=`Particular: ${money(valorPrestacionActual())}.`; }
- else if(prof==='matias'&&regla==='IOMA_OSPRERA'){
-  $('consultaA').value='Matías'; $('facturador').value='Fold2 / FEMEBA'; $('tipoCobro').value='Copago'; $('formaPago').value='Efectivo';
-  if(t==='CONSULTA'){ $('prestacionA').value='No aplica';$('montoCopago').value=35000;$('bonoConsulta').checked=true;info=`${os}: consulta a Fold2/Matías + copago $35.000.`; }
-  else if(t==='ECG'||t==='CONSULTA_ECG'){ $('prestacionA').value='Rogelio';$('montoCopago').value=35000;$('bonoConsulta').checked=true;$('bonoEstudio').checked=true;info=`${os}: consulta a Matías, ECG a Rogelio + copago $35.000.`; }
-  else { $('prestacionA').value='Rogelio';$('montoCopago').value=50000;$('bonoConsulta').checked=true;$('bonoEstudio').checked=true;info=`${os}: consulta a Matías/Fold2, estudio como Holter a Rogelio + copago $50.000.`; }
- } else if(prof==='matias'&&regla==='OSDE'){
-  $('consultaA').value='Matías'; if(t==='CONSULTA'){ $('prestacionA').value='No aplica';$('facturador').value='Matías';$('bonoConsulta').checked=true;info='OSDE: consulta a Matías.'; }
-  else { $('prestacionA').value='Rogelio';$('facturador').value='Rogelio';$('bonoConsulta').checked=true;$('bonoEstudio').checked=true;info='OSDE: consulta a Matías + estudio como Holter a Rogelio.'; }
- } else if(prof==='matias'&&regla==='SANCOR_PREVENCION'){
-  $('consultaA').value='Matías'; if(t==='CONSULTA'){ $('prestacionA').value='No aplica';$('bonoConsulta').checked=true;info=`${os}: consulta a Matías.`; }
-  else { $('prestacionA').value='Rogelio';$('facturador').value='Rogelio';$('bonoConsulta').checked=true;$('bonoEstudio').checked=true;info=`${os}: consulta a Matías + estudio a Rogelio.`; }
- } else if(prof==='matias'&&regla==='INTEGRAL'){
-  $('consultaA').value='Matías';$('prestacionA').value='Matías';$('facturador').value='Matías'; if(t==='CONSULTA'){$('bonoConsulta').checked=true;info='Integral: consulta a Matías.';} else {$('bonoEstudio').checked=true;info='Integral: estudio a Matías, sin consulta extra.';}
- } else if(prof==='matias'&&regla==='GENERAL_CONSULTA_EXTRA'){
-  $('consultaA').value='Matías';$('prestacionA').value='Matías';$('facturador').value='Matías'; if(t==='CONSULTA'){$('bonoConsulta').checked=true;} else {$('bonoConsulta').checked=true;$('bonoEstudio').checked=true;} info=`${os}: regla general.`;
+ if(os==='Particular'){ $('tipoCobro').value='Particular';$('formaPago').value='Efectivo';setSelectValue('facturador','Particular'); if(esConsulta(prest))$('montoConsulta').value=valorPrestacionActual(); else $('montoEstudio').value=valorPrestacionActual(); info=`Particular: ${money(valorPrestacionActual())}.`; }
+ else if(regla==='IOMA_OSPRERA'){
+  setSelectValue('consultaA','Matías'); setSelectValue('facturador','Fold2 / FEMEBA'); $('tipoCobro').value='Copago'; $('formaPago').value='Efectivo';
+  if(t==='CONSULTA'){ setSelectValue('prestacionA','No aplica');$('montoCopago').value=copConsulta;$('bonoConsulta').checked=true;info=`${os}: consulta a Fold2/Matías + copago ${money(copConsulta)}.`; }
+  else if(t==='ECG'||t==='CONSULTA_ECG'){ setSelectValue('prestacionA','Rogelio');$('montoCopago').value=copElectro;$('bonoConsulta').checked=true;$('bonoEstudio').checked=true;info=`${os}: consulta a Matías, ECG a Rogelio + copago ${money(copElectro)}.`; }
+  else { setSelectValue('prestacionA','Rogelio');$('montoCopago').value=copEstudio;$('bonoConsulta').checked=true;$('bonoEstudio').checked=true;info=`${os}: consulta a Matías/Fold2, estudio a Rogelio + copago ${money(copEstudio)}.`; }
+ } else if(regla==='OSDE'){
+  setSelectValue('consultaA','Matías'); if(t==='CONSULTA'){ setSelectValue('prestacionA','No aplica');setSelectValue('facturador','Matías');$('bonoConsulta').checked=true;info='OSDE: consulta a Matías.'; }
+  else { setSelectValue('prestacionA','Rogelio');setSelectValue('facturador','Rogelio');$('bonoConsulta').checked=true;$('bonoEstudio').checked=true;info='OSDE: consulta a Matías + estudio a Rogelio.'; }
+ } else if(regla==='SANCOR_PREVENCION'){
+  setSelectValue('consultaA','Matías'); if(t==='CONSULTA'){ setSelectValue('prestacionA','No aplica');$('bonoConsulta').checked=true;info=`${os}: consulta a Matías.`; }
+  else { setSelectValue('prestacionA','Rogelio');setSelectValue('facturador','Rogelio');$('bonoConsulta').checked=true;$('bonoEstudio').checked=true;info=`${os}: consulta a Matías + estudio a Rogelio.`; }
+ } else if(regla==='INTEGRAL'){
+  setSelectValue('consultaA','Matías');setSelectValue('prestacionA','Matías');setSelectValue('facturador','Matías'); if(t==='CONSULTA'){$('bonoConsulta').checked=true;info='Integral: consulta a Matías.';} else {$('bonoEstudio').checked=true;info='Integral: estudio a Matías, sin consulta extra.';}
+ } else if(regla==='TODO_MATIAS'){
+  setSelectValue('consultaA','Matías');setSelectValue('prestacionA','Matías');setSelectValue('facturador','Matías'); if(t==='CONSULTA'){$('bonoConsulta').checked=true;} else {$('bonoEstudio').checked=true;} info=`${os}: todo a Matías.`;
+ } else if(regla==='SIN_REGLA'){
+  setSelectValue('consultaA','Matías');setSelectValue('prestacionA','Matías');setSelectValue('facturador','Matías'); info=`${os}: sin regla automática.`;
+ } else {
+  setSelectValue('consultaA','Matías');setSelectValue('prestacionA','Matías');setSelectValue('facturador','Matías'); if(t==='CONSULTA'){$('bonoConsulta').checked=true;} else {$('bonoConsulta').checked=true;$('bonoEstudio').checked=true;} info=`${os}: regla general Matías.`;
  }
  $('reglaInfo').textContent=info; calcularCajaCarga();
 }
@@ -626,7 +737,14 @@ function atencionesPerfil(){const p=perfilObj();if(p.id==='general')return atenc
 function filtrar(){const desde=$('fDesde').value,hasta=$('fHasta').value,os=$('fOS').value,prof=$('fProfesional').value,prest=$('fPrestacion').value,pac=$('fPaciente').value.toLowerCase().trim(),dest=$('fDestino').value;return atencionesPerfil().filter(a=>{if(desde&&a.fecha<desde)return false;if(hasta&&a.fecha>hasta)return false;if(os===FILTRO_FACTURA_ROGELIO && !esRegistroFacturaRogelio(a))return false;if(os&&os!==FILTRO_FACTURA_ROGELIO&&a.obraSocial!==os)return false;if(prof&&a.profesional!==prof)return false;if(prest&&a.prestacion!==prest)return false;if(pac&&!String(a.paciente||'').toLowerCase().includes(pac))return false;if(dest&&a.consultaA!==dest&&a.prestacionA!==dest)return false;return true}).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''))}
 function consultaComputada(a){const t=tipoPrest(a.prestacion),r=a.reglaOS||getRegla(a.obraSocial);if(t==='CONSULTA'||t==='CONSULTA_ECG')return true;if(t==='ECG'&&r==='IOMA_OSPRERA')return true;if(t!=='CONSULTA'){return ['GENERAL_CONSULTA_EXTRA','SANCOR_PREVENCION','IOMA_OSPRERA','OSDE'].includes(r)}return !!a.bonoConsulta}
 function resumen(datos){return datos.reduce((r,a)=>{if(consultaComputada(a))r.consultas++;if(tipoPrest(a.prestacion)!=='CONSULTA')r.estudios++;if(a.bonoConsulta||consultaComputada(a))r.bonoConsulta++;if(a.bonoEstudio||tipoPrest(a.prestacion)!=='CONSULTA')r.bonoEstudio++;const particular=Number(a.montoConsulta||0)+Number(a.montoEstudio||0);const copago=Number(a.montoCopago||0);r.particular+=particular;r.copago+=copago;r.total+=particular+copago;return r},{consultas:0,estudios:0,bonoConsulta:0,bonoEstudio:0,particular:0,copago:0,total:0})}
-function dineroVisible(a){const p=perfilObj(),cp=a.cajaPerfil||a.profesionalId;if(p.id==='rogelio'&&cp!=='rogelio')return {particular:0,copago:0,total:0};if(p.id==='matias'&&cp!=='matias')return {particular:0,copago:0,total:0};const particular=Number(a.montoConsulta||0)+Number(a.montoEstudio||0);const copago=Number(a.montoCopago||0);return {particular,copago,total:particular+copago}}
+function dineroVisible(a){
+ const p=perfilObj(),cp=a.cajaPerfil||a.profesionalId;
+ if(p.id==='general')return {particular:0,copago:0,total:0};
+ if(cp!==p.id)return {particular:0,copago:0,total:0};
+ const particular=Number(a.montoConsulta||0)+Number(a.montoEstudio||0);
+ const copago=Number(a.montoCopago||0);
+ return {particular,copago,total:particular+copago};
+}
 function atencionesCajaDelPerfil(datos = atenciones) {
   const p = perfilObj();
 
@@ -671,18 +789,29 @@ function calcularLiquidacionColocaciones(){
   const totalHolter=holter*v.holter,totalMapa=mapa*v.mapa,totalEcg=ecg*v.ecg,total=totalHolter+totalMapa+totalEcg;
   $('liquidacionResultado').innerHTML=`Holter: ${holter} × ${money(v.holter)} = <strong>${money(totalHolter)}</strong> | MAPA: ${mapa} × ${money(v.mapa)} = <strong>${money(totalMapa)}</strong> | ECG: ${ecg} × ${money(v.ecg)} = <strong>${money(totalEcg)}</strong> | <strong>Total: ${money(total)}</strong>`;
 }
-function renderTabla(){const tbody=$('tablaAtenciones');tbody.innerHTML='';const datos=filtrar();renderResumenCaja(datos);actualizarResumenFacturaRogelio(datos);if(resumenFiltrosVisible)calcularLiquidacionColocaciones();if(!datos.length){tbody.innerHTML='<tr><td colspan="14">No hay registros para mostrar.</td></tr>';return}datos.forEach(a=>{const e=evaluarEstado(a),m=dineroVisible(a),part=m.particular;const tr=document.createElement('tr');if(editandoId===a.id){tr.className='edit-row';tr.innerHTML=`<td><input type="date" id="e_fecha_${a.id}" value="${a.fecha||''}"></td><td><input id="e_paciente_${a.id}" value="${escapeHtml(a.paciente)}"><input id="e_obs_${a.id}" value="${escapeHtml(a.observaciones||'')}" placeholder="Obs."></td><td>${selectHTML('e_os_'+a.id,data.obrasSociales,a.obraSocial)}</td><td>${selectProfesionalesHTML('e_prof_'+a.id,a.profesionalId)}</td><td>${selectPrestacionesHTML('e_prest_'+a.id,a.profesionalId,a.prestacion)}</td><td>${selectHTML('e_consultaA_'+a.id,['Matías','Rogelio','No aplica','A definir'],a.consultaA)}</td><td>${selectHTML('e_prestacionA_'+a.id,['Matías','Rogelio','No aplica','A definir'],a.prestacionA)}</td><td>${selectHTML('e_tipoCobro_'+a.id,['Sin cobro en caja','Copago','Particular','Particular + copago'],a.tipoCobro)}<div class="inline-checks-edit"><label><input type="checkbox" id="e_bonoConsulta_${a.id}" ${a.bonoConsulta?'checked':''}> Bono consulta</label><label><input type="checkbox" id="e_bonoEstudio_${a.id}" ${a.bonoEstudio?'checked':''}> Bono estudio</label><label><input type="checkbox" id="e_bonoFirmado_${a.id}" ${a.bonoFirmado?'checked':''}> Bono firmado</label><label><input type="checkbox" id="e_copiaImpresa_${a.id}" ${a.copiaImpresa?'checked':''}> Copia</label><label><input type="checkbox" id="e_fold2_${a.id}" ${a.fold2?'checked':''}> Fold2</label><label><input type="checkbox" id="e_planilla_${a.id}" ${a.planilla?'checked':''}> Planilla</label><label><input type="checkbox" id="e_colocacionLiquidable_${a.id}" ${a.colocacionLiquidable?'checked':''}> Colocación liquidable</label><label>Colocador/a ${selectHTML('e_colocador_'+a.id,['Geraldine','Secretaría','Otro'],a.colocador||'Geraldine')}</label></div></td><td>${selectHTML('e_formaPago_'+a.id,['No aplica','Efectivo','Transferencia','Mixto'],a.formaPago||'No aplica')}</td><td><input type="number" id="e_particular_${a.id}" value="${Number(a.montoConsulta||0)+Number(a.montoEstudio||0)}"></td><td><input type="number" id="e_copago_${a.id}" value="${Number(a.montoCopago||0)}"></td><td>${money(a.montoTotal)}</td><td class="estado-cell"><span class="badge ${e.cls}">${e.txt}</span></td><td class="no-print actions-cell"><div class="edit-actions"><button class="small-btn" onclick="guardarEdicion(${a.id})">Guardar</button><button class="small-btn" onclick="cancelarEdicion()">Cancelar</button></div></td>`}else{const admin=`${a.bonoConsulta?'Bono consulta<br>':''}${a.bonoEstudio?'Bono estudio<br>':''}${a.bonoFirmado?'Firmado<br>':''}${a.copiaImpresa?'Copia<br>':''}`;tr.innerHTML=`<td>${formatFecha(a.fecha)}</td><td><strong>${escapeHtml(a.paciente)}</strong>${a.observaciones?'<br><small>'+escapeHtml(a.observaciones)+'</small>':''}</td><td>${a.obraSocial}</td><td>${a.profesional}</td><td>${prestacionContable(a)}${badgeColocacion(a)}</td><td>${a.consultaA}</td><td>${a.prestacionA}</td><td>${a.tipoCobro||''}${admin?'<br><small>'+admin+'</small>':''}</td><td>${a.formaPago||'No aplica'}</td><td class="money-col">${money(part)}</td><td class="money-col">${money(m.copago)}</td><td class="money-col">${money(m.total)}</td><td class="estado-cell"><span class="badge ${e.cls}">${e.txt}</span></td><td class="no-print actions-cell"><div class="edit-actions"><button onclick="editarAtencion(${a.id})">Editar</button><button onclick="eliminarAtencion(${a.id})">Borrar</button></div></td>`}tbody.appendChild(tr)})}
+function renderTabla(){const tbody=$('tablaAtenciones');tbody.innerHTML='';const datos=filtrar();renderResumenCaja(datos);actualizarResumenFacturaRogelio(datos);if(resumenFiltrosVisible)calcularLiquidacionColocaciones();const totalPaginas=Math.max(1,Math.ceil(datos.length/TAMANIO_PAGINA_LISTADO));if(paginaListado>totalPaginas)paginaListado=totalPaginas;if(paginaListado<1)paginaListado=1;actualizarPaginacionListado(datos.length,totalPaginas);const inicio=(paginaListado-1)*TAMANIO_PAGINA_LISTADO;const datosPagina=datos.slice(inicio,inicio+TAMANIO_PAGINA_LISTADO);if(!datos.length){tbody.innerHTML='<tr><td colspan="14">No hay registros para mostrar.</td></tr>';return}datosPagina.forEach(a=>{const e=evaluarEstado(a),m=dineroVisible(a),part=m.particular;const tr=document.createElement('tr');if(editandoId===a.id){tr.className='edit-row';tr.innerHTML=`<td><input type="date" id="e_fecha_${a.id}" value="${a.fecha||''}"></td><td><input id="e_paciente_${a.id}" value="${escapeHtml(a.paciente)}"><input id="e_obs_${a.id}" value="${escapeHtml(a.observaciones||'')}" placeholder="Obs."></td><td>${selectHTML('e_os_'+a.id,data.obrasSociales,a.obraSocial)}</td><td>${selectProfesionalesHTML('e_prof_'+a.id,a.profesionalId)}</td><td>${selectPrestacionesHTML('e_prest_'+a.id,a.profesionalId,a.prestacion)}</td><td>${selectHTML('e_consultaA_'+a.id,opcionesDestinos(a.consultaA),a.consultaA)}</td><td>${selectHTML('e_prestacionA_'+a.id,opcionesDestinos(a.prestacionA),a.prestacionA)}</td><td>${selectHTML('e_tipoCobro_'+a.id,['Sin cobro en caja','Copago','Particular','Particular + copago'],a.tipoCobro)}<div class="inline-checks-edit"><label><input type="checkbox" id="e_bonoConsulta_${a.id}" ${a.bonoConsulta?'checked':''}> Bono consulta</label><label><input type="checkbox" id="e_bonoEstudio_${a.id}" ${a.bonoEstudio?'checked':''}> Bono estudio</label><label><input type="checkbox" id="e_bonoFirmado_${a.id}" ${a.bonoFirmado?'checked':''}> Bono firmado</label><label><input type="checkbox" id="e_copiaImpresa_${a.id}" ${a.copiaImpresa?'checked':''}> Copia</label><label><input type="checkbox" id="e_fold2_${a.id}" ${a.fold2?'checked':''}> Fold2</label><label><input type="checkbox" id="e_planilla_${a.id}" ${a.planilla?'checked':''}> Planilla</label><label><input type="checkbox" id="e_colocacionLiquidable_${a.id}" ${a.colocacionLiquidable?'checked':''}> Colocación liquidable</label><label>Colocador/a ${selectHTML('e_colocador_'+a.id,['Geraldine','Secretaría','Otro'],a.colocador||'Geraldine')}</label></div></td><td>${selectHTML('e_formaPago_'+a.id,['No aplica','Efectivo','Transferencia','Mixto'],a.formaPago||'No aplica')}</td><td><input type="number" id="e_particular_${a.id}" value="${Number(a.montoConsulta||0)+Number(a.montoEstudio||0)}"></td><td><input type="number" id="e_copago_${a.id}" value="${Number(a.montoCopago||0)}"></td><td>${money(a.montoTotal)}</td><td class="estado-cell"><span class="badge ${e.cls}">${e.txt}</span></td><td class="no-print actions-cell"><div class="edit-actions"><button class="small-btn" onclick="guardarEdicion(${a.id})">Guardar</button><button class="small-btn" onclick="cancelarEdicion()">Cancelar</button></div></td>`}else{const admin=`${a.bonoConsulta?'Bono consulta<br>':''}${a.bonoEstudio?'Bono estudio<br>':''}${a.bonoFirmado?'Firmado<br>':''}${a.copiaImpresa?'Copia<br>':''}`;tr.innerHTML=`<td>${formatFecha(a.fecha)}</td><td><strong>${escapeHtml(a.paciente)}</strong>${a.observaciones?'<br><small>'+escapeHtml(a.observaciones)+'</small>':''}</td><td>${a.obraSocial}</td><td>${a.profesional}</td><td>${prestacionContable(a)}${badgeColocacion(a)}</td><td>${a.consultaA}</td><td>${a.prestacionA}</td><td>${a.tipoCobro||''}${admin?'<br><small>'+admin+'</small>':''}</td><td>${a.formaPago||'No aplica'}</td><td class="money-col">${money(part)}</td><td class="money-col">${money(m.copago)}</td><td class="money-col">${money(m.total)}</td><td class="estado-cell"><span class="badge ${e.cls}">${e.txt}</span></td><td class="no-print actions-cell"><div class="edit-actions"><button onclick="editarAtencion(${a.id})">Editar</button><button onclick="eliminarAtencion(${a.id})">Borrar</button></div></td>`}tbody.appendChild(tr)})}
+function actualizarPaginacionListado(totalRegistros,totalPaginas){
+ const box=$('paginacionListado'),info=$('paginaInfo'),prev=$('btnPaginaAnterior'),next=$('btnPaginaSiguiente');
+ if(!box||!info||!prev||!next)return;
+ const desde=totalRegistros?((paginaListado-1)*TAMANIO_PAGINA_LISTADO+1):0;
+ const hasta=Math.min(paginaListado*TAMANIO_PAGINA_LISTADO,totalRegistros);
+ info.textContent=`Mostrando ${desde}-${hasta} de ${totalRegistros} · Página ${paginaListado} de ${totalPaginas}`;
+ prev.disabled=paginaListado<=1;
+ next.disabled=paginaListado>=totalPaginas;
+ box.classList.toggle('hidden',totalRegistros<=TAMANIO_PAGINA_LISTADO);
+}
 function renderResumenCaja(datos=filtrar()){const r=resumen(datos),c=cajaHoy(datos);$('rConsultas').textContent=r.consultas;$('rEstudios').textContent=r.estudios;$('rBonoConsulta').textContent=r.bonoConsulta;$('rBonoEstudio').textContent=r.bonoEstudio;$('rParticular').textContent=money(c.particular);$('rCopago').textContent=money(c.copago);$('rTotal').textContent=money(c.total)}
 function renderStats(){const datos=atencionesPerfil(),c=cajaHoy(datos);$('statTotal').textContent=mostrarConteoDashboard?datos.length:'•••';if($('btnToggleConteo'))$('btnToggleConteo').textContent=mostrarConteoDashboard?'Ocultar':'Mostrar';$('statHoy').textContent=datos.filter(a=>a.fecha===todayISO()).length;$('statPendientes').textContent=datos.filter(a=>evaluarEstado(a).cls==='bad').length;$('statParticular').textContent=money(c.particular);$('statCopagos').textContent=money(c.copago);$('statTotalCaja').textContent=money(c.total);if($('dashboardDetalle'))$('dashboardDetalle').textContent=''}
 
 function selectHTML(id,items,selected){return `<select id="${id}">`+items.map(x=>`<option ${x===selected?'selected':''}>${escapeHtml(x)}</option>`).join('')+'</select>'}
+function opcionesDestinos(extra){const base=['Matías','Rogelio','No aplica','A definir'];data.profesionales.filter(p=>p.id!=='general').forEach(p=>base.push(p.nombre));if(extra)base.push(extra);return [...new Set(base.filter(Boolean))];}
 function selectProfesionalesHTML(id,selected){return `<select id="${id}">`+data.profesionales.filter(p=>p.id!=='general').map(p=>`<option value="${p.id}" ${p.id===selected?'selected':''}>${escapeHtml(p.nombre)}</option>`).join('')+'</select>'}
 function selectPrestacionesHTML(id,prof,selected){const p=data.profesionales.find(x=>x.id===prof);const items=p?.prestaciones?.length?p.prestaciones:allPrestaciones();return selectHTML(id,items,selected)}
 function editarAtencion(id){editandoId=id;renderTabla()}function cancelarEdicion(){editandoId=null;renderTabla()}
 function guardarEdicion(id){const a=atenciones.find(x=>x.id===id);if(!a)return;const profId=$('e_prof_'+id).value,prof=data.profesionales.find(p=>p.id===profId),prest=$('e_prest_'+id).value,tipo=$('e_tipoCobro_'+id).value,part=Number($('e_particular_'+id).value||0),cop=Number($('e_copago_'+id).value||0);let total=0;if(tipo.includes('Particular'))total+=part;if(tipo.includes('Copago')||tipo.includes('copago'))total+=cop;a.fecha=$('e_fecha_'+id).value;a.paciente=$('e_paciente_'+id).value.trim();a.observaciones=$('e_obs_'+id).value.trim();a.obraSocial=$('e_os_'+id).value;a.profesionalId=profId;a.profesional=prof?.nombre||'';a.prestacion=prest;a.consultaA=$('e_consultaA_'+id).value;a.prestacionA=$('e_prestacionA_'+id).value;a.tipoCobro=tipo;a.formaPago=$('e_formaPago_'+id).value;a.cajaPerfil=profId;a.montoConsulta=esConsulta(prest)?part:0;a.montoEstudio=esConsulta(prest)?0:part;a.montoCopago=cop;a.montoTotal=total;a.bonoConsulta=$('e_bonoConsulta_'+id).checked;a.bonoEstudio=$('e_bonoEstudio_'+id).checked;a.bonoFirmado=$('e_bonoFirmado_'+id).checked;a.copiaImpresa=$('e_copiaImpresa_'+id).checked;a.requiereCopiaImpresa=a.bonoEstudio;a.fold2=$('e_fold2_'+id).checked;a.planilla=$('e_planilla_'+id).checked;a.colocacionLiquidable=$('e_colocacionLiquidable_'+id)?.checked||false;a.colocador=$('e_colocador_'+id)?.value||'';a.reglaOS=getRegla(a.obraSocial);saveAtenciones();editandoId=null;renderTabla();renderStats();if(resumenFiltrosVisible)calcularLiquidacionColocaciones()}
 function eliminarAtencion(id){if(!confirm('¿Borrar esta atención?'))return;atenciones=atenciones.filter(a=>a.id!==id);saveAtenciones();renderTabla();renderStats()}
 
-function setPeriodo20(){const d=new Date();let y=d.getFullYear(),m=d.getMonth()+1,day=d.getDate(),dy=y,dm=m,hy=y,hm=m+1;if(day<20){dm=m-1;hm=m}if(dm<1){dm=12;dy--}if(hm>12){hm=1;hy++}$('fDesde').value=`${dy}-${String(dm).padStart(2,'0')}-20`;$('fHasta').value=`${hy}-${String(hm).padStart(2,'0')}-20`;mostrarResumenFiltros();renderTabla();calcularLiquidacionColocaciones()}
+function setPeriodo20(){const d=new Date();let y=d.getFullYear(),m=d.getMonth()+1,day=d.getDate(),dy=y,dm=m,hy=y,hm=m+1;if(day<20){dm=m-1;hm=m}if(dm<1){dm=12;dy--}if(hm>12){hm=1;hy++}$('fDesde').value=`${dy}-${String(dm).padStart(2,'0')}-20`;$('fHasta').value=`${hy}-${String(hm).padStart(2,'0')}-20`;paginaListado=1;mostrarResumenFiltros();renderTabla();calcularLiquidacionColocaciones()}
 function resetFiltros(){
  $('fDesde').value='';
  $('fHasta').value='';
@@ -691,6 +820,7 @@ function resetFiltros(){
  $('fPrestacion').value='';
  $('fPaciente').value='';
  $('fDestino').value='';
+ paginaListado=1;
  if($('perfilActivo')){$('perfilActivo').value='general';cambiarPerfil('general')}
  ocultarResumenFiltros();
  renderTabla();
@@ -698,19 +828,19 @@ function resetFiltros(){
 }
 function verDineroPeriodo(){
   const res=$('dineroPeriodoResultado');
-  if(perfilObj().id!=='matias'){
-    res.textContent='Acceso administrativo no habilitado para este perfil.';
+  if(perfilObj().id==='general'){
+    res.textContent='Seleccione un perfil profesional para ver ingresos. La vista general no mezcla cajas.';
     return;
   }
   if($('claveDinero').value!==CLAVE_DINERO_PERIODO){
-    res.textContent='Clave administrador incorrecta.';
+    res.textContent='Clave incorrecta.';
     return;
   }
 
   const desde=$('adminDesde')?.value || $('fDesde').value || '';
   const hasta=$('adminHasta')?.value || $('fHasta').value || todayISO();
 
-  let datos=atencionesPerfil().filter(a=>{
+  let datos=atencionesCajaDelPerfil(atenciones).filter(a=>{
     if(desde && a.fecha < desde) return false;
     if(hasta && a.fecha > hasta) return false;
     return true;
@@ -720,19 +850,47 @@ function verDineroPeriodo(){
   const desdeTxt=desde ? formatFecha(desde) : 'inicio';
   const hastaTxt=hasta ? formatFecha(hasta) : 'hoy';
 
-  res.textContent=`Resumen administrativo (${desdeTxt} a ${hastaTxt}) — Particular ${money(r.particular)} | Copagos ${money(r.copago)} | Total ${money(r.total)} | Registros ${datos.length}`;
+  res.textContent=`Ingreso del perfil ${perfilObj().nombre} (${desdeTxt} a ${hastaTxt}) — Particular ${money(r.particular)} | Copagos ${money(r.copago)} | Total ${money(r.total)} | Registros ${datos.length}`;
 }
 function ocultarDineroPeriodo(){$('dineroPeriodoResultado').textContent='';$('claveDinero').value=''}
 function setPrintMeta(){$('printMeta').textContent=`Perfil: ${perfilObj().nombre} | Registros: ${filtrar().length} | ${formatFecha(todayISO())}`}
-function exportarCSV(){const datos=filtrar();if(!datos.length){alert('No hay datos');return}const r=resumen(datos);const incluirValoresExport=!!$('incluirValoresImpresion')?.checked;const filas=[['CardioLink Admin v2.5.5'],['Perfil',perfilObj().nombre],['Consultas',r.consultas],['Estudios',r.estudios],[],['Fecha','Paciente','OS','Profesional','Prestación','Consulta a','Estudio a','Tipo','Forma','Particular visible','Copago visible','Total visible','Estado']];datos.forEach(a=>{const m=dineroVisible(a),e=evaluarEstado(a);filas.push([formatFecha(a.fecha),a.paciente,a.obraSocial,a.profesional,prestacionContable(a),a.consultaA,a.prestacionA,a.tipoCobro,a.formaPago,incluirValoresExport?m.particular:'',incluirValoresExport?m.copago:'',incluirValoresExport?m.total:'',e.txt])});const csv=filas.map(r=>r.map(c=>`"${String(c??'').replaceAll('"','""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_listado.csv';a.click()}
-function exportarBackup(){const b={app:'CardioLink Admin',version:'2.5.6',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
+function exportarCSV(){const datos=filtrar();if(!datos.length){alert('No hay datos');return}const r=resumen(datos);const incluirValoresExport=!!$('incluirValoresImpresion')?.checked;const filas=[['CardioLink Admin v2.5.7'],['Perfil',perfilObj().nombre],['Consultas',r.consultas],['Estudios',r.estudios],[],['Fecha','Paciente','OS','Profesional','Prestación','Consulta a','Estudio a','Tipo','Forma','Particular visible','Copago visible','Total visible','Estado']];datos.forEach(a=>{const m=dineroVisible(a),e=evaluarEstado(a);filas.push([formatFecha(a.fecha),a.paciente,a.obraSocial,a.profesional,prestacionContable(a),a.consultaA,a.prestacionA,a.tipoCobro,a.formaPago,incluirValoresExport?m.particular:'',incluirValoresExport?m.copago:'',incluirValoresExport?m.total:'',e.txt])});const csv=filas.map(r=>r.map(c=>`"${String(c??'').replaceAll('"','""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_listado.csv';a.click()}
+function exportarBackup(){const b={app:'CardioLink Admin',version:'2.5.7',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
 function importarBackup(){const inp=$('inputImportBackup');if(!inp.files[0]){alert('Elegí archivo');return}if(!confirm('Reemplaza la base actual. ¿Continuar?'))return;const rd=new FileReader();rd.onload=e=>{try{const b=JSON.parse(e.target.result);if(!b.config||!b.atenciones)throw new Error();data=b.config;atenciones=b.atenciones;saveConfig();saveAtenciones();refreshSelects();renderConfig();cambiarPerfil('general');alert('Backup importado')}catch{alert('Backup inválido')}};rd.readAsText(inp.files[0])}
 function renderConfig(){cargarValoresConfig();cargarReglaConfig();$('listaProfesionales').innerHTML=data.profesionales.map(p=>`<li><strong>${p.nombre}</strong> — ${p.area} ${p.id!=='general'?`<button class="small-btn" onclick="delProfesional('${p.id}')">Borrar</button>`:''}</li>`).join('');$('listaOS').innerHTML=data.obrasSociales.map(o=>`<li>${o} <button class="small-btn" onclick="delOS('${escapeHtml(o)}')">Borrar</button></li>`).join('');$('listaPrestaciones').innerHTML=allPrestaciones().map(p=>`<li>${p} <button class="small-btn" onclick="delPrestacion('${encodeURIComponent(p)}')">Borrar</button></li>`).join('')}
-function cargarValoresConfig(){const p=data.profesionales.find(x=>x.id===$('cfgProfesionalValores').value)||data.profesionales.find(x=>x.id==='matias');$('cfgProfesionalValores').value=p.id;$('cfgConsultaParticular').value=p.valores?.consulta||0;$('cfgElectroParticular').value=p.valores?.electro||0;$('cfgEstudioParticular').value=p.valores?.estudio||0}
-function guardarValores(){const p=data.profesionales.find(x=>x.id===$('cfgProfesionalValores').value);p.valores={consulta:Number($('cfgConsultaParticular').value||0),electro:Number($('cfgElectroParticular').value||0),estudio:Number($('cfgEstudioParticular').value||0)};saveConfig();alert('Valores guardados')}
+function cargarValoresConfig(){
+ const p=data.profesionales.find(x=>x.id===$('cfgProfesionalValores').value)||data.profesionales.find(x=>x.id==='matias');
+ if(!p)return;
+ const v=valoresDelProfesional(p);
+ $('cfgProfesionalValores').value=p.id;
+ $('cfgConsultaParticular').value=v.consulta;
+ $('cfgElectroParticular').value=v.electro;
+ $('cfgEstudioParticular').value=v.estudio;
+ if($('cfgCopagoConsulta'))$('cfgCopagoConsulta').value=v.copagoConsulta;
+ if($('cfgCopagoElectro'))$('cfgCopagoElectro').value=v.copagoElectro;
+ if($('cfgCopagoEstudio'))$('cfgCopagoEstudio').value=v.copagoEstudio;
+}
+function guardarValores(){
+ const p=data.profesionales.find(x=>x.id===$('cfgProfesionalValores').value);
+ if(!p)return;
+ const prev=p.valores||{};
+ p.valores={
+   ...prev,
+   consulta:Number($('cfgConsultaParticular').value||0),
+   electro:Number($('cfgElectroParticular').value||0),
+   estudio:Number($('cfgEstudioParticular').value||0),
+   copagoConsulta:Number($('cfgCopagoConsulta')?.value||0),
+   copagoElectro:Number($('cfgCopagoElectro')?.value||0),
+   copagoEstudio:Number($('cfgCopagoEstudio')?.value||0)
+ };
+ saveConfig();
+ alert('Valores del perfil guardados');
+ aplicarRegla();
+ renderStats();
+}
 function cargarReglaConfig(){$('cfgTipoRegla').value=getRegla($('cfgReglaOS').value)}
 function guardarReglaConfig(){setRegla($('cfgReglaOS').value,$('cfgTipoRegla').value);alert('Regla guardada');aplicarRegla()}
-function addProfesional(){const n=$('nuevoProfesional').value.trim();if(!n)return;data.profesionales.push({id:'p_'+Date.now(),nombre:n,area:$('nuevaArea').value.trim()||'Sin definir',prestaciones:[],valores:{consulta:0,electro:0,estudio:0}});saveConfig();refreshSelects();renderConfig()}
+function addProfesional(){const n=$('nuevoProfesional').value.trim();if(!n)return;data.profesionales.push({id:'p_'+Date.now(),nombre:n,area:$('nuevaArea').value.trim()||'Sin definir',prestaciones:[],valores:{consulta:0,electro:0,estudio:0,copagoConsulta:0,copagoElectro:0,copagoEstudio:0}});saveConfig();refreshSelects();renderConfig()}
 function delProfesional(id){if(!confirm('Borrar profesional?'))return;data.profesionales=data.profesionales.filter(p=>p.id!==id);saveConfig();refreshSelects();renderConfig()}
 function addOS(){const n=$('nuevaOS').value.trim();if(!n)return;if(!data.obrasSociales.includes(n))data.obrasSociales.push(n);saveConfig();refreshSelects();renderConfig()}
 function delOS(n){if(!confirm('Borrar OS?'))return;data.obrasSociales=data.obrasSociales.filter(o=>o!==n);saveConfig();refreshSelects();renderConfig()}
@@ -788,6 +946,7 @@ async function iniciarCardioLink() {
   await cargarAtencionesDesdeSupabase();
   init();
   agregarBotonCerrarSesion();
+  iniciarControlInactividad();
   iniciarRefrescoAutomatico();
 }
 
