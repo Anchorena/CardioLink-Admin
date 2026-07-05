@@ -576,7 +576,12 @@ $('fOS').appendChild(optFacturaRogelio);
 function showSection(id){document.querySelectorAll('.section').forEach(s=>s.classList.remove('visible'));$(id).classList.add('visible');document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.section===id))}
 function cambiarPerfil(id){$('perfilActivo').value=id;const p=perfilObj();$('tituloBienvenida').textContent=p.id==='general'?'Vista General / Administración':`Bienvenido ${p.nombre}`;$('subtituloPerfil').textContent=p.area;$('profesional').value=p.id==='general'?'matias':p.id;if($('instructivoPerfiles'))$('instructivoPerfiles').classList.toggle('hidden',p.id!=='general');paginaListado=1;actualizarPrestaciones();aplicarRegla();renderTabla();renderStats()}
 function actualizarHora(){const a=new Date();$('fechaHoraPanel').textContent=a.toLocaleDateString('es-AR',{weekday:'long',day:'2-digit',month:'2-digit',year:'numeric'})+' · '+a.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}
-function actualizarPrestaciones(){const p=profesionalCarga();llenarSelect($('prestacion'),p?.prestaciones?.length?p.prestaciones:allPrestaciones())}
+function actualizarPrestaciones(){
+ const p=profesionalCarga();
+ const items=p?.prestaciones?.length?p.prestaciones:allPrestaciones();
+ llenarSelect($('prestacion'),items);
+ if($('segundoEstudio'))llenarSelect($('segundoEstudio'),items);
+}
 function valoresDelProfesional(p){
   const v = p?.valores || {};
   return {
@@ -691,16 +696,79 @@ function limpiarForm(){
  $('formAtencion').reset();
  $('fecha').value=todayISO();
  if($('colocador'))$('colocador').value='Geraldine';
+ if($('activarSegundoEstudio'))$('activarSegundoEstudio').checked=false;
+ ['estudioInformado','estudioImpreso','estudioImpresoFacturacion','estudioEnviadoMail','estudioEnviadoWS'].forEach(id=>{if($(id))$(id).checked=false});
  const p=perfilObj();
  $('profesional').value=p.id==='general'?'matias':p.id;
  actualizarPrestaciones();
  aplicarRegla();
 }
 
+function esRegistroDeEstudio(a){return tipoPrest(a?.prestacion)!=='CONSULTA'}
+function tomarEstadoInformeDesdeCarga(){
+ return {
+  estudioInformado:$('estudioInformado')?.checked||false,
+  estudioImpreso:$('estudioImpreso')?.checked||false,
+  estudioImpresoFacturacion:$('estudioImpresoFacturacion')?.checked||false,
+  estudioEnviadoMail:$('estudioEnviadoMail')?.checked||false,
+  estudioEnviadoWS:$('estudioEnviadoWS')?.checked||false
+ };
+}
+function crearAtencionDesdeFormulario(prestacion, opciones={}){
+ const prof=profesionalCarga();
+ const esSegunda=!!opciones.segunda;
+ const estadoInforme=tomarEstadoInformeDesdeCarga();
+ const observacionesBase=$('observaciones').value.trim();
+ return {
+  id:Date.now()+(esSegunda?1:0),
+  fecha:$('fecha').value,
+  paciente:$('paciente').value.trim(),
+  dni:$('dni').value.trim(),
+  obraSocial:$('obraSocial').value,
+  profesionalId:$('profesional').value,
+  profesional:prof?.nombre||'',
+  prestacion:prestacion,
+  consultaA:$('consultaA').value,
+  prestacionA:$('prestacionA').value,
+  facturador:$('facturador').value,
+  tipoCobro:esSegunda?'Sin cobro en caja':$('tipoCobro').value,
+  formaPago:esSegunda?'No aplica':$('formaPago').value,
+  cajaPerfil:$('profesional').value,
+  reglaOS:getRegla($('obraSocial').value),
+  montoConsulta:esSegunda?0:Number($('montoConsulta').value||0),
+  montoEstudio:esSegunda?0:Number($('montoEstudio').value||0),
+  montoCopago:esSegunda?0:Number($('montoCopago').value||0),
+  montoTotal:esSegunda?0:Number($('montoTotal').value||0),
+  bonoConsulta:esSegunda?false:$('bonoConsulta').checked,
+  bonoEstudio:$('bonoEstudio').checked,
+  bonoFirmado:$('bonoFirmado').checked,
+  copiaImpresa:$('copiaImpresa').checked,
+  requiereCopiaImpresa:$('bonoEstudio').checked,
+  fold2:$('fold2').checked,
+  planilla:$('planilla').checked,
+  colocacionLiquidable:$('colocacionLiquidable')?.checked||false,
+  colocador:$('colocador')?.value||'',
+  ...estadoInforme,
+  observaciones:esSegunda ? [observacionesBase,'Segundo estudio del mismo paciente'].filter(Boolean).join(' | ') : observacionesBase
+ };
+}
 function guardarAtencion(e){
- e.preventDefault(); calcularCajaCarga(); const prof=profesionalCarga();
- const a={id:Date.now(),fecha:$('fecha').value,paciente:$('paciente').value.trim(),dni:$('dni').value.trim(),obraSocial:$('obraSocial').value,profesionalId:$('profesional').value,profesional:prof?.nombre||'',prestacion:$('prestacion').value,consultaA:$('consultaA').value,prestacionA:$('prestacionA').value,facturador:$('facturador').value,tipoCobro:$('tipoCobro').value,formaPago:$('formaPago').value,cajaPerfil:$('profesional').value,reglaOS:getRegla($('obraSocial').value),montoConsulta:Number($('montoConsulta').value||0),montoEstudio:Number($('montoEstudio').value||0),montoCopago:Number($('montoCopago').value||0),montoTotal:Number($('montoTotal').value||0),bonoConsulta:$('bonoConsulta').checked,bonoEstudio:$('bonoEstudio').checked,bonoFirmado:$('bonoFirmado').checked,copiaImpresa:$('copiaImpresa').checked,requiereCopiaImpresa:$('bonoEstudio').checked,fold2:$('fold2').checked,planilla:$('planilla').checked,colocacionLiquidable:$('colocacionLiquidable')?.checked||false,colocador:$('colocador')?.value||'',observaciones:$('observaciones').value.trim()};
- atenciones.push(a);saveAtenciones();renderTabla();renderStats();if(resumenFiltrosVisible)calcularLiquidacionColocaciones();limpiarForm();if(guardarYContinuar){guardarYContinuar=false;showSection('carga');setTimeout(()=>$('paciente').focus(),50)}else showSection('listado')
+ e.preventDefault();
+ calcularCajaCarga();
+ const registros=[];
+ const prestPrincipal=$('prestacion').value;
+ registros.push(crearAtencionDesdeFormulario(prestPrincipal));
+ if($('activarSegundoEstudio')?.checked && $('segundoEstudio')?.value){
+  const prest2=$('segundoEstudio').value;
+  if(prest2 && prest2!==prestPrincipal) registros.push(crearAtencionDesdeFormulario(prest2,{segunda:true}));
+ }
+ atenciones.push(...registros);
+ saveAtenciones();
+ renderTabla();
+ renderStats();
+ if(resumenFiltrosVisible)calcularLiquidacionColocaciones();
+ limpiarForm();
+ if(guardarYContinuar){guardarYContinuar=false;showSection('carga');setTimeout(()=>$('paciente').focus(),50)}else showSection('listado')
 }
 
 
@@ -776,6 +844,17 @@ function cajaHoy(datos = atenciones) {
     }, { particular: 0, copago: 0, total: 0 });
 }
 function evaluarEstado(a){const f=new Set();if((a.bonoConsulta||a.bonoEstudio)&&!a.bonoFirmado)f.add('firma');if((a.bonoEstudio||a.requiereCopiaImpresa)&&!a.copiaImpresa)f.add('copia');return f.size?{txt:'Falta: '+Array.from(f).join(' + '),cls:'bad'}:{txt:'OK',cls:'ok'}}
+function badgesInforme(a){
+ if(!esRegistroDeEstudio(a))return '';
+ const badges=[];
+ badges.push(a.estudioInformado?'<span class="badge ok informe-badge">Informado</span>':'<span class="badge bad informe-badge">Pend. informe</span>');
+ if(a.estudioImpreso)badges.push('<span class="badge ok informe-badge">Impreso</span>');
+ if(a.estudioImpresoFacturacion)badges.push('<span class="badge ok informe-badge">Imp. fact.</span>');
+ if(a.estudioEnviadoMail)badges.push('<span class="badge ok informe-badge">Mail</span>');
+ if(a.estudioEnviadoWS)badges.push('<span class="badge ok informe-badge">WS</span>');
+ return `<div class="estado-informe">${badges.join(' ')}</div>`;
+}
+function estadoHTML(a,e){return `<span class="badge ${e.cls}">${e.txt}</span>${badgesInforme(a)}`;}
 
 function prestacionContable(a){const r=a.reglaOS||getRegla(a.obraSocial);if(perfilObj().id==='rogelio'&&a.prestacionA==='Rogelio'&&['OSDE','IOMA_OSPRERA'].includes(r)&&tipoPrest(a.prestacion)!=='CONSULTA')return 'Holter';return a.prestacion}
 function badgeColocacion(a){return a.colocacionLiquidable?`<br><span class="badge ok">Colocación ${escapeHtml(a.colocador||'')}</span>`:''}
@@ -789,7 +868,7 @@ function calcularLiquidacionColocaciones(){
   const totalHolter=holter*v.holter,totalMapa=mapa*v.mapa,totalEcg=ecg*v.ecg,total=totalHolter+totalMapa+totalEcg;
   $('liquidacionResultado').innerHTML=`Holter: ${holter} × ${money(v.holter)} = <strong>${money(totalHolter)}</strong> | MAPA: ${mapa} × ${money(v.mapa)} = <strong>${money(totalMapa)}</strong> | ECG: ${ecg} × ${money(v.ecg)} = <strong>${money(totalEcg)}</strong> | <strong>Total: ${money(total)}</strong>`;
 }
-function renderTabla(){const tbody=$('tablaAtenciones');tbody.innerHTML='';const datos=filtrar();renderResumenCaja(datos);actualizarResumenFacturaRogelio(datos);if(resumenFiltrosVisible)calcularLiquidacionColocaciones();const totalPaginas=Math.max(1,Math.ceil(datos.length/TAMANIO_PAGINA_LISTADO));if(paginaListado>totalPaginas)paginaListado=totalPaginas;if(paginaListado<1)paginaListado=1;actualizarPaginacionListado(datos.length,totalPaginas);const inicio=(paginaListado-1)*TAMANIO_PAGINA_LISTADO;const datosPagina=datos.slice(inicio,inicio+TAMANIO_PAGINA_LISTADO);if(!datos.length){tbody.innerHTML='<tr><td colspan="14">No hay registros para mostrar.</td></tr>';return}datosPagina.forEach(a=>{const e=evaluarEstado(a),m=dineroVisible(a),part=m.particular;const tr=document.createElement('tr');if(editandoId===a.id){tr.className='edit-row';tr.innerHTML=`<td><input type="date" id="e_fecha_${a.id}" value="${a.fecha||''}"></td><td><input id="e_paciente_${a.id}" value="${escapeHtml(a.paciente)}"><input id="e_obs_${a.id}" value="${escapeHtml(a.observaciones||'')}" placeholder="Obs."></td><td>${selectHTML('e_os_'+a.id,data.obrasSociales,a.obraSocial)}</td><td>${selectProfesionalesHTML('e_prof_'+a.id,a.profesionalId)}</td><td>${selectPrestacionesHTML('e_prest_'+a.id,a.profesionalId,a.prestacion)}</td><td>${selectHTML('e_consultaA_'+a.id,opcionesDestinos(a.consultaA),a.consultaA)}</td><td>${selectHTML('e_prestacionA_'+a.id,opcionesDestinos(a.prestacionA),a.prestacionA)}</td><td>${selectHTML('e_tipoCobro_'+a.id,['Sin cobro en caja','Copago','Particular','Particular + copago'],a.tipoCobro)}<div class="inline-checks-edit"><label><input type="checkbox" id="e_bonoConsulta_${a.id}" ${a.bonoConsulta?'checked':''}> Bono consulta</label><label><input type="checkbox" id="e_bonoEstudio_${a.id}" ${a.bonoEstudio?'checked':''}> Bono estudio</label><label><input type="checkbox" id="e_bonoFirmado_${a.id}" ${a.bonoFirmado?'checked':''}> Bono firmado</label><label><input type="checkbox" id="e_copiaImpresa_${a.id}" ${a.copiaImpresa?'checked':''}> Copia</label><label><input type="checkbox" id="e_fold2_${a.id}" ${a.fold2?'checked':''}> Fold2</label><label><input type="checkbox" id="e_planilla_${a.id}" ${a.planilla?'checked':''}> Planilla</label><label><input type="checkbox" id="e_colocacionLiquidable_${a.id}" ${a.colocacionLiquidable?'checked':''}> Colocación liquidable</label><label>Colocador/a ${selectHTML('e_colocador_'+a.id,['Geraldine','Secretaría','Otro'],a.colocador||'Geraldine')}</label></div></td><td>${selectHTML('e_formaPago_'+a.id,['No aplica','Efectivo','Transferencia','Mixto'],a.formaPago||'No aplica')}</td><td><input type="number" id="e_particular_${a.id}" value="${Number(a.montoConsulta||0)+Number(a.montoEstudio||0)}"></td><td><input type="number" id="e_copago_${a.id}" value="${Number(a.montoCopago||0)}"></td><td>${money(a.montoTotal)}</td><td class="estado-cell"><span class="badge ${e.cls}">${e.txt}</span></td><td class="no-print actions-cell"><div class="edit-actions"><button class="small-btn" onclick="guardarEdicion(${a.id})">Guardar</button><button class="small-btn" onclick="cancelarEdicion()">Cancelar</button></div></td>`}else{const admin=`${a.bonoConsulta?'Bono consulta<br>':''}${a.bonoEstudio?'Bono estudio<br>':''}${a.bonoFirmado?'Firmado<br>':''}${a.copiaImpresa?'Copia<br>':''}`;tr.innerHTML=`<td>${formatFecha(a.fecha)}</td><td><strong>${escapeHtml(a.paciente)}</strong>${a.observaciones?'<br><small>'+escapeHtml(a.observaciones)+'</small>':''}</td><td>${a.obraSocial}</td><td>${a.profesional}</td><td>${prestacionContable(a)}${badgeColocacion(a)}</td><td>${a.consultaA}</td><td>${a.prestacionA}</td><td>${a.tipoCobro||''}${admin?'<br><small>'+admin+'</small>':''}</td><td>${a.formaPago||'No aplica'}</td><td class="money-col">${money(part)}</td><td class="money-col">${money(m.copago)}</td><td class="money-col">${money(m.total)}</td><td class="estado-cell"><span class="badge ${e.cls}">${e.txt}</span></td><td class="no-print actions-cell"><div class="edit-actions"><button onclick="editarAtencion(${a.id})">Editar</button><button onclick="eliminarAtencion(${a.id})">Borrar</button></div></td>`}tbody.appendChild(tr)})}
+function renderTabla(){const tbody=$('tablaAtenciones');tbody.innerHTML='';const datos=filtrar();renderResumenCaja(datos);actualizarResumenFacturaRogelio(datos);if(resumenFiltrosVisible)calcularLiquidacionColocaciones();const totalPaginas=Math.max(1,Math.ceil(datos.length/TAMANIO_PAGINA_LISTADO));if(paginaListado>totalPaginas)paginaListado=totalPaginas;if(paginaListado<1)paginaListado=1;actualizarPaginacionListado(datos.length,totalPaginas);const inicio=(paginaListado-1)*TAMANIO_PAGINA_LISTADO;const datosPagina=datos.slice(inicio,inicio+TAMANIO_PAGINA_LISTADO);if(!datos.length){tbody.innerHTML='<tr><td colspan="14">No hay registros para mostrar.</td></tr>';return}datosPagina.forEach(a=>{const e=evaluarEstado(a),m=dineroVisible(a),part=m.particular;const tr=document.createElement('tr');if(editandoId===a.id){tr.className='edit-row';tr.innerHTML=`<td><input type="date" id="e_fecha_${a.id}" value="${a.fecha||''}"></td><td><input id="e_paciente_${a.id}" value="${escapeHtml(a.paciente)}"><input id="e_obs_${a.id}" value="${escapeHtml(a.observaciones||'')}" placeholder="Obs."></td><td>${selectHTML('e_os_'+a.id,data.obrasSociales,a.obraSocial)}</td><td>${selectProfesionalesHTML('e_prof_'+a.id,a.profesionalId)}</td><td>${selectPrestacionesHTML('e_prest_'+a.id,a.profesionalId,a.prestacion)}</td><td>${selectHTML('e_consultaA_'+a.id,opcionesDestinos(a.consultaA),a.consultaA)}</td><td>${selectHTML('e_prestacionA_'+a.id,opcionesDestinos(a.prestacionA),a.prestacionA)}</td><td>${selectHTML('e_tipoCobro_'+a.id,['Sin cobro en caja','Copago','Particular','Particular + copago'],a.tipoCobro)}<div class="inline-checks-edit"><label><input type="checkbox" id="e_bonoConsulta_${a.id}" ${a.bonoConsulta?'checked':''}> Bono consulta</label><label><input type="checkbox" id="e_bonoEstudio_${a.id}" ${a.bonoEstudio?'checked':''}> Bono estudio</label><label><input type="checkbox" id="e_bonoFirmado_${a.id}" ${a.bonoFirmado?'checked':''}> Bono firmado</label><label><input type="checkbox" id="e_copiaImpresa_${a.id}" ${a.copiaImpresa?'checked':''}> Copia</label><label><input type="checkbox" id="e_fold2_${a.id}" ${a.fold2?'checked':''}> Fold2</label><label><input type="checkbox" id="e_planilla_${a.id}" ${a.planilla?'checked':''}> Planilla</label><label><input type="checkbox" id="e_colocacionLiquidable_${a.id}" ${a.colocacionLiquidable?'checked':''}> Colocación liquidable</label><label>Colocador/a ${selectHTML('e_colocador_'+a.id,['Geraldine','Secretaría','Otro'],a.colocador||'Geraldine')}</label></div></td><td>${selectHTML('e_formaPago_'+a.id,['No aplica','Efectivo','Transferencia','Mixto'],a.formaPago||'No aplica')}</td><td><input type="number" id="e_particular_${a.id}" value="${Number(a.montoConsulta||0)+Number(a.montoEstudio||0)}"></td><td><input type="number" id="e_copago_${a.id}" value="${Number(a.montoCopago||0)}"></td><td>${money(a.montoTotal)}</td><td class="estado-cell">${estadoHTML(a,e)}</td><td class="no-print actions-cell"><div class="edit-actions"><button class="small-btn" onclick="guardarEdicion(${a.id})">Guardar</button><button class="small-btn" onclick="cancelarEdicion()">Cancelar</button></div></td>`}else{tr.innerHTML=`<td>${formatFecha(a.fecha)}</td><td><strong>${escapeHtml(a.paciente)}</strong>${a.observaciones?'<br><small>'+escapeHtml(a.observaciones)+'</small>':''}</td><td>${a.obraSocial}</td><td>${a.profesional}</td><td>${prestacionContable(a)}${badgeColocacion(a)}</td><td>${a.consultaA}</td><td>${a.prestacionA}</td><td>${a.tipoCobro||''}</td><td>${a.formaPago||'No aplica'}</td><td class="money-col">${money(part)}</td><td class="money-col">${money(m.copago)}</td><td class="money-col">${money(m.total)}</td><td class="estado-cell">${estadoHTML(a,e)}</td><td class="no-print actions-cell"><div class="edit-actions"><button onclick="editarAtencion(${a.id})">Editar</button><button onclick="eliminarAtencion(${a.id})">Borrar</button></div></td>`}tbody.appendChild(tr)})}
 function actualizarPaginacionListado(totalRegistros,totalPaginas){
  const box=$('paginacionListado'),info=$('paginaInfo'),prev=$('btnPaginaAnterior'),next=$('btnPaginaSiguiente');
  if(!box||!info||!prev||!next)return;
@@ -849,6 +928,11 @@ function abrirModalEdicion(id){
           <label><input type="checkbox" id="m_planilla" ${a.planilla?'checked':''}> Planilla</label>
           <label><input type="checkbox" id="m_colocacionLiquidable" ${a.colocacionLiquidable?'checked':''}> Colocación liquidable</label>
           <label>Colocador/a ${selectHTML('m_colocador',['Geraldine','Secretaría','Otro'],a.colocador||'Geraldine')}</label>
+          <label><input type="checkbox" id="m_estudioInformado" ${a.estudioInformado?'checked':''}> Informe realizado / informado</label>
+          <label><input type="checkbox" id="m_estudioImpreso" ${a.estudioImpreso?'checked':''}> Informe impreso</label>
+          <label><input type="checkbox" id="m_estudioImpresoFacturacion" ${a.estudioImpresoFacturacion?'checked':''}> Impreso facturación</label>
+          <label><input type="checkbox" id="m_estudioEnviadoMail" ${a.estudioEnviadoMail?'checked':''}> Enviado por mail</label>
+          <label><input type="checkbox" id="m_estudioEnviadoWS" ${a.estudioEnviadoWS?'checked':''}> Enviado por WhatsApp</label>
         </div>
         <div class="full"><label>Observaciones</label><textarea id="m_obs" rows="3">${escapeHtml(a.observaciones||'')}</textarea></div>
       </div>
@@ -905,6 +989,11 @@ function guardarEdicionModal(id){
   a.planilla=$('m_planilla').checked;
   a.colocacionLiquidable=$('m_colocacionLiquidable')?.checked||false;
   a.colocador=$('m_colocador')?.value||'';
+  a.estudioInformado=$('m_estudioInformado')?.checked||false;
+  a.estudioImpreso=$('m_estudioImpreso')?.checked||false;
+  a.estudioImpresoFacturacion=$('m_estudioImpresoFacturacion')?.checked||false;
+  a.estudioEnviadoMail=$('m_estudioEnviadoMail')?.checked||false;
+  a.estudioEnviadoWS=$('m_estudioEnviadoWS')?.checked||false;
   a.reglaOS=getRegla(a.obraSocial);
   saveAtenciones();
   cerrarModalEdicion();

@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CardioLink Admin v2.5.9</title>
-<link rel="stylesheet" href="styles.css?v=259">
+<title>CardioLink Admin v2.6.0</title>
+<link rel="stylesheet" href="styles.css?v=260">
 </head>
 <body>
 <aside class="sidebar">
   <div class="brand">
-    <div class="brand-main">CardioLink Admin <span>v2.5.9</span></div>
+    <div class="brand-main">CardioLink Admin <span>v2.6.0</span></div>
     <div class="brand-by">by Matías Anchorena</div>
   </div>
   <button class="nav active" data-section="dashboard">Dashboard</button>
@@ -73,6 +73,14 @@
         <div><label>Profesional actuante</label><select id="profesional"></select></div>
         <div><label>Prestación</label><select id="prestacion"></select></div>
 
+        <div class="full segundo-estudio-box">
+          <label class="check-line"><input type="checkbox" id="activarSegundoEstudio"> Agregar segundo estudio como registro separado</label>
+          <div class="segundo-estudio-grid">
+            <div><label>Segundo estudio</label><select id="segundoEstudio"></select></div>
+            <p class="muted">Se guardará como otro registro del mismo paciente. Si corresponde cobro propio, editá ese segundo registro desde el listado.</p>
+          </div>
+        </div>
+
         <div><label>Consulta se contabiliza a</label><select id="consultaA">
           <option>Matías</option><option>Rogelio</option><option>No aplica</option><option>A definir</option>
         </select></div>
@@ -113,6 +121,11 @@
               <option value="Otro">Otro</option>
             </select>
           </label>
+          <label><input type="checkbox" id="estudioInformado"> Informe realizado / informado</label>
+          <label><input type="checkbox" id="estudioImpreso"> Informe impreso</label>
+          <label><input type="checkbox" id="estudioImpresoFacturacion"> Impreso facturación</label>
+          <label><input type="checkbox" id="estudioEnviadoMail"> Enviado por mail</label>
+          <label><input type="checkbox" id="estudioEnviadoWS"> Enviado por WhatsApp</label>
         </div>
 
         <div class="full rule-box" id="reglaInfo">Regla automática: sin aplicar.</div>
@@ -150,7 +163,7 @@
 
       <div id="printArea">
         <div class="print-title">
-          <h2>CardioLink Admin v2.5.9</h2>
+          <h2>CardioLink Admin v2.6.0</h2>
           <p>by Matías Anchorena — Listado filtrado</p>
           <p id="printMeta"></p>
         </div>
@@ -284,6 +297,6 @@
   </section>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="app.js?v=259"></script>
+<script src="app.js"></script>
 </body>
 </html>
