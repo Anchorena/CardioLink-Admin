@@ -591,7 +591,7 @@ $('fOS').appendChild(optFacturaRogelio);
  llenarSelect($('cfgProfesionalValores'),data.profesionales.filter(p=>p.id!=='general'),p=>p.id,p=>p.nombre);
  llenarSelect($('cfgReglaOS'),data.obrasSociales);
 }
-function showSection(id){document.querySelectorAll('.section').forEach(s=>s.classList.remove('visible'));$(id).classList.add('visible');document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.section===id));if(id==='colocaciones')renderLiquidacionColocacionesSolapa()}
+function showSection(id){document.querySelectorAll('.section').forEach(s=>s.classList.remove('visible'));if($(id))$(id).classList.add('visible');document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.section===id));if(id==='instructivos'){if($('tituloBienvenida'))$('tituloBienvenida').textContent='Instructivos de uso';if($('subtituloPerfil'))$('subtituloPerfil').textContent='Guía para secretaría, médicos y administración';}if(id==='colocaciones')renderLiquidacionColocacionesSolapa()}
 function cambiarPerfil(id){$('perfilActivo').value=id;const p=perfilObj();$('tituloBienvenida').textContent=p.id==='general'?'Vista General / Administración':`Bienvenido ${p.nombre}`;$('subtituloPerfil').textContent=p.area;$('profesional').value=p.id==='general'?'matias':p.id;if($('instructivoPerfiles'))$('instructivoPerfiles').classList.toggle('hidden',p.id!=='general');paginaListado=1;actualizarPrestaciones();aplicarRegla();renderTabla();renderStats()}
 function actualizarHora(){const a=new Date();$('fechaHoraPanel').textContent=a.toLocaleDateString('es-AR',{weekday:'long',day:'2-digit',month:'2-digit',year:'numeric'})+' · '+a.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}
 function actualizarPrestaciones(){
