@@ -1181,19 +1181,19 @@ function eliminarAtencion(id){if(!confirm('¿Borrar esta atención?'))return;ate
 
 function setPeriodo20(){const d=new Date();let y=d.getFullYear(),m=d.getMonth()+1,day=d.getDate(),dy=y,dm=m,hy=y,hm=m+1;if(day<20){dm=m-1;hm=m}if(dm<1){dm=12;dy--}if(hm>12){hm=1;hy++}$('fDesde').value=`${dy}-${String(dm).padStart(2,'0')}-20`;$('fHasta').value=`${hy}-${String(hm).padStart(2,'0')}-20`;paginaListado=1;mostrarResumenFiltros();renderTabla();calcularLiquidacionColocaciones()}
 function resetFiltros(){
- $('fDesde').value='';
- $('fHasta').value='';
- $('fOS').value='';
- $('fProfesional').value='';
- $('fPrestacion').value='';
- $('fPaciente').value='';
- $('fDestino').value='';
- paginaListado=1;
- modoPendientesGlobal=false;
- if($('perfilActivo')){$('perfilActivo').value='general';cambiarPerfil('general')}
- ocultarResumenFiltros();
- renderTabla();
- renderStats();
+  $('fDesde').value='';
+  $('fHasta').value='';
+  $('fOS').value='';
+  $('fProfesional').value='';
+  $('fPrestacion').value='';
+  $('fPaciente').value='';
+  $('fDestino').value='';
+
+  paginaActualListado = 1;
+
+  ocultarResumenFiltros();
+  renderTabla();
+  renderStats();
 }
 function verDineroPeriodo(){
   const res=$('dineroPeriodoResultado');
