@@ -19,6 +19,7 @@ let cargandoDesdeNube = false;
 let syncTimer = null;
 const TAMANIO_PAGINA_LISTADO = 50;
 let paginaListado = 1;
+let modoPendientesGlobal = false;
 const INACTIVIDAD_MS = 30 * 60 * 1000;
 let timerInactividad = null;
 
@@ -506,7 +507,7 @@ function esElectro(prest){const s=(prest||'').toLowerCase();return s.includes('e
 function tipoPrest(prest){const s=(prest||'').toLowerCase();if(s.includes('consulta')&&(s.includes('ecg')||s.includes('electro')))return'CONSULTA_ECG';if(s.includes('consulta'))return'CONSULTA';if(s.includes('ecg')||s.includes('electro'))return'ECG';if(s.includes('holter'))return'HOLTER';if(s.includes('mapa'))return'MAPA';if(s.includes('eco'))return'ECO';return'ESTUDIO'}
 function esPrestacionColocable(prest){return ['HOLTER','MAPA','ECG'].includes(tipoPrest(prest))}
 function valoresColocacion(){try{return Object.assign({holter:10000,mapa:10000,ecg:0},JSON.parse(localStorage.getItem(storageValoresColocacion)||'{}'))}catch{return {holter:10000,mapa:10000,ecg:0}}}
-function guardarValoresColocacion(){const v={holter:Number($('valorColocacionHolter')?.value||10000),mapa:Number($('valorColocacionMapa')?.value||10000),ecg:Number($('valorColocacionEcg')?.value||0)};localStorage.setItem(storageValoresColocacion,JSON.stringify(v));return v}
+function guardarValoresColocacion(){const v={holter:Number($('valorColocacionHolter')?.value||$('liqValorHolter')?.value||10000),mapa:Number($('valorColocacionMapa')?.value||$('liqValorMapa')?.value||10000),ecg:Number($('valorColocacionEcg')?.value||$('liqValorEcg')?.value||0)};localStorage.setItem(storageValoresColocacion,JSON.stringify(v));return v}
 function mostrarResumenFiltros(){resumenFiltrosVisible=true;if($('resumenCaja'))$('resumenCaja').classList.remove('hidden');if($('liquidacionBox'))$('liquidacionBox').classList.remove('hidden')}
 function ocultarResumenFiltros(){resumenFiltrosVisible=false;if($('resumenCaja'))$('resumenCaja').classList.add('hidden');if($('liquidacionBox'))$('liquidacionBox').classList.add('hidden');if($('liquidacionResultado'))$('liquidacionResultado').textContent=''}
 function getRegla(os){return (data.reglasOS||{})[os]||'GENERAL_CONSULTA_EXTRA'}
@@ -534,6 +535,10 @@ $('btnToggleConteo').addEventListener('click',()=>{mostrarConteoDashboard=!mostr
  $('btnPeriodo20').addEventListener('click',setPeriodo20);
  $('btnFiltrar').addEventListener('click',()=>{paginaListado=1;mostrarResumenFiltros();renderTabla();calcularLiquidacionColocaciones()});
  $('btnResetFiltros').addEventListener('click',resetFiltros);
+ if($('btnPendientesGlobal'))$('btnPendientesGlobal').addEventListener('click',activarFiltroPendientesGlobal);
+ if($('btnVerPendientesSolapa'))$('btnVerPendientesSolapa').addEventListener('click',()=>{showSection('listado');activarFiltroPendientesGlobal();});
+ if($('btnLiqCalcular'))$('btnLiqCalcular').addEventListener('click',renderLiquidacionColocacionesSolapa);
+ if($('btnLiqMes'))$('btnLiqMes').addEventListener('click',()=>{const d=new Date();const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');$('liqDesde').value=`${y}-${m}-01`;$('liqHasta').value=todayISO();renderLiquidacionColocacionesSolapa();});
  if($('btnPaginaAnterior'))$('btnPaginaAnterior').addEventListener('click',()=>{if(paginaListado>1){paginaListado--;renderTabla();}});
  if($('btnPaginaSiguiente'))$('btnPaginaSiguiente').addEventListener('click',()=>{paginaListado++;renderTabla();});
  $('btnPrint').addEventListener('click',()=>{setPrintMeta();document.body.classList.toggle('print-money',!!$('incluirValoresImpresion')?.checked);window.print();setTimeout(()=>document.body.classList.remove('print-money'),500)});
@@ -542,6 +547,10 @@ $('btnToggleConteo').addEventListener('click',()=>{mostrarConteoDashboard=!mostr
  if($('valorColocacionHolter'))$('valorColocacionHolter').value=vc.holter;
  if($('valorColocacionMapa'))$('valorColocacionMapa').value=vc.mapa;
  if($('valorColocacionEcg'))$('valorColocacionEcg').value=vc.ecg;
+ if($('liqValorHolter'))$('liqValorHolter').value=vc.holter;
+ if($('liqValorMapa'))$('liqValorMapa').value=vc.mapa;
+ if($('liqValorEcg'))$('liqValorEcg').value=vc.ecg;
+ if($('liqDesde')){const d=new Date();const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');$('liqDesde').value=`${y}-${m}-01`;$('liqHasta').value=todayISO();}
  if($('btnCalcularLiquidacion'))$('btnCalcularLiquidacion').addEventListener('click',()=>{mostrarResumenFiltros();calcularLiquidacionColocaciones()});
  ['valorColocacionHolter','valorColocacionMapa','valorColocacionEcg'].forEach(id=>{if($(id))$(id).addEventListener('input',()=>{guardarValoresColocacion();calcularLiquidacionColocaciones()})});
  $('btnVerDineroPeriodo').addEventListener('click',verDineroPeriodo);
@@ -573,7 +582,7 @@ $('fOS').appendChild(optFacturaRogelio);
  llenarSelect($('cfgProfesionalValores'),data.profesionales.filter(p=>p.id!=='general'),p=>p.id,p=>p.nombre);
  llenarSelect($('cfgReglaOS'),data.obrasSociales);
 }
-function showSection(id){document.querySelectorAll('.section').forEach(s=>s.classList.remove('visible'));$(id).classList.add('visible');document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.section===id))}
+function showSection(id){document.querySelectorAll('.section').forEach(s=>s.classList.remove('visible'));$(id).classList.add('visible');document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.section===id));if(id==='colocaciones')renderLiquidacionColocacionesSolapa()}
 function cambiarPerfil(id){$('perfilActivo').value=id;const p=perfilObj();$('tituloBienvenida').textContent=p.id==='general'?'Vista General / Administración':`Bienvenido ${p.nombre}`;$('subtituloPerfil').textContent=p.area;$('profesional').value=p.id==='general'?'matias':p.id;if($('instructivoPerfiles'))$('instructivoPerfiles').classList.toggle('hidden',p.id!=='general');paginaListado=1;actualizarPrestaciones();aplicarRegla();renderTabla();renderStats()}
 function actualizarHora(){const a=new Date();$('fechaHoraPanel').textContent=a.toLocaleDateString('es-AR',{weekday:'long',day:'2-digit',month:'2-digit',year:'numeric'})+' · '+a.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}
 function actualizarPrestaciones(){
@@ -802,7 +811,26 @@ function actualizarResumenFacturaRogelio(datos){
 }
 
 function atencionesPerfil(){const p=perfilObj();if(p.id==='general')return atenciones;if(p.id==='matias')return atenciones.filter(a=>a.profesionalId==='matias'||a.consultaA==='Matías'||a.prestacionA==='Matías');if(p.id==='rogelio')return atenciones.filter(a=>a.profesionalId==='rogelio'||a.consultaA==='Rogelio'||a.prestacionA==='Rogelio');return atenciones.filter(a=>a.profesionalId===p.id)}
-function filtrar(){const desde=$('fDesde').value,hasta=$('fHasta').value,os=$('fOS').value,prof=$('fProfesional').value,prest=$('fPrestacion').value,pac=$('fPaciente').value.toLowerCase().trim(),dest=$('fDestino').value;return atencionesPerfil().filter(a=>{if(desde&&a.fecha<desde)return false;if(hasta&&a.fecha>hasta)return false;if(os===FILTRO_FACTURA_ROGELIO && !esRegistroFacturaRogelio(a))return false;if(os&&os!==FILTRO_FACTURA_ROGELIO&&a.obraSocial!==os)return false;if(prof&&a.profesional!==prof)return false;if(prest&&a.prestacion!==prest)return false;if(pac&&!String(a.paciente||'').toLowerCase().includes(pac))return false;if(dest&&a.consultaA!==dest&&a.prestacionA!==dest)return false;return true}).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''))}
+
+function esPendienteAdministrativo(a){
+ const e=evaluarEstado(a);
+ if(e.cls==='bad')return true;
+ if(esRegistroDeEstudio(a)){
+   const entregado=!!(a.estudioImpreso||a.estudioEnviadoMail||a.estudioEnviadoWS);
+   if(!a.estudioInformado||!entregado)return true;
+ }
+ return false;
+}
+function activarFiltroPendientesGlobal(){
+ modoPendientesGlobal=true;
+ paginaListado=1;
+ if($('fDesde'))$('fDesde').value='';
+ if($('fHasta'))$('fHasta').value='';
+ mostrarResumenFiltros();
+ renderTabla();
+ renderStats();
+}
+function filtrar(){const desde=$('fDesde').value,hasta=$('fHasta').value,os=$('fOS').value,prof=$('fProfesional').value,prest=$('fPrestacion').value,pac=$('fPaciente').value.toLowerCase().trim(),dest=$('fDestino').value;return atencionesPerfil().filter(a=>{if(modoPendientesGlobal&&!esPendienteAdministrativo(a))return false;if(!modoPendientesGlobal){if(desde&&a.fecha<desde)return false;if(hasta&&a.fecha>hasta)return false;}if(os===FILTRO_FACTURA_ROGELIO && !esRegistroFacturaRogelio(a))return false;if(os&&os!==FILTRO_FACTURA_ROGELIO&&a.obraSocial!==os)return false;if(prof&&a.profesional!==prof)return false;if(prest&&a.prestacion!==prest)return false;if(pac&&!String(a.paciente||'').toLowerCase().includes(pac))return false;if(dest&&a.consultaA!==dest&&a.prestacionA!==dest)return false;return true}).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''))}
 function consultaComputada(a){const t=tipoPrest(a.prestacion),r=a.reglaOS||getRegla(a.obraSocial);if(t==='CONSULTA'||t==='CONSULTA_ECG')return true;if(t==='ECG'&&r==='IOMA_OSPRERA')return true;if(t!=='CONSULTA'){return ['GENERAL_CONSULTA_EXTRA','SANCOR_PREVENCION','IOMA_OSPRERA','OSDE'].includes(r)}return !!a.bonoConsulta}
 function resumen(datos){return datos.reduce((r,a)=>{if(consultaComputada(a))r.consultas++;if(tipoPrest(a.prestacion)!=='CONSULTA')r.estudios++;if(a.bonoConsulta||consultaComputada(a))r.bonoConsulta++;if(a.bonoEstudio||tipoPrest(a.prestacion)!=='CONSULTA')r.bonoEstudio++;const particular=Number(a.montoConsulta||0)+Number(a.montoEstudio||0);const copago=Number(a.montoCopago||0);r.particular+=particular;r.copago+=copago;r.total+=particular+copago;return r},{consultas:0,estudios:0,bonoConsulta:0,bonoEstudio:0,particular:0,copago:0,total:0})}
 function dineroVisible(a){
@@ -847,17 +875,23 @@ function evaluarEstado(a){const f=new Set();if((a.bonoConsulta||a.bonoEstudio)&&
 function badgesInforme(a){
  if(!esRegistroDeEstudio(a))return '';
  const badges=[];
- badges.push(a.estudioInformado?'<span class="badge ok informe-badge">Informado</span>':'<span class="badge bad informe-badge">Pend. informe</span>');
- if(a.estudioImpreso)badges.push('<span class="badge ok informe-badge">Impreso</span>');
+ const informado=!!a.estudioInformado;
+ const impreso=!!a.estudioImpreso;
+ const enviadoMail=!!a.estudioEnviadoMail;
+ const enviadoWS=!!a.estudioEnviadoWS;
+ const entregado=impreso||enviadoMail||enviadoWS;
+ badges.push(informado?'<span class="badge ok informe-badge">Informado</span>':'<span class="badge bad informe-badge">Pend. informe</span>');
+ if(impreso)badges.push('<span class="badge ok informe-badge">Impreso</span>');
  if(a.estudioImpresoFacturacion)badges.push('<span class="badge ok informe-badge">Imp. fact.</span>');
- if(a.estudioEnviadoMail)badges.push('<span class="badge ok informe-badge">Mail</span>');
- if(a.estudioEnviadoWS)badges.push('<span class="badge ok informe-badge">WS</span>');
+ if(enviadoMail)badges.push('<span class="badge ok informe-badge">Mail</span>');
+ if(enviadoWS)badges.push('<span class="badge ok informe-badge">WS</span>');
+ if(!entregado)badges.push('<span class="badge bad informe-badge">Pendiente envío/entrega</span>');
  return `<div class="estado-informe">${badges.join(' ')}</div>`;
 }
 function estadoHTML(a,e){return `<span class="badge ${e.cls}">${e.txt}</span>${badgesInforme(a)}`;}
 
 function prestacionContable(a){const r=a.reglaOS||getRegla(a.obraSocial);if(perfilObj().id==='rogelio'&&a.prestacionA==='Rogelio'&&['OSDE','IOMA_OSPRERA'].includes(r)&&tipoPrest(a.prestacion)!=='CONSULTA')return 'Holter';return a.prestacion}
-function badgeColocacion(a){return a.colocacionLiquidable?`<br><span class="badge ok">Colocación ${escapeHtml(a.colocador||'')}</span>`:''}
+function badgeColocacion(a){return a.colocacionLiquidable?`<br><span class="badge ok colocacion-badge">Coloc. ${escapeHtml(a.colocador||'')}</span>`:''}
 function calcularLiquidacionColocaciones(){
   if(!$('liquidacionResultado'))return;
   const v=guardarValoresColocacion();
@@ -868,6 +902,52 @@ function calcularLiquidacionColocaciones(){
   const totalHolter=holter*v.holter,totalMapa=mapa*v.mapa,totalEcg=ecg*v.ecg,total=totalHolter+totalMapa+totalEcg;
   $('liquidacionResultado').innerHTML=`Holter: ${holter} × ${money(v.holter)} = <strong>${money(totalHolter)}</strong> | MAPA: ${mapa} × ${money(v.mapa)} = <strong>${money(totalMapa)}</strong> | ECG: ${ecg} × ${money(v.ecg)} = <strong>${money(totalEcg)}</strong> | <strong>Total: ${money(total)}</strong>`;
 }
+function valorColocacionPorPrestacion(prest){
+ const v=valoresColocacion();
+ const t=tipoPrest(prest);
+ if(t==='HOLTER')return Number(v.holter||0);
+ if(t==='MAPA')return Number(v.mapa||0);
+ if(t==='ECG')return Number(v.ecg||0);
+ return 0;
+}
+function datosLiquidacionColocaciones(){
+ const desde=$('liqDesde')?.value||'';
+ const hasta=$('liqHasta')?.value||'';
+ const colocador=$('liqColocador')?.value||'';
+ return atencionesPerfil().filter(a=>{
+   if(!a.colocacionLiquidable||!esPrestacionColocable(a.prestacion))return false;
+   if(desde&&a.fecha<desde)return false;
+   if(hasta&&a.fecha>hasta)return false;
+   if(colocador&&a.colocador!==colocador)return false;
+   return true;
+ }).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+}
+function renderLiquidacionColocacionesSolapa(){
+ if(!$('liqResultado'))return;
+ const v={holter:Number($('liqValorHolter')?.value||10000),mapa:Number($('liqValorMapa')?.value||10000),ecg:Number($('liqValorEcg')?.value||0)};
+ localStorage.setItem(storageValoresColocacion,JSON.stringify(v));
+ if($('valorColocacionHolter'))$('valorColocacionHolter').value=v.holter;
+ if($('valorColocacionMapa'))$('valorColocacionMapa').value=v.mapa;
+ if($('valorColocacionEcg'))$('valorColocacionEcg').value=v.ecg;
+ const datos=datosLiquidacionColocaciones();
+ const holter=datos.filter(a=>tipoPrest(a.prestacion)==='HOLTER').length;
+ const mapa=datos.filter(a=>tipoPrest(a.prestacion)==='MAPA').length;
+ const ecg=datos.filter(a=>tipoPrest(a.prestacion)==='ECG').length;
+ const totalHolter=holter*v.holter,totalMapa=mapa*v.mapa,totalEcg=ecg*v.ecg,total=totalHolter+totalMapa+totalEcg;
+ $('liqResultado').innerHTML=`<strong>Total a pagar: ${money(total)}</strong><br>Holter: ${holter} × ${money(v.holter)} = ${money(totalHolter)} · MAPA: ${mapa} × ${money(v.mapa)} = ${money(totalMapa)} · ECG: ${ecg} × ${money(v.ecg)} = ${money(totalEcg)}`;
+ const tbody=$('tablaLiquidacionColocaciones');
+ if(tbody){
+   tbody.innerHTML='';
+   if(!datos.length){tbody.innerHTML='<tr><td colspan="6">No hay colocaciones liquidables para este filtro.</td></tr>';return;}
+   datos.forEach(a=>{
+     const tr=document.createElement('tr');
+     const valor=valorColocacionPorPrestacion(a.prestacion);
+     tr.innerHTML=`<td>${formatFecha(a.fecha)}</td><td><strong>${escapeHtml(a.paciente||'')}</strong></td><td>${escapeHtml(a.prestacion||'')}</td><td>${escapeHtml(a.colocador||'')}</td><td>${money(valor)}</td><td><button class="secondary" onclick="editarAtencion(${a.id})">Editar</button></td>`;
+     tbody.appendChild(tr);
+   });
+ }
+}
+
 function renderTabla(){const tbody=$('tablaAtenciones');tbody.innerHTML='';const datos=filtrar();renderResumenCaja(datos);actualizarResumenFacturaRogelio(datos);if(resumenFiltrosVisible)calcularLiquidacionColocaciones();const totalPaginas=Math.max(1,Math.ceil(datos.length/TAMANIO_PAGINA_LISTADO));if(paginaListado>totalPaginas)paginaListado=totalPaginas;if(paginaListado<1)paginaListado=1;actualizarPaginacionListado(datos.length,totalPaginas);const inicio=(paginaListado-1)*TAMANIO_PAGINA_LISTADO;const datosPagina=datos.slice(inicio,inicio+TAMANIO_PAGINA_LISTADO);if(!datos.length){tbody.innerHTML='<tr><td colspan="14">No hay registros para mostrar.</td></tr>';return}datosPagina.forEach(a=>{const e=evaluarEstado(a),m=dineroVisible(a),part=m.particular;const tr=document.createElement('tr');if(editandoId===a.id){tr.className='edit-row';tr.innerHTML=`<td><input type="date" id="e_fecha_${a.id}" value="${a.fecha||''}"></td><td><input id="e_paciente_${a.id}" value="${escapeHtml(a.paciente)}"><input id="e_obs_${a.id}" value="${escapeHtml(a.observaciones||'')}" placeholder="Obs."></td><td>${selectHTML('e_os_'+a.id,data.obrasSociales,a.obraSocial)}</td><td>${selectProfesionalesHTML('e_prof_'+a.id,a.profesionalId)}</td><td>${selectPrestacionesHTML('e_prest_'+a.id,a.profesionalId,a.prestacion)}</td><td>${selectHTML('e_consultaA_'+a.id,opcionesDestinos(a.consultaA),a.consultaA)}</td><td>${selectHTML('e_prestacionA_'+a.id,opcionesDestinos(a.prestacionA),a.prestacionA)}</td><td>${selectHTML('e_tipoCobro_'+a.id,['Sin cobro en caja','Copago','Particular','Particular + copago'],a.tipoCobro)}<div class="inline-checks-edit"><label><input type="checkbox" id="e_bonoConsulta_${a.id}" ${a.bonoConsulta?'checked':''}> Bono consulta</label><label><input type="checkbox" id="e_bonoEstudio_${a.id}" ${a.bonoEstudio?'checked':''}> Bono estudio</label><label><input type="checkbox" id="e_bonoFirmado_${a.id}" ${a.bonoFirmado?'checked':''}> Bono firmado</label><label><input type="checkbox" id="e_copiaImpresa_${a.id}" ${a.copiaImpresa?'checked':''}> Copia</label><label><input type="checkbox" id="e_fold2_${a.id}" ${a.fold2?'checked':''}> Fold2</label><label><input type="checkbox" id="e_planilla_${a.id}" ${a.planilla?'checked':''}> Planilla</label><label><input type="checkbox" id="e_colocacionLiquidable_${a.id}" ${a.colocacionLiquidable?'checked':''}> Colocación liquidable</label><label>Colocador/a ${selectHTML('e_colocador_'+a.id,['Geraldine','Secretaría','Otro'],a.colocador||'Geraldine')}</label></div></td><td>${selectHTML('e_formaPago_'+a.id,['No aplica','Efectivo','Transferencia','Mixto'],a.formaPago||'No aplica')}</td><td><input type="number" id="e_particular_${a.id}" value="${Number(a.montoConsulta||0)+Number(a.montoEstudio||0)}"></td><td><input type="number" id="e_copago_${a.id}" value="${Number(a.montoCopago||0)}"></td><td>${money(a.montoTotal)}</td><td class="estado-cell">${estadoHTML(a,e)}</td><td class="no-print actions-cell"><div class="edit-actions"><button class="small-btn" onclick="guardarEdicion(${a.id})">Guardar</button><button class="small-btn" onclick="cancelarEdicion()">Cancelar</button></div></td>`}else{tr.innerHTML=`<td>${formatFecha(a.fecha)}</td><td><strong>${escapeHtml(a.paciente)}</strong>${a.observaciones?'<br><small>'+escapeHtml(a.observaciones)+'</small>':''}</td><td>${a.obraSocial}</td><td>${a.profesional}</td><td>${prestacionContable(a)}${badgeColocacion(a)}</td><td>${a.consultaA}</td><td>${a.prestacionA}</td><td>${a.tipoCobro||''}</td><td>${a.formaPago||'No aplica'}</td><td class="money-col">${money(part)}</td><td class="money-col">${money(m.copago)}</td><td class="money-col">${money(m.total)}</td><td class="estado-cell">${estadoHTML(a,e)}</td><td class="no-print actions-cell"><div class="edit-actions"><button onclick="editarAtencion(${a.id})">Editar</button><button onclick="eliminarAtencion(${a.id})">Borrar</button></div></td>`}tbody.appendChild(tr)})}
 function actualizarPaginacionListado(totalRegistros,totalPaginas){
  const box=$('paginacionListado'),info=$('paginaInfo'),prev=$('btnPaginaAnterior'),next=$('btnPaginaSiguiente');
@@ -1015,6 +1095,7 @@ function resetFiltros(){
  $('fPaciente').value='';
  $('fDestino').value='';
  paginaListado=1;
+ modoPendientesGlobal=false;
  if($('perfilActivo')){$('perfilActivo').value='general';cambiarPerfil('general')}
  ocultarResumenFiltros();
  renderTabla();

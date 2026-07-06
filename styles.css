@@ -18,7 +18,7 @@ label{font-weight:700;font-size:13px;display:block;margin-bottom:6px}input,selec
 .resumen-caja{display:grid;grid-template-columns:repeat(7,1fr);gap:10px;margin:12px 0 18px}.resumen-caja div{background:rgba(127,127,127,.08);border-radius:10px;padding:10px}.resumen-caja strong{font-size:18px}
 .money-lock{background:rgba(127,127,127,.08);border:1px solid var(--line);border-radius:12px;padding:12px;margin:10px 0 18px;display:grid;grid-template-columns:1.2fr 1.2fr 150px 150px 160px 80px 90px;gap:10px;align-items:center}.money-result{grid-column:1/-1;font-weight:700}
 table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px solid var(--line);padding:8px;text-align:left;vertical-align:top}th{background:rgba(127,127,127,.08)}
-.badge{display:inline-block;padding:7px 11px;border-radius:999px;font-size:15px;font-weight:800;line-height:1.15}.ok{background:#dcfce7;color:#166534}.bad{background:#fee2e2;color:#991b1b}
+.badge{display:inline-block;padding:9px 14px;border-radius:999px;font-size:18px;font-weight:900;line-height:1.15}.ok{background:#dcfce7;color:#166534}.bad{background:#fee2e2;color:#991b1b}
 .estado-cell{width:125px;max-width:125px}.actions-cell{width:82px;min-width:82px}.edit-actions{display:flex;flex-direction:column;gap:5px}.edit-actions button{width:72px;padding:6px!important;font-size:12px!important}
 .config-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}.config-grid ul{max-height:260px;overflow:auto;padding-left:20px}.config-grid li{margin-bottom:7px}.print-title{display:none}
 .edit-row input,.edit-row select{min-width:105px;padding:6px 8px;font-size:12px}.inline-checks-edit{min-width:190px;display:grid;gap:4px;font-size:12px;margin-top:6px}.inline-checks-edit label{font-weight:500;display:flex;gap:5px;margin:0}.inline-checks-edit input{width:auto}
@@ -139,3 +139,31 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px
 .segundo-estudio-grid{display:grid;grid-template-columns:minmax(240px,360px) 1fr;gap:12px;align-items:end;margin-top:10px}
 .estado-cell{width:170px;max-width:190px}.estado-informe{display:flex;flex-wrap:wrap;gap:5px;margin-top:8px}.informe-badge{font-size:12px;padding:5px 8px}
 @media(max-width:950px){.segundo-estudio-grid{grid-template-columns:1fr}.badge{font-size:14px}}
+
+
+/* v2.6.2 - liquidación y pendientes */
+.colocacion-badge{
+  font-size:11px!important;
+  padding:4px 7px!important;
+  line-height:1.1!important;
+  margin-top:4px;
+  white-space:nowrap;
+}
+.liquidacion-panel-grid{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(150px,1fr));
+  gap:12px;
+  align-items:end;
+  margin:12px 0 16px;
+}
+.liquidacion-total-box{
+  background:rgba(14,116,144,.10);
+  border:1px solid rgba(14,116,144,.25);
+  padding:14px;
+  border-radius:14px;
+  font-size:16px;
+  margin:12px 0 16px;
+}
+.tabla-mini th,.tabla-mini td{font-size:13px}
+.pendientes-ayuda{margin-top:10px;color:var(--muted);font-size:14px}
+@media(max-width:950px){.liquidacion-panel-grid{grid-template-columns:1fr}.estado-cell{width:190px;max-width:220px}}

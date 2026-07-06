@@ -3,18 +3,19 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CardioLink Admin v2.6.0</title>
-<link rel="stylesheet" href="styles.css?v=260">
+<title>CardioLink Admin v2.6.2</title>
+<link rel="stylesheet" href="styles.css?v=262">
 </head>
 <body>
 <aside class="sidebar">
   <div class="brand">
-    <div class="brand-main">CardioLink Admin <span>v2.6.0</span></div>
+    <div class="brand-main">CardioLink Admin <span>v2.6.2</span></div>
     <div class="brand-by">by Matías Anchorena</div>
   </div>
   <button class="nav active" data-section="dashboard">Dashboard</button>
   <button class="nav" data-section="carga">Carga de turno/atención</button>
   <button class="nav" data-section="listado">Listado / filtros</button>
+  <button class="nav" data-section="colocaciones">Colocaciones / pendientes</button>
   <button class="nav" data-section="config">Configuración</button>
   <button id="btnDark" class="dark-toggle">🌙 Modo oscuro</button>
 </aside>
@@ -156,6 +157,7 @@
         <button class="secondary" id="btnPeriodo20">20 al 20</button>
         <button class="primary" id="btnFiltrar">Filtrar</button>
         <button class="secondary" id="btnResetFiltros">Limpiar</button>
+        <button class="danger" id="btnPendientesGlobal" type="button">Ver pendientes</button>
         <button class="primary" id="btnPrint">Imprimir / PDF</button>
         <button class="primary" id="btnExportExcel">Exportar Excel</button>
         <label class="print-values no-print"><input type="checkbox" id="incluirValoresImpresion"> Incluir valores</label>
@@ -163,7 +165,7 @@
 
       <div id="printArea">
         <div class="print-title">
-          <h2>CardioLink Admin v2.6.0</h2>
+          <h2>CardioLink Admin v2.6.2</h2>
           <p>by Matías Anchorena — Listado filtrado</p>
           <p id="printMeta"></p>
         </div>
@@ -218,6 +220,36 @@
           <button class="secondary" type="button" id="btnPaginaSiguiente">Siguiente</button>
         </div>
       </div>
+    </div>
+  </section>
+
+
+  <section id="colocaciones" class="section">
+    <div class="card">
+      <h2>Liquidación colocación Holter / MAPA / ECG</h2>
+      <p class="muted">Calcula colocaciones marcadas como liquidables. Por defecto Holter $10.000. Podés cambiar valores sin tocar código.</p>
+      <div class="liquidacion-panel-grid">
+        <div><label>Desde</label><input type="date" id="liqDesde"></div>
+        <div><label>Hasta</label><input type="date" id="liqHasta"></div>
+        <div><label>Colocador/a</label><select id="liqColocador"><option value="">Todos</option><option>Geraldine</option><option>Secretaría</option><option>Otro</option></select></div>
+        <div><label>Valor Holter</label><input type="number" id="liqValorHolter" value="10000" min="0"></div>
+        <div><label>Valor MAPA</label><input type="number" id="liqValorMapa" value="10000" min="0"></div>
+        <div><label>Valor ECG</label><input type="number" id="liqValorEcg" value="0" min="0"></div>
+        <button class="primary" id="btnLiqMes" type="button">Mes actual</button>
+        <button class="primary" id="btnLiqCalcular" type="button">Calcular</button>
+      </div>
+      <div id="liqResultado" class="liquidacion-total-box">Sin cálculo todavía.</div>
+      <table class="tabla-mini">
+        <thead><tr><th>Fecha</th><th>Paciente</th><th>Prestación</th><th>Colocador/a</th><th>Valor</th><th></th></tr></thead>
+        <tbody id="tablaLiquidacionColocaciones"></tbody>
+      </table>
+    </div>
+
+    <div class="card">
+      <h2>Pendientes de informe / envío / entrega</h2>
+      <p class="muted">Muestra pendientes sin importar la fecha. Tocá Editar para completar tildes en la ventana emergente.</p>
+      <button class="danger" id="btnVerPendientesSolapa" type="button">Mostrar pendientes</button>
+      <div class="pendientes-ayuda">También podés usar el botón <strong>Ver pendientes</strong> en Listado / filtros.</div>
     </div>
   </section>
 
@@ -297,6 +329,6 @@
   </section>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="app.js?v=260"></script>
+<script src="app.js?v=262"></script>
 </body>
 </html>
