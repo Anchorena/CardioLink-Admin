@@ -169,7 +169,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px
 @media(max-width:950px){.liquidacion-panel-grid{grid-template-columns:1fr}.estado-cell{width:190px;max-width:220px}}
 
 
-/* v2.6.4 - listado fijo y badges compactos */
+/* v2.6.6 - listado fijo y badges compactos */
 .estado-cell{
   width: 160px;
   max-width: 180px;
@@ -208,7 +208,7 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px
 }
 
 
-/* v2.6.4 - listado con encabezado fijo y badges más compactos */
+/* v2.6.6 - listado con encabezado fijo y badges más compactos */
 .tabla-listado-wrap{
   max-height: calc(100vh - 360px);
   overflow: auto;
@@ -259,4 +259,49 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px
   .tabla-listado-wrap{max-height:none;overflow:visible;border:0;border-radius:0}
   .tabla-listado-wrap table{min-width:0}
   .tabla-listado-wrap thead th{position:static;box-shadow:none}
+}
+
+
+/* v2.6.6 - liquidación imprimible, botones más cerca, modal más cómoda */
+.actions-cell{
+  width:70px !important;
+  min-width:70px !important;
+  max-width:70px !important;
+  padding-left:4px !important;
+  padding-right:4px !important;
+  position: sticky;
+  right: 0;
+  background: var(--card);
+  z-index: 4;
+  box-shadow: -6px 0 10px rgba(15,23,42,.04);
+}
+.tabla-listado-wrap thead th:last-child{
+  position: sticky;
+  right: 0;
+  z-index: 7;
+  background: var(--card);
+}
+.edit-actions{gap:4px !important;align-items:center !important}
+.edit-actions button{width:66px !important;padding:5px 6px !important;font-size:11px !important;border-radius:10px !important}
+.estado-cell{width:132px !important;max-width:142px !important}
+.estado-cell .badge{font-size:10px !important;padding:3px 5px !important;line-height:1.05 !important;margin:1px 2px 1px 0 !important}
+.estado-cell > .badge{font-size:11px !important;padding:4px 6px !important}
+.estado-informe{max-width:128px !important;gap:2px !important;margin-top:3px !important}
+.informe-badge{font-size:9.5px !important;padding:3px 5px !important}
+.tabla-listado-wrap table{min-width:1080px !important}
+.modal-edit-card{padding-bottom:0 !important}
+.modal-actions{
+  position: sticky;
+  bottom: 0;
+  background: var(--card);
+  margin-left: -24px;
+  margin-right: -24px;
+  padding: 14px 24px 18px !important;
+  border-top:1px solid var(--line);
+  box-shadow:0 -12px 24px rgba(15,23,42,.08);
+  z-index: 2;
+}
+#btnLiqPrint{white-space:nowrap}
+@media print{
+  .actions-cell{position:static;box-shadow:none}
 }

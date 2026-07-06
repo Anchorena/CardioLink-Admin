@@ -538,6 +538,7 @@ $('btnToggleConteo').addEventListener('click',()=>{mostrarConteoDashboard=!mostr
  if($('btnPendientesGlobal'))$('btnPendientesGlobal').addEventListener('click',activarFiltroPendientesGlobal);
  if($('btnVerPendientesSolapa'))$('btnVerPendientesSolapa').addEventListener('click',()=>{showSection('listado');activarFiltroPendientesGlobal();});
  if($('btnLiqCalcular'))$('btnLiqCalcular').addEventListener('click',renderLiquidacionColocacionesSolapa);
+ if($('btnLiqPrint'))$('btnLiqPrint').addEventListener('click',imprimirLiquidacionColocaciones);
  if($('btnLiqMes'))$('btnLiqMes').addEventListener('click',()=>{const d=new Date();const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');$('liqDesde').value=`${y}-${m}-01`;$('liqHasta').value=todayISO();renderLiquidacionColocacionesSolapa();});
  if($('btnPaginaAnterior'))$('btnPaginaAnterior').addEventListener('click',()=>{if(paginaListado>1){paginaListado--;renderTabla();}});
  if($('btnPaginaSiguiente'))$('btnPaginaSiguiente').addEventListener('click',()=>{paginaListado++;renderTabla();});
@@ -574,7 +575,7 @@ function refreshSelects(){
  llenarTodos($('fOS'),data.obrasSociales,'Todas las OS');
 const optFacturaRogelio=document.createElement('option');
 optFacturaRogelio.value=FILTRO_FACTURA_ROGELIO;
-optFacturaRogelio.textContent='Factura Rogelio';
+optFacturaRogelio.textContent='Factura Rogelio / Holter';
 $('fOS').appendChild(optFacturaRogelio);
  llenarTodos($('fProfesional'),data.profesionales.filter(p=>p.id!=='general').map(p=>p.nombre),'Todos los médicos');
  llenarTodos($('fPrestacion'),allPrestaciones(),'Todas las prestaciones');
@@ -829,27 +830,21 @@ function facturaRogelioHTML(datos){
 function actualizarResumenFacturaRogelio(datos){
   let box = document.getElementById('facturaRogelioResumenBox');
   const printArea = document.getElementById('printArea');
-
-  if (!printArea) return;
-
-  if (!box) {
+  if(!printArea) return;
+  if(!box){
     box = document.createElement('div');
     box.id = 'facturaRogelioResumenBox';
     box.className = 'factura-rogelio-box';
-
-    const tabla = printArea.querySelector('table');
-
-    if (tabla && tabla.parentNode) {
-      tabla.parentNode.insertBefore(box, tabla);
+    const wrap = printArea.querySelector('.tabla-listado-wrap');
+    if(wrap && wrap.parentNode){
+      wrap.parentNode.insertBefore(box, wrap);
     } else {
       printArea.prepend(box);
     }
   }
-
-  box.innerHTML = $('fOS')?.value === FILTRO_FACTURA_ROGELIO
-    ? facturaRogelioHTML(datos)
-    : '';
+  box.innerHTML = $('fOS')?.value===FILTRO_FACTURA_ROGELIO ? facturaRogelioHTML(datos) : '';
 }
+
 
 function atencionesPerfil(){const p=perfilObj();if(p.id==='general')return atenciones;if(p.id==='matias')return atenciones.filter(a=>a.profesionalId==='matias'||a.consultaA==='Matías'||a.prestacionA==='Matías');if(p.id==='rogelio')return atenciones.filter(a=>a.profesionalId==='rogelio'||a.consultaA==='Rogelio'||a.prestacionA==='Rogelio');return atenciones.filter(a=>a.profesionalId===p.id)}
 
@@ -972,32 +967,81 @@ function datosLiquidacionColocaciones(){
    return true;
  }).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
 }
-function renderLiquidacionColocacionesSolapa(){
- if(!$('liqResultado'))return;
- const v={holter:Number($('liqValorHolter')?.value||10000),mapa:Number($('liqValorMapa')?.value||10000),ecg:Number($('liqValorEcg')?.value||0)};
- localStorage.setItem(storageValoresColocacion,JSON.stringify(v));
- if($('valorColocacionHolter'))$('valorColocacionHolter').value=v.holter;
- if($('valorColocacionMapa'))$('valorColocacionMapa').value=v.mapa;
- if($('valorColocacionEcg'))$('valorColocacionEcg').value=v.ecg;
- const datos=datosLiquidacionColocaciones();
- const holter=datos.filter(a=>tipoPrest(a.prestacion)==='HOLTER').length;
- const mapa=datos.filter(a=>tipoPrest(a.prestacion)==='MAPA').length;
- const ecg=datos.filter(a=>tipoPrest(a.prestacion)==='ECG').length;
- const totalHolter=holter*v.holter,totalMapa=mapa*v.mapa,totalEcg=ecg*v.ecg,total=totalHolter+totalMapa+totalEcg;
- $('liqResultado').innerHTML=`<strong>Total a pagar: ${money(total)}</strong><br>Holter: ${holter} × ${money(v.holter)} = ${money(totalHolter)} · MAPA: ${mapa} × ${money(v.mapa)} = ${money(totalMapa)} · ECG: ${ecg} × ${money(v.ecg)} = ${money(totalEcg)}`;
- const tbody=$('tablaLiquidacionColocaciones');
- if(tbody){
-   tbody.innerHTML='';
-   if(!datos.length){tbody.innerHTML='<tr><td colspan="6">No hay colocaciones liquidables para este filtro.</td></tr>';return;}
-   datos.forEach(a=>{
-     const tr=document.createElement('tr');
-     const valor=valorColocacionPorPrestacion(a.prestacion);
-     tr.innerHTML=`<td>${formatFecha(a.fecha)}</td><td><strong>${escapeHtml(a.paciente||'')}</strong></td><td>${escapeHtml(a.prestacion||'')}</td><td>${escapeHtml(a.colocador||'')}</td><td>${money(valor)}</td><td><button class="secondary" onclick="editarAtencion(${a.id})">Editar</button></td>`;
-     tbody.appendChild(tr);
-   });
- }
+
+function datosLiquidacionColocacionesSolapa(){
+  guardarValoresColocacion();
+  const desde=$('liqDesde')?.value||'';
+  const hasta=$('liqHasta')?.value||'';
+  const colocador=$('liqColocador')?.value||'';
+  const v={
+    holter:Number($('liqValorHolter')?.value||0),
+    mapa:Number($('liqValorMapa')?.value||0),
+    ecg:Number($('liqValorEcg')?.value||0)
+  };
+  const datos=(atenciones||[]).filter(a=>{
+    if(!a.colocacionLiquidable || !esPrestacionColocable(a.prestacion))return false;
+    if(desde && a.fecha<desde)return false;
+    if(hasta && a.fecha>hasta)return false;
+    if(colocador && a.colocador!==colocador)return false;
+    return true;
+  }).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+  const holter=datos.filter(a=>tipoPrest(a.prestacion)==='HOLTER').length;
+  const mapa=datos.filter(a=>tipoPrest(a.prestacion)==='MAPA').length;
+  const ecg=datos.filter(a=>tipoPrest(a.prestacion)==='ECG').length;
+  const totalHolter=holter*v.holter,totalMapa=mapa*v.mapa,totalEcg=ecg*v.ecg,total=totalHolter+totalMapa+totalEcg;
+  return {desde,hasta,colocador,v,datos,holter,mapa,ecg,totalHolter,totalMapa,totalEcg,total};
 }
 
+function imprimirLiquidacionColocaciones(){
+  const l=datosLiquidacionColocacionesSolapa();
+  if(!l.datos.length){alert('No hay colocaciones para imprimir con esos filtros.');return;}
+  const desdeTxt=l.desde?formatFecha(l.desde):'Inicio';
+  const hastaTxt=l.hasta?formatFecha(l.hasta):'Hoy';
+  const colocadorTxt=l.colocador||'Todos';
+  const filas=l.datos.map(a=>{
+    const valor=tipoPrest(a.prestacion)==='HOLTER'?l.v.holter:tipoPrest(a.prestacion)==='MAPA'?l.v.mapa:l.v.ecg;
+    return `<tr><td>${formatFecha(a.fecha)}</td><td>${escapeHtml(a.paciente||'')}</td><td>${escapeHtml(a.prestacion||'')}</td><td>${escapeHtml(a.colocador||'')}</td><td class="money">${money(valor)}</td></tr>`;
+  }).join('');
+  const html=`<!DOCTYPE html><html lang="es"><head><meta charset="UTF-8"><title>Liquidación colocaciones</title><style>
+    body{font-family:Arial,sans-serif;color:#111827;margin:28px}h1{margin:0 0 4px;font-size:24px}h2{font-size:18px;margin:18px 0 8px}.muted{color:#64748b;margin:0 0 14px}.box{border:1px solid #cbd5e1;background:#f8fafc;border-radius:12px;padding:14px;margin:14px 0}.total{font-size:22px;font-weight:800}.grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 24px}.line{font-size:15px}table{width:100%;border-collapse:collapse;margin-top:16px}th,td{border-bottom:1px solid #e5e7eb;text-align:left;padding:8px;font-size:13px}th{background:#f1f5f9}.money{text-align:right}.footer{margin-top:18px;font-size:12px;color:#64748b}@media print{button{display:none}body{margin:18px}}
+  </style></head><body>
+    <h1>CardioLink Admin</h1>
+    <p class="muted">Liquidación colocación Holter / MAPA / ECG · by Matías Anchorena</p>
+    <div class="box">
+      <div class="grid">
+        <div><strong>Período:</strong> ${desdeTxt} al ${hastaTxt}</div>
+        <div><strong>Colocador/a:</strong> ${escapeHtml(colocadorTxt)}</div>
+        <div class="line">Holter: ${l.holter} × ${money(l.v.holter)} = <strong>${money(l.totalHolter)}</strong></div>
+        <div class="line">MAPA: ${l.mapa} × ${money(l.v.mapa)} = <strong>${money(l.totalMapa)}</strong></div>
+        <div class="line">ECG: ${l.ecg} × ${money(l.v.ecg)} = <strong>${money(l.totalEcg)}</strong></div>
+        <div class="total">Total a pagar: ${money(l.total)}</div>
+      </div>
+    </div>
+    <h2>Detalle incluido</h2>
+    <table><thead><tr><th>Fecha</th><th>Paciente</th><th>Prestación</th><th>Colocador/a</th><th class="money">Valor</th></tr></thead><tbody>${filas}</tbody></table>
+    <p class="footer">Impreso: ${new Date().toLocaleString('es-AR')}</p>
+    <script>window.onload=()=>setTimeout(()=>window.print(),250)<\/script>
+  </body></html>`;
+  const w=window.open('','_blank');
+  if(!w){alert('El navegador bloqueó la ventana de impresión. Permití ventanas emergentes para esta página.');return;}
+  w.document.open();w.document.write(html);w.document.close();
+}
+
+function renderLiquidacionColocacionesSolapa(){
+  if(!$('liqResultado'))return;
+  const l=datosLiquidacionColocacionesSolapa();
+  $('liqResultado').innerHTML=`<strong>Total a pagar: ${money(l.total)}</strong><br>Holter: ${l.holter} × ${money(l.v.holter)} = ${money(l.totalHolter)} · MAPA: ${l.mapa} × ${money(l.v.mapa)} = ${money(l.totalMapa)} · ECG: ${l.ecg} × ${money(l.v.ecg)} = ${money(l.totalEcg)}`;
+  const tbody=$('tablaLiquidacionColocaciones');
+  if(!tbody)return;
+  tbody.innerHTML='';
+  if(!l.datos.length){tbody.innerHTML='<tr><td colspan="6">No hay colocaciones para esos filtros.</td></tr>';return;}
+  l.datos.forEach(a=>{
+    const valor=tipoPrest(a.prestacion)==='HOLTER'?l.v.holter:tipoPrest(a.prestacion)==='MAPA'?l.v.mapa:l.v.ecg;
+    const tr=document.createElement('tr');
+    tr.innerHTML=`<td>${formatFecha(a.fecha)}</td><td><strong>${escapeHtml(a.paciente||'')}</strong></td><td>${escapeHtml(a.prestacion||'')}</td><td>${escapeHtml(a.colocador||'')}</td><td>${money(valor)}</td><td><button class="secondary" onclick="editarAtencion(${a.id})">Editar</button></td>`;
+    tbody.appendChild(tr);
+  });
+}
 function renderTabla(){const tbody=$('tablaAtenciones');tbody.innerHTML='';const datos=filtrar();renderResumenCaja(datos);actualizarResumenFacturaRogelio(datos);if(resumenFiltrosVisible)calcularLiquidacionColocaciones();const totalPaginas=Math.max(1,Math.ceil(datos.length/TAMANIO_PAGINA_LISTADO));if(paginaListado>totalPaginas)paginaListado=totalPaginas;if(paginaListado<1)paginaListado=1;actualizarPaginacionListado(datos.length,totalPaginas);const inicio=(paginaListado-1)*TAMANIO_PAGINA_LISTADO;const datosPagina=datos.slice(inicio,inicio+TAMANIO_PAGINA_LISTADO);if(!datos.length){tbody.innerHTML='<tr><td colspan="14">No hay registros para mostrar.</td></tr>';return}datosPagina.forEach(a=>{const e=evaluarEstado(a),m=dineroVisible(a),part=m.particular;const tr=document.createElement('tr');if(editandoId===a.id){tr.className='edit-row';tr.innerHTML=`<td><input type="date" id="e_fecha_${a.id}" value="${a.fecha||''}"></td><td><input id="e_paciente_${a.id}" value="${escapeHtml(a.paciente)}"><input id="e_obs_${a.id}" value="${escapeHtml(a.observaciones||'')}" placeholder="Obs."></td><td>${selectHTML('e_os_'+a.id,data.obrasSociales,a.obraSocial)}</td><td>${selectProfesionalesHTML('e_prof_'+a.id,a.profesionalId)}</td><td>${selectPrestacionesHTML('e_prest_'+a.id,a.profesionalId,a.prestacion)}</td><td>${selectHTML('e_consultaA_'+a.id,opcionesDestinos(a.consultaA),a.consultaA)}</td><td>${selectHTML('e_prestacionA_'+a.id,opcionesDestinos(a.prestacionA),a.prestacionA)}</td><td>${selectHTML('e_tipoCobro_'+a.id,['Sin cobro en caja','Copago','Particular','Particular + copago'],a.tipoCobro)}<div class="inline-checks-edit"><label><input type="checkbox" id="e_bonoConsulta_${a.id}" ${a.bonoConsulta?'checked':''}> Bono consulta</label><label><input type="checkbox" id="e_bonoEstudio_${a.id}" ${a.bonoEstudio?'checked':''}> Bono estudio</label><label><input type="checkbox" id="e_bonoFirmado_${a.id}" ${a.bonoFirmado?'checked':''}> Bono firmado</label><label><input type="checkbox" id="e_copiaImpresa_${a.id}" ${a.copiaImpresa?'checked':''}> Copia</label><label><input type="checkbox" id="e_fold2_${a.id}" ${a.fold2?'checked':''}> Fold2</label><label><input type="checkbox" id="e_planilla_${a.id}" ${a.planilla?'checked':''}> Planilla</label><label><input type="checkbox" id="e_colocacionLiquidable_${a.id}" ${a.colocacionLiquidable?'checked':''}> Colocación liquidable</label><label>Colocador/a ${selectHTML('e_colocador_'+a.id,['Geraldine','Secretaría','Otro'],a.colocador||'Geraldine')}</label></div></td><td>${selectHTML('e_formaPago_'+a.id,['No aplica','Efectivo','Transferencia','Mixto'],a.formaPago||'No aplica')}</td><td><input type="number" id="e_particular_${a.id}" value="${Number(a.montoConsulta||0)+Number(a.montoEstudio||0)}"></td><td><input type="number" id="e_copago_${a.id}" value="${Number(a.montoCopago||0)}"></td><td>${money(a.montoTotal)}</td><td class="estado-cell">${estadoHTML(a,e)}</td><td class="no-print actions-cell"><div class="edit-actions"><button class="small-btn" onclick="guardarEdicion(${a.id})">Guardar</button><button class="small-btn" onclick="cancelarEdicion()">Cancelar</button></div></td>`}else{tr.innerHTML=`<td>${formatFecha(a.fecha)}</td><td><strong>${escapeHtml(a.paciente)}</strong>${a.observaciones?'<br><small>'+escapeHtml(a.observaciones)+'</small>':''}</td><td>${a.obraSocial}</td><td>${a.profesional}</td><td>${prestacionListado(a)}${badgeColocacion(a)}</td><td>${a.consultaA}</td><td>${a.prestacionA}</td><td>${a.tipoCobro||''}</td><td>${a.formaPago||'No aplica'}</td><td class="money-col">${money(part)}</td><td class="money-col">${money(m.copago)}</td><td class="money-col">${money(m.total)}</td><td class="estado-cell">${estadoHTML(a,e)}</td><td class="no-print actions-cell"><div class="edit-actions"><button onclick="editarAtencion(${a.id})">Editar</button><button onclick="eliminarAtencion(${a.id})">Borrar</button></div></td>`}tbody.appendChild(tr)})}
 function actualizarPaginacionListado(totalRegistros,totalPaginas){
  const box=$('paginacionListado'),info=$('paginaInfo'),prev=$('btnPaginaAnterior'),next=$('btnPaginaSiguiente');
@@ -1180,7 +1224,7 @@ function verDineroPeriodo(){
 function ocultarDineroPeriodo(){$('dineroPeriodoResultado').textContent='';$('claveDinero').value=''}
 function setPrintMeta(){$('printMeta').textContent=`Perfil: ${perfilObj().nombre} | Registros: ${filtrar().length} | ${formatFecha(todayISO())}`}
 function exportarCSV(){const datos=filtrar();if(!datos.length){alert('No hay datos');return}const r=resumen(datos);const incluirValoresExport=!!$('incluirValoresImpresion')?.checked;const filas=[['CardioLink Admin v2.5.9'],['Perfil',perfilObj().nombre],['Consultas',r.consultas],['Estudios',r.estudios],[],['Fecha','Paciente','OS','Profesional','Prestación','Consulta a','Estudio a','Tipo','Forma','Particular visible','Copago visible','Total visible','Estado']];datos.forEach(a=>{const m=dineroVisible(a),e=evaluarEstado(a);filas.push([formatFecha(a.fecha),a.paciente,a.obraSocial,a.profesional,prestacionListado(a),a.consultaA,a.prestacionA,a.tipoCobro,a.formaPago,incluirValoresExport?m.particular:'',incluirValoresExport?m.copago:'',incluirValoresExport?m.total:'',e.txt])});const csv=filas.map(r=>r.map(c=>`"${String(c??'').replaceAll('"','""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_listado.csv';a.click()}
-function exportarBackup(){const b={app:'CardioLink Admin',version:'2.6.4',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
+function exportarBackup(){const b={app:'CardioLink Admin',version:'2.6.6',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
 function importarBackup(){const inp=$('inputImportBackup');if(!inp.files[0]){alert('Elegí archivo');return}if(!confirm('Reemplaza la base actual. ¿Continuar?'))return;const rd=new FileReader();rd.onload=e=>{try{const b=JSON.parse(e.target.result);if(!b.config||!b.atenciones)throw new Error();data=b.config;atenciones=b.atenciones;saveConfig();saveAtenciones();refreshSelects();renderConfig();cambiarPerfil('general');alert('Backup importado')}catch{alert('Backup inválido')}};rd.readAsText(inp.files[0])}
 function renderConfig(){cargarValoresConfig();cargarReglaConfig();$('listaProfesionales').innerHTML=data.profesionales.map(p=>`<li><strong>${p.nombre}</strong> — ${p.area} ${p.id!=='general'?`<button class="small-btn" onclick="delProfesional('${p.id}')">Borrar</button>`:''}</li>`).join('');$('listaOS').innerHTML=data.obrasSociales.map(o=>`<li>${o} <button class="small-btn" onclick="delOS('${escapeHtml(o)}')">Borrar</button></li>`).join('');$('listaPrestaciones').innerHTML=allPrestaciones().map(p=>`<li>${p} <button class="small-btn" onclick="delPrestacion('${encodeURIComponent(p)}')">Borrar</button></li>`).join('')}
 function cargarValoresConfig(){
