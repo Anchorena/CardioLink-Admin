@@ -827,16 +827,28 @@ function facturaRogelioHTML(datos){
   return `<div class="factura-rogelio-box"><strong>Factura Rogelio</strong>${partes} | <strong>Total estudios: ${r.total}</strong></div>`;
 }
 function actualizarResumenFacturaRogelio(datos){
-  let box=document.getElementById('facturaRogelioResumenBox');
-  const printArea=document.getElementById('printArea');
-  if(!box && printArea){
-    box=document.createElement('div');
-    box.id='facturaRogelioResumenBox';
-    const tabla=printArea.querySelector('table');
-    printArea.insertBefore(box,tabla);
+  let box = document.getElementById('facturaRogelioResumenBox');
+  const printArea = document.getElementById('printArea');
+
+  if (!printArea) return;
+
+  if (!box) {
+    box = document.createElement('div');
+    box.id = 'facturaRogelioResumenBox';
+    box.className = 'factura-rogelio-box';
+
+    const tabla = printArea.querySelector('table');
+
+    if (tabla && tabla.parentNode) {
+      tabla.parentNode.insertBefore(box, tabla);
+    } else {
+      printArea.prepend(box);
+    }
   }
-  if(!box)return;
-  box.innerHTML = $('fOS').value===FILTRO_FACTURA_ROGELIO ? facturaRogelioHTML(datos) : '';
+
+  box.innerHTML = $('fOS')?.value === FILTRO_FACTURA_ROGELIO
+    ? facturaRogelioHTML(datos)
+    : '';
 }
 
 function atencionesPerfil(){const p=perfilObj();if(p.id==='general')return atenciones;if(p.id==='matias')return atenciones.filter(a=>a.profesionalId==='matias'||a.consultaA==='Matías'||a.prestacionA==='Matías');if(p.id==='rogelio')return atenciones.filter(a=>a.profesionalId==='rogelio'||a.consultaA==='Rogelio'||a.prestacionA==='Rogelio');return atenciones.filter(a=>a.profesionalId===p.id)}
