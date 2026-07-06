@@ -167,3 +167,42 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px
 .tabla-mini th,.tabla-mini td{font-size:13px}
 .pendientes-ayuda{margin-top:10px;color:var(--muted);font-size:14px}
 @media(max-width:950px){.liquidacion-panel-grid{grid-template-columns:1fr}.estado-cell{width:190px;max-width:220px}}
+
+
+/* v2.6.3 - badges compactos */
+.estado-cell{
+  width: 160px;
+  max-width: 180px;
+}
+.estado-cell .badge{
+  font-size: 13px !important;
+  padding: 5px 8px !important;
+  line-height: 1.1 !important;
+  border-radius: 999px !important;
+  font-weight: 800 !important;
+  margin: 2px 3px 2px 0;
+}
+.estado-cell > .badge{
+  font-size: 14px !important;
+  padding: 6px 9px !important;
+}
+.estado-informe{
+  display:flex;
+  flex-wrap:wrap;
+  gap:3px;
+  margin-top:5px;
+  max-width:170px;
+}
+.informe-badge{
+  font-size:11px !important;
+  padding:4px 6px !important;
+  line-height:1.05 !important;
+  border-radius:999px !important;
+  white-space:normal;
+}
+.colocacion-badge{
+  font-size:10px !important;
+  padding:3px 6px !important;
+  max-width:95px;
+  white-space:normal !important;
+}

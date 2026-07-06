@@ -679,13 +679,42 @@ function aplicarRegla(){
  let info=`Regla automática: ${regla}.`;
  if(os==='Particular'){ $('tipoCobro').value='Particular';$('formaPago').value='Efectivo';setSelectValue('facturador','Particular'); if(esConsulta(prest))$('montoConsulta').value=valorPrestacionActual(); else $('montoEstudio').value=valorPrestacionActual(); info=`Particular: ${money(valorPrestacionActual())}.`; }
  else if(regla==='IOMA_OSPRERA'){
-  setSelectValue('consultaA','Matías'); setSelectValue('facturador','Fold2 / FEMEBA'); $('tipoCobro').value='Copago'; $('formaPago').value='Efectivo';
-  if(t==='CONSULTA'){ setSelectValue('prestacionA','No aplica');$('montoCopago').value=copConsulta;$('bonoConsulta').checked=true;info=`${os}: consulta a Fold2/Matías + copago ${money(copConsulta)}.`; }
-  else if(t==='ECG'||t==='CONSULTA_ECG'){ setSelectValue('prestacionA','Rogelio');$('montoCopago').value=copElectro;$('bonoConsulta').checked=true;$('bonoEstudio').checked=true;info=`${os}: consulta a Matías, ECG a Rogelio + copago ${money(copElectro)}.`; }
-  else { setSelectValue('prestacionA','Rogelio');$('montoCopago').value=copEstudio;$('bonoConsulta').checked=true;$('bonoEstudio').checked=true;info=`${os}: consulta a Matías/Fold2, estudio a Rogelio + copago ${money(copEstudio)}.`; }
+  setSelectValue('consultaA','Matías');
+  setSelectValue('facturador','Fold2 / FEMEBA');
+  $('tipoCobro').value='Copago';
+  $('formaPago').value='Efectivo';
+
+  if(t==='CONSULTA'){
+    setSelectValue('prestacionA','No aplica');
+    $('montoCopago').value=copConsulta;
+    $('bonoConsulta').checked=true;
+    $('bonoEstudio').checked=false;
+    info=`${os}: consulta a Matías/Fold2 + copago ${money(copConsulta)}.`;
+  } else {
+    // Para Matías, IOMA/OSPRERA: cualquier estudio se liquida como Holter a Rogelio,
+    // con consulta Matías/Fold2 + bono estudio Rogelio + copago de estudio configurable.
+    setSelectValue('prestacionA','Rogelio');
+    $('montoCopago').value=copEstudio;
+    $('bonoConsulta').checked=true;
+    $('bonoEstudio').checked=true;
+    info=`${os}: consulta a Matías/Fold2 + estudio como Holter a Rogelio + copago ${money(copEstudio)}.`;
+  }
  } else if(regla==='OSDE'){
-  setSelectValue('consultaA','Matías'); if(t==='CONSULTA'){ setSelectValue('prestacionA','No aplica');setSelectValue('facturador','Matías');$('bonoConsulta').checked=true;info='OSDE: consulta a Matías.'; }
-  else { setSelectValue('prestacionA','Rogelio');setSelectValue('facturador','Rogelio');$('bonoConsulta').checked=true;$('bonoEstudio').checked=true;info='OSDE: consulta a Matías + estudio a Rogelio.'; }
+  setSelectValue('consultaA','Matías');
+  if(t==='CONSULTA'){
+    setSelectValue('prestacionA','No aplica');
+    setSelectValue('facturador','Matías');
+    $('bonoConsulta').checked=true;
+    $('bonoEstudio').checked=false;
+    info='OSDE: consulta a Matías.';
+  } else {
+    // Para Matías, OSDE: cualquier estudio se carga como Holter a Rogelio.
+    setSelectValue('prestacionA','Rogelio');
+    setSelectValue('facturador','Rogelio');
+    $('bonoConsulta').checked=true;
+    $('bonoEstudio').checked=true;
+    info='OSDE: consulta a Matías + estudio como Holter a Rogelio.';
+  }
  } else if(regla==='SANCOR_PREVENCION'){
   setSelectValue('consultaA','Matías'); if(t==='CONSULTA'){ setSelectValue('prestacionA','No aplica');$('bonoConsulta').checked=true;info=`${os}: consulta a Matías.`; }
   else { setSelectValue('prestacionA','Rogelio');setSelectValue('facturador','Rogelio');$('bonoConsulta').checked=true;$('bonoEstudio').checked=true;info=`${os}: consulta a Matías + estudio a Rogelio.`; }
@@ -890,7 +919,13 @@ function badgesInforme(a){
 }
 function estadoHTML(a,e){return `<span class="badge ${e.cls}">${e.txt}</span>${badgesInforme(a)}`;}
 
-function prestacionContable(a){const r=a.reglaOS||getRegla(a.obraSocial);if(perfilObj().id==='rogelio'&&a.prestacionA==='Rogelio'&&['OSDE','IOMA_OSPRERA'].includes(r)&&tipoPrest(a.prestacion)!=='CONSULTA')return 'Holter';return a.prestacion}
+function prestacionContable(a){
+  const r=a.reglaOS||getRegla(a.obraSocial);
+  if(a.profesionalId==='matias' && a.prestacionA==='Rogelio' && ['OSDE','IOMA_OSPRERA'].includes(r) && tipoPrest(a.prestacion)!=='CONSULTA'){
+    return 'Holter';
+  }
+  return a.prestacion;
+}
 function badgeColocacion(a){return a.colocacionLiquidable?`<br><span class="badge ok colocacion-badge">Coloc. ${escapeHtml(a.colocador||'')}</span>`:''}
 function calcularLiquidacionColocaciones(){
   if(!$('liquidacionResultado'))return;
