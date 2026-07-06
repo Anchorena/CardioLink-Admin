@@ -305,3 +305,25 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px
 @media print{
   .actions-cell{position:static;box-shadow:none}
 }
+
+/* v2.6.7 - Paciente único, Medicloud y prestaciones múltiples */
+.paciente-search-box,
+.prestaciones-multiples-box{
+  background:#f8fafc;
+  border:1px solid #dbe4ee;
+  border-radius:18px;
+  padding:16px;
+}
+.paciente-search-box h3,
+.prestaciones-multiples-box h3{margin:0 0 10px 0;color:#0f172a}
+.paciente-search-grid{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:end}
+.paciente-search-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:end}
+.paciente-results{margin-top:10px;display:grid;gap:8px}
+.paciente-result{display:flex;justify-content:space-between;gap:10px;align-items:center;background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:10px 12px}
+.paciente-selected{margin-top:10px;background:#e0f2fe;border:1px solid #7dd3fc;border-radius:14px;padding:10px 12px;color:#0f172a}
+.prestaciones-extra-grid{display:grid;grid-template-columns:repeat(2,minmax(240px,1fr));gap:10px;margin-top:10px}
+.prestaciones-extra-grid label{background:#fff;border:1px solid #e2e8f0;border-radius:14px;padding:12px;font-weight:700;display:flex;justify-content:space-between;gap:10px;align-items:center}
+.no-cobrar-inline{font-weight:600;color:#991b1b;background:#fee2e2;border-radius:999px;padding:4px 8px;white-space:nowrap}
+.badge.neutral{background:#e5e7eb;color:#374151}
+.modal-import-card textarea{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:14px;padding:14px;font-size:16px;min-height:220px}
+@media(max-width:900px){.paciente-search-grid,.prestaciones-extra-grid{grid-template-columns:1fr}.paciente-search-actions{justify-content:flex-start}}

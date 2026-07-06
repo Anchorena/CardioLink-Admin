@@ -60,7 +60,7 @@ function mostrarPantallaLogin() {
 
       <h1>CardioLink Admin</h1>
       <p class="login-subtitle">by Matías Anchorena</p>
-      <p class="login-meta">Versión 2.5.7 · 2026</p>
+      <p class="login-meta">Versión 2.6.7 · 2026</p>
     </div>
 
     <div class="login-fields">
@@ -474,10 +474,13 @@ const defaults={
   {id:'lucas_drago',nombre:'Dr. Drago Lucas',area:'Diagnóstico por Imágenes',prestaciones:['Ecografía abdominal','Ecografía renal','Ecografía tiroidea','Ecografía mamaria','Doppler arterial','Doppler venoso','Mamografía'],valores:{consulta:0,electro:0,estudio:60000,copagoConsulta:0,copagoElectro:0,copagoEstudio:0}}
  ],
  obrasSociales:['Particular','OSDE','Swiss Medical','Medicus','Galeno','Omint','William Hope','Banco Provincia','OSMATA','OSPEGYPE','OSPE','Medifé','Luz Médica','OPIM / Ensalud','IOMA','OSPRERA','Sancor','Prevención Salud','Integral','Otra'],
- reglasOS:{'IOMA':'IOMA_OSPRERA','OSPRERA':'IOMA_OSPRERA','OSDE':'OSDE','Sancor':'SANCOR_PREVENCION','Prevención Salud':'SANCOR_PREVENCION','Integral':'INTEGRAL'}
+ reglasOS:{'IOMA':'IOMA_OSPRERA','OSPRERA':'IOMA_OSPRERA','OSDE':'OSDE','Sancor':'SANCOR_PREVENCION','Prevención Salud':'SANCOR_PREVENCION','Integral':'INTEGRAL'},
+ pacientes:[]
 };
 
 let data=loadConfig();
+if(!Array.isArray(data.pacientes)) data.pacientes=[];
+if(!data.reglasOS) data.reglasOS=structuredClone(defaults.reglasOS);
 let atenciones=loadAtenciones();
 let editandoId=null;
 let guardarYContinuar=false;
@@ -524,12 +527,17 @@ function init(){
  $('btnIrCarga').addEventListener('click',()=>showSection('carga'));
 $('btnToggleConteo').addEventListener('click',()=>{mostrarConteoDashboard=!mostrarConteoDashboard;renderStats();});
  $('perfilActivo').addEventListener('change',e=>cambiarPerfil(e.target.value));
- ['profesional','obraSocial','prestacion'].forEach(id=>$(id).addEventListener('change',()=>{if(id==='profesional')actualizarPrestaciones();aplicarRegla();calcularCajaCarga()}));
+ ['profesional','obraSocial','prestacion'].forEach(id=>$(id).addEventListener('change',()=>{if(id==='profesional')actualizarPrestaciones();actualizarExtrasPrestaciones();aplicarRegla();calcularCajaCarga()}));
  ['tipoCobro','formaPago','montoConsulta','montoEstudio','montoCopago'].forEach(id=>$(id).addEventListener('input',calcularCajaCarga));
  $('formAtencion').addEventListener('submit',guardarAtencion);
  $('btnGuardarNuevo').addEventListener('click',()=>{guardarYContinuar=true;$('formAtencion').requestSubmit()});
  $('btnNuevoRegistro').addEventListener('click',()=>{limpiarForm();showSection('carga')});
  $('btnLimpiar').addEventListener('click',limpiarForm);
+ if($('btnBuscarPaciente'))$('btnBuscarPaciente').addEventListener('click',buscarPacienteDesdeCarga);
+ if($('buscarPaciente'))$('buscarPaciente').addEventListener('input',()=>{const q=$('buscarPaciente').value.trim();if(q.length>=3)buscarPacienteDesdeCarga();});
+ if($('btnImportarMedicloud'))$('btnImportarMedicloud').addEventListener('click',abrirImportadorMedicloud);
+ if($('btnNuevoPacienteManual'))$('btnNuevoPacienteManual').addEventListener('click',nuevoPacienteManual);
+ if($('dni'))$('dni').addEventListener('blur',buscarPacientePorDniSiExiste);
  $('btnHoy').addEventListener('click',()=>{const h=todayISO();$('fDesde').value=h;$('fHasta').value=h;paginaListado=1;mostrarResumenFiltros();renderTabla();calcularLiquidacionColocaciones()});
  $('btnMes').addEventListener('click',()=>{const d=new Date();const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');$('fDesde').value=`${y}-${m}-01`;$('fHasta').value=todayISO();paginaListado=1;mostrarResumenFiltros();renderTabla();calcularLiquidacionColocaciones()});
  $('btnPeriodo20').addEventListener('click',setPeriodo20);
@@ -590,7 +598,7 @@ function actualizarPrestaciones(){
  const p=profesionalCarga();
  const items=p?.prestaciones?.length?p.prestaciones:allPrestaciones();
  llenarSelect($('prestacion'),items);
- if($('segundoEstudio'))llenarSelect($('segundoEstudio'),items);
+ actualizarExtrasPrestaciones();
 }
 function valoresDelProfesional(p){
   const v = p?.valores || {};
@@ -730,12 +738,16 @@ function aplicarRegla(){
  }
  $('reglaInfo').textContent=info; calcularCajaCarga();
 }
-function calcularCajaCarga(){const tipo=$('tipoCobro').value;let total=0;const part=Number($('montoConsulta').value||0)+Number($('montoEstudio').value||0);const cop=Number($('montoCopago').value||0);if(tipo.includes('Particular'))total+=part;if(tipo.includes('Copago')||tipo.includes('copago'))total+=cop;$('montoTotal').value=total}
+function calcularCajaCarga(){const tipo=$('tipoCobro').value;let total=0;if(tipo==='No cobrar'){ $('montoConsulta').value=0;$('montoEstudio').value=0;$('montoCopago').value=0;$('montoTotal').value=0;return;}const part=Number($('montoConsulta').value||0)+Number($('montoEstudio').value||0);const cop=Number($('montoCopago').value||0);if(tipo.includes('Particular'))total+=part;if(tipo.includes('Copago')||tipo.includes('copago'))total+=cop;$('montoTotal').value=total}
 function limpiarForm(){
  $('formAtencion').reset();
  $('fecha').value=todayISO();
  if($('colocador'))$('colocador').value='Geraldine';
- if($('activarSegundoEstudio'))$('activarSegundoEstudio').checked=false;
+ if($('pacienteId'))$('pacienteId').value='';
+ if($('buscarPaciente'))$('buscarPaciente').value='';
+ if($('resultadosPacientes'))$('resultadosPacientes').innerHTML='';
+ if($('pacienteSeleccionadoBox')){$('pacienteSeleccionadoBox').innerHTML='';$('pacienteSeleccionadoBox').classList.add('hidden')}
+ document.querySelectorAll('.extra-prestacion,.no-cobrar-inline input').forEach(ch=>ch.checked=false);
  ['estudioInformado','estudioImpreso','estudioImpresoFacturacion','estudioEnviadoMail','estudioEnviadoWS'].forEach(id=>{if($(id))$(id).checked=false});
  const p=perfilObj();
  $('profesional').value=p.id==='general'?'matias':p.id;
@@ -753,61 +765,138 @@ function tomarEstadoInformeDesdeCarga(){
   estudioEnviadoWS:$('estudioEnviadoWS')?.checked||false
  };
 }
+function valorDePrestacion(profId, prestacion){
+ const p=data.profesionales.find(x=>x.id===profId)||profesionalCarga();
+ if(!p)return 0;
+ const v=valoresDelProfesional(p);
+ if(esConsulta(prestacion))return v.consulta;
+ if(esElectro(prestacion))return v.electro;
+ return v.estudio;
+}
+function copagoDePrestacion(profId, prestacion){
+ const p=data.profesionales.find(x=>x.id===profId)||profesionalCarga();
+ if(!p)return 0;
+ const v=valoresDelProfesional(p);
+ const t=tipoPrest(prestacion);
+ if(t==='CONSULTA'||t==='CONSULTA_ECG')return v.copagoConsulta;
+ if(t==='ECG')return v.copagoElectro || v.copagoConsulta;
+ return v.copagoEstudio;
+}
+function calcularMontosParaRegistro(prestacion,{adicional=false,noCobrar=false}={}){
+ if(noCobrar)return {montoConsulta:0,montoEstudio:0,montoCopago:0,montoTotal:0,tipoCobro:'No cobrar',formaPago:'No aplica',noCobrar:true};
+ const tipo=$('tipoCobro').value;
+ const os=$('obraSocial').value;
+ const profId=$('profesional').value;
+ const regla=getRegla(os);
+ const t=tipoPrest(prestacion);
+ let montoConsulta=0,montoEstudio=0,montoCopago=0,montoTotal=0;
+ let tipoCobro=tipo;
+ let formaPago=$('formaPago').value;
+ if(adicional){
+   // En estudios adicionales se cobra por prestación, pero la consulta no se duplica.
+   if(os==='Particular' || tipo.includes('Particular')){
+     tipoCobro='Particular';formaPago=formaPago==='No aplica'?'Efectivo':formaPago;
+     montoEstudio=valorDePrestacion(profId,prestacion);
+   } else if(regla==='IOMA_OSPRERA' || tipo.includes('Copago')){
+     tipoCobro='Copago';formaPago=formaPago==='No aplica'?'Efectivo':formaPago;
+     montoCopago=copagoDePrestacion(profId,prestacion);
+   } else {
+     tipoCobro='Sin cobro en caja';formaPago='No aplica';
+   }
+ } else {
+   montoConsulta=Number($('montoConsulta').value||0);
+   montoEstudio=Number($('montoEstudio').value||0);
+   montoCopago=Number($('montoCopago').value||0);
+ }
+ if(tipoCobro.includes('Particular'))montoTotal+=montoConsulta+montoEstudio;
+ if(tipoCobro.includes('Copago')||tipoCobro.includes('copago'))montoTotal+=montoCopago;
+ return {montoConsulta,montoEstudio,montoCopago,montoTotal,tipoCobro,formaPago,noCobrar:false};
+}
 function crearAtencionDesdeFormulario(prestacion, opciones={}){
  const prof=profesionalCarga();
- const esSegunda=!!opciones.segunda;
+ const esAdicional=!!opciones.adicional;
+ const noCobrar=!!opciones.noCobrar;
+ const grupoTurnoId=opciones.grupoTurnoId || ('turno_'+Date.now());
  const estadoInforme=tomarEstadoInformeDesdeCarga();
  const observacionesBase=$('observaciones').value.trim();
+ const montos=calcularMontosParaRegistro(prestacion,{adicional:esAdicional,noCobrar});
+ const cuentaConsulta = esAdicional ? false : true;
  return {
-  id:Date.now()+(esSegunda?1:0),
+  id:Date.now()+Math.floor(Math.random()*100000),
+  grupoTurnoId,
+  pacienteId:$('pacienteId')?.value || pacienteIdPorDni($('dni')?.value) || '',
   fecha:$('fecha').value,
   paciente:$('paciente').value.trim(),
   dni:$('dni').value.trim(),
+  telefono:$('telefono')?.value.trim()||'',
+  email:$('email')?.value.trim()||'',
+  fechaNacimiento:$('fechaNacimiento')?.value||'',
   obraSocial:$('obraSocial').value,
+  coberturaAtencion:$('obraSocial').value,
+  numeroAfiliadoAtencion:$('numeroAfiliado')?.value.trim()||'',
   profesionalId:$('profesional').value,
   profesional:prof?.nombre||'',
   prestacion:prestacion,
   consultaA:$('consultaA').value,
   prestacionA:$('prestacionA').value,
   facturador:$('facturador').value,
-  tipoCobro:esSegunda?'Sin cobro en caja':$('tipoCobro').value,
-  formaPago:esSegunda?'No aplica':$('formaPago').value,
+  tipoCobro:montos.tipoCobro,
+  formaPago:montos.formaPago,
+  noCobrar:!!montos.noCobrar,
   cajaPerfil:$('profesional').value,
   reglaOS:getRegla($('obraSocial').value),
-  montoConsulta:esSegunda?0:Number($('montoConsulta').value||0),
-  montoEstudio:esSegunda?0:Number($('montoEstudio').value||0),
-  montoCopago:esSegunda?0:Number($('montoCopago').value||0),
-  montoTotal:esSegunda?0:Number($('montoTotal').value||0),
-  bonoConsulta:esSegunda?false:$('bonoConsulta').checked,
-  bonoEstudio:$('bonoEstudio').checked,
+  montoConsulta:montos.montoConsulta,
+  montoEstudio:montos.montoEstudio,
+  montoCopago:montos.montoCopago,
+  montoTotal:montos.montoTotal,
+  cuentaConsulta,
+  bonoConsulta:cuentaConsulta ? $('bonoConsulta').checked : false,
+  bonoEstudio: tipoPrest(prestacion)!=='CONSULTA' ? true : $('bonoEstudio').checked,
   bonoFirmado:$('bonoFirmado').checked,
   copiaImpresa:$('copiaImpresa').checked,
-  requiereCopiaImpresa:$('bonoEstudio').checked,
+  requiereCopiaImpresa: tipoPrest(prestacion)!=='CONSULTA',
   fold2:$('fold2').checked,
   planilla:$('planilla').checked,
-  colocacionLiquidable:$('colocacionLiquidable')?.checked||false,
+  colocacionLiquidable: esPrestacionColocable(prestacion) ? ($('colocacionLiquidable')?.checked||false) : false,
   colocador:$('colocador')?.value||'',
   ...estadoInforme,
-  observaciones:esSegunda ? [observacionesBase,'Segundo estudio del mismo paciente'].filter(Boolean).join(' | ') : observacionesBase
+  creadoPor: usuarioSupabase?.email || 'local',
+  creadoEn: new Date().toISOString(),
+  editadoPor:'',
+  editadoEn:'',
+  observaciones:esAdicional ? [observacionesBase,'Estudio adicional del mismo turno'].filter(Boolean).join(' | ') : observacionesBase
  };
+}
+function prestacionesAdicionalesSeleccionadas(prestPrincipal){
+ const extras=[];
+ document.querySelectorAll('.extra-prestacion:checked').forEach(ch=>{
+   const prest=ch.dataset.prestacion;
+   if(!prest || prest===prestPrincipal)return;
+   const noId='noCobrar_'+prest.replaceAll(' ','_').replaceAll('/','_');
+   extras.push({prestacion:prest,noCobrar:!!$(noId)?.checked});
+ });
+ return extras;
 }
 function guardarAtencion(e){
  e.preventDefault();
  calcularCajaCarga();
+ const paciente=upsertPacienteDesdeCarga();
  const registros=[];
+ const grupoTurnoId='turno_'+Date.now();
  const prestPrincipal=$('prestacion').value;
- registros.push(crearAtencionDesdeFormulario(prestPrincipal));
- if($('activarSegundoEstudio')?.checked && $('segundoEstudio')?.value){
-  const prest2=$('segundoEstudio').value;
-  if(prest2 && prest2!==prestPrincipal) registros.push(crearAtencionDesdeFormulario(prest2,{segunda:true}));
- }
+ const noCobrarPrincipal=$('tipoCobro').value==='No cobrar';
+ registros.push(crearAtencionDesdeFormulario(prestPrincipal,{grupoTurnoId,noCobrar:noCobrarPrincipal}));
+ prestacionesAdicionalesSeleccionadas(prestPrincipal).forEach(extra=>{
+   registros.push(crearAtencionDesdeFormulario(extra.prestacion,{grupoTurnoId,adicional:true,noCobrar:extra.noCobrar}));
+ });
+ registros.forEach(r=>{if(paciente?.id)r.pacienteId=paciente.id;});
  atenciones.push(...registros);
  saveAtenciones();
  renderTabla();
  renderStats();
  if(resumenFiltrosVisible)calcularLiquidacionColocaciones();
  limpiarForm();
- if(guardarYContinuar){guardarYContinuar=false;showSection('carga');setTimeout(()=>$('paciente').focus(),50)}else showSection('listado')
+ if(guardarYContinuar){guardarYContinuar=false;showSection('carga');setTimeout(()=>$('buscarPaciente')?.focus(),50)}else showSection('listado')
 }
 
 
@@ -846,6 +935,146 @@ function actualizarResumenFacturaRogelio(datos){
 }
 
 
+
+function normalizarTexto(s){return String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();}
+function pacienteIdPorDni(dni){const d=String(dni||'').replace(/\D/g,'');if(!d)return'';return (data.pacientes||[]).find(p=>String(p.dni||'').replace(/\D/g,'')===d)?.id||'';}
+function pacientesDesdeAtenciones(){
+ const mapa=new Map();
+ atenciones.forEach(a=>{
+   const dni=String(a.dni||'').replace(/\D/g,'');
+   const key=dni || normalizarTexto(a.paciente||'');
+   if(!key || mapa.has(key))return;
+   mapa.set(key,{id:a.pacienteId||('legacy_'+key),nombreCompleto:a.paciente||'',dni:a.dni||'',telefono:a.telefono||'',email:a.email||'',fechaNacimiento:a.fechaNacimiento||'',coberturaHabitual:a.obraSocial||'',numeroAfiliadoHabitual:a.numeroAfiliadoAtencion||'',origen:'historial'});
+ });
+ return Array.from(mapa.values());
+}
+function todosPacientes(){
+ const porDni=new Map();
+ [...(data.pacientes||[]),...pacientesDesdeAtenciones()].forEach(p=>{
+   const key=String(p.dni||'').replace(/\D/g,'') || normalizarTexto(p.nombreCompleto||'');
+   if(key && !porDni.has(key))porDni.set(key,p);
+ });
+ return Array.from(porDni.values());
+}
+function buscarPacientes(q){
+ const nq=normalizarTexto(q);const nd=String(q||'').replace(/\D/g,'');
+ if(!nq && !nd)return[];
+ return todosPacientes().filter(p=>{
+   const dni=String(p.dni||'').replace(/\D/g,'');
+   return (nd && dni.includes(nd)) || normalizarTexto(p.nombreCompleto).includes(nq) || String(p.telefono||'').includes(nd);
+ }).slice(0,8);
+}
+function renderResultadosPacientes(lista){
+ const box=$('resultadosPacientes');if(!box)return;
+ if(!lista.length){box.innerHTML='<div class="muted">No encontré paciente local. Podés cargarlo manual o importar desde Medicloud.</div>';return;}
+ box.innerHTML=lista.map(p=>`<div class="paciente-result"><div><strong>${escapeHtml(p.nombreCompleto||'Paciente')}</strong><br><small>DNI ${escapeHtml(p.dni||'s/d')} · ${escapeHtml(p.telefono||'')} · Cobertura habitual: ${escapeHtml(p.coberturaHabitual||'s/d')}</small></div><button type="button" class="secondary" onclick="usarPaciente('${escapeHtml(p.id)}')">Usar</button></div>`).join('');
+}
+function buscarPacienteDesdeCarga(){renderResultadosPacientes(buscarPacientes($('buscarPaciente')?.value||$('dni')?.value||$('paciente')?.value||''));}
+function buscarPacientePorDniSiExiste(){const dni=$('dni')?.value||'';if(String(dni).replace(/\D/g,'').length>=6){const r=buscarPacientes(dni);if(r.length)renderResultadosPacientes(r);}}
+function usarPaciente(id){
+ const p=todosPacientes().find(x=>x.id===id);if(!p)return;
+ $('pacienteId').value=p.id;
+ $('paciente').value=p.nombreCompleto||'';
+ $('dni').value=p.dni||'';
+ if($('telefono'))$('telefono').value=p.telefono||'';
+ if($('email'))$('email').value=p.email||'';
+ if($('fechaNacimiento'))$('fechaNacimiento').value=fechaISODesdeTexto(p.fechaNacimiento||'')||p.fechaNacimiento||'';
+ if(p.coberturaHabitual){ensureSelectOption($('obraSocial'),p.coberturaHabitual);$('obraSocial').value=p.coberturaHabitual;}
+ if($('numeroAfiliado'))$('numeroAfiliado').value=p.numeroAfiliadoHabitual||'';
+ if($('pacienteSeleccionadoBox')){$('pacienteSeleccionadoBox').classList.remove('hidden');$('pacienteSeleccionadoBox').innerHTML=`Paciente seleccionado: <strong>${escapeHtml(p.nombreCompleto||'')}</strong> · DNI ${escapeHtml(p.dni||'')} · cobertura habitual ${escapeHtml(p.coberturaHabitual||'s/d')}`;}
+ if($('resultadosPacientes'))$('resultadosPacientes').innerHTML='';
+ aplicarRegla();
+}
+function nuevoPacienteManual(){
+ if($('pacienteId'))$('pacienteId').value='';
+ if($('resultadosPacientes'))$('resultadosPacientes').innerHTML='<div class="muted">Cargá los datos manualmente. Si ponés DNI, CardioLink evitará duplicados al guardar.</div>';
+}
+function upsertPacienteDesdeCarga(){
+ const dni=String($('dni')?.value||'').replace(/\D/g,'');
+ const nombreCompleto=($('paciente')?.value||'').trim();
+ if(!dni && !nombreCompleto)return null;
+ if(!Array.isArray(data.pacientes))data.pacientes=[];
+ let p=dni?data.pacientes.find(x=>String(x.dni||'').replace(/\D/g,'')===dni):null;
+ if(!p && $('pacienteId')?.value)p=data.pacientes.find(x=>x.id===$('pacienteId').value);
+ if(!p){p={id:'pac_'+Date.now()+Math.floor(Math.random()*10000),historialCoberturas:[]};data.pacientes.push(p);}
+ p.nombreCompleto=nombreCompleto;
+ p.dni=$('dni')?.value.trim()||p.dni||'';
+ p.telefono=$('telefono')?.value.trim()||p.telefono||'';
+ p.email=$('email')?.value.trim()||p.email||'';
+ p.fechaNacimiento=$('fechaNacimiento')?.value||p.fechaNacimiento||'';
+ const os=$('obraSocial')?.value||'';
+ const afiliado=$('numeroAfiliado')?.value.trim()||'';
+ const actualizar=$('actualizarCoberturaHabitual')?.checked || !p.coberturaHabitual;
+ if(actualizar){
+   if(p.coberturaHabitual && p.coberturaHabitual!==os){
+     p.historialCoberturas=p.historialCoberturas||[];
+     p.historialCoberturas.push({cobertura:p.coberturaHabitual,numeroAfiliado:p.numeroAfiliadoHabitual||'',hasta:todayISO()});
+   }
+   p.coberturaHabitual=os;
+   p.numeroAfiliadoHabitual=afiliado;
+ }
+ p.actualizadoEn=new Date().toISOString();
+ $('pacienteId').value=p.id;
+ saveConfig();
+ return p;
+}
+function fechaISODesdeTexto(t){
+ const m=String(t||'').match(/(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})/);
+ if(!m)return'';
+ let y=m[3]; if(y.length===2)y='19'+y;
+ return `${y.padStart(4,'0')}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+}
+function parsearTextoMedicloud(txt){
+ const lines=String(txt||'').split(/\n+/).map(x=>x.trim()).filter(Boolean);
+ function despuesDe(etiquetas){
+   for(let i=0;i<lines.length;i++){
+     const n=normalizarTexto(lines[i]);
+     if(etiquetas.some(e=>n.includes(e))){
+       for(let j=i+1;j<Math.min(lines.length,i+4);j++){
+         if(!normalizarTexto(lines[j]).includes('opcional') && !normalizarTexto(lines[j]).includes('nombre') && !normalizarTexto(lines[j]).includes('apellido')) return lines[j];
+       }
+     }
+   }
+   return '';
+ }
+ const nombre=despuesDe(['nombre']);
+ const apellido=despuesDe(['apellido']);
+ const email=(txt.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)||[''])[0];
+ const dni=despuesDe(['dni / cedula','dni / cédula','pasaporte']) || (txt.match(/\b\d{7,8}\b/)||[''])[0];
+ const tel=(txt.match(/(?:\+?54)?\s?9?\s?\d{8,11}/)||[''])[0];
+ const fn=despuesDe(['fecha de nacimiento']);
+ return {nombreCompleto:[apellido,nombre].filter(Boolean).join(' ').trim(),dni,email,telefono:tel,fechaNacimiento:fechaISODesdeTexto(fn)};
+}
+function abrirImportadorMedicloud(){
+ const overlay=document.createElement('div');
+ overlay.id='modalImportMedicloud';
+ overlay.innerHTML=`<div class="modal-edit-card modal-import-card"><div class="modal-edit-header"><div><h2>Importar paciente desde Medicloud</h2><p>Copiá los datos visibles de Medicloud, pegalos acá y CardioLink evita duplicados por DNI.</p></div><button type="button" class="modal-close" onclick="cerrarImportadorMedicloud()">×</button></div><textarea id="textoMedicloud" rows="10" placeholder="Pegá acá el texto copiado desde Medicloud"></textarea><div class="modal-actions"><button class="secondary" type="button" onclick="cerrarImportadorMedicloud()">Cancelar</button><button class="primary" type="button" onclick="aplicarImportMedicloud()">Completar paciente</button></div></div>`;
+ document.body.appendChild(overlay);
+ setTimeout(()=>$('textoMedicloud')?.focus(),50);
+}
+function cerrarImportadorMedicloud(){const m=$('modalImportMedicloud');if(m)m.remove();}
+function aplicarImportMedicloud(){
+ const datos=parsearTextoMedicloud($('textoMedicloud')?.value||'');
+ if(!datos.nombreCompleto && !datos.dni){alert('No pude detectar nombre o DNI. Pegá más datos de la ficha.');return;}
+ const existente=datos.dni?buscarPacientes(datos.dni)[0]:null;
+ if(existente && !confirm('Este DNI ya existe en CardioLink. ¿Actualizar datos de la ficha existente con lo copiado desde Medicloud?')){usarPaciente(existente.id);cerrarImportadorMedicloud();return;}
+ $('paciente').value=datos.nombreCompleto||'';
+ $('dni').value=datos.dni||'';
+ if($('telefono'))$('telefono').value=datos.telefono||'';
+ if($('email'))$('email').value=datos.email||'';
+ if($('fechaNacimiento'))$('fechaNacimiento').value=datos.fechaNacimiento||'';
+ upsertPacienteDesdeCarga();
+ const id=$('pacienteId').value;
+ if(id)usarPaciente(id);
+ cerrarImportadorMedicloud();
+}
+function actualizarExtrasPrestaciones(){
+ const prest=$('prestacion')?.value||'';
+ document.querySelectorAll('.extra-prestacion').forEach(ch=>{
+   ch.disabled=ch.dataset.prestacion===prest;
+   if(ch.disabled)ch.checked=false;
+ });
+}
 function atencionesPerfil(){const p=perfilObj();if(p.id==='general')return atenciones;if(p.id==='matias')return atenciones.filter(a=>a.profesionalId==='matias'||a.consultaA==='Matías'||a.prestacionA==='Matías');if(p.id==='rogelio')return atenciones.filter(a=>a.profesionalId==='rogelio'||a.consultaA==='Rogelio'||a.prestacionA==='Rogelio');return atenciones.filter(a=>a.profesionalId===p.id)}
 
 function esPendienteAdministrativo(a){
@@ -867,7 +1096,7 @@ function activarFiltroPendientesGlobal(){
  renderStats();
 }
 function filtrar(){const desde=$('fDesde').value,hasta=$('fHasta').value,os=$('fOS').value,prof=$('fProfesional').value,prest=$('fPrestacion').value,pac=$('fPaciente').value.toLowerCase().trim(),dest=$('fDestino').value;return atencionesPerfil().filter(a=>{if(modoPendientesGlobal&&!esPendienteAdministrativo(a))return false;if(!modoPendientesGlobal){if(desde&&a.fecha<desde)return false;if(hasta&&a.fecha>hasta)return false;}if(os===FILTRO_FACTURA_ROGELIO && !esRegistroFacturaRogelio(a))return false;if(os&&os!==FILTRO_FACTURA_ROGELIO&&a.obraSocial!==os)return false;if(prof&&a.profesional!==prof)return false;if(prest&&a.prestacion!==prest)return false;if(pac&&!String(a.paciente||'').toLowerCase().includes(pac))return false;if(dest&&a.consultaA!==dest&&a.prestacionA!==dest)return false;return true}).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''))}
-function consultaComputada(a){const t=tipoPrest(a.prestacion),r=a.reglaOS||getRegla(a.obraSocial);if(t==='CONSULTA'||t==='CONSULTA_ECG')return true;if(t==='ECG'&&r==='IOMA_OSPRERA')return true;if(t!=='CONSULTA'){return ['GENERAL_CONSULTA_EXTRA','SANCOR_PREVENCION','IOMA_OSPRERA','OSDE'].includes(r)}return !!a.bonoConsulta}
+function consultaComputada(a){if(a.cuentaConsulta===false)return false;const t=tipoPrest(a.prestacion),r=a.reglaOS||getRegla(a.obraSocial);if(t==='CONSULTA'||t==='CONSULTA_ECG')return true;if(t==='ECG'&&r==='IOMA_OSPRERA')return true;if(t!=='CONSULTA'){return ['GENERAL_CONSULTA_EXTRA','SANCOR_PREVENCION','IOMA_OSPRERA','OSDE'].includes(r)}return !!a.bonoConsulta}
 function resumen(datos){return datos.reduce((r,a)=>{if(consultaComputada(a))r.consultas++;if(tipoPrest(a.prestacion)!=='CONSULTA')r.estudios++;if(a.bonoConsulta||consultaComputada(a))r.bonoConsulta++;if(a.bonoEstudio||tipoPrest(a.prestacion)!=='CONSULTA')r.bonoEstudio++;const particular=Number(a.montoConsulta||0)+Number(a.montoEstudio||0);const copago=Number(a.montoCopago||0);r.particular+=particular;r.copago+=copago;r.total+=particular+copago;return r},{consultas:0,estudios:0,bonoConsulta:0,bonoEstudio:0,particular:0,copago:0,total:0})}
 function dineroVisible(a){
  const p=perfilObj(),cp=a.cajaPerfil||a.profesionalId;
@@ -924,7 +1153,7 @@ function badgesInforme(a){
  if(!entregado)badges.push('<span class="badge bad informe-badge">Pend. envío/entrega</span>');
  return `<div class="estado-informe">${badges.join(' ')}</div>`;
 }
-function estadoHTML(a,e){return `<span class="badge ${e.cls}">${e.txt}</span>${badgesInforme(a)}`;}
+function estadoHTML(a,e){const nc=a.noCobrar?'<span class="badge neutral informe-badge">No cobrado</span>':'';return `<span class="badge ${e.cls}">${e.txt}</span>${nc}${badgesInforme(a)}`;}
 
 function prestacionContable(a){
   const r=a.reglaOS||getRegla(a.obraSocial);
@@ -1042,7 +1271,7 @@ function renderLiquidacionColocacionesSolapa(){
     tbody.appendChild(tr);
   });
 }
-function renderTabla(){const tbody=$('tablaAtenciones');tbody.innerHTML='';const datos=filtrar();renderResumenCaja(datos);actualizarResumenFacturaRogelio(datos);if(resumenFiltrosVisible)calcularLiquidacionColocaciones();const totalPaginas=Math.max(1,Math.ceil(datos.length/TAMANIO_PAGINA_LISTADO));if(paginaListado>totalPaginas)paginaListado=totalPaginas;if(paginaListado<1)paginaListado=1;actualizarPaginacionListado(datos.length,totalPaginas);const inicio=(paginaListado-1)*TAMANIO_PAGINA_LISTADO;const datosPagina=datos.slice(inicio,inicio+TAMANIO_PAGINA_LISTADO);if(!datos.length){tbody.innerHTML='<tr><td colspan="14">No hay registros para mostrar.</td></tr>';return}datosPagina.forEach(a=>{const e=evaluarEstado(a),m=dineroVisible(a),part=m.particular;const tr=document.createElement('tr');if(editandoId===a.id){tr.className='edit-row';tr.innerHTML=`<td><input type="date" id="e_fecha_${a.id}" value="${a.fecha||''}"></td><td><input id="e_paciente_${a.id}" value="${escapeHtml(a.paciente)}"><input id="e_obs_${a.id}" value="${escapeHtml(a.observaciones||'')}" placeholder="Obs."></td><td>${selectHTML('e_os_'+a.id,data.obrasSociales,a.obraSocial)}</td><td>${selectProfesionalesHTML('e_prof_'+a.id,a.profesionalId)}</td><td>${selectPrestacionesHTML('e_prest_'+a.id,a.profesionalId,a.prestacion)}</td><td>${selectHTML('e_consultaA_'+a.id,opcionesDestinos(a.consultaA),a.consultaA)}</td><td>${selectHTML('e_prestacionA_'+a.id,opcionesDestinos(a.prestacionA),a.prestacionA)}</td><td>${selectHTML('e_tipoCobro_'+a.id,['Sin cobro en caja','Copago','Particular','Particular + copago'],a.tipoCobro)}<div class="inline-checks-edit"><label><input type="checkbox" id="e_bonoConsulta_${a.id}" ${a.bonoConsulta?'checked':''}> Bono consulta</label><label><input type="checkbox" id="e_bonoEstudio_${a.id}" ${a.bonoEstudio?'checked':''}> Bono estudio</label><label><input type="checkbox" id="e_bonoFirmado_${a.id}" ${a.bonoFirmado?'checked':''}> Bono firmado</label><label><input type="checkbox" id="e_copiaImpresa_${a.id}" ${a.copiaImpresa?'checked':''}> Copia</label><label><input type="checkbox" id="e_fold2_${a.id}" ${a.fold2?'checked':''}> Fold2</label><label><input type="checkbox" id="e_planilla_${a.id}" ${a.planilla?'checked':''}> Planilla</label><label><input type="checkbox" id="e_colocacionLiquidable_${a.id}" ${a.colocacionLiquidable?'checked':''}> Colocación liquidable</label><label>Colocador/a ${selectHTML('e_colocador_'+a.id,['Geraldine','Secretaría','Otro'],a.colocador||'Geraldine')}</label></div></td><td>${selectHTML('e_formaPago_'+a.id,['No aplica','Efectivo','Transferencia','Mixto'],a.formaPago||'No aplica')}</td><td><input type="number" id="e_particular_${a.id}" value="${Number(a.montoConsulta||0)+Number(a.montoEstudio||0)}"></td><td><input type="number" id="e_copago_${a.id}" value="${Number(a.montoCopago||0)}"></td><td>${money(a.montoTotal)}</td><td class="estado-cell">${estadoHTML(a,e)}</td><td class="no-print actions-cell"><div class="edit-actions"><button class="small-btn" onclick="guardarEdicion(${a.id})">Guardar</button><button class="small-btn" onclick="cancelarEdicion()">Cancelar</button></div></td>`}else{tr.innerHTML=`<td>${formatFecha(a.fecha)}</td><td><strong>${escapeHtml(a.paciente)}</strong>${a.observaciones?'<br><small>'+escapeHtml(a.observaciones)+'</small>':''}</td><td>${a.obraSocial}</td><td>${a.profesional}</td><td>${prestacionListado(a)}${badgeColocacion(a)}</td><td>${a.consultaA}</td><td>${a.prestacionA}</td><td>${a.tipoCobro||''}</td><td>${a.formaPago||'No aplica'}</td><td class="money-col">${money(part)}</td><td class="money-col">${money(m.copago)}</td><td class="money-col">${money(m.total)}</td><td class="estado-cell">${estadoHTML(a,e)}</td><td class="no-print actions-cell"><div class="edit-actions"><button onclick="editarAtencion(${a.id})">Editar</button><button onclick="eliminarAtencion(${a.id})">Borrar</button></div></td>`}tbody.appendChild(tr)})}
+function renderTabla(){const tbody=$('tablaAtenciones');tbody.innerHTML='';const datos=filtrar();renderResumenCaja(datos);actualizarResumenFacturaRogelio(datos);if(resumenFiltrosVisible)calcularLiquidacionColocaciones();const totalPaginas=Math.max(1,Math.ceil(datos.length/TAMANIO_PAGINA_LISTADO));if(paginaListado>totalPaginas)paginaListado=totalPaginas;if(paginaListado<1)paginaListado=1;actualizarPaginacionListado(datos.length,totalPaginas);const inicio=(paginaListado-1)*TAMANIO_PAGINA_LISTADO;const datosPagina=datos.slice(inicio,inicio+TAMANIO_PAGINA_LISTADO);if(!datos.length){tbody.innerHTML='<tr><td colspan="14">No hay registros para mostrar.</td></tr>';return}datosPagina.forEach(a=>{const e=evaluarEstado(a),m=dineroVisible(a),part=m.particular;const tr=document.createElement('tr');if(editandoId===a.id){tr.className='edit-row';tr.innerHTML=`<td><input type="date" id="e_fecha_${a.id}" value="${a.fecha||''}"></td><td><input id="e_paciente_${a.id}" value="${escapeHtml(a.paciente)}"><input id="e_obs_${a.id}" value="${escapeHtml(a.observaciones||'')}" placeholder="Obs."></td><td>${selectHTML('e_os_'+a.id,data.obrasSociales,a.obraSocial)}</td><td>${selectProfesionalesHTML('e_prof_'+a.id,a.profesionalId)}</td><td>${selectPrestacionesHTML('e_prest_'+a.id,a.profesionalId,a.prestacion)}</td><td>${selectHTML('e_consultaA_'+a.id,opcionesDestinos(a.consultaA),a.consultaA)}</td><td>${selectHTML('e_prestacionA_'+a.id,opcionesDestinos(a.prestacionA),a.prestacionA)}</td><td>${selectHTML('e_tipoCobro_'+a.id,['Sin cobro en caja','No cobrar','Copago','Particular','Particular + copago'],a.tipoCobro)}<div class="inline-checks-edit"><label><input type="checkbox" id="e_bonoConsulta_${a.id}" ${a.bonoConsulta?'checked':''}> Bono consulta</label><label><input type="checkbox" id="e_bonoEstudio_${a.id}" ${a.bonoEstudio?'checked':''}> Bono estudio</label><label><input type="checkbox" id="e_bonoFirmado_${a.id}" ${a.bonoFirmado?'checked':''}> Bono firmado</label><label><input type="checkbox" id="e_copiaImpresa_${a.id}" ${a.copiaImpresa?'checked':''}> Copia</label><label><input type="checkbox" id="e_fold2_${a.id}" ${a.fold2?'checked':''}> Fold2</label><label><input type="checkbox" id="e_planilla_${a.id}" ${a.planilla?'checked':''}> Planilla</label><label><input type="checkbox" id="e_colocacionLiquidable_${a.id}" ${a.colocacionLiquidable?'checked':''}> Colocación liquidable</label><label>Colocador/a ${selectHTML('e_colocador_'+a.id,['Geraldine','Secretaría','Otro'],a.colocador||'Geraldine')}</label></div></td><td>${selectHTML('e_formaPago_'+a.id,['No aplica','Efectivo','Transferencia','Mixto'],a.formaPago||'No aplica')}</td><td><input type="number" id="e_particular_${a.id}" value="${Number(a.montoConsulta||0)+Number(a.montoEstudio||0)}"></td><td><input type="number" id="e_copago_${a.id}" value="${Number(a.montoCopago||0)}"></td><td>${money(a.montoTotal)}</td><td class="estado-cell">${estadoHTML(a,e)}</td><td class="no-print actions-cell"><div class="edit-actions"><button class="small-btn" onclick="guardarEdicion(${a.id})">Guardar</button><button class="small-btn" onclick="cancelarEdicion()">Cancelar</button></div></td>`}else{tr.innerHTML=`<td>${formatFecha(a.fecha)}</td><td><strong>${escapeHtml(a.paciente)}</strong>${a.observaciones?'<br><small>'+escapeHtml(a.observaciones)+'</small>':''}</td><td>${a.obraSocial}</td><td>${a.profesional}</td><td>${prestacionListado(a)}${badgeColocacion(a)}</td><td>${a.consultaA}</td><td>${a.prestacionA}</td><td>${a.tipoCobro||''}</td><td>${a.formaPago||'No aplica'}</td><td class="money-col">${money(part)}</td><td class="money-col">${money(m.copago)}</td><td class="money-col">${money(m.total)}</td><td class="estado-cell">${estadoHTML(a,e)}</td><td class="no-print actions-cell"><div class="edit-actions"><button onclick="editarAtencion(${a.id})">Editar</button><button onclick="eliminarAtencion(${a.id})">Borrar</button></div></td>`}tbody.appendChild(tr)})}
 function actualizarPaginacionListado(totalRegistros,totalPaginas){
  const box=$('paginacionListado'),info=$('paginaInfo'),prev=$('btnPaginaAnterior'),next=$('btnPaginaSiguiente');
  if(!box||!info||!prev||!next)return;
@@ -1089,7 +1318,7 @@ function abrirModalEdicion(id){
         <div><label>Prestación</label>${selectPrestacionesHTML('m_prest',a.profesionalId,a.prestacion)}</div>
         <div><label>Consulta a</label>${selectHTML('m_consultaA',opcionesDestinos(a.consultaA),a.consultaA)}</div>
         <div><label>Estudio/prestación a</label>${selectHTML('m_prestacionA',opcionesDestinos(a.prestacionA),a.prestacionA)}</div>
-        <div><label>Tipo de cobro</label>${selectHTML('m_tipoCobro',['Sin cobro en caja','Copago','Particular','Particular + copago'],a.tipoCobro||'Sin cobro en caja')}</div>
+        <div><label>Tipo de cobro</label>${selectHTML('m_tipoCobro',['Sin cobro en caja','No cobrar','Copago','Particular','Particular + copago'],a.tipoCobro||'Sin cobro en caja')}</div>
         <div><label>Forma de pago</label>${selectHTML('m_formaPago',['No aplica','Efectivo','Transferencia','Mixto'],a.formaPago||'No aplica')}</div>
         <div><label>Particular</label><input type="number" id="m_particular" value="${particular}"></div>
         <div><label>Copago</label><input type="number" id="m_copago" value="${copago}"></div>
@@ -1135,8 +1364,7 @@ function guardarEdicionModal(id){
   const part=Number($('m_particular').value||0);
   const cop=Number($('m_copago').value||0);
   let total=0;
-  if(tipo.includes('Particular'))total+=part;
-  if(tipo.includes('Copago')||tipo.includes('copago'))total+=cop;
+  if(tipo==='No cobrar'){total=0;} else {if(tipo.includes('Particular'))total+=part;if(tipo.includes('Copago')||tipo.includes('copago'))total+=cop;}
   a.fecha=$('m_fecha').value;
   a.paciente=$('m_paciente').value.trim();
   a.dni=$('m_dni').value.trim();
@@ -1150,9 +1378,10 @@ function guardarEdicionModal(id){
   a.tipoCobro=tipo;
   a.formaPago=$('m_formaPago').value;
   a.cajaPerfil=profId;
-  a.montoConsulta=esConsulta(prest)?part:0;
-  a.montoEstudio=esConsulta(prest)?0:part;
-  a.montoCopago=cop;
+  a.noCobrar=tipo==='No cobrar';
+  a.montoConsulta=a.noCobrar?0:(esConsulta(prest)?part:0);
+  a.montoEstudio=a.noCobrar?0:(esConsulta(prest)?0:part);
+  a.montoCopago=a.noCobrar?0:cop;
   a.montoTotal=total;
   a.bonoConsulta=$('m_bonoConsulta').checked;
   a.bonoEstudio=$('m_bonoEstudio').checked;
@@ -1169,6 +1398,8 @@ function guardarEdicionModal(id){
   a.estudioEnviadoMail=$('m_estudioEnviadoMail')?.checked||false;
   a.estudioEnviadoWS=$('m_estudioEnviadoWS')?.checked||false;
   a.reglaOS=getRegla(a.obraSocial);
+  a.editadoPor=usuarioSupabase?.email||'local';
+  a.editadoEn=new Date().toISOString();
   saveAtenciones();
   cerrarModalEdicion();
   renderTabla();
@@ -1181,19 +1412,18 @@ function eliminarAtencion(id){if(!confirm('¿Borrar esta atención?'))return;ate
 
 function setPeriodo20(){const d=new Date();let y=d.getFullYear(),m=d.getMonth()+1,day=d.getDate(),dy=y,dm=m,hy=y,hm=m+1;if(day<20){dm=m-1;hm=m}if(dm<1){dm=12;dy--}if(hm>12){hm=1;hy++}$('fDesde').value=`${dy}-${String(dm).padStart(2,'0')}-20`;$('fHasta').value=`${hy}-${String(hm).padStart(2,'0')}-20`;paginaListado=1;mostrarResumenFiltros();renderTabla();calcularLiquidacionColocaciones()}
 function resetFiltros(){
-  $('fDesde').value='';
-  $('fHasta').value='';
-  $('fOS').value='';
-  $('fProfesional').value='';
-  $('fPrestacion').value='';
-  $('fPaciente').value='';
-  $('fDestino').value='';
-
-  paginaActualListado = 1;
-
-  ocultarResumenFiltros();
-  renderTabla();
-  renderStats();
+ $('fDesde').value='';
+ $('fHasta').value='';
+ $('fOS').value='';
+ $('fProfesional').value='';
+ $('fPrestacion').value='';
+ $('fPaciente').value='';
+ $('fDestino').value='';
+ paginaListado=1;
+ modoPendientesGlobal=false;
+ ocultarResumenFiltros();
+ renderTabla();
+ renderStats();
 }
 function verDineroPeriodo(){
   const res=$('dineroPeriodoResultado');
@@ -1224,7 +1454,7 @@ function verDineroPeriodo(){
 function ocultarDineroPeriodo(){$('dineroPeriodoResultado').textContent='';$('claveDinero').value=''}
 function setPrintMeta(){$('printMeta').textContent=`Perfil: ${perfilObj().nombre} | Registros: ${filtrar().length} | ${formatFecha(todayISO())}`}
 function exportarCSV(){const datos=filtrar();if(!datos.length){alert('No hay datos');return}const r=resumen(datos);const incluirValoresExport=!!$('incluirValoresImpresion')?.checked;const filas=[['CardioLink Admin v2.5.9'],['Perfil',perfilObj().nombre],['Consultas',r.consultas],['Estudios',r.estudios],[],['Fecha','Paciente','OS','Profesional','Prestación','Consulta a','Estudio a','Tipo','Forma','Particular visible','Copago visible','Total visible','Estado']];datos.forEach(a=>{const m=dineroVisible(a),e=evaluarEstado(a);filas.push([formatFecha(a.fecha),a.paciente,a.obraSocial,a.profesional,prestacionListado(a),a.consultaA,a.prestacionA,a.tipoCobro,a.formaPago,incluirValoresExport?m.particular:'',incluirValoresExport?m.copago:'',incluirValoresExport?m.total:'',e.txt])});const csv=filas.map(r=>r.map(c=>`"${String(c??'').replaceAll('"','""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_listado.csv';a.click()}
-function exportarBackup(){const b={app:'CardioLink Admin',version:'2.6.6',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
+function exportarBackup(){const b={app:'CardioLink Admin',version:'2.6.7',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
 function importarBackup(){const inp=$('inputImportBackup');if(!inp.files[0]){alert('Elegí archivo');return}if(!confirm('Reemplaza la base actual. ¿Continuar?'))return;const rd=new FileReader();rd.onload=e=>{try{const b=JSON.parse(e.target.result);if(!b.config||!b.atenciones)throw new Error();data=b.config;atenciones=b.atenciones;saveConfig();saveAtenciones();refreshSelects();renderConfig();cambiarPerfil('general');alert('Backup importado')}catch{alert('Backup inválido')}};rd.readAsText(inp.files[0])}
 function renderConfig(){cargarValoresConfig();cargarReglaConfig();$('listaProfesionales').innerHTML=data.profesionales.map(p=>`<li><strong>${p.nombre}</strong> — ${p.area} ${p.id!=='general'?`<button class="small-btn" onclick="delProfesional('${p.id}')">Borrar</button>`:''}</li>`).join('');$('listaOS').innerHTML=data.obrasSociales.map(o=>`<li>${o} <button class="small-btn" onclick="delOS('${escapeHtml(o)}')">Borrar</button></li>`).join('');$('listaPrestaciones').innerHTML=allPrestaciones().map(p=>`<li>${p} <button class="small-btn" onclick="delPrestacion('${encodeURIComponent(p)}')">Borrar</button></li>`).join('')}
 function cargarValoresConfig(){

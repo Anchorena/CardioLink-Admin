@@ -9,7 +9,7 @@
 <body>
 <aside class="sidebar">
   <div class="brand">
-    <div class="brand-main">CardioLink Admin <span>v2.6.6</span></div>
+    <div class="brand-main">CardioLink Admin <span>v2.6.7</span></div>
     <div class="brand-by">by Matías Anchorena</div>
   </div>
   <button class="nav active" data-section="dashboard">Dashboard</button>
@@ -67,18 +67,47 @@
     <div class="card">
       <h2>Carga de turno/atención de atención</h2>
       <form id="formAtencion" class="form-grid">
-        <div><label>Fecha</label><input type="date" id="fecha" required></div>
-        <div><label>Paciente</label><input type="text" id="paciente" required placeholder="Apellido y nombre"></div>
-        <div><label>DNI</label><input type="text" id="dni" placeholder="Opcional"></div>
-        <div><label>Obra social / cobertura</label><select id="obraSocial"></select></div>
-        <div><label>Profesional actuante</label><select id="profesional"></select></div>
-        <div><label>Prestación</label><select id="prestacion"></select></div>
+        <input type="hidden" id="pacienteId">
 
-        <div class="full segundo-estudio-box">
-          <label class="check-line"><input type="checkbox" id="activarSegundoEstudio"> Agregar segundo estudio como registro separado</label>
-          <div class="segundo-estudio-grid">
-            <div><label>Segundo estudio</label><select id="segundoEstudio"></select></div>
-            <p class="muted">Se guardará como otro registro del mismo paciente. Si corresponde cobro propio, editá ese segundo registro desde el listado.</p>
+        <div class="full paciente-search-box">
+          <h3>Paciente</h3>
+          <div class="paciente-search-grid">
+            <div>
+              <label>Buscar paciente por DNI / apellido / teléfono</label>
+              <input type="text" id="buscarPaciente" placeholder="Ej: 10176264 o Mogliasso">
+            </div>
+            <div class="paciente-search-actions">
+              <button class="secondary" type="button" id="btnBuscarPaciente">Buscar local</button>
+              <button class="secondary" type="button" id="btnImportarMedicloud">Importar desde Medicloud</button>
+              <button class="secondary" type="button" id="btnNuevoPacienteManual">Nuevo manual</button>
+            </div>
+          </div>
+          <div id="resultadosPacientes" class="paciente-results"></div>
+          <div id="pacienteSeleccionadoBox" class="paciente-selected hidden"></div>
+        </div>
+
+        <div><label>Fecha</label><input type="date" id="fecha" required></div>
+        <div><label>Apellido y nombre</label><input type="text" id="paciente" required placeholder="Apellido y nombre"></div>
+        <div><label>DNI</label><input type="text" id="dni" placeholder="Opcional"></div>
+        <div><label>Teléfono</label><input type="text" id="telefono" placeholder="Opcional"></div>
+        <div><label>Email</label><input type="email" id="email" placeholder="Opcional"></div>
+        <div><label>Fecha nacimiento</label><input type="date" id="fechaNacimiento"></div>
+        <div><label>Obra social / cobertura para este turno</label><select id="obraSocial"></select></div>
+        <div><label>Nº afiliado para este turno</label><input type="text" id="numeroAfiliado" placeholder="Opcional"></div>
+        <div class="full">
+          <label class="check-line"><input type="checkbox" id="actualizarCoberturaHabitual"> Guardar esta cobertura como cobertura habitual del paciente</label>
+        </div>
+        <div><label>Profesional actuante</label><select id="profesional"></select></div>
+        <div><label>Prestación principal</label><select id="prestacion"></select></div>
+
+        <div class="full prestaciones-multiples-box">
+          <h3>Prestaciones adicionales del mismo turno</h3>
+          <p class="muted">Cada estudio adicional se guarda como registro separado, vinculado al mismo turno. La consulta se cuenta una sola vez; el copago/particular se calcula por cada estudio salvo que marques “No cobrar”.</p>
+          <div class="prestaciones-extra-grid">
+            <label><input type="checkbox" class="extra-prestacion" data-prestacion="Ecocardiograma Doppler" id="extraEco"> Ecocardiograma Doppler <span class="no-cobrar-inline"><input type="checkbox" id="noCobrar_Ecocardiograma_Doppler"> No cobrar</span></label>
+            <label><input type="checkbox" class="extra-prestacion" data-prestacion="MAPA" id="extraMAPA"> MAPA <span class="no-cobrar-inline"><input type="checkbox" id="noCobrar_MAPA"> No cobrar</span></label>
+            <label><input type="checkbox" class="extra-prestacion" data-prestacion="Holter" id="extraHolter"> Holter <span class="no-cobrar-inline"><input type="checkbox" id="noCobrar_Holter"> No cobrar</span></label>
+            <label><input type="checkbox" class="extra-prestacion" data-prestacion="Electrocardiograma" id="extraECG"> ECG / Electrocardiograma <span class="no-cobrar-inline"><input type="checkbox" id="noCobrar_Electrocardiograma"> No cobrar</span></label>
           </div>
         </div>
 
@@ -95,7 +124,7 @@
         </select></div>
 
         <div><label>Tipo de cobro</label><select id="tipoCobro">
-          <option>Sin cobro en caja</option><option>Copago</option><option>Particular</option><option>Particular + copago</option>
+          <option>Sin cobro en caja</option><option>No cobrar</option><option>Copago</option><option>Particular</option><option>Particular + copago</option>
         </select></div>
 
         <div><label>Forma de pago</label><select id="formaPago">
@@ -165,7 +194,7 @@
 
       <div id="printArea">
         <div class="print-title">
-          <h2>CardioLink Admin v2.6.6</h2>
+          <h2>CardioLink Admin v2.6.7</h2>
           <p>by Matías Anchorena — Listado filtrado</p>
           <p id="printMeta"></p>
         </div>
