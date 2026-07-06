@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CardioLink Admin v2.6.3</title>
-<link rel="stylesheet" href="styles.css?v=263">
+<title>CardioLink Admin v2.6.4</title>
+<link rel="stylesheet" href="styles.css?v=264">
 </head>
 <body>
 <aside class="sidebar">
   <div class="brand">
-    <div class="brand-main">CardioLink Admin <span>v2.6.3</span></div>
+    <div class="brand-main">CardioLink Admin <span>v2.6.4</span></div>
     <div class="brand-by">by Matías Anchorena</div>
   </div>
   <button class="nav active" data-section="dashboard">Dashboard</button>
@@ -165,7 +165,7 @@
 
       <div id="printArea">
         <div class="print-title">
-          <h2>CardioLink Admin v2.6.3</h2>
+          <h2>CardioLink Admin v2.6.4</h2>
           <p>by Matías Anchorena — Listado filtrado</p>
           <p id="printMeta"></p>
         </div>
@@ -203,16 +203,18 @@
           <div id="dineroPeriodoResultado" class="money-result"></div>
         </div>
 
-        <table>
-          <thead>
-          <tr>
-            <th>Fecha</th><th>Paciente</th><th>OS</th><th>Profesional</th><th>Prestación</th>
-            <th>Consulta a</th><th>Estudio a</th><th>Tipo cobro</th><th>Forma pago</th>
-            <th class="money-col">Particular</th><th class="money-col">Copago</th><th class="money-col">Total</th><th>Estado</th><th class="no-print"></th>
-          </tr>
-          </thead>
-          <tbody id="tablaAtenciones"></tbody>
-        </table>
+        <div class="tabla-listado-wrap">
+          <table>
+            <thead>
+            <tr>
+              <th>Fecha</th><th>Paciente</th><th>OS</th><th>Profesional</th><th>Prestación</th>
+              <th>Consulta a</th><th>Estudio a</th><th>Tipo cobro</th><th>Forma pago</th>
+              <th class="money-col">Particular</th><th class="money-col">Copago</th><th class="money-col">Total</th><th>Estado</th><th class="no-print"></th>
+            </tr>
+            </thead>
+            <tbody id="tablaAtenciones"></tbody>
+          </table>
+        </div>
 
         <div class="pagination no-print" id="paginacionListado">
           <button class="secondary" type="button" id="btnPaginaAnterior">Anterior</button>
@@ -329,6 +331,6 @@
   </section>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="app.js?v=263"></script>
+<script src="app.js?v=264"></script>
 </body>
 </html>
