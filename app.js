@@ -1661,7 +1661,24 @@ async function iniciarCardioLink() {
   iniciarControlInactividad();
   iniciarRefrescoAutomatico();
 }
+function renderConfig(){
+  if (typeof renderConfiguracion === 'function') {
+    renderConfiguracion();
+    return;
+  }
 
+  if (typeof renderListasConfig === 'function') {
+    renderListasConfig();
+    return;
+  }
+
+  if (typeof renderConfigPacientes === 'function') {
+    renderConfigPacientes();
+    return;
+  }
+
+  console.warn('renderConfig no encontró una función de configuración equivalente.');
+}
 iniciarCardioLink();
 
 
