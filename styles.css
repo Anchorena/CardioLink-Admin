@@ -540,3 +540,7 @@ input[type="checkbox"]{
 .clear-search:hover {
   background: #cbd5e1;
 }
+
+
+/* v2.7.4: cerrar sesión fijo abajo izquierda */
+#btnCerrarSesion{left:18px!important;right:auto!important;bottom:18px!important;padding:13px 18px!important;font-size:16px!important;font-weight:800!important;border-radius:14px!important;min-width:190px!important;}

@@ -334,17 +334,20 @@ function agregarBotonCerrarSesion() {
   btn.id = "btnCerrarSesion";
   btn.textContent = "Cerrar sesión";
   btn.style.position = "fixed";
-  btn.style.right = "14px";
-  btn.style.bottom = "14px";
+  btn.style.left = "18px";
+  btn.style.right = "auto";
+  btn.style.bottom = "18px";
   btn.style.zIndex = "9999";
-  btn.style.padding = "10px 14px";
-  btn.style.borderRadius = "10px";
+  btn.style.padding = "13px 18px";
+  btn.style.borderRadius = "14px";
   btn.style.border = "none";
   btn.style.background = "#334155";
   btn.style.color = "white";
-  btn.style.fontWeight = "700";
+  btn.style.fontWeight = "800";
   btn.style.cursor = "pointer";
   btn.style.boxShadow = "0 6px 20px rgba(0,0,0,.25)";
+  btn.style.fontSize = "16px";
+  btn.style.minWidth = "190px";
 
   btn.addEventListener("click", async () => {
     if (confirm("¿Cerrar sesión en CardioLink?")) {
@@ -521,67 +524,95 @@ function llenarSelect(sel,items,val=x=>x,txt=x=>x){sel.innerHTML='';items.forEac
 function llenarTodos(sel,items,label){sel.innerHTML=`<option value="">${label}</option>`;items.forEach(i=>{const o=document.createElement('option');o.value=i;o.textContent=i;sel.appendChild(o)})}
 
 function init(){
- document.body.classList.toggle('dark',localStorage.getItem('cardiolink_dark_v25')==='1');
- refreshSelects(); $('fecha').value=todayISO(); if($('adminDesde')) $('adminDesde').value=todayISO(); if($('adminHasta')) $('adminHasta').value=todayISO(); cambiarPerfil('general'); renderConfig(); actualizarHora(); setInterval(actualizarHora,30000);
- document.querySelectorAll('.nav').forEach(b=>b.addEventListener('click',()=>showSection(b.dataset.section)));
- $('btnDark').addEventListener('click',()=>{document.body.classList.toggle('dark');localStorage.setItem('cardiolink_dark_v25',document.body.classList.contains('dark')?'1':'0')});
- $('btnIrCarga').addEventListener('click',()=>showSection('carga'));
-$('btnToggleConteo').addEventListener('click',()=>{mostrarConteoDashboard=!mostrarConteoDashboard;renderStats();});
- $('perfilActivo').addEventListener('change',e=>cambiarPerfil(e.target.value));
- ['profesional','obraSocial','prestacion'].forEach(id=>$(id).addEventListener('change',()=>{if(id==='profesional')actualizarPrestaciones();actualizarExtrasPrestaciones();aplicarRegla();calcularCajaCarga()}));
- ['tipoCobro','formaPago','montoConsulta','montoEstudio','montoCopago'].forEach(id=>$(id).addEventListener('input',calcularCajaCarga));
- $('formAtencion').addEventListener('submit',guardarAtencion);
- $('btnGuardarNuevo').addEventListener('click',()=>{guardarYContinuar=true;$('formAtencion').requestSubmit()});
- $('btnNuevoRegistro').addEventListener('click',()=>{limpiarForm();showSection('carga')});
- $('btnLimpiar').addEventListener('click',limpiarForm);
- if($('btnBuscarPaciente'))$('btnBuscarPaciente').addEventListener('click',buscarPacienteDesdeCarga);
- if($('buscarPaciente'))$('buscarPaciente').addEventListener('input',()=>{const q=$('buscarPaciente').value.trim();if(q.length>=3)buscarPacienteDesdeCarga();});
- if($('btnImportarMedicloud'))$('btnImportarMedicloud').addEventListener('click',abrirImportadorMedicloud);
- if($('btnNuevoPacienteManual'))$('btnNuevoPacienteManual').addEventListener('click',nuevoPacienteManual);
- if($('dni'))$('dni').addEventListener('blur',buscarPacientePorDniSiExiste);
- $('btnHoy').addEventListener('click',()=>{const h=todayISO();$('fDesde').value=h;$('fHasta').value=h;paginaListado=1;mostrarResumenFiltros();renderTabla();calcularLiquidacionColocaciones()});
- $('btnMes').addEventListener('click',()=>{const d=new Date();const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');$('fDesde').value=`${y}-${m}-01`;$('fHasta').value=todayISO();paginaListado=1;mostrarResumenFiltros();renderTabla();calcularLiquidacionColocaciones()});
- $('btnPeriodo20').addEventListener('click',setPeriodo20);
- $('btnFiltrar').addEventListener('click',()=>{paginaListado=1;mostrarResumenFiltros();renderTabla();calcularLiquidacionColocaciones()});
- $('btnResetFiltros').addEventListener('click',resetFiltros);
- if($('btnPendientesGlobal'))$('btnPendientesGlobal').addEventListener('click',activarFiltroPendientesGlobal);
- if($('btnVerPendientesSolapa'))$('btnVerPendientesSolapa').addEventListener('click',()=>{showSection('listado');activarFiltroPendientesGlobal();});
- if($('btnLiqCalcular'))$('btnLiqCalcular').addEventListener('click',renderLiquidacionColocacionesSolapa);
- if($('btnLiqPrint'))$('btnLiqPrint').addEventListener('click',imprimirLiquidacionColocaciones);
- if($('btnLiqMes'))$('btnLiqMes').addEventListener('click',()=>{const d=new Date();const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');$('liqDesde').value=`${y}-${m}-01`;$('liqHasta').value=todayISO();renderLiquidacionColocacionesSolapa();});
- if($('btnPaginaAnterior'))$('btnPaginaAnterior').addEventListener('click',()=>{if(paginaListado>1){paginaListado--;renderTabla();}});
- if($('btnPaginaSiguiente'))$('btnPaginaSiguiente').addEventListener('click',()=>{paginaListado++;renderTabla();});
- $('btnPrint').addEventListener('click',()=>{setPrintMeta();document.body.classList.toggle('print-money',!!$('incluirValoresImpresion')?.checked);window.print();setTimeout(()=>document.body.classList.remove('print-money'),500)});
- $('btnExportExcel').addEventListener('click',exportarCSV);
- const vc=valoresColocacion();
- if($('valorColocacionHolter'))$('valorColocacionHolter').value=vc.holter;
- if($('valorColocacionMapa'))$('valorColocacionMapa').value=vc.mapa;
- if($('valorColocacionEcg'))$('valorColocacionEcg').value=vc.ecg;
- if($('liqValorHolter'))$('liqValorHolter').value=vc.holter;
- if($('liqValorMapa'))$('liqValorMapa').value=vc.mapa;
- if($('liqValorEcg'))$('liqValorEcg').value=vc.ecg;
- if($('liqDesde')){const d=new Date();const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');$('liqDesde').value=`${y}-${m}-01`;$('liqHasta').value=todayISO();}
- if($('btnCalcularLiquidacion'))$('btnCalcularLiquidacion').addEventListener('click',()=>{mostrarResumenFiltros();calcularLiquidacionColocaciones()});
- ['valorColocacionHolter','valorColocacionMapa','valorColocacionEcg'].forEach(id=>{if($(id))$(id).addEventListener('input',()=>{guardarValoresColocacion();calcularLiquidacionColocaciones()})});
- $('btnVerDineroPeriodo').addEventListener('click',verDineroPeriodo);
- $('btnOcultarDineroPeriodo').addEventListener('click',ocultarDineroPeriodo);
- $('btnGuardarValores').addEventListener('click',guardarValores);
- $('cfgProfesionalValores').addEventListener('change',cargarValoresConfig);
- $('cfgReglaOS').addEventListener('change',cargarReglaConfig);
- $('btnGuardarReglaOS').addEventListener('click',guardarReglaConfig);
- $('btnAddProfesional').addEventListener('click',addProfesional);
- $('btnAddOS').addEventListener('click',addOS);
- $('btnAddPrestacion').addEventListener('click',addPrestacion);
- $('btnExportBackup').addEventListener('click',exportarBackup);
- $('btnImportBackup').addEventListener('click',importarBackup);
- $('btnBorrarDatos').addEventListener('click',()=>{if(confirm('¿Borrar atenciones?')){atenciones=[];saveAtenciones();renderTabla();renderStats()}});
- if($('btnBuscarDuplicadosPacientes'))$('btnBuscarDuplicadosPacientes').addEventListener('click',renderDuplicadosPacientes);
- if($('btnPacientesBuscar'))$('btnPacientesBuscar').addEventListener('click',()=>renderPacientesPanel($('pacientesBuscar')?.value||''));
- if($('pacientesBuscar'))$('pacientesBuscar').addEventListener('input',()=>{const q=$('pacientesBuscar').value.trim(); if(q.length>=3)renderPacientesPanel(q);});
- if($('btnPacientesLimpiar'))$('btnPacientesLimpiar').addEventListener('click',()=>{if($('pacientesBuscar'))$('pacientesBuscar').value=''; pacienteSeleccionadoPanelId=''; renderPacientesPanel('',false); if($('pacienteDetalle'))$('pacienteDetalle').innerHTML='<h3>Ficha del paciente</h3><p class="muted">Seleccioná un paciente de la lista. Desde acá podés ver su historial cruzado entre médicos, editar datos básicos o cargar una nueva atención.</p>';});
- if($('btnPacientesTodos'))$('btnPacientesTodos').addEventListener('click',()=>renderPacientesPanel('',true));
- if($('btnPacientesDuplicados'))$('btnPacientesDuplicados').addEventListener('click',()=>{renderDuplicadosPacientes(); const a=$('resultadoDuplicadosPacientes'), b=$('resultadoDuplicadosPacientesPacientes'); if(a&&b)b.innerHTML=a.innerHTML;});
- renderTabla(); renderStats(); ocultarResumenFiltros();
+  // Init robusto: ningún botón faltante debe romper toda la app.
+  const on = (id, ev, fn) => {
+    const el = $(id);
+    if (el && typeof fn === 'function') el.addEventListener(ev, fn);
+  };
+
+  try { document.body.classList.toggle('dark', localStorage.getItem('cardiolink_dark_v25') === '1'); } catch(e) {}
+  try { refreshSelects(); } catch(e) { console.warn('refreshSelects falló:', e); }
+  if ($('fecha')) $('fecha').value = todayISO();
+  if ($('adminDesde')) $('adminDesde').value = todayISO();
+  if ($('adminHasta')) $('adminHasta').value = todayISO();
+  try { cambiarPerfil('general'); } catch(e) { console.warn('cambiarPerfil inicial falló:', e); }
+  try { if (typeof renderConfig === 'function') renderConfig(); } catch(e) { console.warn('renderConfig falló:', e); }
+  try { actualizarHora(); setInterval(actualizarHora,30000); } catch(e) {}
+
+  document.querySelectorAll('.nav').forEach(b=>b.addEventListener('click',()=>showSection(b.dataset.section)));
+
+  on('btnDark','click',()=>{document.body.classList.toggle('dark');localStorage.setItem('cardiolink_dark_v25',document.body.classList.contains('dark')?'1':'0')});
+  on('btnIrCarga','click',()=>showSection('carga'));
+  on('btnToggleConteo','click',()=>{mostrarConteoDashboard=!mostrarConteoDashboard;renderStats();});
+  on('perfilActivo','change',e=>cambiarPerfil(e.target.value));
+
+  ['profesional','obraSocial','prestacion'].forEach(id=>on(id,'change',()=>{if(id==='profesional')actualizarPrestaciones();actualizarExtrasPrestaciones();aplicarRegla();calcularCajaCarga()}));
+  ['tipoCobro','formaPago','montoConsulta','montoEstudio','montoCopago'].forEach(id=>on(id,'input',calcularCajaCarga));
+
+  on('formAtencion','submit',guardarAtencion);
+  on('btnGuardarNuevo','click',()=>{guardarYContinuar=true;$('formAtencion')?.requestSubmit()});
+  on('btnNuevoRegistro','click',()=>{limpiarForm();showSection('carga')});
+  on('btnLimpiar','click',limpiarForm);
+
+  on('btnBuscarPaciente','click',buscarPacienteDesdeCarga);
+  on('buscarPaciente','input',()=>{const q=$('buscarPaciente').value.trim();if(q.length>=3)buscarPacienteDesdeCarga();});
+  on('btnImportarMedicloud','click',abrirImportadorMedicloud);
+  on('btnNuevoPacienteManual','click',nuevoPacienteManual);
+  on('dni','blur',buscarPacientePorDniSiExiste);
+
+  on('btnHoy','click',()=>{const h=todayISO();$('fDesde').value=h;$('fHasta').value=h;paginaListado=1;mostrarResumenFiltros();renderTabla();calcularLiquidacionColocaciones()});
+  on('btnMes','click',()=>{const d=new Date();const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');$('fDesde').value=`${y}-${m}-01`;$('fHasta').value=todayISO();paginaListado=1;mostrarResumenFiltros();renderTabla();calcularLiquidacionColocaciones()});
+  on('btnPeriodo20','click',setPeriodo20);
+  on('btnFiltrar','click',()=>{paginaListado=1;mostrarResumenFiltros();renderTabla();calcularLiquidacionColocaciones()});
+  on('btnResetFiltros','click',resetFiltros);
+  on('btnPendientesGlobal','click',activarFiltroPendientesGlobal);
+  on('btnVerPendientesSolapa','click',()=>{showSection('listado');activarFiltroPendientesGlobal();});
+
+  on('btnLiqCalcular','click',renderLiquidacionColocacionesSolapa);
+  on('btnLiqPrint','click',imprimirLiquidacionColocaciones);
+  on('btnLiqMes','click',()=>{const d=new Date();const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');$('liqDesde').value=`${y}-${m}-01`;$('liqHasta').value=todayISO();renderLiquidacionColocacionesSolapa();});
+
+  on('btnPaginaAnterior','click',()=>{if(paginaListado>1){paginaListado--;renderTabla();}});
+  on('btnPaginaSiguiente','click',()=>{paginaListado++;renderTabla();});
+  on('btnPrint','click',()=>{setPrintMeta();document.body.classList.toggle('print-money',!!$('incluirValoresImpresion')?.checked);window.print();setTimeout(()=>document.body.classList.remove('print-money'),500)});
+  on('btnExportExcel','click',exportarCSV);
+
+  const vc=valoresColocacion();
+  if($('valorColocacionHolter'))$('valorColocacionHolter').value=vc.holter;
+  if($('valorColocacionMapa'))$('valorColocacionMapa').value=vc.mapa;
+  if($('valorColocacionEcg'))$('valorColocacionEcg').value=vc.ecg;
+  if($('liqValorHolter'))$('liqValorHolter').value=vc.holter;
+  if($('liqValorMapa'))$('liqValorMapa').value=vc.mapa;
+  if($('liqValorEcg'))$('liqValorEcg').value=vc.ecg;
+  if($('liqDesde')){const d=new Date();const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');$('liqDesde').value=`${y}-${m}-01`;$('liqHasta').value=todayISO();}
+  on('btnCalcularLiquidacion','click',()=>{mostrarResumenFiltros();calcularLiquidacionColocaciones()});
+  ['valorColocacionHolter','valorColocacionMapa','valorColocacionEcg'].forEach(id=>on(id,'input',()=>{guardarValoresColocacion();calcularLiquidacionColocaciones()}));
+
+  on('btnVerDineroPeriodo','click',verDineroPeriodo);
+  on('btnOcultarDineroPeriodo','click',ocultarDineroPeriodo);
+  on('btnGuardarValores','click',guardarValores);
+  on('cfgProfesionalValores','change',cargarValoresConfig);
+  on('cfgReglaOS','change',cargarReglaConfig);
+  on('btnGuardarReglaOS','click',guardarReglaConfig);
+  on('btnAddProfesional','click',addProfesional);
+  on('btnAddOS','click',addOS);
+  on('btnAddPrestacion','click',addPrestacion);
+  on('btnExportBackup','click',exportarBackup);
+  on('btnImportBackup','click',importarBackup);
+  on('btnBorrarDatos','click',()=>{if(confirm('¿Borrar atenciones?')){atenciones=[];saveAtenciones();renderTabla();renderStats()}});
+  on('btnBuscarDuplicadosPacientes','click',renderDuplicadosPacientes);
+
+  // Solapa Pacientes
+  on('btnPacientesBuscar','click',()=>renderPacientesPanel($('pacientesBuscar')?.value||'',false));
+  on('pacientesBuscar','keydown',(e)=>{if(e.key==='Enter'){e.preventDefault();renderPacientesPanel($('pacientesBuscar')?.value||'',false);}});
+  on('pacientesBuscar','input',()=>{const q=$('pacientesBuscar').value.trim(); if(q.length>=3)renderPacientesPanel(q,false);});
+  on('btnPacientesLimpiar','click',()=>{if($('pacientesBuscar'))$('pacientesBuscar').value=''; pacienteSeleccionadoPanelId=''; renderPacientesPanel('',false); if($('pacienteDetalle'))$('pacienteDetalle').innerHTML='<h3>Ficha del paciente</h3><p class="muted">Seleccioná un paciente de la lista. Desde acá podés ver su historial cruzado entre médicos, editar datos básicos o cargar una nueva atención.</p>';});
+  on('btnPacientesTodos','click',()=>renderPacientesPanel('',true));
+  on('btnPacientesDuplicados','click',()=>{renderDuplicadosPacientes(); const a=$('resultadoDuplicadosPacientes'), b=$('resultadoDuplicadosPacientesPacientes'); if(a&&b)b.innerHTML=a.innerHTML;});
+
+  try { renderTabla(); } catch(e) { console.warn('renderTabla falló:', e); }
+  try { renderStats(); } catch(e) { console.warn('renderStats falló:', e); }
+  try { ocultarResumenFiltros(); } catch(e) {}
 }
 function refreshSelects(){
  llenarSelect($('perfilActivo'),data.profesionales,p=>p.id,p=>p.nombre);
