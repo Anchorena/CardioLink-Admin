@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CardioLink Admin v2.7.1</title>
-<link rel="stylesheet" href="styles.css?v=271">
+<title>CardioLink Admin v2.7.2</title>
+<link rel="stylesheet" href="styles.css?v=272">
 </head>
 <body>
 <aside class="sidebar">
   <div class="brand">
-    <div class="brand-main">CardioLink Admin <span>v2.7.1</span></div>
+    <div class="brand-main">CardioLink Admin <span>v2.7.2</span></div>
     <div class="brand-by">by Matías Anchorena</div>
   </div>
   <button class="nav active" data-section="dashboard">Dashboard</button>
@@ -76,7 +76,7 @@
           <div class="paciente-search-grid">
             <div>
               <label>Buscar paciente por DNI / apellido / teléfono</label>
-              <input type="text" id="buscarPaciente" placeholder="Ej: 10176264 o Mogliasso">
+              <input type="text" id="buscarPaciente" placeholder="Ej: DNI o apellido">
             </div>
             <div class="paciente-search-actions">
               <button class="secondary" type="button" id="btnBuscarPaciente">Buscar local</button>
@@ -177,9 +177,12 @@
       <h2>Pacientes</h2>
       <p class="muted">Buscador único de pacientes de CardioLink. Un mismo paciente puede tener atenciones de Matías, Rogelio, Drago u otros profesionales sin duplicarse.</p>
       <div class="pacientes-toolbar">
-        <div>
+        <div class="pacientes-search-wrap">
           <label>Buscar por DNI / apellido / teléfono / email</label>
-          <input type="text" id="pacientesBuscar" placeholder="Ej: 10176264, Mogliasso, 1136840880">
+          <div class="search-input-clear">
+            <input type="text" id="pacientesBuscar" placeholder="Ej: DNI, apellido, teléfono o email">
+            <button class="clear-search" type="button" id="btnPacientesLimpiar" title="Limpiar búsqueda">×</button>
+          </div>
         </div>
         <button class="primary" type="button" id="btnPacientesBuscar">Buscar</button>
         <button class="secondary" type="button" id="btnPacientesTodos">Ver todos</button>
@@ -233,7 +236,7 @@
 
       <div id="printArea">
         <div class="print-title">
-          <h2>CardioLink Admin v2.7.1</h2>
+          <h2>CardioLink Admin v2.7.2</h2>
           <p>by Matías Anchorena — Listado filtrado</p>
           <p id="printMeta"></p>
         </div>
@@ -607,6 +610,6 @@
   </section>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="app.js?v=271"></script>
+<script src="app.js?v=272"></script>
 </body>
 </html>

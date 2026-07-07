@@ -499,3 +499,44 @@ input[type="checkbox"]{
 .paciente-edit-actions{justify-content:flex-end;margin-top:16px}
 @media(max-width:1050px){.pacientes-toolbar{grid-template-columns:1fr}.pacientes-layout{grid-template-columns:1fr}.paciente-ficha-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:700px){.paciente-ficha-head{display:block}.paciente-ficha-actions{justify-content:flex-start;margin-top:10px}.paciente-ficha-grid{grid-template-columns:1fr}}
+
+
+/* ===== PACIENTES: BUSCADOR CON LIMPIAR ===== */
+.pacientes-search-wrap {
+  min-width: 320px;
+  flex: 1;
+}
+
+.search-input-clear {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.search-input-clear input {
+  padding-right: 48px !important;
+}
+
+.clear-search {
+  position: absolute;
+  right: 12px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 30px;
+  height: 30px;
+  border: none;
+  border-radius: 999px;
+  background: #e5e7eb;
+  color: #111827;
+  font-size: 22px;
+  font-weight: 900;
+  line-height: 1;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.clear-search:hover {
+  background: #cbd5e1;
+}

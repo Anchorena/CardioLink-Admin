@@ -578,6 +578,7 @@ $('btnToggleConteo').addEventListener('click',()=>{mostrarConteoDashboard=!mostr
  if($('btnBuscarDuplicadosPacientes'))$('btnBuscarDuplicadosPacientes').addEventListener('click',renderDuplicadosPacientes);
  if($('btnPacientesBuscar'))$('btnPacientesBuscar').addEventListener('click',()=>renderPacientesPanel($('pacientesBuscar')?.value||''));
  if($('pacientesBuscar'))$('pacientesBuscar').addEventListener('input',()=>{const q=$('pacientesBuscar').value.trim(); if(q.length>=3)renderPacientesPanel(q);});
+ if($('btnPacientesLimpiar'))$('btnPacientesLimpiar').addEventListener('click',()=>{if($('pacientesBuscar'))$('pacientesBuscar').value=''; pacienteSeleccionadoPanelId=''; renderPacientesPanel('',false); if($('pacienteDetalle'))$('pacienteDetalle').innerHTML='<h3>Ficha del paciente</h3><p class="muted">Seleccioná un paciente de la lista. Desde acá podés ver su historial cruzado entre médicos, editar datos básicos o cargar una nueva atención.</p>';});
  if($('btnPacientesTodos'))$('btnPacientesTodos').addEventListener('click',()=>renderPacientesPanel('',true));
  if($('btnPacientesDuplicados'))$('btnPacientesDuplicados').addEventListener('click',()=>{renderDuplicadosPacientes(); const a=$('resultadoDuplicadosPacientes'), b=$('resultadoDuplicadosPacientesPacientes'); if(a&&b)b.innerHTML=a.innerHTML;});
  renderTabla(); renderStats(); ocultarResumenFiltros();
@@ -947,20 +948,41 @@ function pacienteIdPorDni(dni){const d=String(dni||'').replace(/\D/g,'');if(!d)r
 function pacientesDesdeAtenciones(){
  const mapa=new Map();
  atenciones.forEach(a=>{
-   const dni=String(a.dni||'').replace(/\D/g,'');
-   const key=dni || normalizarTexto(a.paciente||'');
+   const dni=dniLimpio(a.dni);
+   const nombre=normalizarTexto(a.paciente||'');
+   const key=a.pacienteId || dni || nombre;
    if(!key || mapa.has(key))return;
    mapa.set(key,{id:a.pacienteId||('legacy_'+key),nombreCompleto:a.paciente||'',dni:a.dni||'',telefono:a.telefono||'',email:a.email||'',fechaNacimiento:a.fechaNacimiento||'',coberturaHabitual:a.obraSocial||'',numeroAfiliadoHabitual:a.numeroAfiliadoAtencion||'',origen:'historial'});
  });
  return Array.from(mapa.values());
 }
-function todosPacientes(){
- const porDni=new Map();
- [...(data.pacientes||[]),...pacientesDesdeAtenciones()].forEach(p=>{
-   const key=String(p.dni||'').replace(/\D/g,'') || normalizarTexto(p.nombreCompleto||'');
-   if(key && !porDni.has(key))porDni.set(key,p);
+function mergePacienteInfo(dest, src){
+ if(!dest || !src)return dest;
+ ['nombreCompleto','dni','telefono','email','fechaNacimiento','coberturaHabitual','numeroAfiliadoHabitual'].forEach(k=>{
+   if(!dest[k] && src[k])dest[k]=src[k];
  });
- return Array.from(porDni.values());
+ return dest;
+}
+function todosPacientes(){
+ const lista=[];
+ const activos=[...(data.pacientes||[]).filter(pacienteActivoPanel),...pacientesDesdeAtenciones()];
+ activos.forEach(p=>{
+   const dni=dniLimpio(p.dni);
+   const nombre=normalizarTexto(p.nombreCompleto||p.paciente||'');
+   const id=String(p.id||'');
+   let existente=null;
+   if(id)existente=lista.find(x=>String(x.id||'')===id);
+   if(!existente && dni)existente=lista.find(x=>dniLimpio(x.dni)===dni);
+   if(!existente && nombre)existente=lista.find(x=>normalizarTexto(x.nombreCompleto||x.paciente||'')===nombre);
+   if(existente){
+     mergePacienteInfo(existente,p);
+     // Si el existente es legacy y el nuevo tiene id persistente, conservar el persistente.
+     if(String(existente.id||'').startsWith('legacy_') && p.id && !String(p.id).startsWith('legacy_')) existente.id=p.id;
+   }else{
+     lista.push({...p});
+   }
+ });
+ return lista;
 }
 function buscarPacientes(q){
  const nq=normalizarTexto(q);const nd=String(q||'').replace(/\D/g,'');
@@ -1459,8 +1481,8 @@ function verDineroPeriodo(){
 }
 function ocultarDineroPeriodo(){$('dineroPeriodoResultado').textContent='';$('claveDinero').value=''}
 function setPrintMeta(){$('printMeta').textContent=`Perfil: ${perfilObj().nombre} | Registros: ${filtrar().length} | ${formatFecha(todayISO())}`}
-function exportarCSV(){const datos=filtrar();if(!datos.length){alert('No hay datos');return}const r=resumen(datos);const incluirValoresExport=!!$('incluirValoresImpresion')?.checked;const filas=[['CardioLink Admin v2.5.9'],['Perfil',perfilObj().nombre],['Consultas',r.consultas],['Estudios',r.estudios],[],['Fecha','Paciente','OS','Profesional','Prestación','Consulta a','Estudio a','Tipo','Forma','Particular visible','Copago visible','Total visible','Estado']];datos.forEach(a=>{const m=dineroVisible(a),e=evaluarEstado(a);filas.push([formatFecha(a.fecha),a.paciente,a.obraSocial,a.profesional,prestacionListado(a),a.consultaA,a.prestacionA,a.tipoCobro,a.formaPago,incluirValoresExport?m.particular:'',incluirValoresExport?m.copago:'',incluirValoresExport?m.total:'',e.txt])});const csv=filas.map(r=>r.map(c=>`"${String(c??'').replaceAll('"','""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_listado.csv';a.click()}
-function exportarBackup(){const b={app:'CardioLink Admin',version:'2.6.9',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
+function exportarCSV(){const datos=filtrar();if(!datos.length){alert('No hay datos');return}const r=resumen(datos);const incluirValoresExport=!!$('incluirValoresImpresion')?.checked;const filas=[['CardioLink Admin v2.7.2'],['Perfil',perfilObj().nombre],['Consultas',r.consultas],['Estudios',r.estudios],[],['Fecha','Paciente','OS','Profesional','Prestación','Consulta a','Estudio a','Tipo','Forma','Particular visible','Copago visible','Total visible','Estado']];datos.forEach(a=>{const m=dineroVisible(a),e=evaluarEstado(a);filas.push([formatFecha(a.fecha),a.paciente,a.obraSocial,a.profesional,prestacionListado(a),a.consultaA,a.prestacionA,a.tipoCobro,a.formaPago,incluirValoresExport?m.particular:'',incluirValoresExport?m.copago:'',incluirValoresExport?m.total:'',e.txt])});const csv=filas.map(r=>r.map(c=>`"${String(c??'').replaceAll('"','""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_listado.csv';a.click()}
+function exportarBackup(){const b={app:'CardioLink Admin',version:'2.7.2',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
 function importarBackup(){const inp=$('inputImportBackup');if(!inp.files[0]){alert('Elegí archivo');return}if(!confirm('Reemplaza la base actual. ¿Continuar?'))return;const rd=new FileReader();rd.onload=e=>{try{const b=JSON.parse(e.target.result);if(!b.config||!b.atenciones)throw new Error();data=b.config;atenciones=b.atenciones;saveConfig();saveAtenciones();refreshSelects();renderConfig();cambiarPerfil('general');alert('Backup importado')}catch{alert('Backup inválido')}};rd.readAsText(inp.files[0])}
 
 function dniLimpio(v){return String(v||'').replace(/\D/g,'');}
@@ -1469,35 +1491,41 @@ function nombreClavePaciente(p){return normalizarTexto(p.nombreCompleto||p.pacie
 function pacienteActivoConfig(p){return p && p.estado!=='fusionado';}
 function atencionesDelPaciente(p){
   const dni=dniLimpio(p.dni);
+  const nombre=normalizarTexto(p.nombreCompleto||p.paciente||'');
   return atenciones.filter(a=>{
     if(p.id && a.pacienteId===p.id)return true;
     if(dni && dniLimpio(a.dni)===dni)return true;
+    if(nombre && normalizarTexto(a.paciente||'')===nombre)return true;
     return false;
   });
 }
 function detectarDuplicadosPacientes(){
   if(!Array.isArray(data.pacientes))data.pacientes=[];
-  const pacientes=data.pacientes.filter(pacienteActivoConfig);
+  const pacientes=[...(data.pacientes||[]).filter(pacienteActivoPanel),...pacientesDesdeAtenciones().filter(pacienteActivoPanel)];
   const pares=[];
   const seen=new Set();
   for(let i=0;i<pacientes.length;i++){
     for(let j=i+1;j<pacientes.length;j++){
       const a=pacientes[i], b=pacientes[j];
+      if(a.id && b.id && a.id===b.id)continue;
       const dniA=dniLimpio(a.dni), dniB=dniLimpio(b.dni);
       const telA=telLimpio(a.telefono), telB=telLimpio(b.telefono);
       const nomA=nombreClavePaciente(a), nomB=nombreClavePaciente(b);
       const fnA=a.fechaNacimiento||'', fnB=b.fechaNacimiento||'';
       let score=0, motivos=[];
       if(dniA && dniB && dniA===dniB){score+=100;motivos.push('mismo DNI');}
-      if(telA && telB && telA.length>=7 && telB.length>=7 && telA===telB){score+=40;motivos.push('mismo teléfono');}
-      if(a.email && b.email && normalizarTexto(a.email)===normalizarTexto(b.email)){score+=35;motivos.push('mismo email');}
+      if(telA && telB && telA.length>=7 && telB.length>=7 && telA===telB){score+=45;motivos.push('mismo teléfono');}
+      if(a.email && b.email && normalizarTexto(a.email)===normalizarTexto(b.email)){score+=40;motivos.push('mismo email');}
       if(fnA && fnB && fnA===fnB){score+=25;motivos.push('misma fecha de nacimiento');}
       if(nomA && nomB){
-        if(nomA===nomB){score+=45;motivos.push('mismo nombre');}
-        else if(nomA.includes(nomB)||nomB.includes(nomA)){score+=25;motivos.push('nombre parecido');}
+        if(nomA===nomB){
+          score+=70;motivos.push('mismo nombre');
+          if((dniA&&!dniB)||(!dniA&&dniB)) {score+=20;motivos.push('uno tiene DNI y el otro no');}
+        }
+        else if(nomA.includes(nomB)||nomB.includes(nomA)){score+=35;motivos.push('nombre parecido');}
       }
       if(score>=60){
-        const key=[a.id,b.id].sort().join('|');
+        const key=[a.id||nomA,b.id||nomB].sort().join('|');
         if(!seen.has(key)){seen.add(key);pares.push({a,b,score,motivos});}
       }
     }
@@ -1532,102 +1560,73 @@ function renderDuplicadosPacientes(){
     </div>`;
   }).join('');
 }
+function asegurarPacientePersistente(p){
+  if(!Array.isArray(data.pacientes))data.pacientes=[];
+  if(!p)return null;
+  let existente=null;
+  if(p.id && !String(p.id).startsWith('legacy_')) existente=data.pacientes.find(x=>x.id===p.id);
+  const dni=dniLimpio(p.dni);
+  const nombre=normalizarTexto(p.nombreCompleto||p.paciente||'');
+  if(!existente && dni) existente=data.pacientes.find(x=>dniLimpio(x.dni)===dni);
+  if(!existente && nombre) existente=data.pacientes.find(x=>normalizarTexto(x.nombreCompleto||x.paciente||'')===nombre);
+  if(!existente){
+    existente={id:'pac_'+Date.now()+Math.floor(Math.random()*10000),historialCoberturas:[]};
+    data.pacientes.push(existente);
+  }
+  mergePacienteInfo(existente,p);
+  return existente;
+}
 function fusionarPacientes(principalId,duplicadoId){
   if(principalId===duplicadoId)return;
-  const principal=(data.pacientes||[]).find(p=>p.id===principalId);
-  const duplicado=(data.pacientes||[]).find(p=>p.id===duplicadoId);
+  const principalOrigen=todosPacientes().find(p=>clavePacientePanel(p)===principalId || p.id===principalId);
+  const duplicado=todosPacientes().find(p=>clavePacientePanel(p)===duplicadoId || p.id===duplicadoId);
+  const principal=asegurarPacientePersistente(principalOrigen);
   if(!principal||!duplicado){alert('No encontré uno de los pacientes.');return;}
-  const cantAntes=atencionesDelPaciente(duplicado).length;
+  const atsDuplicado=atencionesDelPaciente(duplicado);
+  const cantAntes=atsDuplicado.length;
   if(!confirm(`Fusionar pacientes?\n\nPrincipal: ${principal.nombreCompleto||''}\nDuplicado: ${duplicado.nombreCompleto||''}\n\nSe conservarán las atenciones y estadísticas. Se reasignarán ${cantAntes} atenciones al paciente principal.`))return;
   const dniDup=dniLimpio(duplicado.dni);
+  const nombreDup=normalizarTexto(duplicado.nombreCompleto||duplicado.paciente||'');
   atenciones.forEach(a=>{
-    if(a.pacienteId===duplicado.id || (dniDup && dniLimpio(a.dni)===dniDup)){
+    const coincide =
+      (duplicado.id && a.pacienteId===duplicado.id) ||
+      (dniDup && dniLimpio(a.dni)===dniDup) ||
+      (nombreDup && normalizarTexto(a.paciente||'')===nombreDup);
+    if(coincide){
       a.pacienteId=principal.id;
-      if(!a.dni && principal.dni)a.dni=principal.dni;
-      if(!a.paciente && principal.nombreCompleto)a.paciente=principal.nombreCompleto;
-      a.pacienteFusionadoDesde=duplicado.id;
+      if(principal.dni)a.dni=principal.dni;
+      if(principal.nombreCompleto)a.paciente=principal.nombreCompleto;
+      if(principal.telefono)a.telefono=principal.telefono;
+      if(principal.email)a.email=principal.email;
+      if(principal.fechaNacimiento)a.fechaNacimiento=principal.fechaNacimiento;
+      a.pacienteFusionadoDesde=duplicado.id||nombreDup;
       a.pacienteFusionadoEn=new Date().toISOString();
     }
   });
-  ['telefono','email','fechaNacimiento','coberturaHabitual','numeroAfiliadoHabitual'].forEach(k=>{
+  ['telefono','email','fechaNacimiento','coberturaHabitual','numeroAfiliadoHabitual','dni','nombreCompleto'].forEach(k=>{
     if(!principal[k] && duplicado[k])principal[k]=duplicado[k];
   });
   principal.historialCoberturas=[...(principal.historialCoberturas||[]),...(duplicado.historialCoberturas||[])];
   principal.actualizadoEn=new Date().toISOString();
-  duplicado.estado='fusionado';
-  duplicado.fusionadoCon=principal.id;
-  duplicado.fusionadoEn=new Date().toISOString();
-  duplicado.fusionadoPor=usuarioSupabase?.email||'local';
+  const duplicadoPersistente=(data.pacientes||[]).find(p=>p.id===duplicado.id);
+  if(duplicadoPersistente && duplicadoPersistente.id!==principal.id){
+    duplicadoPersistente.estado='fusionado';
+    duplicadoPersistente.fusionadoCon=principal.id;
+    duplicadoPersistente.fusionadoEn=new Date().toISOString();
+    duplicadoPersistente.fusionadoPor=usuarioSupabase?.email||'local';
+  }
   if(!data.auditoriaPacientes)data.auditoriaPacientes=[];
-  data.auditoriaPacientes.push({tipo:'fusion_paciente',principalId,duplicadoId,fecha:new Date().toISOString(),usuario:usuarioSupabase?.email||'local',atencionesReasignadas:cantAntes});
+  data.auditoriaPacientes.push({tipo:'fusion_paciente',principalId:principal.id,duplicadoId:duplicado.id||nombreDup,fecha:new Date().toISOString(),usuario:usuarioSupabase?.email||'local',atencionesReasignadas:cantAntes});
   saveConfig();
   saveAtenciones();
   renderDuplicadosPacientes();
   const a=$('resultadoDuplicadosPacientes'), b=$('resultadoDuplicadosPacientesPacientes'); if(a&&b)b.innerHTML=a.innerHTML;
+  pacienteSeleccionadoPanelId=principal.id;
   renderPacientesPanel($('pacientesBuscar')?.value||'', false);
+  seleccionarPacientePanel(principal.id);
   renderTabla();
   renderStats();
   alert('Pacientes fusionados. Las atenciones y estadísticas se conservaron.');
-}
-
-function renderConfig(){cargarValoresConfig();cargarReglaConfig();$('listaProfesionales').innerHTML=data.profesionales.map(p=>`<li><strong>${p.nombre}</strong> — ${p.area} ${p.id!=='general'?`<button class="small-btn" onclick="delProfesional('${p.id}')">Borrar</button>`:''}</li>`).join('');$('listaOS').innerHTML=data.obrasSociales.map(o=>`<li>${o} <button class="small-btn" onclick="delOS('${escapeHtml(o)}')">Borrar</button></li>`).join('');$('listaPrestaciones').innerHTML=allPrestaciones().map(p=>`<li>${p} <button class="small-btn" onclick="delPrestacion('${encodeURIComponent(p)}')">Borrar</button></li>`).join('')}
-function cargarValoresConfig(){
- const p=data.profesionales.find(x=>x.id===$('cfgProfesionalValores').value)||data.profesionales.find(x=>x.id==='matias');
- if(!p)return;
- const v=valoresDelProfesional(p);
- $('cfgProfesionalValores').value=p.id;
- $('cfgConsultaParticular').value=v.consulta;
- $('cfgElectroParticular').value=v.electro;
- $('cfgEstudioParticular').value=v.estudio;
- if($('cfgCopagoConsulta'))$('cfgCopagoConsulta').value=v.copagoConsulta;
- if($('cfgCopagoElectro'))$('cfgCopagoElectro').value=v.copagoElectro;
- if($('cfgCopagoEstudio'))$('cfgCopagoEstudio').value=v.copagoEstudio;
-}
-function guardarValores(){
- const p=data.profesionales.find(x=>x.id===$('cfgProfesionalValores').value);
- if(!p)return;
- const prev=p.valores||{};
- p.valores={
-   ...prev,
-   consulta:Number($('cfgConsultaParticular').value||0),
-   electro:Number($('cfgElectroParticular').value||0),
-   estudio:Number($('cfgEstudioParticular').value||0),
-   copagoConsulta:Number($('cfgCopagoConsulta')?.value||0),
-   copagoElectro:Number($('cfgCopagoElectro')?.value||0),
-   copagoEstudio:Number($('cfgCopagoEstudio')?.value||0)
- };
- saveConfig();
- alert('Valores del perfil guardados');
- aplicarRegla();
- renderStats();
-}
-function cargarReglaConfig(){$('cfgTipoRegla').value=getRegla($('cfgReglaOS').value)}
-function guardarReglaConfig(){setRegla($('cfgReglaOS').value,$('cfgTipoRegla').value);alert('Regla guardada');aplicarRegla()}
-function addProfesional(){const n=$('nuevoProfesional').value.trim();if(!n)return;data.profesionales.push({id:'p_'+Date.now(),nombre:n,area:$('nuevaArea').value.trim()||'Sin definir',prestaciones:[],valores:{consulta:0,electro:0,estudio:0,copagoConsulta:0,copagoElectro:0,copagoEstudio:0}});saveConfig();refreshSelects();renderConfig()}
-function delProfesional(id){if(!confirm('Borrar profesional?'))return;data.profesionales=data.profesionales.filter(p=>p.id!==id);saveConfig();refreshSelects();renderConfig()}
-function addOS(){const n=$('nuevaOS').value.trim();if(!n)return;if(!data.obrasSociales.includes(n))data.obrasSociales.push(n);saveConfig();refreshSelects();renderConfig()}
-function delOS(n){if(!confirm('Borrar OS?'))return;data.obrasSociales=data.obrasSociales.filter(o=>o!==n);saveConfig();refreshSelects();renderConfig()}
-function addPrestacion(){const n=$('nuevaPrestacion').value.trim(),pid=$('profPrestacion').value;if(!n)return;const p=data.profesionales.find(x=>x.id===pid);if(p&&!p.prestaciones.includes(n))p.prestaciones.push(n);saveConfig();refreshSelects();renderConfig();actualizarPrestaciones()}
-function delPrestacion(enc){const n=decodeURIComponent(enc);if(!confirm('Borrar prestación de todos los perfiles?'))return;data.profesionales.forEach(p=>p.prestaciones=(p.prestaciones||[]).filter(x=>x!==n));saveConfig();refreshSelects();renderConfig();actualizarPrestaciones()}
-
-window.editarAtencion=editarAtencion;window.guardarEdicion=guardarEdicion;window.guardarEdicionModal=guardarEdicionModal;window.cerrarModalEdicion=cerrarModalEdicion;window.cancelarEdicion=cancelarEdicion;window.eliminarAtencion=eliminarAtencion;window.delProfesional=delProfesional;window.delOS=delOS;window.delPrestacion=delPrestacion;
-
-async function refrescarDesdeSupabaseAutomatico() {
-  if (!supabaseClient || !usuarioSupabase) return;
-
-  // No refrescar si alguien está editando una atención
-  if (typeof editandoId !== "undefined" && editandoId) return;
-
-  try {
-    await cargarAtencionesDesdeSupabase();
-
-    if (typeof renderTabla === "function") renderTabla();
-    if (typeof renderStats === "function") renderStats();
-
-    console.log("Refresco automático Supabase OK:", new Date().toLocaleTimeString());
-  } catch (error) {
-    console.error("Error en refresco automático:", error);
-  }
 }
 
 function iniciarRefrescoAutomatico() {
@@ -1677,7 +1676,7 @@ function atencionesPacienteGlobal(p){
   return atenciones.filter(a=>{
     if(p.id && a.pacienteId===p.id)return true;
     if(dni && dniLimpio(a.dni)===dni)return true;
-    if(!dni && nombre && normalizarTexto(a.paciente||'')===nombre)return true;
+    if(nombre && normalizarTexto(a.paciente||'')===nombre)return true;
     return false;
   }).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
 }
@@ -1799,9 +1798,17 @@ function guardarPacientePanel(id){
   const original=buscarPacientePanelPorId(id);
   if(!original)return;
   if(!Array.isArray(data.pacientes))data.pacientes=[];
+  const nombreOriginal=normalizarTexto(nombrePacientePanel(original));
   const dni=dniLimpio($('pacEditDni')?.value||original.dni||'');
-  let p=(original.id && data.pacientes.find(x=>x.id===original.id)) || (dni && data.pacientes.find(x=>dniLimpio(x.dni)===dni));
-  if(!p){p={id:'pac_'+Date.now()+Math.floor(Math.random()*10000),historialCoberturas:[]};data.pacientes.push(p);}
+  let p=null;
+  if(original.id && !String(original.id).startsWith('legacy_')) p=data.pacientes.find(x=>x.id===original.id);
+  if(!p && dni) p=data.pacientes.find(x=>dniLimpio(x.dni)===dni);
+  if(!p && nombreOriginal) p=data.pacientes.find(x=>normalizarTexto(x.nombreCompleto||x.paciente||'')===nombreOriginal);
+  if(!p){
+    p={id:'pac_'+Date.now()+Math.floor(Math.random()*10000),historialCoberturas:[]};
+    data.pacientes.push(p);
+  }
+  const atencionesOriginales=atencionesDelPaciente(original);
   p.nombreCompleto=$('pacEditNombre')?.value.trim()||original.nombreCompleto||'';
   p.dni=$('pacEditDni')?.value.trim()||original.dni||'';
   p.telefono=$('pacEditTelefono')?.value.trim()||'';
@@ -1810,9 +1817,31 @@ function guardarPacientePanel(id){
   p.coberturaHabitual=$('pacEditCobertura')?.value||'';
   p.numeroAfiliadoHabitual=$('pacEditAfiliado')?.value.trim()||'';
   p.actualizadoEn=new Date().toISOString();
+
+  // Clave del arreglo: editar ficha actualiza el paciente seleccionado y adopta sus atenciones previas.
+  // No crea un paciente suelto con 0 atenciones.
+  atencionesOriginales.forEach(a=>{
+    a.pacienteId=p.id;
+    if(p.nombreCompleto)a.paciente=p.nombreCompleto;
+    if(p.dni)a.dni=p.dni;
+    if(p.telefono)a.telefono=p.telefono;
+    if(p.email)a.email=p.email;
+    if(p.fechaNacimiento)a.fechaNacimiento=p.fechaNacimiento;
+  });
   const dniNuevo=dniLimpio(p.dni);
-  atenciones.forEach(a=>{ if(dniNuevo && dniLimpio(a.dni)===dniNuevo) a.pacienteId=p.id; });
-  saveConfig(); saveAtenciones(); pacienteSeleccionadoPanelId=p.id; renderPacientesPanel($('pacientesBuscar')?.value||'',false); seleccionarPacientePanel(p.id);
+  const nombreNuevo=normalizarTexto(p.nombreCompleto||'');
+  atenciones.forEach(a=>{
+    if((dniNuevo && dniLimpio(a.dni)===dniNuevo) || (nombreNuevo && normalizarTexto(a.paciente||'')===nombreNuevo)){
+      a.pacienteId=p.id;
+      if(p.dni)a.dni=p.dni;
+      if(p.nombreCompleto)a.paciente=p.nombreCompleto;
+    }
+  });
+  saveConfig();
+  saveAtenciones();
+  pacienteSeleccionadoPanelId=p.id;
+  renderPacientesPanel($('pacientesBuscar')?.value||'',false);
+  seleccionarPacientePanel(p.id);
 }
 function nuevaAtencionDesdePaciente(id){
   const p=buscarPacientePanelPorId(id); if(!p)return;
