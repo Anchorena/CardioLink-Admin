@@ -474,72 +474,28 @@ input[type="checkbox"]{
 @media (max-width: 900px) {
   .duplicado-grid { grid-template-columns: 1fr; }
 }
-/* ===== INSTRUCTIVOS: INDICE FIJO ===== */
 
-html {
-  scroll-behavior: smooth;
-}
 
-.instructivo-nav-sticky {
-  position: sticky;
-  top: 14px;
-  z-index: 50;
-  border: 1px solid #dbe3ef;
-  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.10);
-}
-
-.instructivo-nav-sticky strong {
-  display: block;
-  margin-bottom: 10px;
-  color: #0f172a;
-}
-
-.instructivo-nav-buttons {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-}
-
-.instructivo-nav-buttons a {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 34px;
-  padding: 8px 12px;
-  border-radius: 999px;
-  background: #eef4ff;
-  color: #1d4ed8;
-  font-weight: 800;
-  font-size: 13px;
-  text-decoration: none;
-  border: 1px solid #bfdbfe;
-}
-
-.instructivo-nav-buttons a:hover {
-  background: #dbeafe;
-  color: #1e40af;
-}
-
-.instructivo-general {
-  scroll-margin-top: 130px;
-}
-
-@media (max-width: 900px) {
-  .instructivo-nav-sticky {
-    top: 8px;
-  }
-
-  .instructivo-nav-buttons {
-    max-height: 150px;
-    overflow-y: auto;
-  }
-
-  .instructivo-nav-buttons a {
-    font-size: 12px;
-    padding: 7px 10px;
-  }
-
-  .instructivo-general {
-    scroll-margin-top: 190px;
-  }
-}
+/* ===== SOLAPA PACIENTES ===== */
+.pacientes-toolbar{display:grid;grid-template-columns:1fr auto auto auto;gap:12px;align-items:end}
+.pacientes-layout{display:grid;grid-template-columns:360px 1fr;gap:18px;align-items:start}
+.pacientes-list-card,.pacientes-detail-card{min-height:420px}
+.pacientes-lista{display:flex;flex-direction:column;gap:10px;margin-top:12px;max-height:620px;overflow:auto;padding-right:4px}
+.paciente-panel-item{display:block;width:100%;text-align:left;border:1px solid #dbe3ef;background:#fff;border-radius:16px;padding:14px 16px;cursor:pointer;color:#0f172a}
+.paciente-panel-item:hover,.paciente-panel-item.active{border-color:#2563eb;background:#eff6ff}
+.paciente-panel-item strong{display:block;font-size:15px;margin-bottom:4px}
+.paciente-panel-item span{display:block;font-size:12px;color:#64748b;line-height:1.35}
+.paciente-ficha-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:14px}
+.paciente-ficha-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.paciente-ficha-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:14px 0}
+.paciente-ficha-grid div{border:1px solid #dbe3ef;border-radius:16px;padding:14px;background:#f8fafc}
+.paciente-ficha-grid span{display:block;font-size:12px;color:#64748b;font-weight:700;margin-bottom:4px}
+.paciente-ficha-grid strong{font-size:15px;color:#0f172a}
+.paciente-mini-resumen{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 18px}
+.paciente-mini-resumen span{border:1px solid #bfdbfe;background:#eef4ff;color:#1d4ed8;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:800}
+.paciente-historial-wrap{overflow:auto;max-height:520px;border:1px solid #e2e8f0;border-radius:16px}
+.paciente-historial{width:100%}
+.paciente-historial th{position:sticky;top:0;background:#f8fafc;z-index:1}
+.paciente-edit-actions{justify-content:flex-end;margin-top:16px}
+@media(max-width:1050px){.pacientes-toolbar{grid-template-columns:1fr}.pacientes-layout{grid-template-columns:1fr}.paciente-ficha-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:700px){.paciente-ficha-head{display:block}.paciente-ficha-actions{justify-content:flex-start;margin-top:10px}.paciente-ficha-grid{grid-template-columns:1fr}}

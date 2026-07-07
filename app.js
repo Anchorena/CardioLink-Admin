@@ -464,6 +464,7 @@ let resumenFiltrosVisible=false;
 let mostrarConteoDashboard=false;
 const storageConfig='cardiolink_config_v25';
 const storageAtenciones='cardiolink_atenciones_v25';
+let pacienteSeleccionadoPanelId=null;
 
 const defaults={
  profesionales:[
@@ -575,6 +576,10 @@ $('btnToggleConteo').addEventListener('click',()=>{mostrarConteoDashboard=!mostr
  $('btnImportBackup').addEventListener('click',importarBackup);
  $('btnBorrarDatos').addEventListener('click',()=>{if(confirm('¿Borrar atenciones?')){atenciones=[];saveAtenciones();renderTabla();renderStats()}});
  if($('btnBuscarDuplicadosPacientes'))$('btnBuscarDuplicadosPacientes').addEventListener('click',renderDuplicadosPacientes);
+ if($('btnPacientesBuscar'))$('btnPacientesBuscar').addEventListener('click',()=>renderPacientesPanel($('pacientesBuscar')?.value||''));
+ if($('pacientesBuscar'))$('pacientesBuscar').addEventListener('input',()=>{const q=$('pacientesBuscar').value.trim(); if(q.length>=3)renderPacientesPanel(q);});
+ if($('btnPacientesTodos'))$('btnPacientesTodos').addEventListener('click',()=>renderPacientesPanel('',true));
+ if($('btnPacientesDuplicados'))$('btnPacientesDuplicados').addEventListener('click',()=>{renderDuplicadosPacientes(); const a=$('resultadoDuplicadosPacientes'), b=$('resultadoDuplicadosPacientesPacientes'); if(a&&b)b.innerHTML=a.innerHTML;});
  renderTabla(); renderStats(); ocultarResumenFiltros();
 }
 function refreshSelects(){
@@ -592,7 +597,7 @@ $('fOS').appendChild(optFacturaRogelio);
  llenarSelect($('cfgProfesionalValores'),data.profesionales.filter(p=>p.id!=='general'),p=>p.id,p=>p.nombre);
  llenarSelect($('cfgReglaOS'),data.obrasSociales);
 }
-function showSection(id){document.querySelectorAll('.section').forEach(s=>s.classList.remove('visible'));if($(id))$(id).classList.add('visible');document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.section===id));if(id==='instructivos'){if($('tituloBienvenida'))$('tituloBienvenida').textContent='Instructivos de uso';if($('subtituloPerfil'))$('subtituloPerfil').textContent='Guía para secretaría, médicos y administración';}if(id==='colocaciones')renderLiquidacionColocacionesSolapa()}
+function showSection(id){document.querySelectorAll('.section').forEach(s=>s.classList.remove('visible'));if($(id))$(id).classList.add('visible');document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.section===id));if(id==='instructivos'){if($('tituloBienvenida'))$('tituloBienvenida').textContent='Instructivos de uso';if($('subtituloPerfil'))$('subtituloPerfil').textContent='Guía para secretaría, médicos y administración';}else if(id==='pacientes'){if($('tituloBienvenida'))$('tituloBienvenida').textContent='Pacientes';if($('subtituloPerfil'))$('subtituloPerfil').textContent='Ficha administrativa e historial cruzado entre profesionales';renderPacientesPanel($('pacientesBuscar')?.value||'',false);}if(id==='colocaciones')renderLiquidacionColocacionesSolapa()}
 function cambiarPerfil(id){$('perfilActivo').value=id;const p=perfilObj();$('tituloBienvenida').textContent=p.id==='general'?'Vista General / Administración':`Bienvenido ${p.nombre}`;$('subtituloPerfil').textContent=p.area;$('profesional').value=p.id==='general'?'matias':p.id;if($('instructivoPerfiles'))$('instructivoPerfiles').classList.toggle('hidden',p.id!=='general');paginaListado=1;actualizarPrestaciones();aplicarRegla();renderTabla();renderStats()}
 function actualizarHora(){const a=new Date();$('fechaHoraPanel').textContent=a.toLocaleDateString('es-AR',{weekday:'long',day:'2-digit',month:'2-digit',year:'numeric'})+' · '+a.toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'})}
 function actualizarPrestaciones(){
@@ -1558,6 +1563,8 @@ function fusionarPacientes(principalId,duplicadoId){
   saveConfig();
   saveAtenciones();
   renderDuplicadosPacientes();
+  const a=$('resultadoDuplicadosPacientes'), b=$('resultadoDuplicadosPacientesPacientes'); if(a&&b)b.innerHTML=a.innerHTML;
+  renderPacientesPanel($('pacientesBuscar')?.value||'', false);
   renderTabla();
   renderStats();
   alert('Pacientes fusionados. Las atenciones y estadísticas se conservaron.');
@@ -1657,3 +1664,159 @@ async function iniciarCardioLink() {
 }
 
 iniciarCardioLink();
+
+
+
+/* ===== SOLAPA PACIENTES ===== */
+function pacienteActivoPanel(p){return p && p.estado!=='fusionado';}
+function nombrePacientePanel(p){return p.nombreCompleto || p.paciente || 'Paciente sin nombre';}
+function clavePacientePanel(p){return String(p.id||'') || dniLimpio(p.dni) || normalizarTexto(nombrePacientePanel(p));}
+function atencionesPacienteGlobal(p){
+  const dni=dniLimpio(p.dni);
+  const nombre=normalizarTexto(nombrePacientePanel(p));
+  return atenciones.filter(a=>{
+    if(p.id && a.pacienteId===p.id)return true;
+    if(dni && dniLimpio(a.dni)===dni)return true;
+    if(!dni && nombre && normalizarTexto(a.paciente||'')===nombre)return true;
+    return false;
+  }).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''));
+}
+function pacientesPanelFiltrados(q='', todos=false){
+  const nq=normalizarTexto(q); const nd=dniLimpio(q);
+  let lista=todosPacientes().filter(pacienteActivoPanel);
+  if(!todos && (nq||nd)){
+    lista=lista.filter(p=>{
+      const ats=atencionesPacienteGlobal(p);
+      return (nd && dniLimpio(p.dni).includes(nd)) ||
+        (nd && String(p.telefono||'').replace(/\D/g,'').includes(nd)) ||
+        normalizarTexto(nombrePacientePanel(p)).includes(nq) ||
+        normalizarTexto(p.email||'').includes(nq) ||
+        ats.some(a=>normalizarTexto(a.profesional||'').includes(nq)||normalizarTexto(a.prestacion||'').includes(nq));
+    });
+  }else if(!todos){
+    lista=lista.slice(0,25);
+  }
+  return lista.sort((a,b)=>nombrePacientePanel(a).localeCompare(nombrePacientePanel(b),'es'));
+}
+function renderPacientesPanel(q='', todos=false){
+  const listaBox=$('pacientesLista'), resumen=$('pacientesResumen');
+  if(!listaBox)return;
+  const lista=pacientesPanelFiltrados(q,todos);
+  if(resumen)resumen.textContent=lista.length ? `${lista.length} paciente(s) encontrados.` : 'No se encontraron pacientes.';
+  if(!lista.length){listaBox.innerHTML='<div class="muted">No hay resultados. Podés importar desde Medicloud o cargar el paciente desde Carga de turno/atención.</div>';return;}
+  listaBox.innerHTML=lista.map(p=>{
+    const ats=atencionesPacienteGlobal(p);
+    const ultima=ats[0];
+    const activo=pacienteSeleccionadoPanelId===p.id?' active':'';
+    return `<button type="button" class="paciente-panel-item${activo}" onclick="seleccionarPacientePanel('${escapeHtml(clavePacientePanel(p))}')">
+      <strong>${escapeHtml(nombrePacientePanel(p))}</strong>
+      <span>DNI ${escapeHtml(p.dni||'s/d')} · ${escapeHtml(p.telefono||'')}</span>
+      <span>${ats.length} atención(es)${ultima?' · Última: '+formatFecha(ultima.fecha)+' · '+escapeHtml(ultima.profesional||''):''}</span>
+    </button>`;
+  }).join('');
+}
+function buscarPacientePanelPorId(id){
+  return todosPacientes().find(p=>clavePacientePanel(p)===id || p.id===id) || null;
+}
+function estadoCortoPaciente(a){
+  const e=evaluarEstado(a);
+  const partes=[];
+  partes.push(e.txt||'');
+  if(tipoPrest(a.prestacion)!=='CONSULTA'){
+    partes.push(a.estudioInformado?'Informe OK':'Informe pendiente');
+    if(a.estudioImpreso)partes.push('Impreso');
+    if(a.estudioEnviadoMail)partes.push('Mail');
+    if(a.estudioEnviadoWS)partes.push('WS');
+  }
+  return partes.filter(Boolean).join(' · ');
+}
+function seleccionarPacientePanel(id){
+  const p=buscarPacientePanelPorId(id); if(!p)return;
+  pacienteSeleccionadoPanelId=clavePacientePanel(p);
+  const ats=atencionesPacienteGlobal(p);
+  const porProf={}; ats.forEach(a=>{porProf[a.profesional||'Sin profesional']=(porProf[a.profesional||'Sin profesional']||0)+1;});
+  const detalle=$('pacienteDetalle'); if(!detalle)return;
+  detalle.innerHTML=`
+    <div class="paciente-ficha-head">
+      <div>
+        <h3>${escapeHtml(nombrePacientePanel(p))}</h3>
+        <p class="muted">DNI ${escapeHtml(p.dni||'s/d')} · Tel ${escapeHtml(p.telefono||'s/d')} · ${escapeHtml(p.email||'')}</p>
+      </div>
+      <div class="paciente-ficha-actions">
+        <button class="primary" type="button" onclick="nuevaAtencionDesdePaciente('${escapeHtml(clavePacientePanel(p))}')">Nueva atención</button>
+        <button class="secondary" type="button" onclick="editarPacientePanel('${escapeHtml(clavePacientePanel(p))}')">Editar ficha</button>
+      </div>
+    </div>
+    <div class="paciente-ficha-grid">
+      <div><span>Cobertura habitual</span><strong>${escapeHtml(p.coberturaHabitual||'s/d')}</strong></div>
+      <div><span>Nº afiliado habitual</span><strong>${escapeHtml(p.numeroAfiliadoHabitual||'s/d')}</strong></div>
+      <div><span>Fecha nacimiento</span><strong>${escapeHtml(p.fechaNacimiento?formatFecha(p.fechaNacimiento):'s/d')}</strong></div>
+      <div><span>Total atenciones</span><strong>${ats.length}</strong></div>
+    </div>
+    <div class="paciente-mini-resumen">
+      ${Object.entries(porProf).map(([prof,n])=>`<span>${escapeHtml(prof)}: <strong>${n}</strong></span>`).join('') || '<span>Sin atenciones registradas</span>'}
+    </div>
+    <h3>Historial cruzado</h3>
+    <p class="muted">Incluye consultas y estudios de todos los profesionales cargados en CardioLink para este mismo paciente.</p>
+    <div class="paciente-historial-wrap">
+      <table class="tabla-mini paciente-historial">
+        <thead><tr><th>Fecha</th><th>Profesional</th><th>Prestación</th><th>Cobertura turno</th><th>Estado / informe / entrega</th><th></th></tr></thead>
+        <tbody>
+          ${ats.length?ats.map(a=>`<tr>
+            <td>${formatFecha(a.fecha)}</td>
+            <td>${escapeHtml(a.profesional||'')}</td>
+            <td><strong>${escapeHtml(prestacionListado(a))}</strong>${a.observaciones?'<br><small>'+escapeHtml(a.observaciones)+'</small>':''}</td>
+            <td>${escapeHtml(a.obraSocial||'')}</td>
+            <td>${escapeHtml(estadoCortoPaciente(a))}</td>
+            <td><button class="secondary" type="button" onclick="editarAtencion(${a.id})">Editar</button></td>
+          </tr>`).join(''):'<tr><td colspan="6">Este paciente todavía no tiene atenciones cargadas.</td></tr>'}
+        </tbody>
+      </table>
+    </div>`;
+  renderPacientesPanel($('pacientesBuscar')?.value||'',false);
+}
+function editarPacientePanel(id){
+  const p=buscarPacientePanelPorId(id); if(!p)return;
+  const detalle=$('pacienteDetalle'); if(!detalle)return;
+  detalle.innerHTML=`
+    <h3>Editar ficha administrativa</h3>
+    <p class="muted">Esto actualiza los datos básicos del paciente. No borra atenciones previas.</p>
+    <div class="form-grid paciente-edit-form">
+      <div><label>Apellido y nombre</label><input id="pacEditNombre" value="${escapeHtml(nombrePacientePanel(p))}"></div>
+      <div><label>DNI</label><input id="pacEditDni" value="${escapeHtml(p.dni||'')}"></div>
+      <div><label>Teléfono</label><input id="pacEditTelefono" value="${escapeHtml(p.telefono||'')}"></div>
+      <div><label>Email</label><input id="pacEditEmail" value="${escapeHtml(p.email||'')}"></div>
+      <div><label>Fecha nacimiento</label><input type="date" id="pacEditNacimiento" value="${escapeHtml(fechaISODesdeTexto(p.fechaNacimiento||'')||p.fechaNacimiento||'')}"></div>
+      <div><label>Cobertura habitual</label><select id="pacEditCobertura">${data.obrasSociales.map(os=>`<option ${os===(p.coberturaHabitual||'')?'selected':''}>${escapeHtml(os)}</option>`).join('')}</select></div>
+      <div><label>Nº afiliado habitual</label><input id="pacEditAfiliado" value="${escapeHtml(p.numeroAfiliadoHabitual||'')}"></div>
+    </div>
+    <div class="modal-actions paciente-edit-actions">
+      <button class="secondary" type="button" onclick="seleccionarPacientePanel('${escapeHtml(clavePacientePanel(p))}')">Cancelar</button>
+      <button class="primary" type="button" onclick="guardarPacientePanel('${escapeHtml(clavePacientePanel(p))}')">Guardar ficha</button>
+    </div>`;
+}
+function guardarPacientePanel(id){
+  const original=buscarPacientePanelPorId(id);
+  if(!original)return;
+  if(!Array.isArray(data.pacientes))data.pacientes=[];
+  const dni=dniLimpio($('pacEditDni')?.value||original.dni||'');
+  let p=(original.id && data.pacientes.find(x=>x.id===original.id)) || (dni && data.pacientes.find(x=>dniLimpio(x.dni)===dni));
+  if(!p){p={id:'pac_'+Date.now()+Math.floor(Math.random()*10000),historialCoberturas:[]};data.pacientes.push(p);}
+  p.nombreCompleto=$('pacEditNombre')?.value.trim()||original.nombreCompleto||'';
+  p.dni=$('pacEditDni')?.value.trim()||original.dni||'';
+  p.telefono=$('pacEditTelefono')?.value.trim()||'';
+  p.email=$('pacEditEmail')?.value.trim()||'';
+  p.fechaNacimiento=$('pacEditNacimiento')?.value||'';
+  p.coberturaHabitual=$('pacEditCobertura')?.value||'';
+  p.numeroAfiliadoHabitual=$('pacEditAfiliado')?.value.trim()||'';
+  p.actualizadoEn=new Date().toISOString();
+  const dniNuevo=dniLimpio(p.dni);
+  atenciones.forEach(a=>{ if(dniNuevo && dniLimpio(a.dni)===dniNuevo) a.pacienteId=p.id; });
+  saveConfig(); saveAtenciones(); pacienteSeleccionadoPanelId=p.id; renderPacientesPanel($('pacientesBuscar')?.value||'',false); seleccionarPacientePanel(p.id);
+}
+function nuevaAtencionDesdePaciente(id){
+  const p=buscarPacientePanelPorId(id); if(!p)return;
+  usarPaciente(p.id);
+  showSection('carga');
+  setTimeout(()=>{$('prestacion')?.focus();},50);
+}
