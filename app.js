@@ -1629,6 +1629,119 @@ function fusionarPacientes(principalId,duplicadoId){
   alert('Pacientes fusionados. Las atenciones y estadísticas se conservaron.');
 }
 
+
+
+/* ===== CONFIGURACION: FUNCIONES RESTAURADAS v2.7.3 ===== */
+function renderConfig(){
+  if($('cfgProfesionalValores')) cargarValoresConfig();
+  if($('cfgReglaOS')) cargarReglaConfig();
+  if($('listaProfesionales')){
+    $('listaProfesionales').innerHTML=(data.profesionales||[]).map(p=>`<li><strong>${escapeHtml(p.nombre||'')}</strong> — ${escapeHtml(p.area||'Sin definir')} ${p.id!=='general'?`<button class="small-btn" onclick="delProfesional('${p.id}')">Borrar</button>`:''}</li>`).join('');
+  }
+  if($('listaOS')){
+    $('listaOS').innerHTML=(data.obrasSociales||[]).map(o=>`<li>${escapeHtml(o)} <button class="small-btn" onclick="delOS('${encodeURIComponent(o)}')">Borrar</button></li>`).join('');
+  }
+  if($('listaPrestaciones')){
+    $('listaPrestaciones').innerHTML=allPrestaciones().map(pr=>`<li>${escapeHtml(pr)} <button class="small-btn" onclick="delPrestacion('${encodeURIComponent(pr)}')">Borrar</button></li>`).join('');
+  }
+}
+
+function cargarValoresConfig(){
+  if(!$('cfgProfesionalValores')) return;
+  let p=(data.profesionales||[]).find(x=>x.id===$('cfgProfesionalValores').value) || (data.profesionales||[]).find(x=>x.id==='matias') || (data.profesionales||[])[0];
+  if(!p)return;
+  const v=valoresDelProfesional(p);
+  $('cfgProfesionalValores').value=p.id;
+  if($('cfgConsultaParticular')) $('cfgConsultaParticular').value=v.consulta||0;
+  if($('cfgElectroParticular')) $('cfgElectroParticular').value=v.electro||0;
+  if($('cfgEstudioParticular')) $('cfgEstudioParticular').value=v.estudio||0;
+  if($('cfgCopagoConsulta')) $('cfgCopagoConsulta').value=v.copagoConsulta||0;
+  if($('cfgCopagoElectro')) $('cfgCopagoElectro').value=v.copagoElectro||0;
+  if($('cfgCopagoEstudio')) $('cfgCopagoEstudio').value=v.copagoEstudio||0;
+}
+
+function guardarValores(){
+  if(!$('cfgProfesionalValores')) return;
+  const p=(data.profesionales||[]).find(x=>x.id===$('cfgProfesionalValores').value);
+  if(!p)return;
+  const prev=p.valores||{};
+  p.valores={
+    ...prev,
+    consulta:Number($('cfgConsultaParticular')?.value||0),
+    electro:Number($('cfgElectroParticular')?.value||0),
+    estudio:Number($('cfgEstudioParticular')?.value||0),
+    copagoConsulta:Number($('cfgCopagoConsulta')?.value||0),
+    copagoElectro:Number($('cfgCopagoElectro')?.value||0),
+    copagoEstudio:Number($('cfgCopagoEstudio')?.value||0)
+  };
+  saveConfig();
+  alert('Valores del perfil guardados');
+  if(typeof aplicarRegla==='function') aplicarRegla();
+  renderStats();
+}
+
+function cargarReglaConfig(){
+  if($('cfgTipoRegla') && $('cfgReglaOS')) $('cfgTipoRegla').value=getRegla($('cfgReglaOS').value);
+}
+
+function guardarReglaConfig(){
+  if(!$('cfgReglaOS') || !$('cfgTipoRegla')) return;
+  setRegla($('cfgReglaOS').value,$('cfgTipoRegla').value);
+  alert('Regla guardada');
+  if(typeof aplicarRegla==='function') aplicarRegla();
+}
+
+function addProfesional(){
+  const n=$('nuevoProfesional')?.value.trim();
+  if(!n)return;
+  data.profesionales=data.profesionales||[];
+  data.profesionales.push({id:'p_'+Date.now(),nombre:n,area:$('nuevaArea')?.value.trim()||'Sin definir',prestaciones:[],valores:{consulta:0,electro:0,estudio:0,copagoConsulta:0,copagoElectro:0,copagoEstudio:0}});
+  saveConfig();refreshSelects();renderConfig();
+}
+function delProfesional(id){
+  if(!confirm('¿Borrar profesional?'))return;
+  data.profesionales=(data.profesionales||[]).filter(p=>p.id!==id);
+  saveConfig();refreshSelects();renderConfig();
+}
+function addOS(){
+  const n=$('nuevaOS')?.value.trim();
+  if(!n)return;
+  data.obrasSociales=data.obrasSociales||[];
+  if(!data.obrasSociales.includes(n))data.obrasSociales.push(n);
+  saveConfig();refreshSelects();renderConfig();
+}
+function delOS(enc){
+  const n=decodeURIComponent(enc);
+  if(!confirm('¿Borrar obra social?'))return;
+  data.obrasSociales=(data.obrasSociales||[]).filter(o=>o!==n);
+  saveConfig();refreshSelects();renderConfig();
+}
+function addPrestacion(){
+  const n=$('nuevaPrestacion')?.value.trim(), pid=$('profPrestacion')?.value;
+  if(!n)return;
+  const p=(data.profesionales||[]).find(x=>x.id===pid);
+  if(p){
+    p.prestaciones=p.prestaciones||[];
+    if(!p.prestaciones.includes(n))p.prestaciones.push(n);
+  }
+  saveConfig();refreshSelects();renderConfig();actualizarPrestaciones();
+}
+function delPrestacion(enc){
+  const n=decodeURIComponent(enc);
+  if(!confirm('¿Borrar prestación de todos los perfiles?'))return;
+  (data.profesionales||[]).forEach(p=>p.prestaciones=(p.prestaciones||[]).filter(x=>x!==n));
+  saveConfig();refreshSelects();renderConfig();actualizarPrestaciones();
+}
+
+window.guardarValores=guardarValores;
+window.guardarReglaConfig=guardarReglaConfig;
+window.addProfesional=addProfesional;
+window.delProfesional=delProfesional;
+window.addOS=addOS;
+window.delOS=delOS;
+window.addPrestacion=addPrestacion;
+window.delPrestacion=delPrestacion;
+
 function iniciarRefrescoAutomatico() {
   if (window.cardioLinkRefreshInterval) {
     clearInterval(window.cardioLinkRefreshInterval);
@@ -1661,24 +1774,7 @@ async function iniciarCardioLink() {
   iniciarControlInactividad();
   iniciarRefrescoAutomatico();
 }
-function renderConfig(){
-  if (typeof renderConfiguracion === 'function') {
-    renderConfiguracion();
-    return;
-  }
 
-  if (typeof renderListasConfig === 'function') {
-    renderListasConfig();
-    return;
-  }
-
-  if (typeof renderConfigPacientes === 'function') {
-    renderConfigPacientes();
-    return;
-  }
-
-  console.warn('renderConfig no encontró una función de configuración equivalente.');
-}
 iniciarCardioLink();
 
 
