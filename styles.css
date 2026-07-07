@@ -474,3 +474,72 @@ input[type="checkbox"]{
 @media (max-width: 900px) {
   .duplicado-grid { grid-template-columns: 1fr; }
 }
+/* ===== INSTRUCTIVOS: INDICE FIJO ===== */
+
+html {
+  scroll-behavior: smooth;
+}
+
+.instructivo-nav-sticky {
+  position: sticky;
+  top: 14px;
+  z-index: 50;
+  border: 1px solid #dbe3ef;
+  box-shadow: 0 10px 24px rgba(15, 23, 42, 0.10);
+}
+
+.instructivo-nav-sticky strong {
+  display: block;
+  margin-bottom: 10px;
+  color: #0f172a;
+}
+
+.instructivo-nav-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.instructivo-nav-buttons a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  padding: 8px 12px;
+  border-radius: 999px;
+  background: #eef4ff;
+  color: #1d4ed8;
+  font-weight: 800;
+  font-size: 13px;
+  text-decoration: none;
+  border: 1px solid #bfdbfe;
+}
+
+.instructivo-nav-buttons a:hover {
+  background: #dbeafe;
+  color: #1e40af;
+}
+
+.instructivo-general {
+  scroll-margin-top: 130px;
+}
+
+@media (max-width: 900px) {
+  .instructivo-nav-sticky {
+    top: 8px;
+  }
+
+  .instructivo-nav-buttons {
+    max-height: 150px;
+    overflow-y: auto;
+  }
+
+  .instructivo-nav-buttons a {
+    font-size: 12px;
+    padding: 7px 10px;
+  }
+
+  .instructivo-general {
+    scroll-margin-top: 190px;
+  }
+}
