@@ -327,117 +327,150 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px
 .badge.neutral{background:#e5e7eb;color:#374151}
 .modal-import-card textarea{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:14px;padding:14px;font-size:16px;min-height:220px}
 @media(max-width:900px){.paciente-search-grid,.prestaciones-extra-grid{grid-template-columns:1fr}.paciente-search-actions{justify-content:flex-start}}
-/* ===== FIX CHECKBOXES / TILDES ===== */
 
-/* Nunca tratar checkbox como input de texto */
-input[type="checkbox"] {
-  width: 22px !important;
-  height: 22px !important;
-  min-width: 22px !important;
-  max-width: 22px !important;
-  padding: 0 !important;
-  margin: 0 !important;
-  border-radius: 6px !important;
-  box-shadow: none !important;
-  accent-color: #2563eb;
-  cursor: pointer;
-  vertical-align: middle;
+/* v2.6.8 - Instructivos y fix visual de checkboxes */
+input[type="checkbox"]{
+  width:22px!important;
+  height:22px!important;
+  min-width:22px!important;
+  max-width:22px!important;
+  padding:0!important;
+  margin:0!important;
+  border-radius:6px!important;
+  box-shadow:none!important;
+  accent-color:#2563eb;
+  cursor:pointer;
+  vertical-align:middle;
+}
+.check-line,label.check-line,.checkbox-line,label.checkbox-line,.checkbox-inline,label.checkbox-inline{
+  display:inline-flex!important;
+  align-items:center!important;
+  gap:10px!important;
+  font-weight:700;
+  cursor:pointer;
+  width:auto!important;
+}
+.prestaciones-extra-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(260px,1fr));
+  gap:16px;
+}
+.prestaciones-extra-grid>label{
+  display:grid!important;
+  grid-template-columns:28px 1fr auto;
+  align-items:center;
+  gap:14px;
+  padding:18px 20px;
+  border:1px solid #dbe3ef;
+  border-radius:18px;
+  background:#fff;
+  font-weight:800;
+  width:auto!important;
+}
+.no-cobrar-inline{
+  display:inline-flex!important;
+  align-items:center;
+  gap:8px;
+  padding:8px 12px;
+  border-radius:999px;
+  background:#fee2e2;
+  color:#991b1b;
+  font-weight:800;
+  white-space:nowrap;
+  width:auto!important;
+}
+.instructivos-hero h2,.instructivo-card h2{margin-top:0;}
+.instructivo-indice{
+  display:flex;
+  flex-wrap:wrap;
+  gap:10px;
+  margin-top:16px;
+}
+.instructivo-indice a{
+  text-decoration:none;
+  background:#eef6ff;
+  color:#0f4a67;
+  border:1px solid #cfe8f5;
+  padding:10px 14px;
+  border-radius:999px;
+  font-weight:800;
+}
+.instructivo-card{
+  line-height:1.5;
+}
+.instructivo-card h3{
+  margin:18px 0 8px;
+  font-size:1.05rem;
+}
+.instructivo-card ol,.instructivo-card ul{
+  padding-left:24px;
+}
+.instructivo-card li{
+  margin:7px 0;
+}
+.ejemplo-box{
+  background:#f8fafc;
+  border:1px solid #dbe3ef;
+  border-radius:14px;
+  padding:14px 16px;
+  margin:10px 0;
+  font-weight:650;
+}
+.inst-alerta{
+  background:#fff7ed;
+  border:1px solid #fed7aa;
+  color:#7c2d12;
+  border-radius:14px;
+  padding:12px 14px;
+  font-weight:800;
+}
+@media(max-width:900px){
+  .prestaciones-extra-grid{grid-template-columns:1fr;}
+  .prestaciones-extra-grid>label{grid-template-columns:28px 1fr;}
+  .no-cobrar-inline{grid-column:2;justify-self:start;}
 }
 
-/* Etiquetas con checkbox al lado */
-.checkbox-line,
-label.checkbox-line,
-.checkbox-inline,
-label.checkbox-inline {
-  display: inline-flex !important;
-  align-items: center !important;
-  gap: 10px !important;
-  font-weight: 700;
-  cursor: pointer;
-  width: auto !important;
-}
 
-/* Checkbox de "guardar cobertura habitual" */
-#chkGuardarCoberturaHabitual,
-#guardarCoberturaHabitual,
-#fGuardarCoberturaHabitual {
-  width: 22px !important;
-  height: 22px !important;
-  min-width: 22px !important;
-}
-
-/* Bloque de prestaciones adicionales */
-.prestaciones-adicionales-grid,
-#adicionalesGrid {
+/* ===== Mantenimiento de pacientes duplicados ===== */
+.duplicados-result {
+  margin-top: 14px;
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-.prestacion-adicional-item,
-.adicional-item {
-  display: grid;
-  grid-template-columns: 28px 1fr auto;
-  align-items: center;
   gap: 14px;
-  padding: 18px 20px;
+}
+.duplicado-card {
   border: 1px solid #dbe3ef;
   border-radius: 18px;
-  background: #fff;
+  padding: 16px;
+  background: #ffffff;
 }
-
-.prestacion-adicional-item .nombre,
-.adicional-item .nombre {
-  font-weight: 800;
-  color: #0f172a;
-  line-height: 1.15;
+.duplicado-card h4 {
+  margin: 0 0 8px;
 }
-
-.prestacion-adicional-item .no-cobrar,
-.adicional-item .no-cobrar {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-radius: 999px;
-  background: #fee2e2;
-  color: #991b1b;
-  font-weight: 700;
-  white-space: nowrap;
-  width: auto !important;
+.duplicado-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  margin: 12px 0;
 }
-
-/* Si algún contenedor usa label para todo el item */
-.prestacion-adicional-item label,
-.adicional-item label {
-  width: auto !important;
-  margin: 0 !important;
+.duplicado-grid > div {
+  background: #f8fafc;
+  border: 1px solid #e5e7eb;
+  border-radius: 14px;
+  padding: 12px;
+  line-height: 1.35;
 }
-
-/* Que los labels largos no empujen raro */
-.campo-checkbox,
-.checkbox-wrap {
+.duplicado-actions {
   display: flex;
-  align-items: center;
   gap: 10px;
   flex-wrap: wrap;
 }
-
-/* Mobile */
+.ok-box {
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: #dcfce7;
+  color: #166534;
+  font-weight: 800;
+}
 @media (max-width: 900px) {
-  .prestaciones-adicionales-grid,
-  #adicionalesGrid {
-    grid-template-columns: 1fr;
-  }
-
-  .prestacion-adicional-item,
-  .adicional-item {
-    grid-template-columns: 28px 1fr;
-  }
-
-  .prestacion-adicional-item .no-cobrar,
-  .adicional-item .no-cobrar {
-    grid-column: 2;
-    justify-self: start;
-  }
+  .duplicado-grid { grid-template-columns: 1fr; }
 }

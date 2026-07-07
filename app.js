@@ -60,7 +60,7 @@ function mostrarPantallaLogin() {
 
       <h1>CardioLink Admin</h1>
       <p class="login-subtitle">by Matías Anchorena</p>
-      <p class="login-meta">Versión 2.6.7 · 2026</p>
+      <p class="login-meta">Versión 2.6.9 · 2026</p>
     </div>
 
     <div class="login-fields">
@@ -574,6 +574,7 @@ $('btnToggleConteo').addEventListener('click',()=>{mostrarConteoDashboard=!mostr
  $('btnExportBackup').addEventListener('click',exportarBackup);
  $('btnImportBackup').addEventListener('click',importarBackup);
  $('btnBorrarDatos').addEventListener('click',()=>{if(confirm('¿Borrar atenciones?')){atenciones=[];saveAtenciones();renderTabla();renderStats()}});
+ if($('btnBuscarDuplicadosPacientes'))$('btnBuscarDuplicadosPacientes').addEventListener('click',renderDuplicadosPacientes);
  renderTabla(); renderStats(); ocultarResumenFiltros();
 }
 function refreshSelects(){
@@ -1454,8 +1455,114 @@ function verDineroPeriodo(){
 function ocultarDineroPeriodo(){$('dineroPeriodoResultado').textContent='';$('claveDinero').value=''}
 function setPrintMeta(){$('printMeta').textContent=`Perfil: ${perfilObj().nombre} | Registros: ${filtrar().length} | ${formatFecha(todayISO())}`}
 function exportarCSV(){const datos=filtrar();if(!datos.length){alert('No hay datos');return}const r=resumen(datos);const incluirValoresExport=!!$('incluirValoresImpresion')?.checked;const filas=[['CardioLink Admin v2.5.9'],['Perfil',perfilObj().nombre],['Consultas',r.consultas],['Estudios',r.estudios],[],['Fecha','Paciente','OS','Profesional','Prestación','Consulta a','Estudio a','Tipo','Forma','Particular visible','Copago visible','Total visible','Estado']];datos.forEach(a=>{const m=dineroVisible(a),e=evaluarEstado(a);filas.push([formatFecha(a.fecha),a.paciente,a.obraSocial,a.profesional,prestacionListado(a),a.consultaA,a.prestacionA,a.tipoCobro,a.formaPago,incluirValoresExport?m.particular:'',incluirValoresExport?m.copago:'',incluirValoresExport?m.total:'',e.txt])});const csv=filas.map(r=>r.map(c=>`"${String(c??'').replaceAll('"','""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_listado.csv';a.click()}
-function exportarBackup(){const b={app:'CardioLink Admin',version:'2.6.7',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
+function exportarBackup(){const b={app:'CardioLink Admin',version:'2.6.9',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
 function importarBackup(){const inp=$('inputImportBackup');if(!inp.files[0]){alert('Elegí archivo');return}if(!confirm('Reemplaza la base actual. ¿Continuar?'))return;const rd=new FileReader();rd.onload=e=>{try{const b=JSON.parse(e.target.result);if(!b.config||!b.atenciones)throw new Error();data=b.config;atenciones=b.atenciones;saveConfig();saveAtenciones();refreshSelects();renderConfig();cambiarPerfil('general');alert('Backup importado')}catch{alert('Backup inválido')}};rd.readAsText(inp.files[0])}
+
+function dniLimpio(v){return String(v||'').replace(/\D/g,'');}
+function telLimpio(v){return String(v||'').replace(/\D/g,'');}
+function nombreClavePaciente(p){return normalizarTexto(p.nombreCompleto||p.paciente||'').replace(/\s+/g,' ').trim();}
+function pacienteActivoConfig(p){return p && p.estado!=='fusionado';}
+function atencionesDelPaciente(p){
+  const dni=dniLimpio(p.dni);
+  return atenciones.filter(a=>{
+    if(p.id && a.pacienteId===p.id)return true;
+    if(dni && dniLimpio(a.dni)===dni)return true;
+    return false;
+  });
+}
+function detectarDuplicadosPacientes(){
+  if(!Array.isArray(data.pacientes))data.pacientes=[];
+  const pacientes=data.pacientes.filter(pacienteActivoConfig);
+  const pares=[];
+  const seen=new Set();
+  for(let i=0;i<pacientes.length;i++){
+    for(let j=i+1;j<pacientes.length;j++){
+      const a=pacientes[i], b=pacientes[j];
+      const dniA=dniLimpio(a.dni), dniB=dniLimpio(b.dni);
+      const telA=telLimpio(a.telefono), telB=telLimpio(b.telefono);
+      const nomA=nombreClavePaciente(a), nomB=nombreClavePaciente(b);
+      const fnA=a.fechaNacimiento||'', fnB=b.fechaNacimiento||'';
+      let score=0, motivos=[];
+      if(dniA && dniB && dniA===dniB){score+=100;motivos.push('mismo DNI');}
+      if(telA && telB && telA.length>=7 && telB.length>=7 && telA===telB){score+=40;motivos.push('mismo teléfono');}
+      if(a.email && b.email && normalizarTexto(a.email)===normalizarTexto(b.email)){score+=35;motivos.push('mismo email');}
+      if(fnA && fnB && fnA===fnB){score+=25;motivos.push('misma fecha de nacimiento');}
+      if(nomA && nomB){
+        if(nomA===nomB){score+=45;motivos.push('mismo nombre');}
+        else if(nomA.includes(nomB)||nomB.includes(nomA)){score+=25;motivos.push('nombre parecido');}
+      }
+      if(score>=60){
+        const key=[a.id,b.id].sort().join('|');
+        if(!seen.has(key)){seen.add(key);pares.push({a,b,score,motivos});}
+      }
+    }
+  }
+  return pares.sort((x,y)=>y.score-x.score);
+}
+function resumenPacienteDuplicado(p){
+  const ats=atencionesDelPaciente(p);
+  return `${escapeHtml(p.nombreCompleto||'Paciente')} · DNI ${escapeHtml(p.dni||'s/d')} · Tel ${escapeHtml(p.telefono||'s/d')} · Atenciones ${ats.length}`;
+}
+function renderDuplicadosPacientes(){
+  const box=$('resultadoDuplicadosPacientes');
+  if(!box)return;
+  const pares=detectarDuplicadosPacientes();
+  if(!pares.length){box.innerHTML='<div class="ok-box">No encontré duplicados probables entre pacientes activos.</div>';return;}
+  box.innerHTML=pares.map((g,idx)=>{
+    const aCount=atencionesDelPaciente(g.a).length;
+    const bCount=atencionesDelPaciente(g.b).length;
+    const sugerido=aCount>=bCount?g.a:g.b;
+    const otro=sugerido.id===g.a.id?g.b:g.a;
+    return `<div class="duplicado-card">
+      <h4>Posible duplicado ${idx+1}</h4>
+      <p class="muted">Motivo: ${escapeHtml(g.motivos.join(', '))}</p>
+      <div class="duplicado-grid">
+        <div><strong>Paciente A</strong><br>${resumenPacienteDuplicado(g.a)}</div>
+        <div><strong>Paciente B</strong><br>${resumenPacienteDuplicado(g.b)}</div>
+      </div>
+      <div class="duplicado-actions">
+        <button class="primary" type="button" onclick="fusionarPacientes('${escapeHtml(sugerido.id)}','${escapeHtml(otro.id)}')">Fusionar: conservar ${escapeHtml(sugerido.nombreCompleto||'principal')}</button>
+        <button class="secondary" type="button" onclick="fusionarPacientes('${escapeHtml(otro.id)}','${escapeHtml(sugerido.id)}')">Conservar el otro</button>
+      </div>
+    </div>`;
+  }).join('');
+}
+function fusionarPacientes(principalId,duplicadoId){
+  if(principalId===duplicadoId)return;
+  const principal=(data.pacientes||[]).find(p=>p.id===principalId);
+  const duplicado=(data.pacientes||[]).find(p=>p.id===duplicadoId);
+  if(!principal||!duplicado){alert('No encontré uno de los pacientes.');return;}
+  const cantAntes=atencionesDelPaciente(duplicado).length;
+  if(!confirm(`Fusionar pacientes?\n\nPrincipal: ${principal.nombreCompleto||''}\nDuplicado: ${duplicado.nombreCompleto||''}\n\nSe conservarán las atenciones y estadísticas. Se reasignarán ${cantAntes} atenciones al paciente principal.`))return;
+  const dniDup=dniLimpio(duplicado.dni);
+  atenciones.forEach(a=>{
+    if(a.pacienteId===duplicado.id || (dniDup && dniLimpio(a.dni)===dniDup)){
+      a.pacienteId=principal.id;
+      if(!a.dni && principal.dni)a.dni=principal.dni;
+      if(!a.paciente && principal.nombreCompleto)a.paciente=principal.nombreCompleto;
+      a.pacienteFusionadoDesde=duplicado.id;
+      a.pacienteFusionadoEn=new Date().toISOString();
+    }
+  });
+  ['telefono','email','fechaNacimiento','coberturaHabitual','numeroAfiliadoHabitual'].forEach(k=>{
+    if(!principal[k] && duplicado[k])principal[k]=duplicado[k];
+  });
+  principal.historialCoberturas=[...(principal.historialCoberturas||[]),...(duplicado.historialCoberturas||[])];
+  principal.actualizadoEn=new Date().toISOString();
+  duplicado.estado='fusionado';
+  duplicado.fusionadoCon=principal.id;
+  duplicado.fusionadoEn=new Date().toISOString();
+  duplicado.fusionadoPor=usuarioSupabase?.email||'local';
+  if(!data.auditoriaPacientes)data.auditoriaPacientes=[];
+  data.auditoriaPacientes.push({tipo:'fusion_paciente',principalId,duplicadoId,fecha:new Date().toISOString(),usuario:usuarioSupabase?.email||'local',atencionesReasignadas:cantAntes});
+  saveConfig();
+  saveAtenciones();
+  renderDuplicadosPacientes();
+  renderTabla();
+  renderStats();
+  alert('Pacientes fusionados. Las atenciones y estadísticas se conservaron.');
+}
+
 function renderConfig(){cargarValoresConfig();cargarReglaConfig();$('listaProfesionales').innerHTML=data.profesionales.map(p=>`<li><strong>${p.nombre}</strong> — ${p.area} ${p.id!=='general'?`<button class="small-btn" onclick="delProfesional('${p.id}')">Borrar</button>`:''}</li>`).join('');$('listaOS').innerHTML=data.obrasSociales.map(o=>`<li>${o} <button class="small-btn" onclick="delOS('${escapeHtml(o)}')">Borrar</button></li>`).join('');$('listaPrestaciones').innerHTML=allPrestaciones().map(p=>`<li>${p} <button class="small-btn" onclick="delPrestacion('${encodeURIComponent(p)}')">Borrar</button></li>`).join('')}
 function cargarValoresConfig(){
  const p=data.profesionales.find(x=>x.id===$('cfgProfesionalValores').value)||data.profesionales.find(x=>x.id==='matias');

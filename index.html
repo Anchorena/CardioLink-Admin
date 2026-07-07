@@ -3,21 +3,21 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CardioLink Admin v2.6.8</title>
-<link rel="stylesheet" href="styles.css?v=267">
+<title>CardioLink Admin v2.6.9</title>
+<link rel="stylesheet" href="styles.css?v=269">
 </head>
 <body>
 <aside class="sidebar">
   <div class="brand">
-    <div class="brand-main">CardioLink Admin <span>v2.6.7</span></div>
+    <div class="brand-main">CardioLink Admin <span>v2.6.9</span></div>
     <div class="brand-by">by Matías Anchorena</div>
   </div>
   <button class="nav active" data-section="dashboard">Dashboard</button>
   <button class="nav" data-section="carga">Carga de turno/atención</button>
   <button class="nav" data-section="listado">Listado / filtros</button>
   <button class="nav" data-section="colocaciones">Colocaciones / pendientes</button>
-<button class="nav" data-section="instructivos">Instructivos</button>
-<button class="nav" data-section="config">Configuración</button>
+  <button class="nav" data-section="instructivos">Instructivos</button>
+  <button class="nav" data-section="config">Configuración</button>
   <button id="btnDark" class="dark-toggle">🌙 Modo oscuro</button>
 </aside>
 
@@ -195,7 +195,7 @@
 
       <div id="printArea">
         <div class="print-title">
-          <h2>CardioLink Admin v2.6.7</h2>
+          <h2>CardioLink Admin v2.6.9</h2>
           <p>by Matías Anchorena — Listado filtrado</p>
           <p id="printMeta"></p>
         </div>
@@ -286,195 +286,205 @@
     </div>
   </section>
 
+
   <section id="instructivos" class="section">
-  <div class="card instructivo-general">
-    <h2>Instructivos de uso de CardioLink Admin</h2>
-    <p class="muted">
-      Esta sección explica cómo usar el sistema en el día a día. Está pensada para que una persona que nunca usó CardioLink pueda sentarse, buscar pacientes, cargar atenciones, filtrar listados e imprimir reportes sin depender de otra explicación.
-    </p>
-  </div>
+    <div class="card instructivos-hero">
+      <h2>Instructivos de uso de CardioLink Admin</h2>
+      <p class="muted">Guía simple para secretaría y médicos. La idea es que alguien que no conoce el sistema pueda sentarse, cargar pacientes, registrar turnos, buscar información y sacar listados sin preguntar cada paso.</p>
+      <div class="instructivo-indice">
+        <a href="#inst-rapido">Uso rápido</a>
+        <a href="#inst-pacientes">Pacientes</a>
+        <a href="#inst-medicloud">Medicloud</a>
+        <a href="#inst-carga">Carga de turno</a>
+        <a href="#inst-combos">Prestaciones múltiples</a>
+        <a href="#inst-busqueda">Búsqueda</a>
+        <a href="#inst-filtros">Filtros y listados</a>
+        <a href="#inst-colocaciones">Colocaciones</a>
+        <a href="#inst-perfiles">Perfiles</a>
+      </div>
+    </div>
 
-  <div class="card instructivo-general">
-    <h2>1. Uso rápido del día a día</h2>
-    <ol>
-      <li>Elegí el <strong>perfil activo</strong> arriba a la derecha: Matías, Rogelio u otro profesional.</li>
-      <li>Entrá a <strong>Carga de turno/atención</strong>.</li>
-      <li>Buscá el paciente por <strong>DNI, apellido o teléfono</strong>.</li>
-      <li>Si el paciente ya existe, tocá <strong>Usar paciente</strong>.</li>
-      <li>Si no existe, cargalo manualmente o importalo desde Medicloud.</li>
-      <li>Elegí la <strong>cobertura para este turno</strong>.</li>
-      <li>Seleccioná la prestación principal y, si corresponde, estudios adicionales.</li>
-      <li>Revisá cobro, bonos, informe y entrega.</li>
-      <li>Tocá <strong>Guardar atención</strong> o <strong>Guardar y nuevo registro</strong>.</li>
-    </ol>
-  </div>
+    <div class="card instructivo-card" id="inst-rapido">
+      <h2>1. Uso rápido del día a día</h2>
+      <p>Para una carga normal, seguí este orden:</p>
+      <ol>
+        <li>Entrá con tu usuario.</li>
+        <li>Elegí el <strong>perfil activo</strong> correcto: Matías, Rogelio, Secretaría, Vista general, etc.</li>
+        <li>Andá a <strong>Carga de turno/atención</strong>.</li>
+        <li>Buscá el paciente por <strong>DNI, apellido o teléfono</strong>.</li>
+        <li>Si el paciente existe, tocá <strong>Usar paciente</strong>.</li>
+        <li>Si no existe, cargalo manualmente o importalo desde Medicloud.</li>
+        <li>Elegí cobertura, profesional, prestación, cobro, bonos y estados.</li>
+        <li>Tocá <strong>Guardar atención</strong> o <strong>Guardar y nuevo registro</strong>.</li>
+      </ol>
+      <p class="inst-alerta">Regla importante: <strong>no cargues al mismo paciente dos veces si ya existe</strong>. Primero buscá por DNI.</p>
+    </div>
 
-  <div class="card instructivo-general">
-    <h2>2. Cómo buscar un paciente ya cargado</h2>
-    <p>
-      Antes de crear un paciente nuevo, siempre buscá si ya existe. Esto evita duplicados.
-    </p>
-    <ol>
-      <li>En la pantalla de carga, usá el buscador de paciente.</li>
-      <li>Podés buscar por <strong>DNI</strong>, <strong>apellido</strong> o <strong>teléfono</strong>.</li>
-      <li>Si aparece el paciente correcto, tocá <strong>Usar paciente</strong>.</li>
-      <li>La app completará sus datos básicos y solo tenés que cargar el turno del día.</li>
-    </ol>
-    <p class="muted">
-      Regla importante: si el DNI coincide, CardioLink considera que es el mismo paciente aunque el nombre esté escrito distinto.
-    </p>
-  </div>
+    <div class="card instructivo-card" id="inst-pacientes">
+      <h2>2. Cómo cargar pacientes sin duplicarlos</h2>
+      <p>CardioLink identifica al paciente principalmente por el <strong>DNI</strong>. Si el DNI ya existe, el sistema debe usar la ficha existente y registrar un nuevo turno, no crear otro paciente.</p>
+      <h3>Paciente ya cargado</h3>
+      <ol>
+        <li>En el campo <strong>Buscar paciente por DNI / apellido / teléfono</strong>, escribí el DNI o parte del apellido.</li>
+        <li>Tocá <strong>Buscar local</strong>.</li>
+        <li>Elegí el paciente correcto.</li>
+        <li>Completá solo los datos del turno: fecha, cobertura del día, prestación, cobro y estado.</li>
+      </ol>
+      <h3>Paciente nuevo</h3>
+      <ol>
+        <li>Si no aparece en la búsqueda local, tocá <strong>Nuevo manual</strong> o <strong>Importar desde Medicloud</strong>.</li>
+        <li>Cargá nombre, DNI, teléfono, email y fecha de nacimiento si los tenés.</li>
+        <li>Elegí la cobertura para ese turno.</li>
+        <li>Si esa cobertura será la habitual del paciente, marcá <strong>Guardar esta cobertura como cobertura habitual del paciente</strong>.</li>
+      </ol>
+      <p class="muted">La cobertura habitual sirve como sugerencia futura. La cobertura del turno queda guardada como dato histórico de ese día.</p>
+    </div>
 
-  <div class="card instructivo-general">
-    <h2>3. Cómo cargar un paciente nuevo manualmente</h2>
-    <ol>
-      <li>Entrá a <strong>Carga de turno/atención</strong>.</li>
-      <li>Completá nombre, apellido, DNI, teléfono, email y fecha de nacimiento si están disponibles.</li>
-      <li>Elegí la cobertura habitual o la cobertura usada para este turno.</li>
-      <li>Si querés que esa cobertura quede guardada como habitual, marcá <strong>Guardar esta cobertura como cobertura habitual del paciente</strong>.</li>
-      <li>Luego completá la prestación y guardá la atención.</li>
-    </ol>
-    <p class="muted">
-      La cobertura habitual del paciente sirve como sugerencia futura. La cobertura del turno queda guardada históricamente para ese día.
-    </p>
-  </div>
+    <div class="card instructivo-card" id="inst-medicloud">
+      <h2>3. Cómo importar datos desde Medicloud</h2>
+      <p>Medicloud sigue siendo la ficha madre o historia clínica. CardioLink se usa para turnos, estudios, caja, bonos, pendientes e informes. Para evitar doble carga, se puede copiar la información visible desde Medicloud y pegarla en CardioLink.</p>
+      <ol>
+        <li>Abrí el paciente en Medicloud.</li>
+        <li>Seleccioná los datos visibles: nombre, apellido, email, teléfono, DNI, fecha de nacimiento, etc.</li>
+        <li>Copiá el texto seleccionado.</li>
+        <li>Volvé a CardioLink y tocá <strong>Importar desde Medicloud</strong>.</li>
+        <li>Pegá el texto en la ventana.</li>
+        <li>Tocá <strong>Completar paciente</strong>.</li>
+      </ol>
+      <h3>Si el paciente ya existe</h3>
+      <p>Si el DNI ya estaba en CardioLink, no se debe duplicar. Se usa la ficha existente y, si hace falta, se actualizan teléfono, email o cobertura habitual.</p>
+      <h3>Ejemplo</h3>
+      <div class="ejemplo-box">
+        Medicloud muestra: Silvia Raquel Mogliasso, DNI 10176264, teléfono 91136840880, email smcocina@hotmail.com.<br>
+        CardioLink completa esos datos y después solo hay que registrar qué viene a hacerse hoy.
+      </div>
+    </div>
 
-  <div class="card instructivo-general">
-    <h2>4. Cómo importar datos desde Medicloud</h2>
-    <p>
-      Medicloud sigue siendo la historia clínica principal. CardioLink solo usa datos básicos para no cargar dos veces.
-    </p>
-    <ol>
-      <li>Abrí la ficha del paciente en Medicloud.</li>
-      <li>Seleccioná los datos visibles del paciente: nombre, apellido, DNI, teléfono, email y fecha de nacimiento.</li>
-      <li>Copiá el texto seleccionado.</li>
-      <li>Volvé a CardioLink.</li>
-      <li>Tocá <strong>Importar desde Medicloud</strong>.</li>
-      <li>Pegá el texto en la ventana.</li>
-      <li>Tocá <strong>Completar paciente</strong>.</li>
-    </ol>
-    <p class="muted">
-      Si el DNI ya existe en CardioLink, no se crea un paciente duplicado. La app debe usar el paciente existente y, si corresponde, actualizar sus datos.
-    </p>
-  </div>
+    <div class="card instructivo-card" id="inst-carga">
+      <h2>4. Cómo cargar un turno o atención</h2>
+      <ol>
+        <li>Elegí la <strong>fecha</strong>.</li>
+        <li>Seleccioná o cargá el <strong>paciente</strong>.</li>
+        <li>Elegí la <strong>obra social / cobertura para este turno</strong>.</li>
+        <li>Completá el <strong>número de afiliado</strong> si corresponde.</li>
+        <li>Elegí el <strong>profesional actuante</strong>.</li>
+        <li>Elegí la <strong>prestación principal</strong>.</li>
+        <li>Revisá que la regla automática haya completado bien: consulta a, estudio a, facturador, bonos y montos.</li>
+        <li>Marcá bonos, copia, informe, envío, colocación o planilla si corresponde.</li>
+        <li>Guardá.</li>
+      </ol>
+      <p class="inst-alerta">Antes de guardar, mirá siempre los campos <strong>Consulta a</strong>, <strong>Estudio a</strong> y <strong>Circuito/facturación</strong>. Ahí se evitan la mayoría de los errores administrativos.</p>
+    </div>
 
-  <div class="card instructivo-general">
-    <h2>5. Cobertura habitual y cobertura del turno</h2>
-    <p>
-      Un paciente puede cambiar de obra social, quedarse sin prepaga o venir particular. Por eso CardioLink separa dos datos.
-    </p>
-    <ol>
-      <li><strong>Cobertura habitual:</strong> es la cobertura sugerida en la ficha del paciente.</li>
-      <li><strong>Cobertura para este turno:</strong> es la cobertura usada ese día.</li>
-      <li>Los reportes y facturación usan la cobertura del turno, no la cobertura habitual actual.</li>
-      <li>Si el paciente cambió de cobertura, podés marcar <strong>Guardar esta cobertura como cobertura habitual</strong>.</li>
-    </ol>
-    <p class="muted">
-      Ejemplo: un paciente que antes tenía OSDE puede venir hoy particular. El turno de hoy queda como Particular, pero los turnos viejos siguen figurando como OSDE.
-    </p>
-  </div>
+    <div class="card instructivo-card" id="inst-combos">
+      <h2>5. Prestaciones múltiples en un mismo turno</h2>
+      <p>Un paciente puede venir a más de una cosa el mismo día. Por ejemplo: Eco + Holter, MAPA + Eco, consulta + ECG, etc.</p>
+      <ol>
+        <li>Elegí una <strong>prestación principal</strong>.</li>
+        <li>En <strong>Prestaciones adicionales del mismo turno</strong>, marcá los estudios extra.</li>
+        <li>Cada estudio adicional se guarda como registro separado, vinculado al mismo turno.</li>
+        <li>La consulta se cuenta una sola vez.</li>
+        <li>El copago o particular se calcula por cada estudio, salvo que marques <strong>No cobrar</strong>.</li>
+      </ol>
+      <h3>Ejemplo IOMA</h3>
+      <div class="ejemplo-box">
+        IOMA + Eco + Holter: se registra consulta a Matías, dos estudios reales y dos copagos de estudio. Si el copago estudio es $50.000, el total de copagos es $100.000.
+      </div>
+      <h3>Ejemplo particular</h3>
+      <div class="ejemplo-box">
+        Particular + MAPA + Eco: si cada estudio vale $60.000, el total es $120.000. Si uno se marca como No cobrar, ese registro queda en $0 pero sigue figurando como estudio realizado.
+      </div>
+    </div>
 
-  <div class="card instructivo-general">
-    <h2>6. Cómo cargar prestaciones múltiples</h2>
-    <p>
-      Si el paciente viene a más de una cosa el mismo día, no lo cargues en observaciones. Usá prestaciones adicionales.
-    </p>
-    <ol>
-      <li>Elegí la <strong>prestación principal</strong>.</li>
-      <li>En <strong>Prestaciones adicionales del mismo turno</strong>, marcá los estudios extra.</li>
-      <li>Ejemplo: si viene a Eco + Holter, elegí Eco como principal y marcá Holter como adicional.</li>
-      <li>Cada estudio se guarda como registro separado, pero queda vinculado al mismo turno.</li>
-      <li>La consulta se cuenta una sola vez.</li>
-      <li>El copago o particular se calcula por cada estudio, salvo que marques <strong>No cobrar</strong>.</li>
-    </ol>
-    <p class="muted">
-      Ejemplo IOMA: Eco + Holter cobra dos copagos de estudio. Si cada copago es $50.000, total $100.000.
-    </p>
-  </div>
+    <div class="card instructivo-card" id="inst-busqueda">
+      <h2>6. Cómo buscar pacientes y atenciones</h2>
+      <p>Para buscar un paciente antes de cargar, usá el buscador de la pantalla de carga. Para buscar atenciones ya cargadas, usá <strong>Listado / filtros</strong>.</p>
+      <h3>Búsqueda de paciente</h3>
+      <ul>
+        <li>Por DNI: es lo más seguro.</li>
+        <li>Por apellido: útil si no tenés el DNI.</li>
+        <li>Por teléfono: útil cuando el paciente llama y no recuerda datos.</li>
+      </ul>
+      <h3>Evitar duplicados</h3>
+      <p>Si encontrás el mismo DNI con nombre parecido, usá el paciente existente. No crees otro por diferencia de mayúsculas, acentos o segundo nombre.</p>
+    </div>
 
-  <div class="card instructivo-general">
-    <h2>7. Opción “No cobrar”</h2>
-    <p>
-      Usá <strong>No cobrar</strong> cuando una prestación se realiza pero no debe sumar caja.
-    </p>
-    <ol>
-      <li>La prestación queda registrada como realizada.</li>
-      <li>El monto queda en $0.</li>
-      <li>No suma caja ni copagos.</li>
-      <li>Los pendientes de informe, impresión o entrega siguen funcionando igual.</li>
-    </ol>
-    <p class="muted">
-      No cobrar no significa borrar la prestación. Significa que administrativamente no entra dinero por ese registro.
-    </p>
-  </div>
+    <div class="card instructivo-card" id="inst-filtros">
+      <h2>7. Cómo usar filtros, listados e impresión</h2>
+      <ol>
+        <li>Entrá a <strong>Listado / filtros</strong>.</li>
+        <li>Elegí fecha desde y hasta, o usá los botones <strong>Hoy</strong>, <strong>Mes</strong> o <strong>20 al 20</strong>.</li>
+        <li>Filtrá por obra social, profesional, prestación, paciente o destino.</li>
+        <li>Tocá <strong>Filtrar</strong>.</li>
+        <li>Si necesitás imprimir, tocá <strong>Imprimir / PDF</strong>.</li>
+        <li>Si necesitás Excel, tocá <strong>Exportar Excel</strong>.</li>
+      </ol>
+      <h3>Ejemplos útiles</h3>
+      <ul>
+        <li><strong>Pacientes de hoy:</strong> botón Hoy + Filtrar.</li>
+        <li><strong>Producción mensual de Matías:</strong> Mes + profesional Matías + Filtrar.</li>
+        <li><strong>Estudios pendientes:</strong> botón Ver pendientes.</li>
+        <li><strong>Factura Rogelio:</strong> filtrar por destino Rogelio o por el filtro específico de factura Rogelio/Holter si está disponible.</li>
+      </ul>
+      <p class="muted">El botón Limpiar borra filtros, pero no debería cambiar el perfil activo.</p>
+    </div>
 
-  <div class="card instructivo-general">
-    <h2>8. Cómo usar filtros y listados</h2>
-    <ol>
-      <li>Entrá a <strong>Listado / filtros</strong>.</li>
-      <li>Podés filtrar por fecha desde/hasta, obra social, profesional, prestación, paciente o destino.</li>
-      <li>Usá <strong>Hoy</strong> para ver solo el día actual.</li>
-      <li>Usá <strong>Mes</strong> para ver el mes completo.</li>
-      <li>Usá <strong>20 al 20</strong> para períodos administrativos.</li>
-      <li>Usá <strong>Ver pendientes</strong> para encontrar informes, copias o entregas incompletas.</li>
-      <li>Usá <strong>Limpiar</strong> para borrar filtros. Esto no debe cambiar el perfil activo.</li>
-    </ol>
-  </div>
+    <div class="card instructivo-card" id="inst-colocaciones">
+      <h2>8. Colocaciones y liquidación</h2>
+      <p>La solapa <strong>Colocaciones / pendientes</strong> sirve para saber cuánto se debe pagar por colocaciones de Holter, MAPA o ECG.</p>
+      <ol>
+        <li>Entrá a <strong>Colocaciones / pendientes</strong>.</li>
+        <li>Elegí fecha desde y hasta.</li>
+        <li>Elegí colocador/a, por ejemplo Geraldine.</li>
+        <li>Revisá o cambiá los valores unitarios.</li>
+        <li>Tocá <strong>Calcular</strong>.</li>
+        <li>El sistema muestra total a pagar y detalle de pacientes.</li>
+        <li>Usá <strong>Imprimir / PDF liquidación</strong> para guardar o entregar el listado.</li>
+      </ol>
+      <p class="inst-alerta">Solo entran en la liquidación los registros marcados como <strong>Colocación liquidable</strong>.</p>
+    </div>
 
-  <div class="card instructivo-general">
-    <h2>9. Cómo imprimir o sacar PDF</h2>
-    <ol>
-      <li>Primero aplicá los filtros que necesitás.</li>
-      <li>Revisá que el listado muestre solo lo que querés imprimir.</li>
-      <li>Si querés que salgan montos, marcá <strong>Incluir valores</strong>.</li>
-      <li>Tocá <strong>Imprimir / PDF</strong>.</li>
-      <li>En la ventana del navegador elegí impresora o <strong>Guardar como PDF</strong>.</li>
-    </ol>
-    <p class="muted">
-      Si no marcás “Incluir valores”, el listado debería imprimirse sin dinero para evitar mostrar caja cuando no corresponde.
-    </p>
-  </div>
+    <div class="card instructivo-card" id="inst-perfiles">
+      <h2>9. Cómo agregar nuevos perfiles y prestaciones</h2>
+      <ol>
+        <li>Entrá a <strong>Configuración</strong>.</li>
+        <li>En <strong>Profesionales</strong>, cargá el nombre del nuevo profesional y su área. Tocá <strong>Agregar</strong>.</li>
+        <li>En <strong>Valores por profesional</strong>, elegí ese profesional y cargá consulta particular, ECG/electro, estudio, copago consulta, copago ECG y copago estudio.</li>
+        <li>Tocá <strong>Guardar valores</strong>.</li>
+        <li>En <strong>Prestaciones</strong>, escribí cada prestación que realiza ese profesional, elegí su perfil y tocá <strong>Agregar</strong>.</li>
+        <li>En <strong>Obras sociales</strong>, agregá una cobertura solo si todavía no existe.</li>
+        <li>Probá con una atención ficticia y después borrala.</li>
+      </ol>
+      <p class="muted">Las reglas especiales por obra social aplican principalmente a Matías. Los demás profesionales facturan para sí mismos salvo configuración distinta.</p>
+    </div>
 
-  <div class="card instructivo-general">
-    <h2>10. Liquidación de colocaciones</h2>
-    <ol>
-      <li>Entrá a <strong>Colocaciones / pendientes</strong>.</li>
-      <li>Elegí período desde/hasta.</li>
-      <li>Elegí colocador/a, por ejemplo Geraldine.</li>
-      <li>Revisá los valores de Holter, MAPA y ECG.</li>
-      <li>Tocá <strong>Calcular</strong>.</li>
-      <li>La app mostrará cantidad de estudios, valor unitario y total a pagar.</li>
-      <li>Usá <strong>Imprimir / PDF liquidación</strong> para guardar o imprimir el resumen.</li>
-    </ol>
-  </div>
+    <div class="card instructivo-card">
+      <h2>10. Errores frecuentes y cómo evitarlos</h2>
+      <ul>
+        <li><strong>Paciente duplicado:</strong> buscar siempre por DNI antes de crear uno nuevo.</li>
+        <li><strong>Cobertura vieja:</strong> revisar cobertura para este turno; no confiar ciegamente en la cobertura habitual.</li>
+        <li><strong>Copago mal cargado:</strong> revisar si corresponde por consulta, por estudio o por cada estudio del combo.</li>
+        <li><strong>No cobrar:</strong> usarlo cuando el estudio se realiza pero no entra dinero en caja.</li>
+        <li><strong>Pendiente de informe:</strong> si el estudio se hizo y todavía no está informado, dejarlo como pendiente.</li>
+        <li><strong>Liquidación incompleta:</strong> marcar Colocación liquidable y colocador/a correcto.</li>
+      </ul>
+    </div>
 
-  <div class="card instructivo-general">
-    <h2>11. Agregar nuevos perfiles, obras sociales y prestaciones</h2>
-    <ol>
-      <li>Entrá a <strong>Configuración</strong>.</li>
-      <li>En <strong>Profesionales</strong>, agregá el nuevo profesional.</li>
-      <li>En <strong>Valores por profesional</strong>, cargá sus valores de consulta, estudio y copagos.</li>
-      <li>En <strong>Prestaciones</strong>, agregá las prestaciones que realiza.</li>
-      <li>En <strong>Obras sociales</strong>, agregá coberturas nuevas si no existen.</li>
-      <li>Probá con una atención ficticia antes de usarlo en pacientes reales.</li>
-    </ol>
-    <p class="muted">
-      Las reglas especiales de OSDE/IOMA/OSPRERA/Sancor/Prevención aplican principalmente al circuito de Matías y Rogelio. Los demás profesionales deberían facturar para sí mismos salvo configuración posterior.
-    </p>
-  </div>
+    <div class="card instructivo-card">
+      <h2>Derechos reservados</h2>
+      <p>
+        Aplicación ideada por <strong>Matías Anchorena</strong> para su uso personal
+        en la gestión de su consultorio personal.
+      </p>
+      <p>
+        Su uso está destinado exclusivamente al ámbito autorizado por su creador.
+        Cualquier utilización fuera de ese destino requiere autorización previa.
+      </p>
+      <p class="muted">Aguante River.</p>
+    </div>
 
-  <div class="card instructivo-general">
-    <h2>12. Errores frecuentes</h2>
-    <ol>
-      <li><strong>Paciente duplicado:</strong> buscar siempre por DNI antes de crear uno nuevo.</li>
-      <li><strong>Obra social equivocada:</strong> revisar la cobertura del turno, no solo la cobertura habitual.</li>
-      <li><strong>Prestación combinada mal cargada:</strong> usar prestaciones adicionales, no observaciones.</li>
-      <li><strong>No aparece en caja:</strong> revisar si está marcado como No cobrar o Sin cobro en caja.</li>
-      <li><strong>No aparece en liquidación:</strong> revisar si está marcada la opción Colocación liquidable y el colocador correcto.</li>
-      <li><strong>No figura en pendientes:</strong> revisar los tildes de informe, impresión, mail o WhatsApp.</li>
-    </ol>
-  </div>
-</section>
+  </section>
+
   <section id="config" class="section">
     <div class="card">
       <h2>Configuración</h2>
@@ -537,6 +547,14 @@
           <ul id="listaPrestaciones"></ul>
         </div>
 
+        <div class="maintenance-card">
+          <h3>Mantenimiento de pacientes</h3>
+          <p class="muted">Busca posibles pacientes duplicados y permite fusionarlos sin borrar consultas, estudios, caja ni estadísticas.</p>
+          <button class="primary" id="btnBuscarDuplicadosPacientes" type="button">Buscar duplicados de pacientes</button>
+          <div id="resultadoDuplicadosPacientes" class="duplicados-result"></div>
+          <p class="muted">La fusión conserva un paciente principal y reasigna las atenciones del duplicado. El duplicado queda inactivo para auditoría.</p>
+        </div>
+
         <div>
           <h3>Backup / traslado</h3>
           <button class="primary" id="btnExportBackup">Exportar backup completo</button>
@@ -551,6 +569,6 @@
   </section>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="app.js?v=268"></script>
+<script src="app.js?v=269"></script>
 </body>
 </html>
