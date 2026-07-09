@@ -3,17 +3,18 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CardioLink Admin v2.7.9</title>
-<link rel="stylesheet" href="styles.css?v=279">
+<title>CardioLink Admin v2.8.0</title>
+<link rel="stylesheet" href="styles.css?v=280">
 </head>
 <body>
 <aside class="sidebar">
   <div class="brand">
-    <div class="brand-main">CardioLink Admin <span>v2.7.9</span></div>
+    <div class="brand-main">CardioLink Admin <span>v2.8.0</span></div>
     <div class="brand-by">by Matías Anchorena</div>
   </div>
   <button class="nav active" data-section="dashboard">Dashboard</button>
   <button class="nav" data-section="carga">Carga de turno/atención</button>
+  <button class="nav" data-section="agenda">Agenda / sala</button>
   <button class="nav" data-section="pacientes">Pacientes</button>
   <button class="nav" data-section="listado">Listado / filtros</button>
   <button class="nav solo-matias" data-section="caja">Caja / reportes</button>
@@ -91,6 +92,8 @@
         </div>
 
         <div><label>Fecha</label><input type="date" id="fecha" required></div>
+        <div><label>Hora inicio</label><input type="time" id="horaInicio"></div>
+        <div><label>Hora fin</label><input type="time" id="horaFin"></div>
         <div><label>Apellido y nombre</label><input type="text" id="paciente" required placeholder="Apellido y nombre"></div>
         <div><label>DNI</label><input type="text" id="dni" placeholder="Opcional"></div>
         <div><label>Teléfono</label><input type="text" id="telefono" placeholder="Opcional"></div>
@@ -174,6 +177,71 @@
     </div>
   </section>
 
+  <section id="agenda" class="section">
+    <div class="card agenda-card">
+      <div class="agenda-head">
+        <div>
+          <h2>Agenda / sala de espera</h2>
+          <p class="muted" id="agendaTextoPerfil">Turnos del día según el perfil activo.</p>
+        </div>
+        <div class="agenda-view-toggle">
+          <label>Vista</label>
+          <select id="agendaVista">
+            <option value="tabla">Tabla</option>
+            <option value="tarjetas">Tarjetas</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="agenda-filters">
+        <div><label>Fecha</label><input type="date" id="agendaFecha"></div>
+        <div><label>Profesional</label><select id="agendaProfesional"></select></div>
+        <div><label>Estado</label><select id="agendaEstado">
+          <option value="">Todos los estados</option>
+          <option value="reservado">Reservado / tomado</option>
+          <option value="confirmado">Confirmado</option>
+          <option value="sala_espera">Sala de espera</option>
+          <option value="en_consulta">En consulta / atendiendo</option>
+          <option value="atendido">Atendido</option>
+          <option value="ausente">Ausente</option>
+          <option value="cancelado">Cancelado</option>
+        </select></div>
+        <button class="primary" type="button" id="btnAgendaActualizar">Actualizar</button>
+        <button class="secondary" type="button" id="btnAgendaHoy">Hoy</button>
+      </div>
+
+      <div class="agenda-legend">
+        <span><i class="dot estado-reservado"></i>Reservado/tomado</span>
+        <span><i class="dot estado-confirmado"></i>Confirmado</span>
+        <span><i class="dot estado-sala_espera"></i>Sala de espera</span>
+        <span><i class="dot estado-en_consulta"></i>En consulta</span>
+        <span><i class="dot estado-atendido"></i>Atendido</span>
+        <span><i class="dot estado-ausente"></i>Ausente/cancelado</span>
+      </div>
+
+      <div id="agendaResumen" class="agenda-resumen muted"></div>
+      <div id="agendaTablaWrap" class="tabla-listado-wrap agenda-table-wrap">
+        <table class="agenda-table">
+          <thead>
+            <tr><th>Horario</th><th>Paciente</th><th>Profesional</th><th>Prestación</th><th>Cobertura</th><th>Estado</th><th>Acciones</th></tr>
+          </thead>
+          <tbody id="agendaTabla"></tbody>
+        </table>
+      </div>
+      <div id="agendaTarjetas" class="agenda-cards"></div>
+    </div>
+
+    <div id="agendaModal" class="modal-backdrop hidden">
+      <div class="modal agenda-modal-card">
+        <div class="modal-header">
+          <h2 id="agendaModalTitulo">Turno</h2>
+          <button class="secondary" type="button" id="btnAgendaModalCerrar">Cerrar</button>
+        </div>
+        <div id="agendaModalBody"></div>
+      </div>
+    </div>
+  </section>
+
   <section id="pacientes" class="section">
     <div class="card">
       <h2>Pacientes</h2>
@@ -238,7 +306,7 @@
 
       <div id="printArea">
         <div class="print-title">
-          <h2>CardioLink Admin v2.7.9</h2>
+          <h2>CardioLink Admin v2.8.0</h2>
           <p>by Matías Anchorena — Listado filtrado</p>
           <p id="printMeta"></p>
         </div>
@@ -656,6 +724,6 @@
   </section>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="app.js?v=279"></script>
+<script src="app.js?v=280"></script>
 </body>
 </html>

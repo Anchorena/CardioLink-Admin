@@ -584,3 +584,54 @@ body[data-rol="admin"] .solo-matias { display:none !important; }
 #caja .card > h2{
   margin-bottom: 8px;
 }
+
+/* ===== AGENDA / SALA DE ESPERA v2.8.0 ===== */
+.agenda-card { overflow: visible; }
+.agenda-head { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; flex-wrap:wrap; }
+.agenda-view-toggle { min-width:180px; }
+.agenda-filters { display:grid; grid-template-columns: repeat(3, minmax(180px, 1fr)) auto auto; gap:14px; align-items:end; margin:18px 0; }
+.agenda-legend { display:flex; flex-wrap:wrap; gap:10px 16px; margin:10px 0 16px; color:#53627a; font-weight:700; }
+.agenda-legend span { display:inline-flex; align-items:center; gap:6px; }
+.dot { width:14px; height:14px; border-radius:50%; display:inline-block; }
+.dot.estado-reservado { background:#5B63E0; }
+.dot.estado-confirmado { background:#24C7B7; }
+.dot.estado-sala_espera { background:#08BFD3; }
+.dot.estado-en_consulta { background:#9747E8; }
+.dot.estado-atendido { background:#6256A5; }
+.dot.estado-ausente { background:#F23B7B; }
+.agenda-resumen { margin:8px 0 14px; font-weight:700; }
+.agenda-table-wrap table { min-width:980px; }
+.agenda-status { display:inline-flex; align-items:center; gap:8px; padding:9px 13px; border-radius:999px; font-weight:900; white-space:nowrap; }
+.agenda-status i, .agenda-state-btn i { width:12px; height:12px; border-radius:50%; display:inline-block; background:currentColor; }
+.agenda-status.estado-reservado, .agenda-state-btn.estado-reservado { background:#eef0ff; color:#4f57d9; }
+.agenda-status.estado-confirmado, .agenda-state-btn.estado-confirmado { background:#ddfbf7; color:#0f9f93; }
+.agenda-status.estado-sala_espera, .agenda-state-btn.estado-sala_espera { background:#defaff; color:#0891a3; }
+.agenda-status.estado-en_consulta, .agenda-state-btn.estado-en_consulta { background:#f1e5ff; color:#7e22ce; }
+.agenda-status.estado-atendido, .agenda-state-btn.estado-atendido { background:#ebe7ff; color:#574b91; }
+.agenda-status.estado-ausente, .agenda-state-btn.estado-ausente { background:#ffe2eb; color:#be185d; }
+.agenda-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.agenda-actions button { border:0; border-radius:12px; padding:10px 12px; font-weight:900; cursor:pointer; background:#e5e7eb; color:#111827; }
+.agenda-actions button:first-child { background:#16475b; color:#fff; }
+.agenda-cards { display:grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap:14px; }
+.agenda-turno-card { border:1px solid #dbe3ef; border-radius:20px; background:#fff; padding:18px; box-shadow:0 8px 22px rgba(15,23,42,.08); }
+.agenda-card-top { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:10px; }
+.agenda-turno-card h3 { margin:6px 0; font-size:22px; }
+.modal-backdrop { position:fixed; inset:0; background:rgba(15,23,42,.45); z-index:1000; display:flex; justify-content:center; align-items:flex-start; padding:40px 18px; overflow:auto; }
+.modal-backdrop.hidden { display:none !important; }
+.agenda-modal-card { width:min(920px, 96vw); background:#fff; border-radius:24px; padding:24px; box-shadow:0 18px 45px rgba(15,23,42,.25); }
+.modal-header { display:flex; justify-content:space-between; align-items:center; gap:14px; border-bottom:1px solid #e5e7eb; padding-bottom:14px; margin-bottom:18px; }
+.agenda-modal-grid { display:grid; grid-template-columns: repeat(2, minmax(180px, 1fr)); gap:12px; }
+.agenda-modal-grid div { border:1px solid #dbe3ef; border-radius:16px; padding:14px; background:#f8fafc; }
+.agenda-modal-grid label { display:block; color:#64748b; font-weight:800; margin-bottom:4px; }
+.agenda-state-grid { display:flex; flex-wrap:wrap; gap:10px; margin:12px 0 20px; }
+.agenda-state-btn { display:inline-flex; align-items:center; gap:8px; border:1px solid transparent; border-radius:999px; padding:11px 14px; font-weight:900; cursor:pointer; }
+.agenda-state-btn.active { outline:3px solid rgba(37,99,235,.25); border-color:currentColor; }
+.modal-actions { border-top:1px solid #e5e7eb; padding-top:16px; }
+@media (max-width: 1000px){
+  .agenda-filters { grid-template-columns:1fr 1fr; }
+  .agenda-modal-grid { grid-template-columns:1fr; }
+}
+@media (max-width: 700px){
+  .agenda-filters { grid-template-columns:1fr; }
+  .agenda-head { display:block; }
+}

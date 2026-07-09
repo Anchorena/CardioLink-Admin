@@ -190,7 +190,7 @@ function seccionPermitida(section){
   if(section==='caja') return esMatiasDuenio();
   if(esMatiasDuenio()) return true;
   if(esSecretaria() || esAdminComun()) return true;
-  if(esMedico()) return ['dashboard','carga','pacientes','listado','colocaciones','instructivos'].includes(section);
+  if(esMedico()) return ['dashboard','carga','agenda','pacientes','listado','colocaciones','instructivos'].includes(section);
   return section!=='config';
 }
 function aplicarPermisosUI(){
@@ -822,6 +822,18 @@ function init(){
   on('btnPacientesTodos','click',()=>renderPacientesPanel('',true));
   on('btnPacientesDuplicados','click',()=>{renderDuplicadosPacientes(); const a=$('resultadoDuplicadosPacientes'), b=$('resultadoDuplicadosPacientesPacientes'); if(a&&b)b.innerHTML=a.innerHTML;});
 
+  // Agenda / sala
+  on('btnAgendaActualizar','click',renderAgenda);
+  on('btnAgendaHoy','click',()=>{if($('agendaFecha'))$('agendaFecha').value=todayISO();renderAgenda();});
+  on('agendaFecha','change',renderAgenda);
+  on('agendaProfesional','change',renderAgenda);
+  on('agendaEstado','change',renderAgenda);
+  on('agendaVista','change',()=>{guardarPreferenciaAgenda($('agendaVista')?.value||'tabla');renderAgenda();});
+  on('btnAgendaModalCerrar','click',cerrarAgendaModal);
+  const agendaModal=$('agendaModal');
+  if(agendaModal)agendaModal.addEventListener('click',e=>{if(e.target===agendaModal)cerrarAgendaModal();});
+  try { initAgenda(); } catch(e) { console.warn('initAgenda falló:', e); }
+
   try { renderTabla(); } catch(e) { console.warn('renderTabla falló:', e); }
   try { renderStats(); } catch(e) { console.warn('renderStats falló:', e); }
   try { ocultarResumenFiltros(); } catch(e) {}
@@ -838,6 +850,7 @@ if(puedeVerFacturaRogelio()){
  $('fOS').appendChild(optFacturaRogelio);
 }
  llenarTodos($('fProfesional'),data.profesionales.filter(p=>p.id!=='general').map(p=>p.nombre),'Todos los médicos');
+ llenarSelectAgendaProfesionales();
  llenarTodos($('fPrestacion'),allPrestaciones(),'Todas las prestaciones');
  llenarSelect($('profPrestacion'),data.profesionales.filter(p=>p.id!=='general'),p=>p.id,p=>p.nombre);
  llenarSelect($('cfgProfesionalValores'),data.profesionales.filter(p=>p.id!=='general'),p=>p.id,p=>p.nombre);
@@ -894,6 +907,11 @@ function showSection(id){
   }else if(id==='carga'){
     if($('tituloBienvenida'))$('tituloBienvenida').textContent='Carga de turno/atención';
     if($('subtituloPerfil'))$('subtituloPerfil').textContent='Carga operativa de pacientes, coberturas y prestaciones';
+  }else if(id==='agenda'){
+    if($('tituloBienvenida'))$('tituloBienvenida').textContent='Agenda / sala de espera';
+    if($('subtituloPerfil'))$('subtituloPerfil').textContent='Turnos del día y estados de atención';
+    initAgenda();
+    renderAgenda();
   }else if(id==='listado'){
     if($('tituloBienvenida'))$('tituloBienvenida').textContent='Listado / filtros';
     if($('subtituloPerfil'))$('subtituloPerfil').textContent='Búsqueda y listados de atenciones';
@@ -1160,6 +1178,9 @@ function crearAtencionDesdeFormulario(prestacion, opciones={}){
   grupoTurnoId,
   pacienteId:$('pacienteId')?.value || pacienteIdPorDni($('dni')?.value) || '',
   fecha:$('fecha').value,
+  horaInicio:$('horaInicio')?.value||'',
+  horaFin:$('horaFin')?.value||'',
+  estadoTurno:'reservado',
   paciente:$('paciente').value.trim(),
   dni:$('dni').value.trim(),
   telefono:$('telefono')?.value.trim()||'',
@@ -1231,6 +1252,7 @@ function guardarAtencion(e){
  atenciones.push(...registros);
  saveAtenciones();
  renderTabla();
+ if(typeof renderAgenda==='function')renderAgenda();
  renderStats();
  if(resumenFiltrosVisible)calcularLiquidacionColocaciones();
  limpiarForm();
@@ -2177,10 +2199,147 @@ window.guardarReglaConfig=guardarReglaConfig;
 window.addProfesional=addProfesional;
 window.delProfesional=delProfesional;
 window.addOS=addOS;
+
+
+/* ===== AGENDA / SALA DE ESPERA v2.8.0 ===== */
+const ESTADOS_AGENDA = {
+  reservado:{label:'Reservado / tomado', short:'Tomado', cls:'estado-reservado'},
+  confirmado:{label:'Confirmado', short:'Confirmado', cls:'estado-confirmado'},
+  sala_espera:{label:'Sala de espera', short:'Sala', cls:'estado-sala_espera'},
+  en_consulta:{label:'En consulta / atendiendo', short:'Atendiendo', cls:'estado-en_consulta'},
+  atendido:{label:'Atendido', short:'Atendido', cls:'estado-atendido'},
+  ausente:{label:'Ausente', short:'Ausente', cls:'estado-ausente'},
+  cancelado:{label:'Cancelado', short:'Cancelado', cls:'estado-ausente'}
+};
+function preferenciaAgendaKey(){return 'cardiolink_agenda_vista_'+usuarioActualNombreCorto();}
+function guardarPreferenciaAgenda(v){localStorage.setItem(preferenciaAgendaKey(),v||'tabla');}
+function leerPreferenciaAgenda(){return localStorage.getItem(preferenciaAgendaKey())||'tabla';}
+function horaTurno(a){return a.horaInicio ? `${a.horaInicio}${a.horaFin?' - '+a.horaFin:''}` : 's/h';}
+function estadoTurno(a){return a.estadoTurno || 'reservado';}
+function estadoAgendaBadge(a){const e=ESTADOS_AGENDA[estadoTurno(a)]||ESTADOS_AGENDA.reservado;return `<span class="agenda-status ${e.cls}"><i></i>${e.short}</span>`;}
+function llenarSelectAgendaProfesionales(){
+  const sel=$('agendaProfesional'); if(!sel||!data?.profesionales)return;
+  sel.innerHTML='';
+  const profs=data.profesionales.filter(p=>p.id!=='general');
+  if(esSecretaria()||esAdminComun()){
+    const opt=document.createElement('option'); opt.value=''; opt.textContent='Todos los profesionales'; sel.appendChild(opt);
+    profs.forEach(p=>{const o=document.createElement('option');o.value=p.id;o.textContent=p.nombre;sel.appendChild(o);});
+  }else if(esMatiasDuenio()){
+    profs.forEach(p=>{const o=document.createElement('option');o.value=p.id;o.textContent=p.nombre;sel.appendChild(o);});
+    sel.value='matias';
+  }else if(esMedico()){
+    const pid=profesionalIdUsuarioActual();
+    const p=profs.find(x=>x.id===pid) || profs[0];
+    if(p){const o=document.createElement('option');o.value=p.id;o.textContent=p.nombre;sel.appendChild(o);sel.value=p.id;}
+    sel.disabled=true;
+    return;
+  }
+  sel.disabled=false;
+}
+function initAgenda(){
+  if($('agendaFecha')&&!$('agendaFecha').value)$('agendaFecha').value=todayISO();
+  if($('agendaVista'))$('agendaVista').value=leerPreferenciaAgenda();
+  llenarSelectAgendaProfesionales();
+  if($('agendaProfesional')){
+    if(esMatiasDuenio()&&!$('agendaProfesional').value)$('agendaProfesional').value='matias';
+    if(esMedico())$('agendaProfesional').value=profesionalIdUsuarioActual();
+  }
+}
+function agendaDatos(){
+  const fecha=$('agendaFecha')?.value||todayISO();
+  let prof=$('agendaProfesional')?.value||'';
+  const estado=$('agendaEstado')?.value||'';
+  if(esMedico())prof=profesionalIdUsuarioActual();
+  if(esMatiasDuenio()&&!prof)prof='matias';
+  return atenciones.filter(a=>{
+    if((a.fecha||'')!==fecha)return false;
+    if(prof && a.profesionalId!==prof)return false;
+    if(estado && estadoTurno(a)!==estado)return false;
+    return true;
+  }).sort((a,b)=>(a.horaInicio||'99:99').localeCompare(b.horaInicio||'99:99') || String(a.paciente||'').localeCompare(String(b.paciente||''),'es'));
+}
+function agendaTextoPerfil(){
+  if(!$('agendaTextoPerfil'))return;
+  if(esSecretaria()||esAdminComun())$('agendaTextoPerfil').textContent='Vista operativa general. Podés ver todos los profesionales o filtrar uno puntual.';
+  else if(esMatiasDuenio())$('agendaTextoPerfil').textContent='Vista de Matías por defecto. Podés cambiar el filtro si necesitás revisar otro profesional.';
+  else $('agendaTextoPerfil').textContent='Vista propia del profesional logueado.';
+}
+function renderAgenda(){
+  const tbody=$('agendaTabla'), cards=$('agendaTarjetas'), wrap=$('agendaTablaWrap'); if(!tbody||!cards)return;
+  agendaTextoPerfil();
+  const datos=agendaDatos();
+  const vista=$('agendaVista')?.value||'tabla';
+  if($('agendaResumen'))$('agendaResumen').textContent=datos.length?`${datos.length} turno(s) para la fecha seleccionada.`:'No hay turnos para la fecha seleccionada.';
+  wrap?.classList.toggle('hidden',vista==='tarjetas');
+  cards.classList.toggle('hidden',vista!=='tarjetas');
+  if(!datos.length){tbody.innerHTML='<tr><td colspan="7">No hay turnos para mostrar.</td></tr>';cards.innerHTML='<div class="muted">No hay turnos para mostrar.</div>';return;}
+  tbody.innerHTML=datos.map(a=>`<tr>
+    <td><strong>${horaTurno(a)}</strong></td>
+    <td><strong>${escapeHtml(a.paciente||'')}</strong><br><small>${escapeHtml(a.telefono||'')} ${a.email?'· '+escapeHtml(a.email):''}</small></td>
+    <td>${escapeHtml(a.profesional||'')}</td>
+    <td>${escapeHtml(a.prestacion||'')}</td>
+    <td>${escapeHtml(a.obraSocial||'')}</td>
+    <td>${estadoAgendaBadge(a)}</td>
+    <td class="agenda-actions"><button onclick="abrirAgendaModal(${a.id})">Ver</button><button onclick="cambiarEstadoAgenda(${a.id},'sala_espera')">Sala</button><button onclick="cambiarEstadoAgenda(${a.id},'en_consulta')">Atender</button><button onclick="cambiarEstadoAgenda(${a.id},'atendido')">Atendido</button></td>
+  </tr>`).join('');
+  cards.innerHTML=datos.map(a=>`<div class="agenda-turno-card">
+    <div class="agenda-card-top"><strong>${horaTurno(a)}</strong>${estadoAgendaBadge(a)}</div>
+    <h3>${escapeHtml(a.paciente||'')}</h3>
+    <p>${escapeHtml(a.prestacion||'')} · ${escapeHtml(a.obraSocial||'')}</p>
+    <p class="muted">${escapeHtml(a.profesional||'')}</p>
+    <div class="agenda-actions"><button onclick="abrirAgendaModal(${a.id})">Ver ficha</button><button onclick="cambiarEstadoAgenda(${a.id},'sala_espera')">Sala</button><button onclick="cambiarEstadoAgenda(${a.id},'en_consulta')">Atender</button><button onclick="cambiarEstadoAgenda(${a.id},'atendido')">Atendido</button></div>
+  </div>`).join('');
+}
+function opcionesEstadoAgendaHTML(id, actual){
+  return Object.entries(ESTADOS_AGENDA).map(([k,e])=>`<button class="agenda-state-btn ${e.cls} ${actual===k?'active':''}" onclick="cambiarEstadoAgenda(${id},'${k}');abrirAgendaModal(${id});"><i></i>${e.short}</button>`).join('');
+}
+function abrirAgendaModal(id){
+  const a=atenciones.find(x=>String(x.id)===String(id)); if(!a)return;
+  const m=$('agendaModal'), body=$('agendaModalBody'); if(!m||!body)return;
+  $('agendaModalTitulo').textContent=a.paciente||'Turno';
+  body.innerHTML=`<div class="agenda-modal-grid">
+    <div><label>Horario</label><strong>${horaTurno(a)}</strong></div>
+    <div><label>Fecha</label><strong>${formatFecha(a.fecha)}</strong></div>
+    <div><label>Profesional</label><strong>${escapeHtml(a.profesional||'')}</strong></div>
+    <div><label>Prestación</label><strong>${escapeHtml(a.prestacion||'')}</strong></div>
+    <div><label>Cobertura</label><strong>${escapeHtml(a.obraSocial||'')}</strong></div>
+    <div><label>Teléfono</label><strong>${escapeHtml(a.telefono||'s/d')}</strong></div>
+  </div>
+  <h3>Estado del turno</h3>
+  <div class="agenda-state-grid">${opcionesEstadoAgendaHTML(a.id,estadoTurno(a))}</div>
+  <div class="agenda-actions modal-actions"><button onclick="editarAtencion(${a.id});cerrarAgendaModal();showSection('listado')">Editar atención</button></div>`;
+  m.classList.remove('hidden');
+}
+function cerrarAgendaModal(){ $('agendaModal')?.classList.add('hidden'); }
+function cambiarEstadoAgenda(id,estado){
+  const a=atenciones.find(x=>String(x.id)===String(id)); if(!a)return;
+  a.estadoTurno=estado;
+  a.estadoTurnoEditadoPor=nombreUsuarioAuditoria();
+  a.estadoTurnoEditadoEn=new Date().toISOString();
+  selloAuditoriaEdicion(a);
+  saveAtenciones();
+  renderAgenda();
+  renderTabla();
+  renderStats();
+}
+
 window.delOS=delOS;
 window.addPrestacion=addPrestacion;
 window.delPrestacion=delPrestacion;
 window.limpiarUsuariosDuplicados=limpiarUsuariosDuplicados;
+window.abrirAgendaModal=abrirAgendaModal;
+window.cerrarAgendaModal=cerrarAgendaModal;
+window.cambiarEstadoAgenda=cambiarEstadoAgenda;
+
+async function refrescarDesdeSupabaseAutomatico(){
+  try{
+    await cargarAtencionesDesdeSupabase();
+    renderTabla();
+    renderStats();
+    if($('agenda')?.classList.contains('visible'))renderAgenda();
+    if($('pacientes')?.classList.contains('visible'))renderPacientesPanel($('pacientesBuscar')?.value||'', false);
+  }catch(e){console.warn('Refresco automático falló:', e);}
+}
 
 function iniciarRefrescoAutomatico() {
   if (window.cardioLinkRefreshInterval) {
