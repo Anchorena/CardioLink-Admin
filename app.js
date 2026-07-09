@@ -190,7 +190,7 @@ function seccionPermitida(section){
   if(section==='caja') return esMatiasDuenio();
   if(esMatiasDuenio()) return true;
   if(esSecretaria() || esAdminComun()) return true;
-  if(esMedico()) return ['dashboard','carga','agenda','pacientes','listado','colocaciones','instructivos'].includes(section);
+  if(esMedico()) return ['dashboard','carga','agenda','pacientes','listado','estadisticas','colocaciones','instructivos'].includes(section);
   return section!=='config';
 }
 function aplicarPermisosUI(){
@@ -830,6 +830,13 @@ function init(){
   on('agendaEstado','change',renderAgenda);
   on('agendaVista','change',()=>{guardarPreferenciaAgenda($('agendaVista')?.value||'tabla');renderAgenda();});
   on('btnAgendaModalCerrar','click',cerrarAgendaModal);
+
+  // Estadísticas / gráficos
+  on('btnStatsGenerar','click',renderEstadisticas);
+  on('btnStatsMes','click',()=>{setPeriodoStatsMes();renderEstadisticas();});
+  on('btnStatsHoy','click',()=>{const h=todayISO(); if($('statsDesde'))$('statsDesde').value=h; if($('statsHasta'))$('statsHasta').value=h; renderEstadisticas();});
+  ['statsDesde','statsHasta','statsProfesional','statsOS','statsPrestacion','statsEstado'].forEach(id=>on(id,'change',renderEstadisticas));
+
   const agendaModal=$('agendaModal');
   if(agendaModal)agendaModal.addEventListener('click',e=>{if(e.target===agendaModal)cerrarAgendaModal();});
   try { initAgenda(); } catch(e) { console.warn('initAgenda falló:', e); }
@@ -851,6 +858,7 @@ if(puedeVerFacturaRogelio()){
 }
  llenarTodos($('fProfesional'),data.profesionales.filter(p=>p.id!=='general').map(p=>p.nombre),'Todos los médicos');
  llenarSelectAgendaProfesionales();
+ llenarSelectEstadisticas();
  llenarTodos($('fPrestacion'),allPrestaciones(),'Todas las prestaciones');
  llenarSelect($('profPrestacion'),data.profesionales.filter(p=>p.id!=='general'),p=>p.id,p=>p.nombre);
  llenarSelect($('cfgProfesionalValores'),data.profesionales.filter(p=>p.id!=='general'),p=>p.id,p=>p.nombre);
@@ -927,6 +935,11 @@ function showSection(id){
   }else if(id==='caja'){
     if($('tituloBienvenida'))$('tituloBienvenida').textContent='Caja / reportes';
     if($('subtituloPerfil'))$('subtituloPerfil').textContent='Panel reservado para Matías';
+  }else if(id==='estadisticas'){
+    if($('tituloBienvenida'))$('tituloBienvenida').textContent='Estadísticas / gráficos';
+    if($('subtituloPerfil'))$('subtituloPerfil').textContent='Indicadores por período, OS, prestación y profesional';
+    initEstadisticas();
+    renderEstadisticas();
   }else if(id==='colocaciones'){
     if($('tituloBienvenida'))$('tituloBienvenida').textContent='Colocaciones / pendientes';
     if($('subtituloPerfil'))$('subtituloPerfil').textContent='Liquidación y pendientes de estudios';
@@ -1857,7 +1870,7 @@ function verDineroPeriodo(){
 }
 function ocultarDineroPeriodo(){$('dineroPeriodoResultado').textContent='';$('claveDinero').value=''}
 function setPrintMeta(){$('printMeta').textContent=`Perfil: ${perfilObj().nombre} | Registros: ${filtrar().length} | ${formatFecha(todayISO())}`}
-function exportarCSV(){const datos=filtrar();if(!datos.length){alert('No hay datos');return}const r=resumen(datos);const incluirValoresExport=!!$('incluirValoresImpresion')?.checked;const filas=[['CardioLink Admin v2.7.9'],['Perfil',perfilObj().nombre],['Consultas',r.consultas],['Estudios',r.estudios],[],['Fecha','Paciente','OS','Profesional','Prestación','Consulta a','Estudio a','Tipo','Forma','Particular visible','Copago visible','Total visible','Estado']];datos.forEach(a=>{const m=dineroVisible(a),e=evaluarEstado(a);filas.push([formatFecha(a.fecha),a.paciente,a.obraSocial,a.profesional,prestacionListado(a),a.consultaA,a.prestacionA,a.tipoCobro,a.formaPago,incluirValoresExport?m.particular:'',incluirValoresExport?m.copago:'',incluirValoresExport?m.total:'',e.txt])});const csv=filas.map(r=>r.map(c=>`"${String(c??'').replaceAll('"','""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_listado.csv';a.click()}
+function exportarCSV(){const datos=filtrar();if(!datos.length){alert('No hay datos');return}const r=resumen(datos);const incluirValoresExport=!!$('incluirValoresImpresion')?.checked;const filas=[['CardioLink Admin v2.8.1'],['Perfil',perfilObj().nombre],['Consultas',r.consultas],['Estudios',r.estudios],[],['Fecha','Paciente','OS','Profesional','Prestación','Consulta a','Estudio a','Tipo','Forma','Particular visible','Copago visible','Total visible','Estado']];datos.forEach(a=>{const m=dineroVisible(a),e=evaluarEstado(a);filas.push([formatFecha(a.fecha),a.paciente,a.obraSocial,a.profesional,prestacionListado(a),a.consultaA,a.prestacionA,a.tipoCobro,a.formaPago,incluirValoresExport?m.particular:'',incluirValoresExport?m.copago:'',incluirValoresExport?m.total:'',e.txt])});const csv=filas.map(r=>r.map(c=>`"${String(c??'').replaceAll('"','""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_listado.csv';a.click()}
 function exportarBackup(){const b={app:'CardioLink Admin',version:'2.7.7',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
 function importarBackup(){const inp=$('inputImportBackup');if(!inp.files[0]){alert('Elegí archivo');return}if(!confirm('Reemplaza la base actual. ¿Continuar?'))return;const rd=new FileReader();rd.onload=e=>{try{const b=JSON.parse(e.target.result);if(!b.config||!b.atenciones)throw new Error();data=b.config;atenciones=b.atenciones;saveConfig();saveAtenciones();refreshSelects();renderConfig();cambiarPerfil('general');alert('Backup importado')}catch{alert('Backup inválido')}};rd.readAsText(inp.files[0])}
 
@@ -2201,7 +2214,7 @@ window.delProfesional=delProfesional;
 window.addOS=addOS;
 
 
-/* ===== AGENDA / SALA DE ESPERA v2.8.0 ===== */
+/* ===== AGENDA / SALA DE ESPERA v2.8.1 ===== */
 const ESTADOS_AGENDA = {
   reservado:{label:'Reservado / tomado', short:'Tomado', cls:'estado-reservado'},
   confirmado:{label:'Confirmado', short:'Confirmado', cls:'estado-confirmado'},
@@ -2321,6 +2334,132 @@ function cambiarEstadoAgenda(id,estado){
   renderAgenda();
   renderTabla();
   renderStats();
+}
+
+
+
+/* ===== ESTADISTICAS / GRAFICOS ===== */
+let statsCharts={};
+
+function nombreEstadoTurnoLabel(k){
+  const x=ESTADOS_AGENDA?.[k];
+  return x?.label || x?.short || k || 'Sin estado';
+}
+function setPeriodoStatsMes(){
+  const d=new Date();
+  const y=d.getFullYear();
+  const m=String(d.getMonth()+1).padStart(2,'0');
+  if($('statsDesde'))$('statsDesde').value=`${y}-${m}-01`;
+  if($('statsHasta'))$('statsHasta').value=todayISO();
+}
+function llenarSelectEstadisticas(){
+  const prof=$('statsProfesional'), os=$('statsOS'), prest=$('statsPrestacion');
+  if(prof){
+    prof.innerHTML='';
+    const add=(value,text)=>{const o=document.createElement('option');o.value=value;o.textContent=text;prof.appendChild(o);};
+    if(esMedico()){
+      const pid=profesionalIdUsuarioActual();
+      add(pid,nombreProfesionalPorId(pid)||'Mi perfil');
+      prof.value=pid;
+      prof.disabled=true;
+    }else{
+      add('', 'Todos los profesionales');
+      data.profesionales.filter(p=>p.id!=='general').forEach(p=>add(p.id,p.nombre));
+      prof.disabled=false;
+      if(esMatiasDuenio() && !prof.value) prof.value='matias';
+    }
+  }
+  if(os) llenarTodos(os,data.obrasSociales,'Todas las OS');
+  if(prest) llenarTodos(prest,allPrestaciones(),'Todas las prestaciones');
+}
+function initEstadisticas(){
+  llenarSelectEstadisticas();
+  if($('statsDesde')&&!$('statsDesde').value) setPeriodoStatsMes();
+  if($('statsProfesional')){
+    if(esMedico())$('statsProfesional').value=profesionalIdUsuarioActual();
+    else if(esMatiasDuenio()&&!$('statsProfesional').value)$('statsProfesional').value='matias';
+  }
+  actualizarTextoEstadisticasPerfil();
+}
+function actualizarTextoEstadisticasPerfil(){
+  const el=$('estadisticasTextoPerfil'); if(!el)return;
+  if(esMedico())el.textContent='Vista estadística propia del profesional logueado.';
+  else if(esSecretaria()||esAdminComun())el.textContent='Vista operativa general. Podés filtrar por profesional, obra social, prestación y estado.';
+  else if(esMatiasDuenio())el.textContent='Vista de Matías por defecto. Podés cambiar filtros para revisar otros perfiles cuando lo necesites.';
+  else el.textContent='Gráficos por rango, profesional, obra social, prestación y estado.';
+}
+function datosEstadisticas(){
+  const desde=$('statsDesde')?.value||'';
+  const hasta=$('statsHasta')?.value||'';
+  let prof=$('statsProfesional')?.value||'';
+  const os=$('statsOS')?.value||'';
+  const prest=$('statsPrestacion')?.value||'';
+  const estado=$('statsEstado')?.value||'';
+  if(esMedico())prof=profesionalIdUsuarioActual();
+  return atenciones.filter(a=>{
+    if(desde && (a.fecha||'')<desde)return false;
+    if(hasta && (a.fecha||'')>hasta)return false;
+    if(prof && a.profesionalId!==prof)return false;
+    if(os && a.obraSocial!==os)return false;
+    if(prest && a.prestacion!==prest)return false;
+    if(estado && estadoTurno(a)!==estado)return false;
+    if(esMedico()){
+      const pid=profesionalIdUsuarioActual();
+      if(a.profesionalId!==pid && a.cajaPerfil!==pid)return false;
+    }
+    return true;
+  });
+}
+function contarPor(datos,fn){
+  const out={};
+  datos.forEach(a=>{const k=fn(a)||'Sin dato'; out[k]=(out[k]||0)+1;});
+  return Object.entries(out).sort((a,b)=>b[1]-a[1]);
+}
+function setText(id,txt){const el=$(id); if(el)el.textContent=txt;}
+function porcentaje(n,total){return total?Math.round((n*1000)/total)/10:0;}
+function renderEstadisticas(){
+  actualizarTextoEstadisticasPerfil();
+  const datos=datosEstadisticas();
+  const total=datos.length;
+  const atendidos=datos.filter(a=>estadoTurno(a)==='atendido').length;
+  const ausentes=datos.filter(a=>estadoTurno(a)==='ausente').length;
+  const cancelados=datos.filter(a=>estadoTurno(a)==='cancelado').length;
+  setText('statsTotal',String(total));
+  setText('statsAtendidos',String(atendidos));
+  setText('statsAusentes',`${porcentaje(ausentes,total)}%`);
+  setText('statsCancelados',`${porcentaje(cancelados,total)}%`);
+  const r=$('statsResumen');
+  if(r){
+    const desde=$('statsDesde')?.value||'inicio'; const hasta=$('statsHasta')?.value||'hoy';
+    r.textContent=`Período ${desde} a ${hasta}. ${total} registro(s). Atendidos: ${atendidos}. Ausentes: ${ausentes}. Cancelados: ${cancelados}.`;
+  }
+  const porOS=contarPor(datos,a=>a.obraSocial||'Sin OS');
+  const porPrest=contarPor(datos,a=>prestacionListado ? prestacionListado(a) : (a.prestacion||'Sin prestación'));
+  const porEstado=contarPor(datos,a=>nombreEstadoTurnoLabel(estadoTurno(a)));
+  const porProf=contarPor(datos,a=>a.profesional||nombreProfesionalPorId(a.profesionalId)||'Sin profesional');
+  renderChartOrFallback('chartOS','chartOSFallback','bar',porOS,'OS');
+  renderChartOrFallback('chartPrestaciones','chartPrestacionesFallback','bar',porPrest,'Prestaciones');
+  renderChartOrFallback('chartEstados','chartEstadosFallback','doughnut',porEstado,'Estados');
+  const profCard=$('chartProfesionalesCard');
+  if(profCard)profCard.classList.toggle('hidden',esMedico());
+  if(!esMedico())renderChartOrFallback('chartProfesionales','chartProfesionalesFallback','bar',porProf,'Profesionales');
+}
+function paletaChart(n){
+  const base=['#2563eb','#14b8a6','#8b5cf6','#9333ea','#ef4444','#f59e0b','#22c55e','#0ea5e9','#64748b','#ec4899'];
+  return Array.from({length:n},(_,i)=>base[i%base.length]);
+}
+function renderChartOrFallback(canvasId, fallbackId, tipo, entries, label){
+  const canvas=$(canvasId), fb=$(fallbackId); if(!canvas)return;
+  const top=entries.slice(0,12);
+  if(fb)fb.innerHTML='';
+  if(window.Chart){
+    if(statsCharts[canvasId])statsCharts[canvasId].destroy();
+    statsCharts[canvasId]=new Chart(canvas,{type:tipo,data:{labels:top.map(x=>x[0]),datasets:[{label,data:top.map(x=>x[1]),backgroundColor:paletaChart(top.length),borderWidth:1}]},options:{responsive:true,maintainAspectRatio:false,plugins:{legend:{display:tipo==='doughnut',position:'bottom'}},scales:tipo==='bar'?{y:{beginAtZero:true,ticks:{precision:0}}}:undefined}});
+    canvas.classList.remove('hidden');
+    return;
+  }
+  canvas.classList.add('hidden');
+  if(fb)fb.innerHTML=top.length?top.map(([k,v])=>`<div class="bar-row"><span>${escapeHtml(k)}</span><strong>${v}</strong><i style="width:${Math.min(100,v*8)}%"></i></div>`).join(''):'<p class="muted">No hay datos para graficar.</p>';
 }
 
 window.delOS=delOS;

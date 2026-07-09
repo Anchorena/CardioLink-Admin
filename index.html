@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CardioLink Admin v2.8.0</title>
-<link rel="stylesheet" href="styles.css?v=280">
+<title>CardioLink Admin v2.8.1</title>
+<link rel="stylesheet" href="styles.css?v=281">
 </head>
 <body>
 <aside class="sidebar">
   <div class="brand">
-    <div class="brand-main">CardioLink Admin <span>v2.8.0</span></div>
+    <div class="brand-main">CardioLink Admin <span>v2.8.1</span></div>
     <div class="brand-by">by Matías Anchorena</div>
   </div>
   <button class="nav active" data-section="dashboard">Dashboard</button>
@@ -18,6 +18,7 @@
   <button class="nav" data-section="pacientes">Pacientes</button>
   <button class="nav" data-section="listado">Listado / filtros</button>
   <button class="nav solo-matias" data-section="caja">Caja / reportes</button>
+  <button class="nav" data-section="estadisticas">Estadísticas</button>
   <button class="nav" data-section="colocaciones">Colocaciones / pendientes</button>
   <button class="nav" data-section="instructivos">Instructivos</button>
   <button class="nav" data-section="config">Configuración</button>
@@ -306,7 +307,7 @@
 
       <div id="printArea">
         <div class="print-title">
-          <h2>CardioLink Admin v2.8.0</h2>
+          <h2>CardioLink Admin v2.8.1</h2>
           <p>by Matías Anchorena — Listado filtrado</p>
           <p id="printMeta"></p>
         </div>
@@ -376,6 +377,71 @@
         </div>
 
 
+    </div>
+  </section>
+
+
+  <section id="estadisticas" class="section">
+    <div class="card estadisticas-card">
+      <div class="agenda-head">
+        <div>
+          <h2>Estadísticas / gráficos</h2>
+          <p class="muted" id="estadisticasTextoPerfil">Gráficos por rango, profesional, obra social, prestación y estado.</p>
+        </div>
+      </div>
+
+      <div class="estadisticas-filtros">
+        <div><label>Desde</label><input type="date" id="statsDesde"></div>
+        <div><label>Hasta</label><input type="date" id="statsHasta"></div>
+        <div><label>Profesional</label><select id="statsProfesional"></select></div>
+        <div><label>Obra social</label><select id="statsOS"></select></div>
+        <div><label>Prestación</label><select id="statsPrestacion"></select></div>
+        <div><label>Estado</label><select id="statsEstado">
+          <option value="">Todos los estados</option>
+          <option value="reservado">Reservado / tomado</option>
+          <option value="confirmado">Confirmado</option>
+          <option value="sala_espera">Sala de espera</option>
+          <option value="en_consulta">En consulta / atendiendo</option>
+          <option value="atendido">Atendido</option>
+          <option value="ausente">Ausente</option>
+          <option value="cancelado">Cancelado</option>
+        </select></div>
+        <button class="primary" type="button" id="btnStatsGenerar">Generar gráficos</button>
+        <button class="secondary" type="button" id="btnStatsMes">Mes actual</button>
+        <button class="secondary" type="button" id="btnStatsHoy">Hoy</button>
+      </div>
+
+      <div class="stats-kpi-grid">
+        <div class="card stat-kpi"><span>Total turnos/atenciones</span><strong id="statsTotal">0</strong></div>
+        <div class="card stat-kpi"><span>Atendidos</span><strong id="statsAtendidos">0</strong></div>
+        <div class="card stat-kpi"><span>Ausentes</span><strong id="statsAusentes">0%</strong></div>
+        <div class="card stat-kpi"><span>Cancelados</span><strong id="statsCancelados">0%</strong></div>
+      </div>
+
+      <div id="statsResumen" class="muted estadisticas-resumen"></div>
+
+      <div class="charts-grid">
+        <div class="chart-card">
+          <h3>Distribución por obra social</h3>
+          <canvas id="chartOS" height="220"></canvas>
+          <div id="chartOSFallback" class="chart-fallback"></div>
+        </div>
+        <div class="chart-card">
+          <h3>Prestaciones / estudios</h3>
+          <canvas id="chartPrestaciones" height="220"></canvas>
+          <div id="chartPrestacionesFallback" class="chart-fallback"></div>
+        </div>
+        <div class="chart-card">
+          <h3>Estados del turno</h3>
+          <canvas id="chartEstados" height="220"></canvas>
+          <div id="chartEstadosFallback" class="chart-fallback"></div>
+        </div>
+        <div class="chart-card" id="chartProfesionalesCard">
+          <h3>Producción por profesional</h3>
+          <canvas id="chartProfesionales" height="220"></canvas>
+          <div id="chartProfesionalesFallback" class="chart-fallback"></div>
+        </div>
+      </div>
     </div>
   </section>
 
@@ -724,6 +790,7 @@
   </section>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="app.js?v=280"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<script src="app.js?v=281"></script>
 </body>
 </html>
