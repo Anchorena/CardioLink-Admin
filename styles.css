@@ -544,3 +544,26 @@ input[type="checkbox"]{
 
 /* v2.7.4: cerrar sesión fijo abajo izquierda */
 #btnCerrarSesion{left:18px!important;right:auto!important;bottom:18px!important;padding:13px 18px!important;font-size:16px!important;font-weight:800!important;border-radius:14px!important;min-width:190px!important;}
+
+/* ===== ROLES / PERMISOS / AUDITORÍA v2.7.5 ===== */
+.hidden-permission { display: none !important; }
+.session-user {
+  margin-top: 6px;
+  font-size: 13px;
+  color: #64748b;
+  font-weight: 700;
+}
+.audit-box {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border-radius: 14px;
+  border: 1px solid #dbe3ef;
+  background: #f8fafc;
+  color: #334155;
+}
+.audit-box strong { color:#0f172a; }
+body[data-rol="medico"] .money-lock,
+body[data-rol="medico"] .solo-matias,
+body[data-rol="medico"] .solo-config { display:none !important; }
+body[data-rol="secretaria"] .solo-matias,
+body[data-rol="admin"] .solo-matias { display:none !important; }

@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CardioLink Admin v2.7.4</title>
-<link rel="stylesheet" href="styles.css?v=274">
+<title>CardioLink Admin v2.7.5</title>
+<link rel="stylesheet" href="styles.css?v=275">
 </head>
 <body>
 <aside class="sidebar">
   <div class="brand">
-    <div class="brand-main">CardioLink Admin <span>v2.7.4</span></div>
+    <div class="brand-main">CardioLink Admin <span>v2.7.5</span></div>
     <div class="brand-by">by Matías Anchorena</div>
   </div>
   <button class="nav active" data-section="dashboard">Dashboard</button>
@@ -28,6 +28,7 @@
       <h1 id="tituloBienvenida">Vista General / Administración</h1>
       <p id="subtituloPerfil">Todos los profesionales</p>
       <p class="datetime" id="fechaHoraPanel"></p>
+      <p class="session-user" id="usuarioActivoBox"></p>
     </div>
     <div class="profile-box">
       <label>Perfil activo</label>
@@ -236,7 +237,7 @@
 
       <div id="printArea">
         <div class="print-title">
-          <h2>CardioLink Admin v2.7.4</h2>
+          <h2>CardioLink Admin v2.7.5</h2>
           <p>by Matías Anchorena — Listado filtrado</p>
           <p id="printMeta"></p>
         </div>
@@ -524,7 +525,19 @@
       <p class="muted">Aguante River.</p>
     </div>
 
-  </section>
+  
+  <div class="card instructivo-card" id="inst-roles-permisos">
+    <h2>Roles, permisos y trazabilidad</h2>
+    <p>CardioLink usa perfiles para que cada persona vea y haga lo que corresponde. La carga queda trazable: se registra quién cargó o modificó cada atención y en qué momento.</p>
+    <ol>
+      <li><strong>Matías / dueño:</strong> ve todo. Es el único que puede ver Factura Rogelio y la caja global avanzada.</li>
+      <li><strong>Secretaría:</strong> puede cargar y gestionar turnos/atenciones de todos los profesionales, agregar obras sociales, reglas, prestaciones y valores si está habilitada.</li>
+      <li><strong>Médico:</strong> ve sus turnos/atenciones, sus pacientes, sus estados y sus reportes/caja propios. No ve caja ni reportes de otros.</li>
+      <li><strong>Usuarios:</strong> Matías crea o resetea perfiles. Si se crea un usuario interno, también debe existir el usuario de Supabase correspondiente.</li>
+      <li><strong>Trazabilidad:</strong> creado por, fecha de carga, editado por y fecha de modificación no deben alterarse manualmente desde perfiles comunes.</li>
+    </ol>
+  </div>
+</section>
 
   <section id="config" class="section">
     <div class="card">
@@ -596,6 +609,23 @@
           <p class="muted">La fusión conserva un paciente principal y reasigna las atenciones del duplicado. El duplicado queda inactivo para auditoría.</p>
         </div>
 
+        <div class="solo-config">
+          <h3>Usuarios, roles y permisos</h3>
+          <p class="muted">Perfiles internos de CardioLink. El usuario de Supabase debe existir con el mismo nombre antes de <strong>@cardiolink.local</strong>.</p>
+          <label>Nombre real</label><input id="usrNombre" placeholder="Ej: Dr. Fernández Drago">
+          <label>Usuario</label><input id="usrUsuario" placeholder="Ej: drago">
+          <label>Rol</label><select id="usrRol">
+            <option value="medico">Médico</option>
+            <option value="secretaria">Secretaría / secretario</option>
+            <option value="admin">Administrador</option>
+          </select>
+          <label>Profesional asociado</label><select id="usrProfesionalId"></select>
+          <label>Especialidad / área</label><input id="usrEspecialidad" placeholder="Ej: Diagnóstico por Imágenes">
+          <button class="primary" id="btnAddUsuarioSistema" type="button">Agregar perfil interno</button>
+          <ul id="listaUsuariosSistema"></ul>
+          <p class="muted">Matías es el único perfil dueño. Factura Rogelio y caja global avanzada quedan reservadas solo para Matías.</p>
+        </div>
+
         <div>
           <h3>Backup / traslado</h3>
           <button class="primary" id="btnExportBackup">Exportar backup completo</button>
@@ -610,6 +640,6 @@
   </section>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="app.js?v=274"></script>
+<script src="app.js?v=275"></script>
 </body>
 </html>
