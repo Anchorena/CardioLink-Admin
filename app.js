@@ -40,12 +40,79 @@ function usuarioActualNombreCorto(){
 function usuariosDefault(){
   return [
     {id:'matias',usuario:'matias',aliases:['matias.anchorena','drm.anchorena'],nombre:'Dr. Matías Anchorena',rol:'duenio',profesionalId:'matias',especialidad:'Medicina Intensiva y Cardiología',activo:true,soloMatias:true},
-    {id:'geraldine',usuario:'geraldine',aliases:['geral','secretaria','secretaria1'],nombre:'Geraldine',rol:'secretaria',profesionalId:'',especialidad:'Administración',activo:true},
+    {id:'geraldine',usuario:'geraldine',aliases:['geral','secretaria1'],nombre:'Geraldine',rol:'secretaria',profesionalId:'',especialidad:'Administración',activo:true},
     {id:'secretaria',usuario:'secretaria',aliases:['administracion','admin_secretaria'],nombre:'Secretaría',rol:'secretaria',profesionalId:'',especialidad:'Administración',activo:true},
     {id:'rogelio',usuario:'rogelio',aliases:['rogelio.anchorena'],nombre:'Dr. Rogelio Anchorena',rol:'medico',profesionalId:'rogelio',especialidad:'Cardiología',activo:true},
-    {id:'humberto_drago',usuario:'drago',aliases:['humberto','humberto_drago','humberto.fernandez.drago','fernandez_drago','fernandezdrago','drago_humberto'],nombre:'Dr. Fernández Drago Humberto',rol:'medico',profesionalId:'humberto_drago',especialidad:'Diagnóstico por Imágenes',activo:true},
+    // Usuario de acceso humberto asociado al profesional existente humberto_drago.
+    // Alias drago queda para compatibilidad con cargas anteriores: no crea otro profesional.
+    {id:'humberto_drago',usuario:'humberto',aliases:['drago','humberto_drago','humberto.fernandez.drago','fernandez_drago','fernandezdrago','drago_humberto'],nombre:'Dr. Fernández Drago Humberto',rol:'medico',profesionalId:'humberto_drago',especialidad:'Diagnóstico por Imágenes',activo:true},
     {id:'lucas_drago',usuario:'lucas',aliases:['lucas_drago','drago_lucas','lucas.drago'],nombre:'Dr. Drago Lucas',rol:'medico',profesionalId:'lucas_drago',especialidad:'Diagnóstico por Imágenes',activo:true}
   ];
+}
+function usuarioLoginCorto(s){
+  let x=String(s||'').toLowerCase().trim();
+  if(x.includes('@')) x=x.split('@')[0];
+  return normalizarUsuarioTexto(x).replace(/\s+/g,'_');
+}
+function userKeys(u){
+  return [u?.id,u?.usuario,u?.email].concat(u?.aliases||[]).filter(Boolean).map(x=>normalizarUsuarioClave(usuarioLoginCorto(x))).filter(Boolean);
+}
+function uniqueList(arr){return [...new Set((arr||[]).filter(Boolean))];}
+function usuariosCoinciden(a,b){
+  const ka=new Set(userKeys(a));
+  return userKeys(b).some(k=>ka.has(k));
+}
+function normalizarUsuarioRegistro(u){
+  u.usuario=usuarioLoginCorto(u.usuario||u.email||u.id);
+  if(!u.id)u.id='usr_'+(u.usuario||Date.now());
+  if(!Array.isArray(u.aliases))u.aliases=[];
+  u.aliases=uniqueList(u.aliases.map(usuarioLoginCorto).filter(x=>x && x!==u.usuario));
+  if(u.activo===undefined)u.activo=true;
+  if(!u.rol)u.rol='medico';
+  return u;
+}
+function consolidarUsuariosConfig(){
+  if(!data) return;
+  const actuales=(Array.isArray(data.usuarios)?data.usuarios:[]).map(u=>normalizarUsuarioRegistro({...u}));
+  const defaults=usuariosDefault().map(u=>normalizarUsuarioRegistro({...u}));
+  const usados=new Set();
+  const resultado=[];
+
+  defaults.forEach(def=>{
+    const candidatos=[];
+    actuales.forEach((u,i)=>{
+      if(usados.has(i))return;
+      if(usuariosCoinciden(u,def)){candidatos.push([u,i]);}
+    });
+    if(candidatos.length){
+      candidatos.forEach(([_,i])=>usados.add(i));
+      const aliases=[];
+      candidatos.forEach(([u])=>{
+        aliases.push(u.usuario, u.email, u.id, ...(u.aliases||[]));
+      });
+      resultado.push({
+        ...candidatos[0][0],
+        ...def,
+        aliases: uniqueList([...(def.aliases||[]), ...aliases.map(usuarioLoginCorto)].filter(x=>x && x!==def.usuario))
+      });
+    }else{
+      resultado.push(def);
+    }
+  });
+
+  actuales.forEach((u,i)=>{
+    if(usados.has(i))return;
+    const ya=resultado.find(r=>usuariosCoinciden(r,u));
+    if(ya){
+      ya.aliases=uniqueList([...(ya.aliases||[]), u.usuario, u.email, u.id, ...(u.aliases||[])].map(usuarioLoginCorto).filter(x=>x && x!==ya.usuario));
+      if(!ya.profesionalId && u.profesionalId)ya.profesionalId=u.profesionalId;
+      if(!ya.especialidad && u.especialidad)ya.especialidad=u.especialidad;
+      if(ya.activo!==false && u.activo===false)ya.activo=false;
+    }else{
+      resultado.push(u);
+    }
+  });
+  data.usuarios=resultado;
 }
 function normalizarUsuarioClave(s){
   return normalizarUsuarioTexto(s).replace(/[^a-z0-9]/g,'');
@@ -57,14 +124,9 @@ function usuarioCoincide(u, user, email){
 }
 function asegurarUsuariosConfig(){
   if(!data) return;
-  if(!Array.isArray(data.usuarios)) data.usuarios = usuariosDefault();
-  const existentes = new Set(data.usuarios.map(u=>normalizarUsuarioClave(u.usuario||u.id)));
-  usuariosDefault().forEach(u=>{ if(!existentes.has(normalizarUsuarioClave(u.usuario))) data.usuarios.push(u); });
+  consolidarUsuariosConfig();
   data.usuarios.forEach(u=>{
-    if(u.activo === undefined) u.activo = true;
-    if(!u.id) u.id = 'usr_' + (u.usuario || Date.now());
-    if(!u.rol) u.rol = 'medico';
-    if(!Array.isArray(u.aliases)) u.aliases=[];
+    normalizarUsuarioRegistro(u);
   });
 }
 function inferirUsuarioPorLogin(user){
@@ -74,7 +136,7 @@ function inferirUsuarioPorLogin(user){
   if(k.includes('geraldine') || k.includes('secretaria') || k.includes('administracion')) return (data.usuarios||[]).find(x=>x.usuario==='geraldine' || x.usuario==='secretaria');
   if(k.includes('rogelio')) return (data.usuarios||[]).find(x=>x.usuario==='rogelio');
   if(k.includes('lucas') && k.includes('drago')) return (data.usuarios||[]).find(x=>x.id==='lucas_drago' || x.usuario==='lucas');
-  if(k.includes('humberto') || k.includes('fernandezdrago') || k==='drago' || k.includes('dragohumberto')) return (data.usuarios||[]).find(x=>x.id==='humberto_drago' || x.usuario==='drago');
+  if(k.includes('humberto') || k.includes('fernandezdrago') || k==='drago' || k.includes('dragohumberto')) return (data.usuarios||[]).find(x=>x.id==='humberto_drago' || x.usuario==='humberto' || (x.aliases||[]).map(normalizarUsuarioClave).includes('drago'));
   return null;
 }
 function perfilUsuarioActual(){
@@ -1773,7 +1835,7 @@ function verDineroPeriodo(){
 }
 function ocultarDineroPeriodo(){$('dineroPeriodoResultado').textContent='';$('claveDinero').value=''}
 function setPrintMeta(){$('printMeta').textContent=`Perfil: ${perfilObj().nombre} | Registros: ${filtrar().length} | ${formatFecha(todayISO())}`}
-function exportarCSV(){const datos=filtrar();if(!datos.length){alert('No hay datos');return}const r=resumen(datos);const incluirValoresExport=!!$('incluirValoresImpresion')?.checked;const filas=[['CardioLink Admin v2.7.7'],['Perfil',perfilObj().nombre],['Consultas',r.consultas],['Estudios',r.estudios],[],['Fecha','Paciente','OS','Profesional','Prestación','Consulta a','Estudio a','Tipo','Forma','Particular visible','Copago visible','Total visible','Estado']];datos.forEach(a=>{const m=dineroVisible(a),e=evaluarEstado(a);filas.push([formatFecha(a.fecha),a.paciente,a.obraSocial,a.profesional,prestacionListado(a),a.consultaA,a.prestacionA,a.tipoCobro,a.formaPago,incluirValoresExport?m.particular:'',incluirValoresExport?m.copago:'',incluirValoresExport?m.total:'',e.txt])});const csv=filas.map(r=>r.map(c=>`"${String(c??'').replaceAll('"','""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_listado.csv';a.click()}
+function exportarCSV(){const datos=filtrar();if(!datos.length){alert('No hay datos');return}const r=resumen(datos);const incluirValoresExport=!!$('incluirValoresImpresion')?.checked;const filas=[['CardioLink Admin v2.7.9'],['Perfil',perfilObj().nombre],['Consultas',r.consultas],['Estudios',r.estudios],[],['Fecha','Paciente','OS','Profesional','Prestación','Consulta a','Estudio a','Tipo','Forma','Particular visible','Copago visible','Total visible','Estado']];datos.forEach(a=>{const m=dineroVisible(a),e=evaluarEstado(a);filas.push([formatFecha(a.fecha),a.paciente,a.obraSocial,a.profesional,prestacionListado(a),a.consultaA,a.prestacionA,a.tipoCobro,a.formaPago,incluirValoresExport?m.particular:'',incluirValoresExport?m.copago:'',incluirValoresExport?m.total:'',e.txt])});const csv=filas.map(r=>r.map(c=>`"${String(c??'').replaceAll('"','""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_listado.csv';a.click()}
 function exportarBackup(){const b={app:'CardioLink Admin',version:'2.7.7',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
 function importarBackup(){const inp=$('inputImportBackup');if(!inp.files[0]){alert('Elegí archivo');return}if(!confirm('Reemplaza la base actual. ¿Continuar?'))return;const rd=new FileReader();rd.onload=e=>{try{const b=JSON.parse(e.target.result);if(!b.config||!b.atenciones)throw new Error();data=b.config;atenciones=b.atenciones;saveConfig();saveAtenciones();refreshSelects();renderConfig();cambiarPerfil('general');alert('Backup importado')}catch{alert('Backup inválido')}};rd.readAsText(inp.files[0])}
 
@@ -2051,7 +2113,8 @@ function renderUsuariosConfig(){
   if(lista){
     lista.innerHTML=(data.usuarios||[]).map(u=>{
       const prof=(data.profesionales||[]).find(p=>p.id===u.profesionalId);
-      return `<li><strong>${escapeHtml(u.nombre||u.usuario)}</strong> <span class="muted">@${escapeHtml(u.usuario||'')} · ${escapeHtml(labelRol(u.rol))}${prof?' · '+escapeHtml(prof.nombre):''}${u.especialidad?' · '+escapeHtml(u.especialidad):''}</span> ${u.activo===false?'<span class="badge bad">Inactivo</span>':''}</li>`;
+      const acceso=escapeHtml(usuarioLoginCorto(u.usuario||u.email||''));
+      return `<li><strong>${escapeHtml(u.nombre||u.usuario)}</strong> <span class="muted">@${acceso} · ${escapeHtml(labelRol(u.rol))}${prof?' · Profesional: '+escapeHtml(prof.nombre):' · Sin profesional asociado'}${u.especialidad?' · '+escapeHtml(u.especialidad):''}</span> ${u.activo===false?'<span class="badge bad">Inactivo</span>':''}</li>`;
     }).join('') || '<li class="muted">Sin usuarios configurados.</li>';
   }
   const profSel=$('usrProfesionalId');
@@ -2062,17 +2125,48 @@ function renderUsuariosConfig(){
 function agregarUsuarioSistema(){
   if(!puedeGestionarConfig()){alert('Tu perfil no puede crear usuarios.');return;}
   asegurarUsuariosConfig();
-  const usuario=normalizarUsuarioTexto($('usrUsuario')?.value||'').replace(/\s+/g,'');
+  const usuario=usuarioLoginCorto($('usrUsuario')?.value||'');
   const nombre=($('usrNombre')?.value||'').trim();
   const rol=$('usrRol')?.value||'medico';
   const profesionalId=$('usrProfesionalId')?.value||'';
   const especialidad=($('usrEspecialidad')?.value||'').trim();
   if(!usuario||!nombre){alert('Completá nombre real y nombre de usuario.');return;}
-  if((data.usuarios||[]).some(u=>normalizarUsuarioTexto(u.usuario)===usuario)){alert('Ese nombre de usuario ya existe en CardioLink.');return;}
-  data.usuarios.push({id:'usr_'+Date.now(),usuario,nombre,rol,profesionalId,especialidad,activo:true,creadoPor:nombreUsuarioAuditoria(),creadoEn:new Date().toISOString()});
+
+  // Si el login coincide con un usuario existente o alias, se actualiza ese usuario.
+  // Esto evita duplicar profesionales cuando se crea, por ejemplo, humberto@cardiolink.local
+  // para el profesional ya existente Dr. Fernández Drago Humberto.
+  let existente=(data.usuarios||[]).find(u=>{
+    const keys=new Set(userKeys(u));
+    return keys.has(normalizarUsuarioClave(usuario));
+  });
+  if(existente){
+    existente.usuario = usuario;
+    existente.nombre = nombre;
+    existente.rol = rol;
+    existente.profesionalId = profesionalId;
+    existente.especialidad = especialidad;
+    existente.activo = true;
+    existente.aliases = uniqueList([...(existente.aliases||[]), usuario].filter(x=>x!==existente.usuario));
+    existente.editadoPor = nombreUsuarioAuditoria();
+    existente.editadoEn = new Date().toISOString();
+    saveConfig();renderUsuariosConfig();aplicarPermisosUI();
+    ['usrUsuario','usrNombre','usrEspecialidad'].forEach(id=>{if($(id))$(id).value='';});
+    alert('Usuario interno actualizado y asociado al profesional seleccionado.');
+    return;
+  }
+
+  data.usuarios.push({id:'usr_'+Date.now(),usuario,nombre,rol,profesionalId,especialidad,activo:true,aliases:[],creadoPor:nombreUsuarioAuditoria(),creadoEn:new Date().toISOString()});
   saveConfig();renderUsuariosConfig();aplicarPermisosUI();
   ['usrUsuario','usrNombre','usrEspecialidad'].forEach(id=>{if($(id))$(id).value='';});
-  alert('Perfil interno creado. Recordá: el usuario también debe existir en Supabase Auth con el mismo nombre antes de @cardiolink.local.');
+  alert('Usuario interno creado. Recordá: el usuario también debe existir en Supabase Auth con el mismo nombre antes de @cardiolink.local.');
+}
+function limpiarUsuariosDuplicados(){
+  if(!puedeGestionarConfig()){alert('Tu perfil no puede depurar usuarios.');return;}
+  asegurarUsuariosConfig();
+  saveConfig();
+  renderUsuariosConfig();
+  aplicarPermisosUI();
+  alert('Usuarios de acceso depurados. Los logins quedaron asociados a profesionales existentes cuando correspondía.');
 }
 function renderConfigOriginalSeguro(){
   if(typeof renderConfig === 'function'){}
@@ -2086,6 +2180,7 @@ window.addOS=addOS;
 window.delOS=delOS;
 window.addPrestacion=addPrestacion;
 window.delPrestacion=delPrestacion;
+window.limpiarUsuariosDuplicados=limpiarUsuariosDuplicados;
 
 function iniciarRefrescoAutomatico() {
   if (window.cardioLinkRefreshInterval) {

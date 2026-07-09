@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CardioLink Admin v2.7.8</title>
-<link rel="stylesheet" href="styles.css?v=278">
+<title>CardioLink Admin v2.7.9</title>
+<link rel="stylesheet" href="styles.css?v=279">
 </head>
 <body>
 <aside class="sidebar">
   <div class="brand">
-    <div class="brand-main">CardioLink Admin <span>v2.7.8</span></div>
+    <div class="brand-main">CardioLink Admin <span>v2.7.9</span></div>
     <div class="brand-by">by Matías Anchorena</div>
   </div>
   <button class="nav active" data-section="dashboard">Dashboard</button>
@@ -238,7 +238,7 @@
 
       <div id="printArea">
         <div class="print-title">
-          <h2>CardioLink Admin v2.7.8</h2>
+          <h2>CardioLink Admin v2.7.9</h2>
           <p>by Matías Anchorena — Listado filtrado</p>
           <p id="printMeta"></p>
         </div>
@@ -626,19 +626,20 @@
 
         <div class="solo-config">
           <h3>Usuarios, roles y permisos</h3>
-          <p class="muted">Perfiles internos de CardioLink. El usuario de Supabase debe existir con el mismo nombre antes de <strong>@cardiolink.local</strong>.</p>
+          <p class="muted">Usuarios de acceso de CardioLink. El login de Supabase debe coincidir con el campo Usuario. El profesional asociado define qué turnos ve ese usuario.</p>
           <label>Nombre real</label><input id="usrNombre" placeholder="Ej: Dr. Fernández Drago">
-          <label>Usuario</label><input id="usrUsuario" placeholder="Ej: drago">
+          <label>Usuario de acceso</label><input id="usrUsuario" placeholder="Ej: humberto, rogelio, xime">
           <label>Rol</label><select id="usrRol">
             <option value="medico">Médico</option>
             <option value="secretaria">Secretaría / secretario</option>
             <option value="admin">Administrador</option>
           </select>
           <label>Profesional asociado</label><select id="usrProfesionalId"></select>
+          <p class="muted">Si el profesional ya existe, seleccionalo acá. No crees otro profesional para el mismo médico.</p>
           <label>Especialidad / área</label><input id="usrEspecialidad" placeholder="Ej: Diagnóstico por Imágenes">
-          <button class="primary" id="btnAddUsuarioSistema" type="button">Agregar perfil interno</button>
+          <button class="primary" id="btnAddUsuarioSistema" type="button">Agregar / actualizar usuario</button>
+          <button class="secondary" onclick="limpiarUsuariosDuplicados()" type="button">Depurar usuarios duplicados</button>
           <ul id="listaUsuariosSistema"></ul>
-          <p class="muted">Matías es el único perfil dueño. Factura Rogelio y caja global avanzada quedan reservadas solo para Matías.</p>
         </div>
 
         <div>
@@ -655,6 +656,6 @@
   </section>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="app.js?v=278"></script>
+<script src="app.js?v=279"></script>
 </body>
 </html>
