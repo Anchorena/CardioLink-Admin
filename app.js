@@ -107,6 +107,7 @@ function auditoriaHTML(a){
   return `<div class="audit-box"><strong>Trazabilidad</strong><br><small>Carga: ${creado}<br>Última edición: ${editado}</small></div>`;
 }
 function seccionPermitida(section){
+  if(section==='caja') return esMatiasDuenio();
   if(esMatiasDuenio()) return true;
   if(esSecretaria() || esAdminComun()) return true;
   if(esMedico()) return ['dashboard','carga','pacientes','listado','colocaciones','instructivos'].includes(section);
@@ -181,7 +182,7 @@ function mostrarPantallaLogin() {
 
       <h1>CardioLink Admin</h1>
       <p class="login-subtitle">by Matías Anchorena</p>
-      <p class="login-meta">Versión 2.7.5 · 2026</p>
+      <p class="login-meta">Versión 2.7.6 · 2026</p>
     </div>
 
     <div class="login-fields">
@@ -662,7 +663,7 @@ function init(){
   if ($('adminHasta')) $('adminHasta').value = todayISO();
   try { cambiarPerfil('general'); } catch(e) { console.warn('cambiarPerfil inicial falló:', e); }
   try { if (typeof renderConfig === 'function') renderConfig(); } catch(e) { console.warn('renderConfig falló:', e); }
-  try { aplicarPermisosUI(); } catch(e) { console.warn('aplicarPermisosUI falló:', e); }
+  try { aplicarPermisosUI(); actualizarInstructivoRolActual(); } catch(e) { console.warn('aplicarPermisosUI falló:', e); }
   try { actualizarHora(); setInterval(actualizarHora,30000); } catch(e) {}
 
   document.querySelectorAll('.nav').forEach(b=>b.addEventListener('click',()=>showSection(b.dataset.section)));
@@ -681,7 +682,9 @@ function init(){
   on('btnLimpiar','click',limpiarForm);
 
   on('btnBuscarPaciente','click',buscarPacienteDesdeCarga);
+  on('buscarPaciente','keydown',(e)=>{if(e.key==='Enter'){e.preventDefault();buscarPacienteDesdeCarga();}});
   on('buscarPaciente','input',()=>{const q=$('buscarPaciente').value.trim();if(q.length>=3)buscarPacienteDesdeCarga();});
+  on('btnLimpiarBuscarPaciente','click',()=>{if($('buscarPaciente'))$('buscarPaciente').value=''; if($('resultadosPacientes'))$('resultadosPacientes').innerHTML='';});
   on('btnImportarMedicloud','click',abrirImportadorMedicloud);
   on('btnNuevoPacienteManual','click',nuevoPacienteManual);
   on('dni','blur',buscarPacientePorDniSiExiste);
@@ -758,7 +761,46 @@ if(puedeVerFacturaRogelio()){
  llenarSelect($('cfgProfesionalValores'),data.profesionales.filter(p=>p.id!=='general'),p=>p.id,p=>p.nombre);
  llenarSelect($('cfgReglaOS'),data.obrasSociales);
 }
-function showSection(id){if(!seccionPermitida(id)){alert('Tu perfil no tiene permiso para abrir esta sección.');return;}aplicarPermisosUI();document.querySelectorAll('.section').forEach(s=>s.classList.remove('visible'));if($(id))$(id).classList.add('visible');document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.section===id));if(id==='instructivos'){if($('tituloBienvenida'))$('tituloBienvenida').textContent='Instructivos de uso';if($('subtituloPerfil'))$('subtituloPerfil').textContent='Guía para secretaría, médicos y administración';}else if(id==='pacientes'){if($('tituloBienvenida'))$('tituloBienvenida').textContent='Pacientes';if($('subtituloPerfil'))$('subtituloPerfil').textContent='Ficha administrativa e historial cruzado entre profesionales';renderPacientesPanel($('pacientesBuscar')?.value||'',false);}if(id==='colocaciones')renderLiquidacionColocacionesSolapa()}
+
+function actualizarInstructivoRolActual(){
+  const box=$('instructivoRolActual');
+  if(!box)return;
+  const u=perfilUsuarioActual();
+  let html='';
+  if(esMatiasDuenio()){
+    html=`<p>Estás usando el perfil <strong>Matías / dueño</strong>. Desde este perfil se ve y administra todo el sistema.</p>
+    <ol>
+      <li>Podés ver todos los profesionales, pacientes, turnos, listados y configuraciones.</li>
+      <li>Solo este perfil puede ver <strong>Factura Rogelio</strong> y la <strong>caja global avanzada</strong>.</li>
+      <li>Podés crear usuarios internos, resetear claves, modificar roles, obras sociales, reglas, prestaciones y valores.</li>
+      <li>Podés revisar duplicados, fusionar pacientes y consultar trazabilidad.</li>
+      <li>La auditoría registra quién cargó o modificó cada atención y cuándo.</li>
+    </ol>`;
+  }else if(esSecretaria()){
+    html=`<p>Estás usando un perfil de <strong>Secretaría</strong>. Este perfil está pensado para gestionar el trabajo operativo del consultorio.</p>
+    <ol>
+      <li>Podés cargar y gestionar turnos/atenciones de todos los profesionales.</li>
+      <li>Podés buscar pacientes, importar desde Medicloud, editar datos administrativos y actualizar coberturas.</li>
+      <li>Podés agregar obras sociales, prestaciones, reglas y valores si el perfil está habilitado.</li>
+      <li>No ves Factura Rogelio ni la caja global avanzada reservada para Matías.</li>
+      <li>Cada carga o modificación queda registrada con tu usuario y fecha/hora.</li>
+    </ol>`;
+  }else if(esMedico()){
+    html=`<p>Estás usando un perfil de <strong>Médico</strong>${u.especialidad?` — ${escapeHtml(u.especialidad)}`:''}. Este perfil muestra principalmente la actividad propia.</p>
+    <ol>
+      <li>Podés ver tus turnos/atenciones y tus pacientes asociados.</li>
+      <li>Podés cargar turnos propios y cambiar estados de atención cuando esté habilitada la agenda.</li>
+      <li>Podés consultar tu historial y reportes propios por rango cuando se habiliten.</li>
+      <li>No ves caja de otros profesionales, reportes globales ni Factura Rogelio.</li>
+      <li>Los cambios que hagas quedan registrados con tu usuario y fecha/hora.</li>
+    </ol>`;
+  }else{
+    html=`<p>Tu perfil tiene permisos administrativos limitados. CardioLink mostrará solo las secciones habilitadas para tu usuario.</p>`;
+  }
+  box.innerHTML=html;
+}
+
+function showSection(id){if(!seccionPermitida(id)){alert('Tu perfil no tiene permiso para abrir esta sección.');return;}aplicarPermisosUI();document.querySelectorAll('.section').forEach(s=>s.classList.remove('visible'));if($(id))$(id).classList.add('visible');document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.section===id));if(id==='instructivos'){if($('tituloBienvenida'))$('tituloBienvenida').textContent='Instructivos de uso';if($('subtituloPerfil'))$('subtituloPerfil').textContent='Guía según el perfil activo';actualizarInstructivoRolActual();}else if(id==='pacientes'){if($('tituloBienvenida'))$('tituloBienvenida').textContent='Pacientes';if($('subtituloPerfil'))$('subtituloPerfil').textContent='Ficha administrativa e historial cruzado entre profesionales';renderPacientesPanel($('pacientesBuscar')?.value||'',false);}else if(id==='caja'){if($('tituloBienvenida'))$('tituloBienvenida').textContent='Caja / reportes';if($('subtituloPerfil'))$('subtituloPerfil').textContent='Panel reservado para Matías';}if(id==='colocaciones')renderLiquidacionColocacionesSolapa()}
 function cambiarPerfil(id){
  if(esMedico()){id=profesionalIdUsuarioActual()||id;}
  $('perfilActivo').value=id;const p=perfilObj();
@@ -1157,19 +1199,29 @@ function todosPacientes(){
  return lista;
 }
 function buscarPacientes(q){
- const nq=normalizarTexto(q);const nd=String(q||'').replace(/\D/g,'');
+ const nq=normalizarTexto(q||'');
+ const nd=String(q||'').replace(/\D/g,'');
  if(!nq && !nd)return[];
- return todosPacientes().filter(p=>{
+ const lista=todosPacientes().filter(p=>{
    const dni=String(p.dni||'').replace(/\D/g,'');
-   return (nd && dni.includes(nd)) || normalizarTexto(p.nombreCompleto).includes(nq) || String(p.telefono||'').includes(nd);
- }).slice(0,8);
+   const tel=String(p.telefono||'').replace(/\D/g,'');
+   const nombre=normalizarTexto(p.nombreCompleto||p.paciente||'');
+   const email=normalizarTexto(p.email||'');
+   const ats=atencionesPacienteGlobal ? atencionesPacienteGlobal(p) : [];
+   return (nd && dni.includes(nd)) ||
+          (nd && tel.includes(nd)) ||
+          (nq && nombre.includes(nq)) ||
+          (nq && email.includes(nq)) ||
+          ats.some(a=>normalizarTexto(a.paciente||'').includes(nq) || normalizarTexto(a.profesional||'').includes(nq) || normalizarTexto(a.prestacion||'').includes(nq));
+ }).sort((a,b)=>nombrePacientePanel(a).localeCompare(nombrePacientePanel(b),'es'));
+ return lista.slice(0,20);
 }
 function renderResultadosPacientes(lista){
  const box=$('resultadosPacientes');if(!box)return;
  if(!lista.length){box.innerHTML='<div class="muted">No encontré paciente local. Podés cargarlo manual o importar desde Medicloud.</div>';return;}
  box.innerHTML=lista.map(p=>`<div class="paciente-result"><div><strong>${escapeHtml(p.nombreCompleto||'Paciente')}</strong><br><small>DNI ${escapeHtml(p.dni||'s/d')} · ${escapeHtml(p.telefono||'')} · Cobertura habitual: ${escapeHtml(p.coberturaHabitual||'s/d')}</small></div><button type="button" class="secondary" onclick="usarPaciente('${escapeHtml(p.id)}')">Usar</button></div>`).join('');
 }
-function buscarPacienteDesdeCarga(){renderResultadosPacientes(buscarPacientes($('buscarPaciente')?.value||$('dni')?.value||$('paciente')?.value||''));}
+function buscarPacienteDesdeCarga(){const q=($('buscarPaciente')?.value||'').trim(); renderResultadosPacientes(buscarPacientes(q));}
 function buscarPacientePorDniSiExiste(){const dni=$('dni')?.value||'';if(String(dni).replace(/\D/g,'').length>=6){const r=buscarPacientes(dni);if(r.length)renderResultadosPacientes(r);}}
 function usarPaciente(id){
  const p=todosPacientes().find(x=>x.id===id);if(!p)return;
@@ -1639,6 +1691,7 @@ function resetFiltros(){
 }
 function verDineroPeriodo(){
   const res=$('dineroPeriodoResultado');
+  if(!puedeVerCajaGlobal()){ if(res)res.textContent='Panel reservado para Matías.'; return; }
   if(perfilObj().id==='general'){
     res.textContent='Seleccione un perfil profesional para ver ingresos. La vista general no mezcla cajas.';
     return;
@@ -1665,7 +1718,7 @@ function verDineroPeriodo(){
 }
 function ocultarDineroPeriodo(){$('dineroPeriodoResultado').textContent='';$('claveDinero').value=''}
 function setPrintMeta(){$('printMeta').textContent=`Perfil: ${perfilObj().nombre} | Registros: ${filtrar().length} | ${formatFecha(todayISO())}`}
-function exportarCSV(){const datos=filtrar();if(!datos.length){alert('No hay datos');return}const r=resumen(datos);const incluirValoresExport=!!$('incluirValoresImpresion')?.checked;const filas=[['CardioLink Admin v2.7.2'],['Perfil',perfilObj().nombre],['Consultas',r.consultas],['Estudios',r.estudios],[],['Fecha','Paciente','OS','Profesional','Prestación','Consulta a','Estudio a','Tipo','Forma','Particular visible','Copago visible','Total visible','Estado']];datos.forEach(a=>{const m=dineroVisible(a),e=evaluarEstado(a);filas.push([formatFecha(a.fecha),a.paciente,a.obraSocial,a.profesional,prestacionListado(a),a.consultaA,a.prestacionA,a.tipoCobro,a.formaPago,incluirValoresExport?m.particular:'',incluirValoresExport?m.copago:'',incluirValoresExport?m.total:'',e.txt])});const csv=filas.map(r=>r.map(c=>`"${String(c??'').replaceAll('"','""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_listado.csv';a.click()}
+function exportarCSV(){const datos=filtrar();if(!datos.length){alert('No hay datos');return}const r=resumen(datos);const incluirValoresExport=!!$('incluirValoresImpresion')?.checked;const filas=[['CardioLink Admin v2.7.6'],['Perfil',perfilObj().nombre],['Consultas',r.consultas],['Estudios',r.estudios],[],['Fecha','Paciente','OS','Profesional','Prestación','Consulta a','Estudio a','Tipo','Forma','Particular visible','Copago visible','Total visible','Estado']];datos.forEach(a=>{const m=dineroVisible(a),e=evaluarEstado(a);filas.push([formatFecha(a.fecha),a.paciente,a.obraSocial,a.profesional,prestacionListado(a),a.consultaA,a.prestacionA,a.tipoCobro,a.formaPago,incluirValoresExport?m.particular:'',incluirValoresExport?m.copago:'',incluirValoresExport?m.total:'',e.txt])});const csv=filas.map(r=>r.map(c=>`"${String(c??'').replaceAll('"','""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_listado.csv';a.click()}
 function exportarBackup(){const b={app:'CardioLink Admin',version:'2.7.2',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
 function importarBackup(){const inp=$('inputImportBackup');if(!inp.files[0]){alert('Elegí archivo');return}if(!confirm('Reemplaza la base actual. ¿Continuar?'))return;const rd=new FileReader();rd.onload=e=>{try{const b=JSON.parse(e.target.result);if(!b.config||!b.atenciones)throw new Error();data=b.config;atenciones=b.atenciones;saveConfig();saveAtenciones();refreshSelects();renderConfig();cambiarPerfil('general');alert('Backup importado')}catch{alert('Backup inválido')}};rd.readAsText(inp.files[0])}
 
@@ -1683,15 +1736,31 @@ function atencionesDelPaciente(p){
     return false;
   });
 }
+function idsAtencionesPacienteParaDuplicados(p){
+  return new Set(atencionesDelPaciente(p).map(a=>String(a.id||'')));
+}
+function compartenAtenciones(a,b){
+  const A=idsAtencionesPacienteParaDuplicados(a), B=idsAtencionesPacienteParaDuplicados(b);
+  if(!A.size || !B.size) return false;
+  for(const id of A){ if(id && B.has(id)) return true; }
+  return false;
+}
+function duplicadoYaResuelto(a,b){
+  if(!Array.isArray(data.auditoriaPacientes)) return false;
+  const ids=[String(a.id||''),String(b.id||''),normalizarTexto(a.nombreCompleto||''),normalizarTexto(b.nombreCompleto||'')].filter(Boolean);
+  return data.auditoriaPacientes.some(x=>x.tipo==='fusion_paciente' && ids.includes(String(x.principalId||'')) && ids.includes(String(x.duplicadoId||'')));
+}
 function detectarDuplicadosPacientes(){
   if(!Array.isArray(data.pacientes))data.pacientes=[];
-  const pacientes=[...(data.pacientes||[]).filter(pacienteActivoPanel),...pacientesDesdeAtenciones().filter(pacienteActivoPanel)];
+  const pacientes=[...(data.pacientes||[]).filter(pacienteActivoPanel),...pacientesDesdeAtenciones().filter(pacienteActivoPanel)].filter(p=>p && p.estado!=='fusionado' && !p.fusionadoCon);
   const pares=[];
   const seen=new Set();
   for(let i=0;i<pacientes.length;i++){
     for(let j=i+1;j<pacientes.length;j++){
       const a=pacientes[i], b=pacientes[j];
       if(a.id && b.id && a.id===b.id)continue;
+      if(compartenAtenciones(a,b))continue;
+      if(duplicadoYaResuelto(a,b))continue;
       const dniA=dniLimpio(a.dni), dniB=dniLimpio(b.dni);
       const telA=telLimpio(a.telefono), telB=telLimpio(b.telefono);
       const nomA=nombreClavePaciente(a), nomB=nombreClavePaciente(b);
@@ -1722,10 +1791,11 @@ function resumenPacienteDuplicado(p){
 }
 function renderDuplicadosPacientes(){
   const box=$('resultadoDuplicadosPacientes');
-  if(!box)return;
+  const boxPac=$('resultadoDuplicadosPacientesPacientes');
   const pares=detectarDuplicadosPacientes();
-  if(!pares.length){box.innerHTML='<div class="ok-box">No encontré duplicados probables entre pacientes activos.</div>';return;}
-  box.innerHTML=pares.map((g,idx)=>{
+  const renderTarget=(html)=>{ if(box)box.innerHTML=html; if(boxPac)boxPac.innerHTML=html; };
+  if(!pares.length){renderTarget('<div class="ok-box">No encontré duplicados probables entre pacientes activos.</div>');return;}
+  const html=pares.map((g,idx)=>{
     const aCount=atencionesDelPaciente(g.a).length;
     const bCount=atencionesDelPaciente(g.b).length;
     const sugerido=aCount>=bCount?g.a:g.b;
@@ -1743,6 +1813,7 @@ function renderDuplicadosPacientes(){
       </div>
     </div>`;
   }).join('');
+  renderTarget(html);
 }
 function asegurarPacientePersistente(p){
   if(!Array.isArray(data.pacientes))data.pacientes=[];

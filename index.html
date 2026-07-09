@@ -3,19 +3,20 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CardioLink Admin v2.7.5</title>
-<link rel="stylesheet" href="styles.css?v=275">
+<title>CardioLink Admin v2.7.6</title>
+<link rel="stylesheet" href="styles.css?v=276">
 </head>
 <body>
 <aside class="sidebar">
   <div class="brand">
-    <div class="brand-main">CardioLink Admin <span>v2.7.5</span></div>
+    <div class="brand-main">CardioLink Admin <span>v2.7.6</span></div>
     <div class="brand-by">by Matías Anchorena</div>
   </div>
   <button class="nav active" data-section="dashboard">Dashboard</button>
   <button class="nav" data-section="carga">Carga de turno/atención</button>
   <button class="nav" data-section="pacientes">Pacientes</button>
   <button class="nav" data-section="listado">Listado / filtros</button>
+  <button class="nav solo-matias" data-section="caja">Caja / reportes</button>
   <button class="nav" data-section="colocaciones">Colocaciones / pendientes</button>
   <button class="nav" data-section="instructivos">Instructivos</button>
   <button class="nav" data-section="config">Configuración</button>
@@ -77,7 +78,7 @@
           <div class="paciente-search-grid">
             <div>
               <label>Buscar paciente por DNI / apellido / teléfono</label>
-              <input type="text" id="buscarPaciente" placeholder="Ej: DNI o apellido">
+              <div class="search-input-clear"><input type="text" id="buscarPaciente" placeholder="Ej: DNI, apellido o teléfono"><button class="clear-search" type="button" id="btnLimpiarBuscarPaciente" title="Limpiar búsqueda">×</button></div>
             </div>
             <div class="paciente-search-actions">
               <button class="secondary" type="button" id="btnBuscarPaciente">Buscar local</button>
@@ -215,7 +216,7 @@
 
   <section id="listado" class="section">
     <div class="card">
-      <h2>Listado, filtros y caja</h2>
+      <h2>Listado / filtros</h2>
       <div class="filters">
         <input type="date" id="fDesde">
         <input type="date" id="fHasta">
@@ -237,7 +238,7 @@
 
       <div id="printArea">
         <div class="print-title">
-          <h2>CardioLink Admin v2.7.5</h2>
+          <h2>CardioLink Admin v2.7.6</h2>
           <p>by Matías Anchorena — Listado filtrado</p>
           <p id="printMeta"></p>
         </div>
@@ -264,17 +265,6 @@
           <div id="liquidacionResultado" class="money-result"></div>
         </div>
 
-        <div class="money-lock no-print">
-          <strong>Panel administrativo avanzado</strong>
-          <span>Acceso administrativo restringido</span>
-          <input type="date" id="adminDesde" title="Desde">
-          <input type="date" id="adminHasta" title="Hasta">
-          <input type="password" id="claveDinero" placeholder="Clave administrador">
-          <button class="primary" id="btnVerDineroPeriodo">Ver</button>
-          <button class="secondary" id="btnOcultarDineroPeriodo">Ocultar</button>
-          <div id="dineroPeriodoResultado" class="money-result"></div>
-        </div>
-
         <div class="tabla-listado-wrap">
           <table>
             <thead>
@@ -297,6 +287,29 @@
     </div>
   </section>
 
+
+
+  <section id="caja" class="section">
+    <div class="card solo-matias">
+      <h2>Caja / reportes</h2>
+      <p class="muted">Panel reservado para el perfil Matías. Desde acá se consultan ingresos por perfil, períodos administrativos y reportes sensibles. Factura Rogelio solo se muestra con el perfil Matías.</p>
+      <div class="admin-report-note">
+        <strong>Uso recomendado:</strong> elegí el perfil profesional arriba, definí el período y consultá la caja correspondiente. La vista general no mezcla cajas.
+      </div>
+        <div class="money-lock no-print solo-matias">
+          <strong>Panel administrativo avanzado</strong>
+          <span>Acceso administrativo restringido</span>
+          <input type="date" id="adminDesde" title="Desde">
+          <input type="date" id="adminHasta" title="Hasta">
+          <input type="password" id="claveDinero" placeholder="Clave administrador">
+          <button class="primary" id="btnVerDineroPeriodo">Ver</button>
+          <button class="secondary" id="btnOcultarDineroPeriodo">Ocultar</button>
+          <div id="dineroPeriodoResultado" class="money-result"></div>
+        </div>
+
+
+    </div>
+  </section>
 
   <section id="colocaciones" class="section">
     <div class="card">
@@ -528,14 +541,16 @@
   
   <div class="card instructivo-card" id="inst-roles-permisos">
     <h2>Roles, permisos y trazabilidad</h2>
-    <p>CardioLink usa perfiles para que cada persona vea y haga lo que corresponde. La carga queda trazable: se registra quién cargó o modificó cada atención y en qué momento.</p>
-    <ol>
-      <li><strong>Matías / dueño:</strong> ve todo. Es el único que puede ver Factura Rogelio y la caja global avanzada.</li>
-      <li><strong>Secretaría:</strong> puede cargar y gestionar turnos/atenciones de todos los profesionales, agregar obras sociales, reglas, prestaciones y valores si está habilitada.</li>
-      <li><strong>Médico:</strong> ve sus turnos/atenciones, sus pacientes, sus estados y sus reportes/caja propios. No ve caja ni reportes de otros.</li>
-      <li><strong>Usuarios:</strong> Matías crea o resetea perfiles. Si se crea un usuario interno, también debe existir el usuario de Supabase correspondiente.</li>
-      <li><strong>Trazabilidad:</strong> creado por, fecha de carga, editado por y fecha de modificación no deben alterarse manualmente desde perfiles comunes.</li>
-    </ol>
+    <div id="instructivoRolActual">
+      <p>CardioLink muestra las funciones según el perfil que inició sesión. La carga queda trazable: se registra quién cargó o modificó cada atención y en qué momento.</p>
+    </div>
+  </div>
+
+  <div class="card instructivo-card" id="inst-contacto-soporte">
+    <h2>Contacto y soporte</h2>
+    <p>Para sugerencias, cambios o problemas, comunicarse con <strong>Matías Anchorena</strong>.</p>
+    <p><strong>Email:</strong> drm.anchorena@gmail.com</p>
+    <p class="muted">También se podrá usar el sistema de mensajes internos de la app cuando esté habilitado.</p>
   </div>
 </section>
 
@@ -640,6 +655,6 @@
   </section>
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="app.js?v=275"></script>
+<script src="app.js?v=276"></script>
 </body>
 </html>

@@ -567,3 +567,20 @@ body[data-rol="medico"] .solo-matias,
 body[data-rol="medico"] .solo-config { display:none !important; }
 body[data-rol="secretaria"] .solo-matias,
 body[data-rol="admin"] .solo-matias { display:none !important; }
+
+/* ===== v2.7.6: Caja/reportes separada ===== */
+.admin-report-note{
+  margin: 12px 0 16px;
+  padding: 14px 16px;
+  border-radius: 16px;
+  border: 1px solid #bfdbfe;
+  background: #eff6ff;
+  color: #1e3a8a;
+  font-weight: 700;
+}
+#caja .money-lock{
+  margin-top: 16px;
+}
+#caja .card > h2{
+  margin-bottom: 8px;
+}
