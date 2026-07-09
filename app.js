@@ -39,41 +39,58 @@ function usuarioActualNombreCorto(){
 }
 function usuariosDefault(){
   return [
-    {id:'matias',usuario:'matias',nombre:'Dr. Matías Anchorena',rol:'duenio',profesionalId:'matias',especialidad:'Medicina Intensiva y Cardiología',activo:true,soloMatias:true},
-    {id:'geraldine',usuario:'geraldine',nombre:'Geraldine',rol:'secretaria',profesionalId:'',especialidad:'Administración',activo:true},
-    {id:'secretaria',usuario:'secretaria',nombre:'Secretaría',rol:'secretaria',profesionalId:'',especialidad:'Administración',activo:true},
-    {id:'rogelio',usuario:'rogelio',nombre:'Dr. Rogelio Anchorena',rol:'medico',profesionalId:'rogelio',especialidad:'Cardiología',activo:true},
-    {id:'humberto_drago',usuario:'drago',nombre:'Dr. Fernández Drago Humberto',rol:'medico',profesionalId:'humberto_drago',especialidad:'Diagnóstico por Imágenes',activo:true},
-    {id:'lucas_drago',usuario:'lucas',nombre:'Dr. Drago Lucas',rol:'medico',profesionalId:'lucas_drago',especialidad:'Diagnóstico por Imágenes',activo:true}
+    {id:'matias',usuario:'matias',aliases:['matias.anchorena','drm.anchorena'],nombre:'Dr. Matías Anchorena',rol:'duenio',profesionalId:'matias',especialidad:'Medicina Intensiva y Cardiología',activo:true,soloMatias:true},
+    {id:'geraldine',usuario:'geraldine',aliases:['geral','secretaria','secretaria1'],nombre:'Geraldine',rol:'secretaria',profesionalId:'',especialidad:'Administración',activo:true},
+    {id:'secretaria',usuario:'secretaria',aliases:['administracion','admin_secretaria'],nombre:'Secretaría',rol:'secretaria',profesionalId:'',especialidad:'Administración',activo:true},
+    {id:'rogelio',usuario:'rogelio',aliases:['rogelio.anchorena'],nombre:'Dr. Rogelio Anchorena',rol:'medico',profesionalId:'rogelio',especialidad:'Cardiología',activo:true},
+    {id:'humberto_drago',usuario:'drago',aliases:['humberto','humberto_drago','humberto.fernandez.drago','fernandez_drago','fernandezdrago','drago_humberto'],nombre:'Dr. Fernández Drago Humberto',rol:'medico',profesionalId:'humberto_drago',especialidad:'Diagnóstico por Imágenes',activo:true},
+    {id:'lucas_drago',usuario:'lucas',aliases:['lucas_drago','drago_lucas','lucas.drago'],nombre:'Dr. Drago Lucas',rol:'medico',profesionalId:'lucas_drago',especialidad:'Diagnóstico por Imágenes',activo:true}
   ];
+}
+function normalizarUsuarioClave(s){
+  return normalizarUsuarioTexto(s).replace(/[^a-z0-9]/g,'');
+}
+function usuarioCoincide(u, user, email){
+  const buscados=[user, email, String(email||'').split('@')[0]].filter(Boolean).map(normalizarUsuarioClave);
+  const candidatos=[u.usuario,u.email,u.id].concat(u.aliases||[]).filter(Boolean).map(normalizarUsuarioClave);
+  return buscados.some(b=>candidatos.includes(b));
 }
 function asegurarUsuariosConfig(){
   if(!data) return;
   if(!Array.isArray(data.usuarios)) data.usuarios = usuariosDefault();
-  const existentes = new Set(data.usuarios.map(u=>u.usuario));
-  usuariosDefault().forEach(u=>{ if(!existentes.has(u.usuario)) data.usuarios.push(u); });
+  const existentes = new Set(data.usuarios.map(u=>normalizarUsuarioClave(u.usuario||u.id)));
+  usuariosDefault().forEach(u=>{ if(!existentes.has(normalizarUsuarioClave(u.usuario))) data.usuarios.push(u); });
   data.usuarios.forEach(u=>{
     if(u.activo === undefined) u.activo = true;
     if(!u.id) u.id = 'usr_' + (u.usuario || Date.now());
     if(!u.rol) u.rol = 'medico';
+    if(!Array.isArray(u.aliases)) u.aliases=[];
   });
+}
+function inferirUsuarioPorLogin(user){
+  const k=normalizarUsuarioClave(user);
+  if(!k) return null;
+  if(k==='matias' || k.includes('matiasanchorena') || k.includes('drmanchorena')) return (data.usuarios||[]).find(x=>x.usuario==='matias');
+  if(k.includes('geraldine') || k.includes('secretaria') || k.includes('administracion')) return (data.usuarios||[]).find(x=>x.usuario==='geraldine' || x.usuario==='secretaria');
+  if(k.includes('rogelio')) return (data.usuarios||[]).find(x=>x.usuario==='rogelio');
+  if(k.includes('lucas') && k.includes('drago')) return (data.usuarios||[]).find(x=>x.id==='lucas_drago' || x.usuario==='lucas');
+  if(k.includes('humberto') || k.includes('fernandezdrago') || k==='drago' || k.includes('dragohumberto')) return (data.usuarios||[]).find(x=>x.id==='humberto_drago' || x.usuario==='drago');
+  return null;
 }
 function perfilUsuarioActual(){
   asegurarUsuariosConfig();
   const user = usuarioActualNombreCorto();
-  let u=(data.usuarios||[]).find(x=>normalizarUsuarioTexto(x.usuario)===normalizarUsuarioTexto(user) && x.activo!==false);
-  if(!u && usuarioSupabase?.email){
-    const email = normalizarUsuarioTexto(usuarioSupabase.email);
-    u=(data.usuarios||[]).find(x=>normalizarUsuarioTexto(x.email)===email && x.activo!==false);
-  }
-  // Si no hay perfil interno, no bloqueamos el consultorio: cae en Matías para poder reparar configuración.
-  if(!u) u=(data.usuarios||[]).find(x=>x.usuario==='matias') || {usuario:'matias',nombre:'Dr. Matías Anchorena',rol:'duenio',profesionalId:'matias',especialidad:'Medicina Intensiva y Cardiología'};
+  const email = usuarioSupabase?.email || '';
+  let u=(data.usuarios||[]).find(x=>usuarioCoincide(x,user,email) && x.activo!==false);
+  if(!u) u=inferirUsuarioPorLogin(user) || inferirUsuarioPorLogin(email);
+  // Si no se reconoce el usuario, entra con permisos mínimos. No cae en Matías para evitar exposición de caja/reportes.
+  if(!u) u={id:'usr_sin_config',usuario:user,nombre:user||'Usuario sin configurar',rol:'medico',profesionalId:'',especialidad:'Perfil no configurado',activo:true};
   usuarioPerfilActual=u;
   return u;
 }
 function esMatiasDuenio(){
   const u=perfilUsuarioActual();
-  return u.rol==='duenio' && normalizarUsuarioTexto(u.usuario)==='matias';
+  return u.rol==='duenio' && (normalizarUsuarioClave(u.usuario)==='matias' || u.soloMatias===true || u.id==='matias');
 }
 function esSecretaria(){ const r=perfilUsuarioActual().rol; return r==='secretaria'; }
 function esAdminComun(){ const r=perfilUsuarioActual().rol; return r==='admin'; }
@@ -126,7 +143,8 @@ function aplicarPermisosUI(){
   if(pa){
     if(esMedico()){
       const pid=profesionalIdUsuarioActual();
-      if(pid){ pa.value=pid; pa.disabled=true; }
+      if(pid){ pa.value=pid; }
+      pa.disabled=true;
     }else{
       pa.disabled=false;
     }
@@ -662,7 +680,8 @@ function init(){
   if ($('fecha')) $('fecha').value = todayISO();
   if ($('adminDesde')) $('adminDesde').value = todayISO();
   if ($('adminHasta')) $('adminHasta').value = todayISO();
-  try { cambiarPerfil('general'); } catch(e) { console.warn('cambiarPerfil inicial falló:', e); }
+  try { cambiarPerfil(esMedico() ? (profesionalIdUsuarioActual() || 'general') : 'general'); } catch(e) { console.warn('cambiarPerfil inicial falló:', e); }
+  try { showSection('dashboard'); } catch(e) { console.warn('showSection dashboard falló:', e); }
   try { if (typeof renderConfig === 'function') renderConfig(); } catch(e) { console.warn('renderConfig falló:', e); }
   try { aplicarPermisosUI(); actualizarInstructivoRolActual(); } catch(e) { console.warn('aplicarPermisosUI falló:', e); }
   try { actualizarHora(); setInterval(actualizarHora,30000); } catch(e) {}
@@ -766,42 +785,77 @@ if(puedeVerFacturaRogelio()){
 function actualizarInstructivoRolActual(){
   const box=$('instructivoRolActual');
   if(!box)return;
-  const u=perfilUsuarioActual();
   let html='';
   if(esMatiasDuenio()){
-    html=`<p>Estás usando el perfil <strong>Matías / dueño</strong>. Desde este perfil se ve y administra todo el sistema.</p>
+    html=`<p>Estás usando el perfil <strong>Matías / dueño</strong>. Este perfil administra el sistema completo.</p>
     <ol>
-      <li>Podés ver todos los profesionales, pacientes, turnos, listados y configuraciones.</li>
-      <li>Solo este perfil puede ver <strong>Factura Rogelio</strong> y la <strong>caja global avanzada</strong>.</li>
-      <li>Podés crear usuarios internos, resetear claves, modificar roles, obras sociales, reglas, prestaciones y valores.</li>
-      <li>Podés revisar duplicados, fusionar pacientes y consultar trazabilidad.</li>
-      <li>La auditoría registra quién cargó o modificó cada atención y cuándo.</li>
+      <li>Gestiona pacientes, turnos, atenciones, profesionales y configuraciones.</li>
+      <li>Administra caja global, reportes generales, colocaciones y circuitos internos.</li>
+      <li>Crea usuarios internos, define roles, especialidades y profesionales asociados.</li>
+      <li>Configura obras sociales, reglas, prestaciones, valores y copagos.</li>
+      <li>Revisa mantenimiento de pacientes, duplicados y auditoría del sistema.</li>
     </ol>`;
   }else if(esSecretaria()){
-    html=`<p>Estás usando un perfil de <strong>Secretaría</strong>. Este perfil está pensado para gestionar el trabajo operativo del consultorio.</p>
+    html=`<p>Estás usando un perfil de <strong>Secretaría</strong>. Este perfil gestiona el trabajo operativo del consultorio.</p>
     <ol>
-      <li>Podés cargar y gestionar turnos/atenciones de todos los profesionales.</li>
-      <li>Podés buscar pacientes, importar desde Medicloud, editar datos administrativos y actualizar coberturas.</li>
-      <li>Podés agregar obras sociales, prestaciones, reglas y valores si el perfil está habilitado.</li>
-      <li>No ves Factura Rogelio ni la caja global avanzada reservada para Matías.</li>
-      <li>Cada carga o modificación queda registrada con tu usuario y fecha/hora.</li>
+      <li>Carga y gestiona turnos/atenciones de todos los profesionales.</li>
+      <li>Busca pacientes, importa datos desde Medicloud y actualiza datos administrativos.</li>
+      <li>Actualiza coberturas, bonos, autorizaciones, copagos y estados administrativos.</li>
+      <li>Agrega obras sociales, prestaciones, reglas y valores cuando esté habilitado.</li>
+      <li>Coordina pacientes, pendientes, colocaciones y comunicación interna del consultorio.</li>
     </ol>`;
   }else if(esMedico()){
-    html=`<p>Estás usando un perfil de <strong>Médico</strong>. Este perfil muestra principalmente tu actividad propia.</p>
+    html=`<p>Estás usando un perfil de <strong>Médico</strong>. Este perfil está orientado a la actividad propia del profesional.</p>
     <ol>
-      <li>Podés ver tus turnos/atenciones y tus pacientes asociados.</li>
-      <li>Podés cargar turnos propios y cambiar estados de atención cuando esté habilitada la agenda.</li>
-      <li>Podés consultar tu historial y reportes propios por rango cuando se habiliten.</li>
-      <li>No ves datos, caja, reportes ni administración general de otros perfiles.</li>
-      <li>Los cambios que hagas quedan registrados con tu usuario y fecha/hora.</li>
+      <li>Consulta sus turnos/atenciones y pacientes asociados.</li>
+      <li>Carga turnos propios cuando corresponda.</li>
+      <li>Actualiza estados de atención cuando esté habilitada la agenda.</li>
+      <li>Consulta su historial profesional y reportes propios por rango cuando estén habilitados.</li>
+      <li>Usa mensajes internos para coordinar con secretaría y otros profesionales.</li>
     </ol>`;
   }else{
-    html=`<p>Tu perfil tiene permisos administrativos limitados. CardioLink mostrará solo las secciones habilitadas para tu usuario.</p>`;
+    html=`<p>Este usuario todavía no tiene un perfil interno completo. Matías debe configurarlo desde Usuarios, roles y permisos.</p>`;
   }
   box.innerHTML=html;
 }
 
-function showSection(id){if(!seccionPermitida(id)){alert('Tu perfil no tiene permiso para abrir esta sección.');return;}aplicarPermisosUI();document.querySelectorAll('.section').forEach(s=>s.classList.remove('visible'));if($(id))$(id).classList.add('visible');document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.section===id));if(id==='instructivos'){if($('tituloBienvenida'))$('tituloBienvenida').textContent='Instructivos de uso';if($('subtituloPerfil'))$('subtituloPerfil').textContent='Guía según el perfil activo';actualizarInstructivoRolActual();}else if(id==='pacientes'){if($('tituloBienvenida'))$('tituloBienvenida').textContent='Pacientes';if($('subtituloPerfil'))$('subtituloPerfil').textContent='Ficha administrativa e historial cruzado entre profesionales';renderPacientesPanel($('pacientesBuscar')?.value||'',false);}else if(id==='caja'){if($('tituloBienvenida'))$('tituloBienvenida').textContent='Caja / reportes';if($('subtituloPerfil'))$('subtituloPerfil').textContent='Panel reservado para Matías';}if(id==='colocaciones')renderLiquidacionColocacionesSolapa()}
+function showSection(id){
+  if(!seccionPermitida(id)){alert('Tu perfil no tiene permiso para abrir esta sección.');return;}
+  aplicarPermisosUI();
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('visible'));
+  if($(id))$(id).classList.add('visible');
+  document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.section===id));
+  if(id==='dashboard'){
+    if($('tituloBienvenida'))$('tituloBienvenida').textContent='Dashboard';
+    if($('subtituloPerfil'))$('subtituloPerfil').textContent='Resumen del perfil activo';
+    renderStats();
+  }else if(id==='carga'){
+    if($('tituloBienvenida'))$('tituloBienvenida').textContent='Carga de turno/atención';
+    if($('subtituloPerfil'))$('subtituloPerfil').textContent='Carga operativa de pacientes, coberturas y prestaciones';
+  }else if(id==='listado'){
+    if($('tituloBienvenida'))$('tituloBienvenida').textContent='Listado / filtros';
+    if($('subtituloPerfil'))$('subtituloPerfil').textContent='Búsqueda y listados de atenciones';
+    renderTabla();
+  }else if(id==='instructivos'){
+    if($('tituloBienvenida'))$('tituloBienvenida').textContent='Instructivos de uso';
+    if($('subtituloPerfil'))$('subtituloPerfil').textContent='Guía según el perfil activo';
+    actualizarInstructivoRolActual();
+  }else if(id==='pacientes'){
+    if($('tituloBienvenida'))$('tituloBienvenida').textContent='Pacientes';
+    if($('subtituloPerfil'))$('subtituloPerfil').textContent='Ficha administrativa e historial cruzado entre profesionales';
+    renderPacientesPanel($('pacientesBuscar')?.value||'',false);
+  }else if(id==='caja'){
+    if($('tituloBienvenida'))$('tituloBienvenida').textContent='Caja / reportes';
+    if($('subtituloPerfil'))$('subtituloPerfil').textContent='Panel reservado para Matías';
+  }else if(id==='colocaciones'){
+    if($('tituloBienvenida'))$('tituloBienvenida').textContent='Colocaciones / pendientes';
+    if($('subtituloPerfil'))$('subtituloPerfil').textContent='Liquidación y pendientes de estudios';
+    renderLiquidacionColocacionesSolapa();
+  }else if(id==='config'){
+    if($('tituloBienvenida'))$('tituloBienvenida').textContent='Configuración';
+    if($('subtituloPerfil'))$('subtituloPerfil').textContent='Profesionales, obras sociales, valores, usuarios y reglas';
+  }
+}
 function cambiarPerfil(id){
  if(esMedico()){id=profesionalIdUsuarioActual()||id;}
  $('perfilActivo').value=id;const p=perfilObj();
