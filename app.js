@@ -190,7 +190,7 @@ function seccionPermitida(section){
   if(section==='caja') return esMatiasDuenio();
   if(esMatiasDuenio()) return true;
   if(esSecretaria() || esAdminComun()) return true;
-  if(esMedico()) return ['dashboard','carga','agenda','pacientes','listado','estadisticas','colocaciones','instructivos'].includes(section);
+  if(esMedico()) return ['dashboard','carga','agenda','mensajes','pacientes','listado','estadisticas','colocaciones','instructivos'].includes(section);
   return section!=='config';
 }
 function aplicarPermisosUI(){
@@ -263,7 +263,7 @@ function mostrarPantallaLogin() {
 
       <h1>CardioLink Admin</h1>
       <p class="login-subtitle">by Matías Anchorena</p>
-      <p class="login-meta">Versión 2.7.6 · 2026</p>
+      <p class="login-meta">Versión 2.8.2 · 2026</p>
     </div>
 
     <div class="login-fields">
@@ -727,6 +727,8 @@ function ocultarResumenFiltros(){resumenFiltrosVisible=false;if($('resumenCaja')
 function getRegla(os){return (data.reglasOS||{})[os]||'GENERAL_CONSULTA_EXTRA'}
 function setRegla(os,regla){if(!data.reglasOS)data.reglasOS={};data.reglasOS[os]=regla;saveConfig()}
 function escapeHtml(s){return String(s??'').replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;')}
+function esMensajeInterno(a){return a && a.tipoRegistro==='mensaje';}
+function atencionesOperativas(datos=atenciones){return (datos||[]).filter(a=>!esMensajeInterno(a));}
 function llenarSelect(sel,items,val=x=>x,txt=x=>x){sel.innerHTML='';items.forEach(i=>{const o=document.createElement('option');o.value=val(i);o.textContent=txt(i);sel.appendChild(o)})}
 function llenarTodos(sel,items,label){sel.innerHTML=`<option value="">${label}</option>`;items.forEach(i=>{const o=document.createElement('option');o.value=i;o.textContent=i;sel.appendChild(o)})}
 
@@ -821,6 +823,15 @@ function init(){
   on('btnPacientesLimpiar','click',()=>{if($('pacientesBuscar'))$('pacientesBuscar').value=''; pacienteSeleccionadoPanelId=''; renderPacientesPanel('',true); if($('pacienteDetalle'))$('pacienteDetalle').innerHTML='<h3>Ficha del paciente</h3><p class="muted">Seleccioná un paciente de la lista. Desde acá podés ver su historial cruzado entre médicos, editar datos básicos o cargar una nueva atención.</p>';});
   on('btnPacientesTodos','click',()=>renderPacientesPanel('',true));
   on('btnPacientesDuplicados','click',()=>{renderDuplicadosPacientes(); const a=$('resultadoDuplicadosPacientes'), b=$('resultadoDuplicadosPacientesPacientes'); if(a&&b)b.innerHTML=a.innerHTML;});
+
+  // Mensajes internos
+  on('btnEnviarMensaje','click',enviarMensajeInterno);
+  on('btnLimpiarMensaje','click',limpiarMensajeInterno);
+  on('btnMensajesActualizar','click',renderMensajes);
+  on('btnMensajesMarcarLeidos','click',marcarMensajesVisiblesLeidos);
+  on('msgFraseRapida','change',()=>{const v=$('msgFraseRapida')?.value||''; if(v) $('msgTexto').value=v;});
+  on('msgFiltro','change',renderMensajes);
+  document.querySelectorAll('.msgQuick').forEach(b=>b.addEventListener('click',()=>{if($('msgTexto'))$('msgTexto').value=b.dataset.text||b.textContent||'';}));
 
   // Agenda / sala
   on('btnAgendaActualizar','click',renderAgenda);
@@ -920,6 +931,11 @@ function showSection(id){
     if($('subtituloPerfil'))$('subtituloPerfil').textContent='Turnos del día y estados de atención';
     initAgenda();
     renderAgenda();
+  }else if(id==='mensajes'){
+    if($('tituloBienvenida'))$('tituloBienvenida').textContent='Mensajes internos';
+    if($('subtituloPerfil'))$('subtituloPerfil').textContent='Comunicación simple entre secretaría y profesionales';
+    initMensajes();
+    renderMensajes();
   }else if(id==='listado'){
     if($('tituloBienvenida'))$('tituloBienvenida').textContent='Listado / filtros';
     if($('subtituloPerfil'))$('subtituloPerfil').textContent='Búsqueda y listados de atenciones';
@@ -1485,10 +1501,10 @@ function atencionesPerfil(){
    return atenciones.filter(a=>a.profesionalId===pid || a.cajaPerfil===pid);
  }
  const p=perfilObj();
- if(p.id==='general')return atenciones;
- if(p.id==='matias')return atenciones.filter(a=>a.profesionalId==='matias'||a.consultaA==='Matías'||a.prestacionA==='Matías');
- if(p.id==='rogelio')return atenciones.filter(a=>a.profesionalId==='rogelio'||a.consultaA==='Rogelio'||a.prestacionA==='Rogelio');
- return atenciones.filter(a=>a.profesionalId===p.id);
+ if(p.id==='general')return base;
+ if(p.id==='matias')return base.filter(a=>a.profesionalId==='matias'||a.consultaA==='Matías'||a.prestacionA==='Matías');
+ if(p.id==='rogelio')return base.filter(a=>a.profesionalId==='rogelio'||a.consultaA==='Rogelio'||a.prestacionA==='Rogelio');
+ return base.filter(a=>a.profesionalId===p.id);
 }
 
 function esPendienteAdministrativo(a){
@@ -1522,7 +1538,7 @@ function dineroVisible(a){
  const copago=Number(a.montoCopago||0);
  return {particular,copago,total:particular+copago};
 }
-function atencionesCajaDelPerfil(datos = atenciones) {
+function atencionesCajaDelPerfil(datos = atencionesOperativas()) {
   const p = perfilObj();
 
   // En vista general / administración NO se mezclan cajas
@@ -1536,7 +1552,7 @@ function atencionesCajaDelPerfil(datos = atenciones) {
   });
 }
 
-function cajaHoy(datos = atenciones) {
+function cajaHoy(datos = atencionesOperativas()) {
   const datosCaja = atencionesCajaDelPerfil(datos);
 
   return datosCaja
@@ -1871,7 +1887,7 @@ function verDineroPeriodo(){
 function ocultarDineroPeriodo(){$('dineroPeriodoResultado').textContent='';$('claveDinero').value=''}
 function setPrintMeta(){$('printMeta').textContent=`Perfil: ${perfilObj().nombre} | Registros: ${filtrar().length} | ${formatFecha(todayISO())}`}
 function exportarCSV(){const datos=filtrar();if(!datos.length){alert('No hay datos');return}const r=resumen(datos);const incluirValoresExport=!!$('incluirValoresImpresion')?.checked;const filas=[['CardioLink Admin v2.8.1'],['Perfil',perfilObj().nombre],['Consultas',r.consultas],['Estudios',r.estudios],[],['Fecha','Paciente','OS','Profesional','Prestación','Consulta a','Estudio a','Tipo','Forma','Particular visible','Copago visible','Total visible','Estado']];datos.forEach(a=>{const m=dineroVisible(a),e=evaluarEstado(a);filas.push([formatFecha(a.fecha),a.paciente,a.obraSocial,a.profesional,prestacionListado(a),a.consultaA,a.prestacionA,a.tipoCobro,a.formaPago,incluirValoresExport?m.particular:'',incluirValoresExport?m.copago:'',incluirValoresExport?m.total:'',e.txt])});const csv=filas.map(r=>r.map(c=>`"${String(c??'').replaceAll('"','""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_listado.csv';a.click()}
-function exportarBackup(){const b={app:'CardioLink Admin',version:'2.7.7',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
+function exportarBackup(){const b={app:'CardioLink Admin',version:'2.8.2',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
 function importarBackup(){const inp=$('inputImportBackup');if(!inp.files[0]){alert('Elegí archivo');return}if(!confirm('Reemplaza la base actual. ¿Continuar?'))return;const rd=new FileReader();rd.onload=e=>{try{const b=JSON.parse(e.target.result);if(!b.config||!b.atenciones)throw new Error();data=b.config;atenciones=b.atenciones;saveConfig();saveAtenciones();refreshSelects();renderConfig();cambiarPerfil('general');alert('Backup importado')}catch{alert('Backup inválido')}};rd.readAsText(inp.files[0])}
 
 function dniLimpio(v){return String(v||'').replace(/\D/g,'');}
@@ -2477,6 +2493,7 @@ async function refrescarDesdeSupabaseAutomatico(){
     renderStats();
     if($('agenda')?.classList.contains('visible'))renderAgenda();
     if($('pacientes')?.classList.contains('visible'))renderPacientesPanel($('pacientesBuscar')?.value||'', false);
+    if($('mensajes')?.classList.contains('visible'))renderMensajes();
   }catch(e){console.warn('Refresco automático falló:', e);}
 }
 
@@ -2490,6 +2507,107 @@ function iniciarRefrescoAutomatico() {
   }, 30000);
 
   console.log("Refresco automático activado cada 30 segundos");
+}
+
+
+/* ===== MENSAJES INTERNOS v2.8.2 ===== */
+function destinatariosMensajes(){
+  asegurarUsuariosConfig();
+  const lista=[{value:'todos',label:'Todos'}, {value:'rol:secretaria',label:'Secretaría'}];
+  (data.usuarios||[]).filter(u=>u.activo!==false).forEach(u=>{
+    lista.push({value:'usuario:'+usuarioLoginCorto(u.usuario||u.id), label:u.nombre||u.usuario});
+  });
+  return lista;
+}
+function initMensajes(){
+  const sel=$('msgDestino');
+  if(sel && !sel.dataset.ready){
+    sel.innerHTML='';
+    destinatariosMensajes().forEach(d=>{
+      const o=document.createElement('option'); o.value=d.value; o.textContent=d.label; sel.appendChild(o);
+    });
+    sel.dataset.ready='1';
+  }
+  renderMensajes();
+}
+function limpiarMensajeInterno(){
+  if($('msgTexto'))$('msgTexto').value='';
+  if($('msgFraseRapida'))$('msgFraseRapida').value='';
+}
+function mensajeVisibleParaUsuario(m){
+  const u=perfilUsuarioActual();
+  const usr=usuarioLoginCorto(u.usuario||usuarioActualNombreCorto());
+  const destino=String(m.destino||'todos');
+  if(destino==='todos')return true;
+  if(destino==='rol:secretaria')return esSecretaria() || esMatiasDuenio() || esAdminComun();
+  if(destino==='rol:medico')return esMedico();
+  if(destino==='usuario:'+usr)return true;
+  if(m.deUsuario===usr)return true;
+  return false;
+}
+function nombreDestinoMensaje(destino){
+  if(destino==='todos')return 'Todos';
+  if(destino==='rol:secretaria')return 'Secretaría';
+  if(destino==='rol:medico')return 'Médicos';
+  if(String(destino).startsWith('usuario:')){
+    const usr=destino.replace('usuario:','');
+    const u=(data.usuarios||[]).find(x=>usuarioLoginCorto(x.usuario||x.id)===usr || (x.aliases||[]).map(usuarioLoginCorto).includes(usr));
+    return u?.nombre || usr;
+  }
+  return destino || 'Todos';
+}
+function mensajesInternos(){return (atenciones||[]).filter(esMensajeInterno).sort((a,b)=>String(b.creadoEn||b.fecha||'').localeCompare(String(a.creadoEn||a.fecha||'')));}
+function enviarMensajeInterno(){
+  const texto=($('msgTexto')?.value||'').trim();
+  if(!texto){alert('Escribí un mensaje.');return;}
+  const u=perfilUsuarioActual();
+  const msg={
+    id:'msg_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
+    tipoRegistro:'mensaje',
+    fecha:todayISO(),
+    horaInicio:new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}),
+    deUsuario:usuarioLoginCorto(u.usuario||usuarioActualNombreCorto()),
+    deNombre:u.nombre||u.usuario||usuarioActualNombreCorto(),
+    deRol:u.rol||'',
+    destino:$('msgDestino')?.value||'todos',
+    texto,
+    leidoPor:[]
+  };
+  selloAuditoriaCreacion(msg);
+  atenciones.push(msg);
+  saveAtenciones();
+  limpiarMensajeInterno();
+  renderMensajes();
+}
+function renderMensajes(){
+  const box=$('mensajesLista'); if(!box)return;
+  const filtro=$('msgFiltro')?.value||'visibles';
+  const usr=usuarioLoginCorto(perfilUsuarioActual().usuario||usuarioActualNombreCorto());
+  let datos=mensajesInternos();
+  if(filtro==='enviados')datos=datos.filter(m=>m.deUsuario===usr);
+  else datos=datos.filter(m=>mensajeVisibleParaUsuario(m));
+  datos=datos.slice(0,80);
+  if(!datos.length){box.innerHTML='<p class="muted">No hay mensajes para mostrar.</p>';return;}
+  box.innerHTML=datos.map(m=>{
+    const visto=(m.leidoPor||[]).includes(usr);
+    return `<div class="mensaje-item ${visto?'visto':'nuevo'}">
+      <div class="mensaje-head"><strong>${escapeHtml(m.deNombre||m.deUsuario||'Usuario')}</strong><span>${escapeHtml(fechaHoraAuditoria(m.creadoEn)||m.horaInicio||'')}</span></div>
+      <div class="mensaje-destino">Para: ${escapeHtml(nombreDestinoMensaje(m.destino))}</div>
+      <div class="mensaje-texto">${escapeHtml(m.texto||'')}</div>
+    </div>`;
+  }).join('');
+}
+function marcarMensajesVisiblesLeidos(){
+  const usr=usuarioLoginCorto(perfilUsuarioActual().usuario||usuarioActualNombreCorto());
+  let cambio=false;
+  mensajesInternos().forEach(m=>{
+    if(mensajeVisibleParaUsuario(m)){
+      if(!Array.isArray(m.leidoPor))m.leidoPor=[];
+      if(!m.leidoPor.includes(usr)){m.leidoPor.push(usr);cambio=true;}
+    }
+  });
+  if(cambio)saveAtenciones();
+  renderMensajes();
 }
 
 async function iniciarCardioLink() {

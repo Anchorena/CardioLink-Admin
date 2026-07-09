@@ -655,3 +655,95 @@ body[data-rol="admin"] .solo-matias { display:none !important; }
 .bar-row span,.bar-row strong{position:relative;z-index:2}.bar-row i{position:absolute;left:0;bottom:0;top:0;background:#dbeafe;z-index:1;opacity:.9}.bar-row strong{font-weight:900;color:#0f172a}
 @media(max-width:1100px){.estadisticas-filtros{grid-template-columns:repeat(2,minmax(140px,1fr))}.stats-kpi-grid{grid-template-columns:repeat(2,1fr)}.charts-grid{grid-template-columns:1fr}}
 @media(max-width:700px){.estadisticas-filtros,.stats-kpi-grid{grid-template-columns:1fr}.chart-card{min-height:300px}.chart-card canvas{height:230px!important}}
+
+/* ===== MENSAJES INTERNOS v2.8.2 ===== */
+.mensajes-layout{
+  display:grid;
+  grid-template-columns:minmax(280px, 420px) 1fr;
+  gap:18px;
+  align-items:start;
+}
+.card-soft{
+  background:#f8fafc;
+  border:1px solid #dbe3ef;
+  border-radius:18px;
+  padding:18px;
+}
+.mini-form{
+  grid-template-columns:1fr 1fr;
+  gap:12px;
+}
+.quick-message-buttons{
+  display:flex;
+  flex-wrap:wrap;
+  gap:8px;
+  margin:12px 0;
+}
+.quick-message-buttons button{
+  padding:8px 10px!important;
+  border-radius:999px!important;
+  font-size:13px!important;
+}
+.mensajes-toolbar{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  margin-bottom:10px;
+}
+.mensajes-filtros{
+  margin-bottom:12px;
+  max-width:260px;
+}
+.mensajes-items{
+  display:flex;
+  flex-direction:column;
+  gap:10px;
+  max-height:560px;
+  overflow:auto;
+  padding-right:4px;
+}
+.mensaje-item{
+  background:#fff;
+  border:1px solid #dbe3ef;
+  border-left:6px solid #93c5fd;
+  border-radius:14px;
+  padding:12px 14px;
+  box-shadow:0 5px 16px rgba(15,23,42,.06);
+}
+.mensaje-item.nuevo{
+  border-left-color:#2563eb;
+  background:#eff6ff;
+}
+.mensaje-item.visto{
+  border-left-color:#cbd5e1;
+}
+.mensaje-head{
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  color:#0f172a;
+}
+.mensaje-head span{
+  color:#64748b;
+  font-size:12px;
+  white-space:nowrap;
+}
+.mensaje-destino{
+  font-size:12px;
+  color:#475569;
+  margin-top:4px;
+  font-weight:700;
+}
+.mensaje-texto{
+  margin-top:8px;
+  font-size:15px;
+  line-height:1.35;
+  color:#111827;
+  white-space:pre-wrap;
+}
+@media(max-width:900px){
+  .mensajes-layout{grid-template-columns:1fr;}
+  .mini-form{grid-template-columns:1fr;}
+  .mensajes-toolbar{align-items:flex-start;flex-direction:column;}
+}

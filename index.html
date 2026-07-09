@@ -3,18 +3,19 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CardioLink Admin v2.8.1</title>
-<link rel="stylesheet" href="styles.css?v=281">
+<title>CardioLink Admin v2.8.2</title>
+<link rel="stylesheet" href="styles.css?v=282">
 </head>
 <body>
 <aside class="sidebar">
   <div class="brand">
-    <div class="brand-main">CardioLink Admin <span>v2.8.1</span></div>
+    <div class="brand-main">CardioLink Admin <span>v2.8.2</span></div>
     <div class="brand-by">by Matías Anchorena</div>
   </div>
   <button class="nav active" data-section="dashboard">Dashboard</button>
   <button class="nav" data-section="carga">Carga de turno/atención</button>
   <button class="nav" data-section="agenda">Agenda / sala</button>
+  <button class="nav" data-section="mensajes">Mensajes</button>
   <button class="nav" data-section="pacientes">Pacientes</button>
   <button class="nav" data-section="listado">Listado / filtros</button>
   <button class="nav solo-matias" data-section="caja">Caja / reportes</button>
@@ -243,6 +244,76 @@
     </div>
   </section>
 
+
+  <section id="mensajes" class="section">
+    <div class="card">
+      <h2>Mensajes internos</h2>
+      <p class="muted">Mensajes simples entre secretaría y profesionales. Se actualizan con el refresco automático de la app.</p>
+      <div class="mensajes-layout">
+        <div class="mensajes-compose card-soft">
+          <h3>Nuevo mensaje</h3>
+          <div class="form-grid mini-form">
+            <div>
+              <label>Para</label>
+              <select id="msgDestino"></select>
+            </div>
+            <div>
+              <label>Frase rápida</label>
+              <select id="msgFraseRapida">
+                <option value="">Escribir libre</option>
+                <option>Llegó paciente</option>
+                <option>Tenés paciente en espera</option>
+                <option>Llamar al próximo</option>
+                <option>Paciente ausente</option>
+                <option>Falta bono</option>
+                <option>Falta autorización</option>
+                <option>Demorado</option>
+                <option>Salgo un momento</option>
+                <option>Voy al baño</option>
+                <option>Ya lo llamo</option>
+                <option>Atendido</option>
+              </select>
+            </div>
+          </div>
+          <label>Mensaje</label>
+          <textarea id="msgTexto" rows="3" placeholder="Escribí un mensaje corto..."></textarea>
+          <div class="quick-message-buttons">
+            <button type="button" class="secondary msgQuick" data-text="Llegó paciente">Llegó paciente</button>
+            <button type="button" class="secondary msgQuick" data-text="Tenés paciente en espera">Paciente en espera</button>
+            <button type="button" class="secondary msgQuick" data-text="Llamar al próximo">Llamar próximo</button>
+            <button type="button" class="secondary msgQuick" data-text="Falta bono">Falta bono</button>
+            <button type="button" class="secondary msgQuick" data-text="Falta autorización">Falta autorización</button>
+            <button type="button" class="secondary msgQuick" data-text="Demorado">Demorado</button>
+            <button type="button" class="secondary msgQuick" data-text="Salgo un momento">Salgo un momento</button>
+            <button type="button" class="secondary msgQuick" data-text="Voy al baño">Voy al baño</button>
+          </div>
+          <div class="actions">
+            <button class="primary" type="button" id="btnEnviarMensaje">Enviar mensaje</button>
+            <button class="secondary" type="button" id="btnLimpiarMensaje">Limpiar</button>
+          </div>
+        </div>
+
+        <div class="mensajes-list card-soft">
+          <div class="mensajes-toolbar">
+            <h3>Bandeja</h3>
+            <div>
+              <button class="secondary" type="button" id="btnMensajesActualizar">Actualizar</button>
+              <button class="secondary" type="button" id="btnMensajesMarcarLeidos">Marcar vistos</button>
+            </div>
+          </div>
+          <div class="mensajes-filtros">
+            <select id="msgFiltro">
+              <option value="visibles">Mis mensajes</option>
+              <option value="todos">Todos los visibles</option>
+              <option value="enviados">Enviados por mí</option>
+            </select>
+          </div>
+          <div id="mensajesLista" class="mensajes-items"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section id="pacientes" class="section">
     <div class="card">
       <h2>Pacientes</h2>
@@ -307,7 +378,7 @@
 
       <div id="printArea">
         <div class="print-title">
-          <h2>CardioLink Admin v2.8.1</h2>
+          <h2>CardioLink Admin v2.8.2</h2>
           <p>by Matías Anchorena — Listado filtrado</p>
           <p id="printMeta"></p>
         </div>
@@ -791,6 +862,6 @@
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="app.js?v=281"></script>
+<script src="app.js?v=282"></script>
 </body>
 </html>
