@@ -3489,3 +3489,160 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   setTimeout(cl291BotonesBasicos,500);
   setTimeout(()=>{ try{ actualizarPrestaciones(); renderAgenda(); actualizarNotificacionMensajes?.(); }catch(e){} },1200);
 })();
+
+/* ===== v2.9.2 FIX DEFINITIVO: editar/borrar listado y retorno desde agenda ===== */
+(function(){
+  let retornoEdicion = null;
+  const $id = (id) => document.getElementById(id);
+  const idDesde = (el) => String(el?.dataset?.id || el?.closest?.('[data-id]')?.dataset?.id || '');
+  const seccionAgendaVisible = () => !!($id('agenda') && $id('agenda').classList.contains('visible'));
+  const seccionListadoVisible = () => !!($id('listado') && $id('listado').classList.contains('visible'));
+
+  function renderDespuesDeCambios(){
+    try { if(typeof renderTabla==='function') renderTabla(); } catch(e) { console.warn(e); }
+    try { if(typeof renderAgenda==='function') renderAgenda(); } catch(e) { console.warn(e); }
+    try { if(typeof renderStats==='function') renderStats(); } catch(e) { console.warn(e); }
+    try { if(typeof renderMensajes==='function') renderMensajes(); } catch(e) {}
+    try { if(typeof actualizarNotificacionMensajes==='function') actualizarNotificacionMensajes(); } catch(e) {}
+  }
+
+  // Quita onclick inline de botones críticos: los maneja este bloque antes que los parches viejos.
+  function normalizarBotonesCriticos(root=document){
+    root.querySelectorAll?.('button[data-action]').forEach(btn => {
+      if(['listado-editar','listado-borrar','agenda-ver','agenda-estado','agenda-estado-modal','modal-guardar-edicion','modal-cancelar-edicion'].includes(btn.dataset.action)){
+        btn.removeAttribute('onclick');
+      }
+    });
+    // Botones viejos del listado que todavía puedan venir con onclick: convertirlos a data-action.
+    root.querySelectorAll?.('button[onclick*="editarAtencion"],button[onclick*="eliminarAtencion"]').forEach(btn => {
+      const oc = btn.getAttribute('onclick') || '';
+      const m = oc.match(/\((['"])(.*?)\1\)/) || oc.match(/\(([^)]+)\)/);
+      let id = btn.dataset.id || '';
+      if(!id && m) id = String(m[2] || m[1] || '').replace(/^['"]|['"]$/g,'');
+      if(id){ btn.dataset.id = id; }
+      btn.dataset.action = oc.includes('eliminarAtencion') ? 'listado-borrar' : 'listado-editar';
+      btn.removeAttribute('onclick');
+    });
+  }
+
+  const abrirOriginal = typeof abrirModalEdicion === 'function' ? abrirModalEdicion : null;
+  window.abrirModalEdicion = abrirModalEdicion = function(id){
+    if(!id){ alert('No encontré la atención seleccionada. Actualizá y probá de nuevo.'); return; }
+    if(!abrirOriginal){ alert('No está disponible el editor de atención.'); return; }
+    abrirOriginal(String(id));
+    const modal = $id('modalEdicionAtencion');
+    if(!modal) return;
+    modal.dataset.atencionId = String(id);
+    const guardar = modal.querySelector('.modal-actions .primary');
+    if(guardar){
+      guardar.removeAttribute('onclick');
+      guardar.dataset.action = 'modal-guardar-edicion';
+      guardar.dataset.id = String(id);
+      guardar.type = 'button';
+    }
+    const cancelar = modal.querySelector('.modal-actions .secondary');
+    if(cancelar){
+      cancelar.removeAttribute('onclick');
+      cancelar.dataset.action = 'modal-cancelar-edicion';
+      cancelar.type = 'button';
+    }
+    const cerrar = modal.querySelector('.modal-close');
+    if(cerrar){
+      cerrar.removeAttribute('onclick');
+      cerrar.dataset.action = 'modal-cancelar-edicion';
+      cerrar.type = 'button';
+    }
+  };
+
+  const guardarOriginal = typeof guardarEdicionModal === 'function' ? guardarEdicionModal : null;
+  window.guardarEdicionModal = guardarEdicionModal = function(id){
+    if(!guardarOriginal){ alert('No está disponible guardar edición.'); return; }
+    guardarOriginal(String(id));
+    if(retornoEdicion === 'agenda'){
+      try { if(typeof showSection==='function') showSection('agenda'); } catch(e) {}
+      try { if(typeof renderAgenda==='function') renderAgenda(); } catch(e) {}
+    } else {
+      try { if(typeof showSection==='function' && seccionListadoVisible()) showSection('listado'); } catch(e) {}
+      try { if(typeof renderTabla==='function') renderTabla(); } catch(e) {}
+    }
+    retornoEdicion = null;
+  };
+
+  window.eliminarAtencion = eliminarAtencion = function(id){
+    if(!id){ alert('No encontré la atención seleccionada. Actualizá y probá de nuevo.'); return; }
+    const a = (atenciones||[]).find(x => String(x.id)===String(id));
+    if(!a){ alert('No encontré la atención seleccionada. Actualizá y probá de nuevo.'); return; }
+    if(!confirm('¿Borrar esta atención?')) return;
+    atenciones = (atenciones||[]).filter(x => String(x.id)!==String(id));
+    try { saveAtenciones(); } catch(e) { console.error(e); }
+    renderDespuesDeCambios();
+  };
+
+  // Captura en window: corre antes que los listeners viejos en document y evita que pisen la acción.
+  window.addEventListener('click', function(e){
+    const btn = e.target?.closest?.('button');
+    if(!btn) return;
+    normalizarBotonesCriticos(document);
+    const action = btn.dataset?.action;
+    if(!action) return;
+
+    if(['listado-editar','listado-borrar','modal-guardar-edicion','modal-cancelar-edicion','agenda-ver','agenda-estado','agenda-estado-modal'].includes(action)){
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation?.();
+    } else {
+      return;
+    }
+
+    const id = idDesde(btn);
+    if(action === 'listado-editar'){
+      retornoEdicion = (btn.closest('#agendaModal') || seccionAgendaVisible()) ? 'agenda' : 'listado';
+      try { if(typeof cerrarAgendaModal==='function') cerrarAgendaModal(); } catch(err) {}
+      return abrirModalEdicion(id);
+    }
+    if(action === 'listado-borrar'){
+      return eliminarAtencion(id);
+    }
+    if(action === 'modal-guardar-edicion'){
+      return guardarEdicionModal(id || $id('modalEdicionAtencion')?.dataset?.atencionId || '');
+    }
+    if(action === 'modal-cancelar-edicion'){
+      try { if(typeof cerrarModalEdicion==='function') cerrarModalEdicion(); } catch(err) {}
+      if(retornoEdicion === 'agenda'){
+        try { if(typeof showSection==='function') showSection('agenda'); } catch(err) {}
+        try { if(typeof renderAgenda==='function') renderAgenda(); } catch(err) {}
+      }
+      retornoEdicion = null;
+      return;
+    }
+    if(action === 'agenda-ver'){
+      return abrirAgendaModal(id);
+    }
+    if(action === 'agenda-estado' || action === 'agenda-estado-modal'){
+      if(typeof cambiarEstadoAgenda==='function') cambiarEstadoAgenda(id, btn.dataset.estado);
+      if(action === 'agenda-estado-modal') setTimeout(()=>abrirAgendaModal(id), 80);
+      return;
+    }
+  }, true);
+
+  // En cada render, normalizar botones nuevos.
+  const renderTablaOriginal = typeof renderTabla === 'function' ? renderTabla : null;
+  if(renderTablaOriginal){
+    window.renderTabla = renderTabla = function(){
+      const r = renderTablaOriginal.apply(this, arguments);
+      normalizarBotonesCriticos(document);
+      return r;
+    };
+  }
+  const renderAgendaOriginal = typeof renderAgenda === 'function' ? renderAgenda : null;
+  if(renderAgendaOriginal){
+    window.renderAgenda = renderAgenda = function(){
+      const r = renderAgendaOriginal.apply(this, arguments);
+      normalizarBotonesCriticos(document);
+      return r;
+    };
+  }
+
+  document.addEventListener('DOMContentLoaded', ()=>setTimeout(()=>normalizarBotonesCriticos(document), 300));
+  setTimeout(()=>normalizarBotonesCriticos(document), 1000);
+})();
