@@ -4465,3 +4465,268 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   setTimeout(()=>{asegurarBloques296(); version296(); moverLogout296(); try{actualizarPrestaciones(); aplicarPermisosUI(); renderAgenda?.(); renderMensajes?.();}catch(e){}},900);
   setInterval(()=>{version296(); moverLogout296();},3000);
 })();
+
+/* ===== v2.9.7 CONFIGURACION VISUAL DE BLOQUES DE PRESTACIONES ===== */
+(function(){
+  const $id=(id)=>document.getElementById(id);
+  const esc=(s)=>String(s??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
+  const uniq=(arr)=>[...new Set((arr||[]).map(x=>String(x||'').trim()).filter(Boolean))];
+  const normKey=(s)=>String(s||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-z0-9]+/g,'_').replace(/^_+|_+$/g,'') || ('bloque_'+Date.now());
+  const esCompuesta=(s)=>String(s||'').includes('+') || /consulta\s*\+/i.test(String(s||''));
+
+  const BLOQUES_297={
+    cardiologia:['Consulta','Ecocardiograma Doppler','MAPA','Holter','Electrocardiograma','ECG','Ergometría','Ecoestrés','Ecocardiograma transesofágico'],
+    diagnostico_imagenes:['Consulta','Ecografía abdominal','Ecografía renal','Ecografía tiroidea','Ecografía mamaria','Ecografía pleural','Ecografía pulmonar','Ecodoppler de vasos del cuello','Doppler arterial de miembros inferiores','Doppler venoso de miembros inferiores','Doppler de vena porta','Doppler de aorta abdominal','Doppler radial','Mamografía'],
+    neuro_vascular:['Consulta','Doppler / Dúplex transcraneal'],
+    neumonologia:['Consulta neumonología','Espirometría','VEF1','Prueba broncodilatadora','Oximetría','Caminata de 6 minutos'],
+    neuro:['Consulta neurología','Electroencefalograma'],
+    kinesiologia:['Consulta kinesiología','Sesión de kinesiología','Rehabilitación respiratoria','Rehabilitación motora'],
+    otras_especialidades:['Consulta']
+  };
+  const LABELS_297={
+    cardiologia:'Cardiología',
+    diagnostico_imagenes:'Diagnóstico por imágenes',
+    neuro_vascular:'Neuro vascular',
+    neumonologia:'Neumonología',
+    neuro:'Neuro',
+    kinesiologia:'Kinesiología',
+    otras_especialidades:'Otras especialidades'
+  };
+
+  function defaultBloquesParaProfesional(p){
+    const id=String(p?.id||''); const area=String(p?.area||'').toLowerCase(); const nombre=String(p?.nombre||'').toLowerCase();
+    if(id==='general') return [];
+    if(id==='matias') return ['cardiologia','neuro_vascular'];
+    if(id==='rogelio') return ['cardiologia'];
+    if(id==='humberto_drago'||id==='lucas_drago'||area.includes('imagen')||nombre.includes('drago')) return ['diagnostico_imagenes'];
+    if(area.includes('neumo')) return ['neumonologia'];
+    if(area.includes('kines')) return ['kinesiologia'];
+    if(area.includes('neuro')) return ['neuro'];
+    return ['otras_especialidades'];
+  }
+
+  function asegurarBloques297(){
+    if(!window.data) return;
+    data.bloquesPrestaciones=data.bloquesPrestaciones && typeof data.bloquesPrestaciones==='object' ? data.bloquesPrestaciones : {};
+    Object.entries(BLOQUES_297).forEach(([k,items])=>{
+      data.bloquesPrestaciones[k]=uniq([...(data.bloquesPrestaciones[k]||[]), ...items]).filter(x=>!esCompuesta(x));
+    });
+    data.bloquesPrestacionesLabels=Object.assign({}, LABELS_297, data.bloquesPrestacionesLabels||{});
+    (data.profesionales||[]).forEach(p=>{
+      if(p.id==='general') return;
+      if(!Array.isArray(p.bloquesPrestaciones) || !p.bloquesPrestaciones.length) p.bloquesPrestaciones=defaultBloquesParaProfesional(p);
+      p.bloquesPrestaciones=p.bloquesPrestaciones.filter(b=>data.bloquesPrestaciones[b]);
+      if(!p.bloquesPrestaciones.length) p.bloquesPrestaciones=defaultBloquesParaProfesional(p);
+    });
+  }
+
+  function prestacionesDeBloques297(bloques){
+    asegurarBloques297();
+    const items=[];
+    (bloques||[]).forEach(b=>items.push(...(data.bloquesPrestaciones[b]||[])));
+    return uniq(items).filter(x=>!esCompuesta(x)).sort((a,b)=>a.localeCompare(b,'es'));
+  }
+  function prestacionesDePerfil297(profId){
+    asegurarBloques297();
+    const p=(data.profesionales||[]).find(x=>String(x.id)===String(profId)) || (typeof profesionalCarga==='function'?profesionalCarga():null);
+    const bloques=(Array.isArray(p?.bloquesPrestaciones) && p.bloquesPrestaciones.length) ? p.bloquesPrestaciones : defaultBloquesParaProfesional(p);
+    let items=prestacionesDeBloques297(bloques);
+    // Consulta siempre disponible como base de atención.
+    if(!items.some(x=>String(x).toLowerCase()==='consulta')) items.unshift('Consulta');
+    return uniq(items).filter(x=>!esCompuesta(x));
+  }
+  window.prestacionesDePerfil297=prestacionesDePerfil297;
+  window.prestacionesDePerfil296=prestacionesDePerfil297;
+
+  window.allPrestaciones = allPrestaciones = function(){
+    asegurarBloques297();
+    return uniq(Object.values(data.bloquesPrestaciones||{}).flat()).filter(x=>!esCompuesta(x)).sort((a,b)=>a.localeCompare(b,'es'));
+  };
+  window.selectPrestacionesHTML = selectPrestacionesHTML = function(id, prof, selected){
+    const items=prestacionesDePerfil297(prof);
+    return `<select id="${id}">`+items.map(x=>`<option ${x===selected?'selected':''}>${esc(x)}</option>`).join('')+'</select>';
+  };
+  window.actualizarPrestaciones = actualizarPrestaciones = function(){
+    const profId=$id('profesional')?.value || (typeof profesionalIdUsuarioActual==='function'?profesionalIdUsuarioActual():'matias') || 'matias';
+    const items=prestacionesDePerfil297(profId);
+    if($id('prestacion')){
+      const prev=$id('prestacion').value;
+      llenarSelect($id('prestacion'),items);
+      if(items.includes(prev)) $id('prestacion').value=prev;
+    }
+    if(typeof actualizarExtrasPrestaciones==='function') actualizarExtrasPrestaciones();
+  };
+  function safeId(prest){return String(prest||'').replace(/[^a-zA-Z0-9_]+/g,'_');}
+  window.actualizarExtrasPrestaciones = actualizarExtrasPrestaciones = function(){
+    const grid=document.querySelector('.prestaciones-extra-grid');
+    if(!grid) return;
+    const profId=$id('profesional')?.value || (typeof profesionalIdUsuarioActual==='function'?profesionalIdUsuarioActual():'matias') || 'matias';
+    const principal=$id('prestacion')?.value || '';
+    const items=prestacionesDePerfil297(profId).filter(p=>p!==principal && !(typeof esConsulta==='function' && esConsulta(p)));
+    grid.innerHTML=items.map(prest=>{
+      const safe=safeId(prest);
+      return `<label><input type="checkbox" class="extra-prestacion" data-prestacion="${esc(prest)}" id="extra_${safe}"> <span>${esc(prest)}</span> <span class="no-cobrar-inline"><input type="checkbox" id="noCobrar_${safe}"> No cobrar</span></label>`;
+    }).join('') || '<p class="muted">Este perfil no tiene prestaciones adicionales configuradas.</p>';
+  };
+
+  function insertarPanelBloques(){
+    if($id('configBloquesPrestaciones297')) return;
+    const grid=document.querySelector('#config .config-grid');
+    if(!grid) return;
+    const card=document.createElement('div');
+    card.className='config-bloques-card full-config-card';
+    card.id='configBloquesPrestaciones297';
+    card.innerHTML=`
+      <h3>Bloques de prestaciones por perfil</h3>
+      <p class="muted">Usá esto cuando entra un profesional nuevo. Elegís sus bloques y esas prestaciones aparecen en el desplegable principal y en los tildes de prestaciones adicionales.</p>
+      <div class="bloques-config-grid">
+        <div>
+          <label>Profesional</label>
+          <select id="cfgBloquesProfesional"></select>
+          <div id="cfgBloquesChecks" class="bloques-checks"></div>
+          <button class="primary" type="button" id="btnGuardarBloquesProfesional">Guardar bloques del profesional</button>
+        </div>
+        <div>
+          <label>Bloque para editar prestaciones</label>
+          <select id="cfgBloqueEditar"></select>
+          <div class="inline-form compact-inline">
+            <input id="cfgNuevaPrestacionBloque" placeholder="Nueva prestación dentro del bloque">
+            <button class="secondary" type="button" id="btnAgregarPrestacionBloque">Agregar prestación</button>
+          </div>
+          <ul id="cfgListaPrestacionesBloque" class="lista-bloque-prestaciones"></ul>
+        </div>
+        <div>
+          <h4>Crear bloque nuevo</h4>
+          <div class="inline-form compact-inline">
+            <input id="cfgNuevoBloqueNombre" placeholder="Ej: Dermatología">
+            <button class="secondary" type="button" id="btnCrearBloquePrestaciones">Crear bloque</button>
+          </div>
+          <p class="muted">Después asignalo al profesional y agregale prestaciones.</p>
+        </div>
+      </div>`;
+    const ref=$id('listaPrestaciones')?.closest('div');
+    if(ref && ref.parentNode===grid) grid.insertBefore(card, ref.nextSibling); else grid.appendChild(card);
+  }
+
+  function opcionesBloquesHTML(selected=''){
+    asegurarBloques297();
+    return Object.keys(data.bloquesPrestaciones||{}).map(k=>`<option value="${esc(k)}" ${k===selected?'selected':''}>${esc(data.bloquesPrestacionesLabels?.[k]||k)}</option>`).join('');
+  }
+  function renderBloquesConfig297(){
+    insertarPanelBloques(); asegurarBloques297();
+    const profSel=$id('cfgBloquesProfesional');
+    const bloqueSel=$id('cfgBloqueEditar');
+    if(!profSel||!bloqueSel) return;
+    const prevProf=profSel.value || 'matias';
+    profSel.innerHTML=(data.profesionales||[]).filter(p=>p.id!=='general').map(p=>`<option value="${esc(p.id)}" ${p.id===prevProf?'selected':''}>${esc(p.nombre||p.id)}</option>`).join('');
+    if(!profSel.value && profSel.options.length) profSel.value=profSel.options[0].value;
+    const prevBloque=bloqueSel.value || Object.keys(data.bloquesPrestaciones||{})[0] || '';
+    bloqueSel.innerHTML=opcionesBloquesHTML(prevBloque);
+    if(prevBloque && data.bloquesPrestaciones[prevBloque]) bloqueSel.value=prevBloque;
+    renderChecksBloquesProfesional297();
+    renderListaPrestacionesBloque297();
+    bindBloquesConfig297();
+  }
+
+  function renderChecksBloquesProfesional297(){
+    const box=$id('cfgBloquesChecks'); const profId=$id('cfgBloquesProfesional')?.value;
+    if(!box||!profId) return;
+    const p=(data.profesionales||[]).find(x=>x.id===profId);
+    const activos=new Set(p?.bloquesPrestaciones||[]);
+    box.innerHTML=Object.keys(data.bloquesPrestaciones||{}).map(k=>`<label class="bloque-check"><input type="checkbox" class="cfgBloqueProfCheck" value="${esc(k)}" ${activos.has(k)?'checked':''}> <span>${esc(data.bloquesPrestacionesLabels?.[k]||k)}</span></label>`).join('');
+    const resumen=prestacionesDePerfil297(profId).join(' · ');
+    box.insertAdjacentHTML('beforeend',`<p class="muted prestaciones-preview"><strong>Prestaciones visibles:</strong> ${esc(resumen||'sin prestaciones')}</p>`);
+  }
+  function renderListaPrestacionesBloque297(){
+    const ul=$id('cfgListaPrestacionesBloque'); const b=$id('cfgBloqueEditar')?.value;
+    if(!ul||!b) return;
+    const items=data.bloquesPrestaciones?.[b]||[];
+    ul.innerHTML=items.map(pr=>`<li><span>${esc(pr)}</span> <button type="button" class="small-btn" data-bloque-del="${esc(b)}" data-prest-del="${esc(pr)}">Borrar</button></li>`).join('') || '<li class="muted">Este bloque no tiene prestaciones todavía.</li>';
+  }
+
+  let bound297=false;
+  function bindBloquesConfig297(){
+    if(bound297) return; bound297=true;
+    document.addEventListener('change',(e)=>{
+      if(e.target?.id==='cfgBloquesProfesional') renderChecksBloquesProfesional297();
+      if(e.target?.id==='cfgBloqueEditar') renderListaPrestacionesBloque297();
+    });
+    document.addEventListener('click',(e)=>{
+      const btn=e.target.closest?.('button'); if(!btn) return;
+      if(btn.id==='btnGuardarBloquesProfesional'){
+        const profId=$id('cfgBloquesProfesional')?.value; const p=(data.profesionales||[]).find(x=>x.id===profId);
+        if(!p) return;
+        const bloques=[...document.querySelectorAll('.cfgBloqueProfCheck:checked')].map(ch=>ch.value);
+        if(!bloques.length){ alert('Elegí al menos un bloque para este profesional.'); return; }
+        p.bloquesPrestaciones=bloques;
+        p.prestaciones=prestacionesDePerfil297(profId);
+        try{saveConfig();}catch(err){}
+        try{refreshSelects(); actualizarPrestaciones(); renderConfig();}catch(err){}
+        alert('Bloques guardados para '+(p.nombre||profId));
+        return;
+      }
+      if(btn.id==='btnAgregarPrestacionBloque'){
+        const b=$id('cfgBloqueEditar')?.value; const pr=($id('cfgNuevaPrestacionBloque')?.value||'').trim();
+        if(!b||!pr) return;
+        if(esCompuesta(pr)){alert('No agregues prestaciones compuestas acá. Las combinaciones se manejan con tildes de prestaciones adicionales.');return;}
+        data.bloquesPrestaciones[b]=uniq([...(data.bloquesPrestaciones[b]||[]), pr]);
+        (data.profesionales||[]).forEach(p=>{ if((p.bloquesPrestaciones||[]).includes(b)) p.prestaciones=prestacionesDePerfil297(p.id); });
+        $id('cfgNuevaPrestacionBloque').value='';
+        try{saveConfig(); refreshSelects(); actualizarPrestaciones(); renderConfig();}catch(err){}
+        return;
+      }
+      if(btn.id==='btnCrearBloquePrestaciones'){
+        const nombre=($id('cfgNuevoBloqueNombre')?.value||'').trim();
+        if(!nombre) return;
+        const k=normKey(nombre);
+        if(!data.bloquesPrestaciones[k]) data.bloquesPrestaciones[k]=['Consulta'];
+        data.bloquesPrestacionesLabels=data.bloquesPrestacionesLabels||{};
+        data.bloquesPrestacionesLabels[k]=nombre;
+        $id('cfgNuevoBloqueNombre').value='';
+        try{saveConfig(); renderConfig();}catch(err){}
+        setTimeout(()=>{ if($id('cfgBloqueEditar')){$id('cfgBloqueEditar').value=k; renderListaPrestacionesBloque297();}},50);
+        return;
+      }
+      if(btn.dataset?.bloqueDel){
+        const b=btn.dataset.bloqueDel; const pr=btn.dataset.prestDel;
+        if(!confirm('¿Borrar esta prestación del bloque?')) return;
+        data.bloquesPrestaciones[b]=(data.bloquesPrestaciones[b]||[]).filter(x=>x!==pr);
+        (data.profesionales||[]).forEach(p=>{ if((p.bloquesPrestaciones||[]).includes(b)) p.prestaciones=prestacionesDePerfil297(p.id); });
+        try{saveConfig(); refreshSelects(); actualizarPrestaciones(); renderConfig();}catch(err){}
+      }
+    });
+  }
+
+  const renderConfigPre297=typeof renderConfig==='function'?renderConfig:null;
+  if(renderConfigPre297){
+    window.renderConfig = renderConfig = function(){
+      const r=renderConfigPre297.apply(this,arguments);
+      renderBloquesConfig297();
+      return r;
+    };
+  }
+
+  const addProfPre297=typeof addProfesional==='function'?addProfesional:null;
+  if(addProfPre297){
+    window.addProfesional = addProfesional = function(){
+      addProfPre297.apply(this,arguments);
+      asegurarBloques297();
+      try{saveConfig(); refreshSelects(); renderConfig();}catch(e){}
+    };
+  }
+
+  function version297(){
+    try{document.title='CardioLink Admin v2.9.7';}catch(e){}
+    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v2.9.7');
+    document.querySelectorAll('h2').forEach(el=>{ if((el.textContent||'').includes('CardioLink Admin v')) el.textContent='CardioLink Admin v2.9.7'; });
+  }
+
+  function init297(){
+    asegurarBloques297();
+    try{localStorage.setItem(storageConfig,JSON.stringify(data));}catch(e){}
+    version297();
+    try{renderBloquesConfig297(); actualizarPrestaciones(); renderAgenda?.(); renderTabla?.();}catch(e){console.warn('Init bloques 2.9.7:',e);}
+  }
+  document.addEventListener('DOMContentLoaded',()=>setTimeout(init297,350));
+  setTimeout(init297,1200);
+})();

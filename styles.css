@@ -890,3 +890,18 @@ body.dark .mensaje-burbuja .mensaje-info,body.dark .mensaje-burbuja .mensaje-par
 .nav.hidden-permission{display:none!important;}
 .prestaciones-extra-grid>label span:first-of-type{flex:1;}
 @media(max-width:700px){.mensaje-burbuja{max-width:88%!important;}.mensajes-items{max-height:58vh;}}
+
+/* v2.9.7 - Configuración visual de bloques de prestaciones */
+.full-config-card{grid-column:1 / -1;}
+.config-bloques-card{border:1px solid var(--border,#dbe3ee);border-radius:20px;padding:22px;background:var(--card,#fff);}
+.bloques-config-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px;align-items:start;}
+.bloques-config-grid>div:last-child{grid-column:1 / -1;}
+.bloques-checks{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:12px 0;}
+.bloque-check{display:flex;align-items:center;gap:10px;border:1px solid var(--border,#dbe3ee);border-radius:14px;padding:10px 12px;background:rgba(248,250,252,.75);font-weight:700;}
+.bloque-check input{width:22px;height:22px;}
+.lista-bloque-prestaciones{list-style:none;padding:0;margin:12px 0 0;display:grid;gap:8px;}
+.lista-bloque-prestaciones li{display:flex;justify-content:space-between;gap:12px;align-items:center;border-bottom:1px solid var(--border,#e5e7eb);padding:8px 0;}
+.compact-inline{margin-top:10px;}
+.prestaciones-preview{grid-column:1 / -1;margin-top:8px;font-size:.9rem;line-height:1.35;}
+body.dark .bloque-check{background:rgba(15,23,42,.5);}
+@media(max-width:900px){.bloques-config-grid{grid-template-columns:1fr;}.bloques-config-grid>div:last-child{grid-column:auto;}}
