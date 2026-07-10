@@ -821,3 +821,56 @@ body[data-rol="admin"] .solo-matias { display:none !important; }
 /* v2.9.1 */
 #modalImportMedicloud.hidden, #modalImportWhatsapp.hidden { display:none !important; }
 #agendaModal.hidden { display:none !important; }
+
+/* ===== v2.9.4 Mensajes internos tipo chat ===== */
+.mensajes-items{gap:12px;}
+.mensaje-item.chat{
+  position:relative;
+  max-width:82%;
+  border-left:0;
+  border-radius:18px;
+  padding:12px 14px 34px;
+  box-shadow:0 8px 20px rgba(15,23,42,.08);
+}
+.mensaje-item.chat.propio{align-self:flex-end;border-bottom-right-radius:6px;background:#e0f2fe;}
+.mensaje-item.chat.ajeno{align-self:flex-start;border-bottom-left-radius:6px;background:#fff;}
+.mensaje-item.chat.nuevo{outline:2px solid rgba(37,99,235,.18);}
+.mensaje-item.chat .mensaje-texto.principal{margin:0 0 8px;font-size:16px;font-weight:800;color:#0f172a;white-space:pre-wrap;line-height:1.35;}
+.mensaje-meta{display:flex;justify-content:space-between;gap:10px;align-items:center;font-size:12px;color:#475569;}
+.mensaje-meta strong{color:#0f172a;}
+.mensaje-meta span{white-space:nowrap;color:#64748b;}
+.mensaje-item.chat .mensaje-destino{font-size:11px;margin-top:3px;color:#64748b;}
+.mensaje-borrar{position:absolute;right:10px;bottom:8px;padding:5px 9px!important;border-radius:999px!important;font-size:11px!important;background:#fee2e2!important;color:#991b1b!important;}
+.msg-color-matias{border-top:4px solid #0ea5e9;}
+.msg-color-secretaria{border-top:4px solid #22c55e;}
+.msg-color-rogelio{border-top:4px solid #8b5cf6;}
+.msg-color-drago{border-top:4px solid #f59e0b;}
+.msg-color-otro{border-top:4px solid #94a3b8;}
+@media(max-width:700px){.mensaje-item.chat{max-width:94%;}}
+
+
+/* ===== v2.9.5 ajustes agenda/chat/logout ===== */
+#btnCerrarSesion{bottom:18px!important;left:18px!important;right:auto!important;min-width:210px!important;z-index:9999!important;}
+.dark-toggle{margin-bottom:90px!important;}
+#mensajesLista.mensajes-items{display:flex!important;flex-direction:column!important;gap:14px!important;align-items:stretch!important;}
+.mensaje-burbuja{position:relative;max-width:78%;padding:14px 16px 40px;border-radius:20px;box-shadow:0 8px 22px rgba(15,23,42,.10);border:1px solid #dbe3ef;line-height:1.35;}
+.mensaje-burbuja.propio{align-self:flex-end;border-bottom-right-radius:6px;background:#dbeafe;margin-left:auto;}
+.mensaje-burbuja.ajeno{align-self:flex-start;border-bottom-left-radius:6px;background:#ffffff;margin-right:auto;}
+.mensaje-burbuja.nuevo{outline:2px solid rgba(14,165,233,.22);}
+.mensaje-burbuja .mensaje-texto{font-size:17px;font-weight:800;color:#0f172a;white-space:pre-wrap;margin-bottom:8px;}
+.mensaje-burbuja .mensaje-info{display:flex;gap:8px;justify-content:space-between;align-items:center;font-size:12px;color:#475569;}
+.mensaje-burbuja .mensaje-info strong{color:#0f172a;}
+.mensaje-burbuja .mensaje-info span{white-space:nowrap;color:#64748b;}
+.mensaje-burbuja .mensaje-para{font-size:12px;font-weight:700;color:#64748b;margin-top:4px;}
+.mensaje-burbuja .mensaje-borrar{position:absolute;right:12px;bottom:10px;padding:6px 11px!important;border-radius:999px!important;background:#fee2e2!important;color:#991b1b!important;font-size:12px!important;}
+.mensaje-burbuja.msg-matias{border-top:5px solid #0ea5e9;}
+.mensaje-burbuja.msg-secretaria{border-top:5px solid #22c55e;}
+.mensaje-burbuja.msg-rogelio{border-top:5px solid #8b5cf6;}
+.mensaje-burbuja.msg-drago{border-top:5px solid #f59e0b;}
+.mensaje-burbuja.msg-otro{border-top:5px solid #94a3b8;}
+body.dark .mensaje-burbuja{border-color:#334155;box-shadow:none;}
+body.dark .mensaje-burbuja.propio{background:#164e63;}
+body.dark .mensaje-burbuja.ajeno{background:#1e293b;}
+body.dark .mensaje-burbuja .mensaje-texto,body.dark .mensaje-burbuja .mensaje-info strong{color:#e5e7eb;}
+body.dark .mensaje-burbuja .mensaje-info,body.dark .mensaje-burbuja .mensaje-para{color:#cbd5e1;}
+@media(max-width:700px){.mensaje-burbuja{max-width:94%;}.dark-toggle{margin-bottom:100px!important;}}

@@ -4148,3 +4148,128 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   document.addEventListener('DOMContentLoaded',()=>{actualizarVersionVisible294(); asegurarBloquesPrestaciones294(); try{actualizarPrestaciones?.(); renderMensajes?.();}catch(e){} });
   setTimeout(()=>{actualizarVersionVisible294(); asegurarBloquesPrestaciones294(); try{actualizarPrestaciones?.(); renderMensajes?.();}catch(e){}},800);
 })();
+
+
+/* ===== v2.9.5 AJUSTES VISUALES: agenda hora, chat real, version visible ===== */
+(function(){
+  const $id=(id)=>document.getElementById(id);
+  const esc=(v)=> typeof escapeHtml==='function' ? escapeHtml(v) : String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const usrActual=()=>{ try{return usuarioLoginCorto(perfilUsuarioActual().usuario||usuarioActualNombreCorto());}catch(e){return usuarioActualNombreCorto?.()||'local';} };
+  const esAdmin=()=>{ try{return esDuenioMatias?.() || perfilUsuarioActual().rol==='admin';}catch(e){return false;} };
+
+  function actualizarVersionVisible295(){
+    try{document.title='CardioLink Admin v2.9.5';}catch(e){}
+    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v2.9.5');
+    document.querySelectorAll('h2').forEach(el=>{ if((el.textContent||'').includes('CardioLink Admin v')) el.textContent='CardioLink Admin v2.9.5'; });
+  }
+
+  function horaAgenda295(a){
+    const ini=(a?.horaInicio||a?.hora||a?.horaTurno||a?.horaAtencion||a?.turnoHora||'').toString().trim();
+    const fin=(a?.horaFin||a?.horaHasta||a?.turnoHoraFin||'').toString().trim();
+    const n=(typeof normalizarHora293==='function' ? normalizarHora293(ini) : '') || ini;
+    const f=(typeof normalizarHora293==='function' ? normalizarHora293(fin) : '') || fin;
+    if(n && f) return `${n} - ${f}`;
+    if(n) return n;
+    return 's/h';
+  }
+  window.horaAgenda295=horaAgenda295;
+  window.horaTurno = function(a){ return horaAgenda295(a); };
+
+  function datosAgenda295(){
+    const fecha=$id('agendaFecha')?.value||todayISO();
+    let prof=$id('agendaProfesional')?.value||'';
+    const est=$id('agendaEstado')?.value||'';
+    if(typeof esMedico==='function' && esMedico()) prof=profesionalIdUsuarioActual?.()||prof;
+    return (atenciones||[]).filter(a=>{
+      if(typeof esMensajeInterno==='function' && esMensajeInterno(a)) return false;
+      if(typeof esAtencionCorrupta==='function' && esAtencionCorrupta(a)) return false;
+      if(a.fecha!==fecha) return false;
+      if(prof && prof!=='todos' && a.profesionalId!==prof) return false;
+      if(est && (typeof estadoTurno==='function' ? estadoTurno(a) : (a.estadoTurno||'reservado'))!==est) return false;
+      return true;
+    }).sort((a,b)=>horaAgenda295(a).localeCompare(horaAgenda295(b)) || String(a.paciente||'').localeCompare(String(b.paciente||''),'es'));
+  }
+
+  // Render agenda final: conserva botones que ya funcionan, pero muestra hora robusta.
+  window.renderAgenda = renderAgenda = function(){
+    const tbody=$id('agendaTabla'), cards=$id('agendaTarjetas'); if(!tbody||!cards)return;
+    try{ if(typeof agendaTextoPerfil==='function') agendaTextoPerfil(); }catch(e){}
+    const datos=datosAgenda295();
+    const vista=$id('agendaVista')?.value||'tabla';
+    if($id('agendaResumen')) $id('agendaResumen').textContent=datos.length?`${datos.length} turno(s) para la fecha seleccionada.`:'No hay turnos para la fecha seleccionada.';
+    if($id('agendaConteo')) $id('agendaConteo').textContent=datos.length?`${datos.length} turno(s) para la fecha seleccionada.`:'No hay turnos para la fecha seleccionada.';
+    tbody.innerHTML=datos.map(a=>`<tr data-id="${esc(a.id)}">
+      <td><strong>${esc(horaAgenda295(a))}</strong></td>
+      <td><strong>${esc(a.paciente||'')}</strong>${a.esPrestacionAdicional?'<br><small class="muted">Estudio adicional del mismo turno</small>':''}</td>
+      <td>${esc(a.profesional||'')}</td>
+      <td>${esc(a.prestacion||'')}</td>
+      <td>${esc(a.obraSocial||a.coberturaAtencion||'')}</td>
+      <td>${typeof estadoAgendaBadge==='function'?estadoAgendaBadge(a):esc(a.estadoTurno||'')}</td>
+      <td class="agenda-actions"><button type="button" data-action="agenda-ver" data-id="${esc(a.id)}">Ver</button><button type="button" data-action="agenda-estado" data-estado="sala_espera" data-id="${esc(a.id)}">Sala</button><button type="button" data-action="agenda-estado" data-estado="en_consulta" data-id="${esc(a.id)}">Atender</button><button type="button" data-action="agenda-estado" data-estado="atendido" data-id="${esc(a.id)}">Atendido</button></td>
+    </tr>`).join('');
+    cards.innerHTML=datos.map(a=>`<div class="agenda-turno-card" data-id="${esc(a.id)}">
+      <div class="agenda-card-top"><strong>${esc(horaAgenda295(a))}</strong>${typeof estadoAgendaBadge==='function'?estadoAgendaBadge(a):''}</div>
+      <div><strong>${esc(a.paciente||'')}</strong></div>
+      <div>${esc(a.profesional||'')} · ${esc(a.prestacion||'')} · ${esc(a.obraSocial||a.coberturaAtencion||'')}</div>
+      <div class="agenda-actions"><button type="button" data-action="agenda-ver" data-id="${esc(a.id)}">Ver ficha</button><button type="button" data-action="agenda-estado" data-estado="sala_espera" data-id="${esc(a.id)}">Sala</button><button type="button" data-action="agenda-estado" data-estado="en_consulta" data-id="${esc(a.id)}">Atender</button><button type="button" data-action="agenda-estado" data-estado="atendido" data-id="${esc(a.id)}">Atendido</button></div>
+    </div>`).join('');
+    const wrap=$id('agendaTablaWrap');
+    if(wrap) wrap.style.display=vista==='tarjetas'?'none':'';
+    cards.style.display=vista==='tarjetas'?'grid':'none';
+  };
+
+  // Repara apertura de agenda modal para mostrar horario robusto.
+  const abrirAgendaPre295 = typeof abrirAgendaModal==='function' ? abrirAgendaModal : null;
+  window.abrirAgendaModal = abrirAgendaModal = function(id){
+    const a=(atenciones||[]).find(x=>String(x.id)===String(id));
+    const m=$id('agendaModal'), title=$id('agendaModalTitulo'), body=$id('agendaModalBody');
+    if(!a || !m || !body){ if(abrirAgendaPre295) return abrirAgendaPre295(id); alert('No encontré la atención seleccionada. Actualizá y probá de nuevo.'); return; }
+    if(title) title.textContent=a.paciente||'Turno';
+    body.innerHTML=`<div class="agenda-modal-grid"><div><label>Horario</label><strong>${esc(horaAgenda295(a))}</strong></div><div><label>Paciente</label><strong>${esc(a.paciente||'')}</strong></div><div><label>Profesional</label><strong>${esc(a.profesional||'')}</strong></div><div><label>Prestación</label><strong>${esc(a.prestacion||'')}</strong></div><div><label>Cobertura</label><strong>${esc(a.obraSocial||a.coberturaAtencion||'')}</strong></div><div><label>Teléfono</label><strong>${esc(a.telefono||'s/d')}</strong></div></div><h3>Estado del turno</h3><div class="agenda-state-grid">${Object.entries(ESTADOS_AGENDA||{}).map(([k,e])=>`<button type="button" class="agenda-state-btn ${e.cls||''} ${(typeof estadoTurno==='function'?estadoTurno(a):a.estadoTurno)===k?'active':''}" data-action="agenda-estado-modal" data-id="${esc(a.id)}" data-estado="${k}"><i></i>${e.short||k}</button>`).join('')}</div><div class="agenda-actions modal-actions"><button type="button" data-action="listado-editar" data-id="${esc(a.id)}">Editar atención</button></div>`;
+    m.classList.remove('hidden');
+  };
+
+  function claseColorMensaje295(m){
+    const u=String(m.deUsuario||m.deNombre||'').toLowerCase();
+    if(u.includes('geraldine')||u.includes('secre')) return 'msg-secretaria';
+    if(u.includes('rogelio')) return 'msg-rogelio';
+    if(u.includes('humberto')||u.includes('lucas')||u.includes('drago')) return 'msg-drago';
+    if(u.includes('matias')) return 'msg-matias';
+    return 'msg-otro';
+  }
+  window.renderMensajes = renderMensajes = function(){
+    const box=$id('mensajesLista'); if(!box)return;
+    const filtro=$id('msgFiltro')?.value||'visibles';
+    const usr=usrActual();
+    let datos=(atenciones||[]).filter(a=>typeof esMensajeInterno==='function' && esMensajeInterno(a)).sort((a,b)=>String(b.creadoEn||b.fecha||'').localeCompare(String(a.creadoEn||a.fecha||'')));
+    if(filtro==='enviados') datos=datos.filter(m=>m.deUsuario===usr);
+    else datos=datos.filter(m=> typeof mensajeVisibleParaUsuario==='function' ? mensajeVisibleParaUsuario(m) : true);
+    datos=datos.slice(0,120);
+    if(!datos.length){box.innerHTML='<p class="muted">No hay mensajes para mostrar.</p>'; try{actualizarNotificacionMensajes?.();}catch(e){} return;}
+    box.innerHTML=datos.map(m=>{
+      const propio=String(m.deUsuario||'')===String(usr);
+      const visto=(m.leidoPor||[]).includes(usr);
+      const puedeBorrar=propio || esAdmin();
+      return `<div class="mensaje-burbuja ${propio?'propio':'ajeno'} ${visto?'visto':'nuevo'} ${claseColorMensaje295(m)}" data-id="${esc(m.id)}">
+        <div class="mensaje-texto">${esc(m.texto||'')}</div>
+        <div class="mensaje-info"><strong>${esc(m.deNombre||m.deUsuario||'Usuario')}</strong><span>${esc((typeof fechaHoraAuditoria==='function'?fechaHoraAuditoria(m.creadoEn):'')||m.horaInicio||'')}</span></div>
+        <div class="mensaje-para">Para: ${esc((typeof nombreDestinoMensaje==='function'?nombreDestinoMensaje(m.destino):'')||m.destino||'Todos')}</div>
+        ${puedeBorrar?`<button type="button" class="mensaje-borrar" data-action="mensaje-borrar" data-id="${esc(m.id)}">Borrar</button>`:''}
+      </div>`;
+    }).join('');
+    try{actualizarNotificacionMensajes?.();}catch(e){}
+  };
+
+  function ajustarLogout295(){
+    const btn=$id('btnCerrarSesion');
+    if(btn){
+      btn.style.bottom='18px'; btn.style.left='18px'; btn.style.zIndex='9999'; btn.style.minWidth='210px';
+    }
+    const dark=document.querySelector('.dark-toggle');
+    if(dark) dark.style.marginBottom='90px';
+  }
+
+  document.addEventListener('DOMContentLoaded',()=>{actualizarVersionVisible295(); ajustarLogout295(); try{renderAgenda(); renderMensajes();}catch(e){} });
+  setTimeout(()=>{actualizarVersionVisible295(); ajustarLogout295(); try{renderAgenda(); renderMensajes();}catch(e){} },900);
+  setInterval(()=>{actualizarVersionVisible295(); ajustarLogout295();},3000);
+})();
