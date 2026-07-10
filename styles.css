@@ -747,3 +747,45 @@ body[data-rol="admin"] .solo-matias { display:none !important; }
   .mini-form{grid-template-columns:1fr;}
   .mensajes-toolbar{align-items:flex-start;flex-direction:column;}
 }
+
+
+/* ===== MENSAJES: NOTIFICACION EN MENU ===== */
+.nav[data-section="mensajes"]{
+  position:relative;
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+}
+.msg-badge{
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  min-width:23px;
+  height:23px;
+  padding:0 7px;
+  border-radius:999px;
+  background:#ef4444;
+  color:#fff;
+  font-size:12px;
+  font-weight:900;
+  line-height:1;
+  box-shadow:0 0 0 3px rgba(239,68,68,.18);
+}
+.msg-badge.hidden{
+  display:none!important;
+}
+.nav.nav-unread{
+  background:#fff7ed!important;
+  color:#9a3412!important;
+  border-color:#fdba74!important;
+  box-shadow:0 8px 18px rgba(234,88,12,.14);
+}
+.nav.nav-unread::before{
+  content:"";
+  width:8px;
+  height:8px;
+  border-radius:999px;
+  background:#ef4444;
+  box-shadow:0 0 0 5px rgba(239,68,68,.14);
+}

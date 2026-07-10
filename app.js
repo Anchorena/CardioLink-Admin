@@ -223,6 +223,7 @@ function aplicarPermisosUI(){
     const u=perfilUsuarioActual();
     box.innerHTML=`Usuario: <strong>${escapeHtml(u.nombre||u.usuario)}</strong> · Rol: <strong>${escapeHtml(labelRol(u.rol))}</strong>${u.especialidad?` · ${escapeHtml(u.especialidad)}`:''}`;
   }
+  actualizarNotificacionMensajes();
 }
 function labelRol(r){return ({duenio:'Matías / dueño',admin:'Administrador',secretaria:'Secretaría',medico:'Médico',tecnico:'Técnico / colocador'}[r]||r||'Sin rol');}
 
@@ -263,7 +264,7 @@ function mostrarPantallaLogin() {
 
       <h1>CardioLink Admin</h1>
       <p class="login-subtitle">by Matías Anchorena</p>
-      <p class="login-meta">Versión 2.8.2 · 2026</p>
+      <p class="login-meta">Versión 2.8.3 · 2026</p>
     </div>
 
     <div class="login-fields">
@@ -751,6 +752,7 @@ function init(){
   try { actualizarHora(); setInterval(actualizarHora,30000); } catch(e) {}
 
   document.querySelectorAll('.nav').forEach(b=>b.addEventListener('click',()=>showSection(b.dataset.section)));
+  actualizarNotificacionMensajes();
 
   on('btnDark','click',()=>{document.body.classList.toggle('dark');localStorage.setItem('cardiolink_dark_v25',document.body.classList.contains('dark')?'1':'0')});
   on('btnIrCarga','click',()=>showSection('carga'));
@@ -770,6 +772,7 @@ function init(){
   on('buscarPaciente','input',()=>{const q=$('buscarPaciente').value.trim();if(q.length>=3)buscarPacienteDesdeCarga();});
   on('btnLimpiarBuscarPaciente','click',()=>{if($('buscarPaciente'))$('buscarPaciente').value=''; if($('resultadosPacientes'))$('resultadosPacientes').innerHTML='';});
   on('btnImportarMedicloud','click',abrirImportadorMedicloud);
+  on('btnImportarWhatsapp','click',abrirImportadorWhatsapp);
   on('btnNuevoPacienteManual','click',nuevoPacienteManual);
   on('dni','blur',buscarPacientePorDniSiExiste);
 
@@ -1487,6 +1490,116 @@ function aplicarImportMedicloud(){
  const id=$('pacienteId').value;
  if(id)usarPaciente(id);
  cerrarImportadorMedicloud();
+}
+
+function mesNumeroDesdeTexto(mes){
+ const m=normalizarTexto(mes||'');
+ const mapa={enero:1,febrero:2,marzo:3,abril:4,mayo:5,junio:6,julio:7,agosto:8,septiembre:9,setiembre:9,octubre:10,noviembre:11,diciembre:12};
+ return mapa[m]||'';
+}
+function fechaISODesdeWhatsapp(txt){
+ const t=String(txt||'');
+ let m=t.match(/\b(\d{1,2})\s*(?:de)?\s*(enero|febrero|marzo|abril|mayo|junio|julio|agosto|septiembre|setiembre|octubre|noviembre|diciembre)\s*(?:de)?\s*(\d{2,4})?\b/i);
+ if(m){
+   let y=m[3]||String(new Date().getFullYear()); if(y.length===2)y='20'+y;
+   const mm=mesNumeroDesdeTexto(m[2]);
+   return `${String(y).padStart(4,'0')}-${String(mm).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;
+ }
+ m=t.match(/\b(\d{1,2})[\/\-](\d{1,2})(?:[\/\-](\d{2,4}))?\b/);
+ if(m){
+   let y=m[3]||String(new Date().getFullYear()); if(y.length===2)y='20'+y;
+   return `${String(y).padStart(4,'0')}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;
+ }
+ return '';
+}
+function horaDesdeWhatsapp(txt){
+ const m=String(txt||'').match(/\b(\d{1,2})[:.](\d{2})\s*(?:hs|h|hrs)?\b/i);
+ if(!m)return '';
+ return `${String(m[1]).padStart(2,'0')}:${m[2]}`;
+}
+function sumarMinutosHora(hora,min){
+ if(!hora)return '';
+ const [hh,mm]=hora.split(':').map(Number);
+ const d=new Date(2000,0,1,hh||0,mm||0); d.setMinutes(d.getMinutes()+min);
+ return `${String(d.getHours()).padStart(2,'0')}:${String(d.getMinutes()).padStart(2,'0')}`;
+}
+function valorCampoWhatsapp(txt, patrones){
+ const lines=String(txt||'').split(/\n+/).map(x=>x.replace(/^[\s•\-*]+/,'').trim()).filter(Boolean);
+ for(const l of lines){
+   const n=normalizarTexto(l);
+   for(const pat of patrones){
+     if(n.includes(pat)){
+       let v=l.replace(/^.*?(?:\:|\.\s)/,'').trim();
+       // Si no hubo separador, quita la etiqueta aproximada
+       v=v.replace(/^(numero\s+de\s+dni|nro\s+de\s+dni|dni|nombre\s+y\s+apellido|nombre\s+apellido|mail|email|e-mail|obra\s+social|cobertura|f\.?\s*de\s*nacimiento|fecha\s+de\s+nacimiento|telefono|teléfono|tel)\s*/i,'').trim();
+       return v;
+     }
+   }
+ }
+ return '';
+}
+function detectarPrestacionWhatsapp(txt){
+ const n=normalizarTexto(txt||'');
+ if(n.includes('mapa'))return 'MAPA';
+ if(n.includes('holter'))return 'Holter';
+ if(n.includes('ecocardiograma')||n.includes('eco doppler')||n.includes('doppler'))return 'Ecocardiograma Doppler';
+ if(n.includes('electrocardiograma')||n.includes('ecg')||n.includes('riesgo quirurgico')||n.includes('riesgo quirúrgico'))return 'Electrocardiograma';
+ if(n.includes('apto fisico')||n.includes('apto físico'))return 'Apto físico';
+ if(n.includes('cardiologia')||n.includes('cardiología')||n.includes('consulta'))return 'Consulta cardiológica';
+ return '';
+}
+function parsearTextoWhatsapp(txt){
+ const raw=String(txt||'');
+ const email=(raw.match(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i)||[''])[0];
+ const dniRaw=valorCampoWhatsapp(raw,['numero de dni','nro de dni','dni']);
+ const dni=(dniRaw.match(/\d{6,9}/)||raw.match(/\b\d{7,9}\b/)||[''])[0];
+ const nombre=valorCampoWhatsapp(raw,['nombre y apellido','nombre apellido','apellido y nombre']);
+ const telRaw=valorCampoWhatsapp(raw,['telefono','teléfono','tel ']);
+ const tel=(telRaw.match(/(?:\+?54)?\s?9?\s?\d{8,11}/)||raw.match(/(?:\+?54)?\s?9?\s?\d{8,11}/)||[''])[0];
+ const os=valorCampoWhatsapp(raw,['obra social','cobertura','prepaga']);
+ const fnRaw=valorCampoWhatsapp(raw,['f. de nacimiento','fecha de nacimiento','nacimiento']);
+ const fechaNacimiento=fechaISODesdeWhatsapp(fnRaw);
+ const prestacion=detectarPrestacionWhatsapp(raw);
+ const fechaTurno=fechaISODesdeWhatsapp(raw.match(/(?:lunes|martes|miercoles|miércoles|jueves|viernes|sabado|sábado|domingo)[^\n]*/i)?.[0]||'');
+ const horaInicio=horaDesdeWhatsapp(raw);
+ const lineas=raw.split(/\n+/).map(x=>x.trim()).filter(Boolean);
+ const motivo=lineas.filter(l=>/para|motivo|estudio|consulta|cardio|eco|mapa|holter|electro|apto/i.test(l)).slice(-2).join(' · ');
+ return {nombreCompleto:nombre,dni,email,telefono:tel,fechaNacimiento,obraSocial:os,prestacion,fechaTurno,horaInicio,horaFin:sumarMinutosHora(horaInicio,20),motivo};
+}
+function abrirImportadorWhatsapp(){
+ const overlay=document.createElement('div');
+ overlay.id='modalImportWhatsapp';
+ overlay.innerHTML=`<div class="modal-edit-card modal-import-card"><div class="modal-edit-header"><div><h2>Importar paciente/turno desde WhatsApp</h2><p>Copiá el mensaje de WhatsApp con los datos del paciente y pegalos acá. CardioLink intentará completar paciente, cobertura, prestación, fecha y horario.</p></div><button type="button" class="modal-close" onclick="cerrarImportadorWhatsapp()">×</button></div><textarea id="textoWhatsapp" rows="11" placeholder="Pegá acá el mensaje copiado de WhatsApp"></textarea><div class="modal-actions"><button class="secondary" type="button" onclick="cerrarImportadorWhatsapp()">Cancelar</button><button class="primary" type="button" onclick="aplicarImportWhatsapp()">Completar paciente/turno</button></div></div>`;
+ document.body.appendChild(overlay);
+ setTimeout(()=>$('textoWhatsapp')?.focus(),50);
+}
+function cerrarImportadorWhatsapp(){const m=$('modalImportWhatsapp');if(m)m.remove();}
+function aplicarImportWhatsapp(){
+ const datos=parsearTextoWhatsapp($('textoWhatsapp')?.value||'');
+ if(!datos.nombreCompleto && !datos.dni && !datos.telefono){alert('No pude detectar datos suficientes. Pegá el mensaje completo de WhatsApp.');return;}
+ const existente=datos.dni?buscarPacientes(datos.dni)[0]:(datos.telefono?buscarPacientes(datos.telefono)[0]:null);
+ if(existente){usarPaciente(existente.id);} else {
+   if($('paciente'))$('paciente').value=datos.nombreCompleto||'';
+   if($('dni'))$('dni').value=datos.dni||'';
+   if($('telefono'))$('telefono').value=datos.telefono||'';
+   if($('email'))$('email').value=datos.email||'';
+   if($('fechaNacimiento'))$('fechaNacimiento').value=datos.fechaNacimiento||'';
+   upsertPacienteDesdeCarga();
+   const id=$('pacienteId')?.value; if(id)usarPaciente(id);
+ }
+ // Completa/actualiza datos del turno aunque el paciente ya existiera
+ if(datos.nombreCompleto && !$('paciente')?.value)$('paciente').value=datos.nombreCompleto;
+ if(datos.dni && !$('dni')?.value)$('dni').value=datos.dni;
+ if(datos.telefono && $('telefono') && !$('telefono').value)$('telefono').value=datos.telefono;
+ if(datos.email && $('email') && !$('email').value)$('email').value=datos.email;
+ if(datos.fechaNacimiento && $('fechaNacimiento') && !$('fechaNacimiento').value)$('fechaNacimiento').value=datos.fechaNacimiento;
+ if(datos.obraSocial && $('obraSocial')){ensureSelectOption($('obraSocial'),datos.obraSocial);$('obraSocial').value=datos.obraSocial;}
+ if(datos.prestacion && $('prestacion')){ensureSelectOption($('prestacion'),datos.prestacion);$('prestacion').value=datos.prestacion;actualizarExtrasPrestaciones();}
+ if(datos.fechaTurno && $('fecha'))$('fecha').value=datos.fechaTurno;
+ if(datos.horaInicio && $('horaInicio'))$('horaInicio').value=datos.horaInicio;
+ if(datos.horaFin && $('horaFin') && !$('horaFin').value)$('horaFin').value=datos.horaFin;
+ if(datos.motivo && $('observaciones'))$('observaciones').value=($('observaciones').value?$('observaciones').value+'\n':'')+'Importado desde WhatsApp: '+datos.motivo;
+ aplicarRegla(); calcularCajaCarga(); cerrarImportadorWhatsapp();
 }
 function actualizarExtrasPrestaciones(){
  const prest=$('prestacion')?.value||'';
@@ -2494,6 +2607,7 @@ async function refrescarDesdeSupabaseAutomatico(){
     if($('agenda')?.classList.contains('visible'))renderAgenda();
     if($('pacientes')?.classList.contains('visible'))renderPacientesPanel($('pacientesBuscar')?.value||'', false);
     if($('mensajes')?.classList.contains('visible'))renderMensajes();
+    actualizarNotificacionMensajes();
   }catch(e){console.warn('Refresco automático falló:', e);}
 }
 
@@ -2557,6 +2671,44 @@ function nombreDestinoMensaje(destino){
   return destino || 'Todos';
 }
 function mensajesInternos(){return (atenciones||[]).filter(esMensajeInterno).sort((a,b)=>String(b.creadoEn||b.fecha||'').localeCompare(String(a.creadoEn||a.fecha||'')));}
+function mensajesNoLeidosUsuario(){
+  const usr=usuarioLoginCorto(perfilUsuarioActual().usuario||usuarioActualNombreCorto());
+  return mensajesInternos().filter(m=>{
+    if(m.deUsuario===usr) return false;
+    if(!mensajeVisibleParaUsuario(m)) return false;
+    return !(Array.isArray(m.leidoPor) && m.leidoPor.includes(usr));
+  });
+}
+function asegurarBadgeMensajes(){
+  const btn=document.querySelector('.nav[data-section="mensajes"]');
+  if(!btn) return null;
+  let badge=btn.querySelector('.msg-badge');
+  if(!badge){
+    badge=document.createElement('span');
+    badge.className='msg-badge';
+    badge.setAttribute('aria-label','Mensajes nuevos');
+    btn.appendChild(badge);
+  }
+  return badge;
+}
+function actualizarNotificacionMensajes(){
+  const btn=document.querySelector('.nav[data-section="mensajes"]');
+  const badge=asegurarBadgeMensajes();
+  if(!btn || !badge) return;
+  let n=0;
+  try{ n=mensajesNoLeidosUsuario().length; }catch(e){ n=0; }
+  if(n>0){
+    badge.textContent = n>99 ? '99+' : String(n);
+    badge.classList.remove('hidden');
+    btn.classList.add('nav-unread');
+    btn.title = `${n} mensaje${n===1?'':'s'} nuevo${n===1?'':'s'}`;
+  }else{
+    badge.textContent='';
+    badge.classList.add('hidden');
+    btn.classList.remove('nav-unread');
+    btn.removeAttribute('title');
+  }
+}
 function enviarMensajeInterno(){
   const texto=($('msgTexto')?.value||'').trim();
   if(!texto){alert('Escribí un mensaje.');return;}
@@ -2578,6 +2730,7 @@ function enviarMensajeInterno(){
   saveAtenciones();
   limpiarMensajeInterno();
   renderMensajes();
+  actualizarNotificacionMensajes();
 }
 function renderMensajes(){
   const box=$('mensajesLista'); if(!box)return;
@@ -2587,7 +2740,7 @@ function renderMensajes(){
   if(filtro==='enviados')datos=datos.filter(m=>m.deUsuario===usr);
   else datos=datos.filter(m=>mensajeVisibleParaUsuario(m));
   datos=datos.slice(0,80);
-  if(!datos.length){box.innerHTML='<p class="muted">No hay mensajes para mostrar.</p>';return;}
+  if(!datos.length){box.innerHTML='<p class="muted">No hay mensajes para mostrar.</p>';actualizarNotificacionMensajes();return;}
   box.innerHTML=datos.map(m=>{
     const visto=(m.leidoPor||[]).includes(usr);
     return `<div class="mensaje-item ${visto?'visto':'nuevo'}">
@@ -2596,6 +2749,7 @@ function renderMensajes(){
       <div class="mensaje-texto">${escapeHtml(m.texto||'')}</div>
     </div>`;
   }).join('');
+  actualizarNotificacionMensajes();
 }
 function marcarMensajesVisiblesLeidos(){
   const usr=usuarioLoginCorto(perfilUsuarioActual().usuario||usuarioActualNombreCorto());
@@ -2608,6 +2762,7 @@ function marcarMensajesVisiblesLeidos(){
   });
   if(cambio)saveAtenciones();
   renderMensajes();
+  actualizarNotificacionMensajes();
 }
 
 async function iniciarCardioLink() {
