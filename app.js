@@ -2612,18 +2612,18 @@ function renderAgenda(){
     <td>${escapeHtml(a.prestacion||'')}</td>
     <td>${escapeHtml(a.obraSocial||'')}</td>
     <td>${estadoAgendaBadge(a)}</td>
-    <td class="agenda-actions"><button onclick="abrirAgendaModal(${a.id})">Ver</button><button onclick="cambiarEstadoAgenda(${a.id},'sala_espera')">Sala</button><button onclick="cambiarEstadoAgenda(${a.id},'en_consulta')">Atender</button><button onclick="cambiarEstadoAgenda(${a.id},'atendido')">Atendido</button></td>
+    <td class="agenda-actions"><button onclick="abrirAgendaModal(${idJS(a.id)})">Ver</button><button onclick="cambiarEstadoAgenda(${idJS(a.id)},'sala_espera')">Sala</button><button onclick="cambiarEstadoAgenda(${idJS(a.id)},'en_consulta')">Atender</button><button onclick="cambiarEstadoAgenda(${idJS(a.id)},'atendido')">Atendido</button></td>
   </tr>`).join('');
   cards.innerHTML=datos.map(a=>`<div class="agenda-turno-card">
     <div class="agenda-card-top"><strong>${horaTurno(a)}</strong>${estadoAgendaBadge(a)}</div>
     <h3>${escapeHtml(a.paciente||'')}</h3>
     <p>${escapeHtml(a.prestacion||'')} · ${escapeHtml(a.obraSocial||'')}</p>
     <p class="muted">${escapeHtml(a.profesional||'')}</p>
-    <div class="agenda-actions"><button onclick="abrirAgendaModal(${a.id})">Ver ficha</button><button onclick="cambiarEstadoAgenda(${a.id},'sala_espera')">Sala</button><button onclick="cambiarEstadoAgenda(${a.id},'en_consulta')">Atender</button><button onclick="cambiarEstadoAgenda(${a.id},'atendido')">Atendido</button></div>
+    <div class="agenda-actions"><button onclick="abrirAgendaModal(${idJS(a.id)})">Ver ficha</button><button onclick="cambiarEstadoAgenda(${idJS(a.id)},'sala_espera')">Sala</button><button onclick="cambiarEstadoAgenda(${idJS(a.id)},'en_consulta')">Atender</button><button onclick="cambiarEstadoAgenda(${idJS(a.id)},'atendido')">Atendido</button></div>
   </div>`).join('');
 }
 function opcionesEstadoAgendaHTML(id, actual){
-  return Object.entries(ESTADOS_AGENDA).map(([k,e])=>`<button class="agenda-state-btn ${e.cls} ${actual===k?'active':''}" onclick="cambiarEstadoAgenda(${id},'${k}');abrirAgendaModal(${id});"><i></i>${e.short}</button>`).join('');
+  return Object.entries(ESTADOS_AGENDA).map(([k,e])=>`<button class="agenda-state-btn ${e.cls} ${actual===k?'active':''}" onclick="cambiarEstadoAgenda(${idJS(id)},'${k}');abrirAgendaModal(${idJS(id)});"><i></i>${e.short}</button>`).join('');
 }
 function abrirAgendaModal(id){
   const a=atenciones.find(x=>String(x.id)===String(id)); if(!a)return;
@@ -2639,7 +2639,7 @@ function abrirAgendaModal(id){
   </div>
   <h3>Estado del turno</h3>
   <div class="agenda-state-grid">${opcionesEstadoAgendaHTML(a.id,estadoTurno(a))}</div>
-  <div class="agenda-actions modal-actions"><button onclick="editarAtencion(${a.id});cerrarAgendaModal();showSection('listado')">Editar atención</button></div>`;
+  <div class="agenda-actions modal-actions"><button onclick="editarAtencion(${idJS(a.id)});cerrarAgendaModal();showSection('listado')">Editar atención</button></div>`;
   m.classList.remove('hidden');
 }
 function cerrarAgendaModal(){ $('agendaModal')?.classList.add('hidden'); }
@@ -2788,6 +2788,13 @@ window.limpiarUsuariosDuplicados=limpiarUsuariosDuplicados;
 window.abrirAgendaModal=abrirAgendaModal;
 window.cerrarAgendaModal=cerrarAgendaModal;
 window.cambiarEstadoAgenda=cambiarEstadoAgenda;
+window.editarAtencion=editarAtencion;
+window.eliminarAtencion=eliminarAtencion;
+window.guardarEdicion=guardarEdicion;
+window.cancelarEdicion=cancelarEdicion;
+window.showSection=showSection;
+window.renderAgenda=renderAgenda;
+window.renderTabla=renderTabla;
 
 async function refrescarDesdeSupabaseAutomatico(){
   try{
@@ -3161,3 +3168,106 @@ function nuevaAtencionDesdePaciente(id){
   showSection('carga');
   setTimeout(()=>{$('prestacion')?.focus();},50);
 }
+
+
+/* ===== v2.8.9 FIX BOTONES LISTADO / AGENDA =====
+   Evita que los botones dependan solamente del onclick inline. Esto repara
+   editar/borrar en Listado y los botones de Agenda cuando el id viene como texto. */
+function cardioParseArg(raw){
+  raw=String(raw||'').trim();
+  if((raw.startsWith('"')&&raw.endsWith('"'))||(raw.startsWith("'")&&raw.endsWith("'"))){
+    return raw.slice(1,-1).replace(/\\'/g,"'").replace(/\\"/g,'"');
+  }
+  if(raw==='undefined'||raw==='null'||raw==='')return '';
+  return raw;
+}
+function cardioInlineArgs(onclickText, fnName){
+  const re=new RegExp(fnName.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\(([^)]*)\\)');
+  const m=String(onclickText||'').match(re);
+  if(!m)return [];
+  const txt=m[1];
+  const out=[]; let cur='', q=null;
+  for(let i=0;i<txt.length;i++){
+    const ch=txt[i];
+    if(q){ cur+=ch; if(ch===q && txt[i-1] !== '\\') q=null; }
+    else if(ch==='"'||ch==="'"){ q=ch; cur+=ch; }
+    else if(ch===','){ out.push(cardioParseArg(cur)); cur=''; }
+    else cur+=ch;
+  }
+  if(cur.trim()!=='' || txt.includes(',')) out.push(cardioParseArg(cur));
+  return out;
+}
+function cardioReengancharBotonesCriticos(){
+  // Reenganche explícito de botones de agenda, por si un error previo cortó init().
+  const btn=$('btnAgendaActualizar');
+  if(btn && !btn.dataset.fix289){
+    btn.dataset.fix289='1';
+    btn.addEventListener('click', function(e){
+      e.preventDefault();
+      try{ renderAgenda(); }catch(err){ console.error('Error actualizando agenda:', err); alert('No se pudo actualizar la agenda. Revisar consola.'); }
+    });
+  }
+  const hoy=$('btnAgendaHoy');
+  if(hoy && !hoy.dataset.fix289){
+    hoy.dataset.fix289='1';
+    hoy.addEventListener('click', function(e){
+      e.preventDefault();
+      if($('agendaFecha'))$('agendaFecha').value=todayISO();
+      try{ renderAgenda(); }catch(err){ console.error('Error actualizando agenda:', err); }
+    });
+  }
+}
+document.addEventListener('click', function(e){
+  const btn=e.target.closest('button');
+  if(!btn)return;
+  const oc=btn.getAttribute('onclick')||'';
+  if(!oc)return;
+  try{
+    if(oc.includes('editarAtencion(')){
+      e.preventDefault(); e.stopImmediatePropagation();
+      const [id]=cardioInlineArgs(oc,'editarAtencion');
+      if(id) editarAtencion(id);
+      if(oc.includes('cerrarAgendaModal')) cerrarAgendaModal();
+      if(oc.includes('showSection')) showSection('listado');
+      return;
+    }
+    if(oc.includes('eliminarAtencion(')){
+      e.preventDefault(); e.stopImmediatePropagation();
+      const [id]=cardioInlineArgs(oc,'eliminarAtencion');
+      if(id) eliminarAtencion(id);
+      return;
+    }
+    if(oc.includes('guardarEdicion(')){
+      e.preventDefault(); e.stopImmediatePropagation();
+      const [id]=cardioInlineArgs(oc,'guardarEdicion');
+      if(id) guardarEdicion(id);
+      return;
+    }
+    if(oc.includes('cancelarEdicion(')){
+      e.preventDefault(); e.stopImmediatePropagation();
+      cancelarEdicion();
+      return;
+    }
+    if(oc.includes('abrirAgendaModal(') && !oc.includes('cambiarEstadoAgenda(')){
+      e.preventDefault(); e.stopImmediatePropagation();
+      const [id]=cardioInlineArgs(oc,'abrirAgendaModal');
+      if(id) abrirAgendaModal(id);
+      return;
+    }
+    if(oc.includes('cambiarEstadoAgenda(')){
+      e.preventDefault(); e.stopImmediatePropagation();
+      const [id,estado]=cardioInlineArgs(oc,'cambiarEstadoAgenda');
+      if(id && estado) cambiarEstadoAgenda(id,estado);
+      if(oc.includes('abrirAgendaModal')) abrirAgendaModal(id);
+      return;
+    }
+  }catch(err){ console.error('Error en botón CardioLink:', err); alert('No se pudo ejecutar el botón. Revisar consola.'); }
+}, true);
+document.addEventListener('DOMContentLoaded', cardioReengancharBotonesCriticos);
+setTimeout(cardioReengancharBotonesCriticos, 500);
+setTimeout(cardioReengancharBotonesCriticos, 1500);
+
+// Exposición explícita para navegadores que no publiquen funciones top-level en window.
+try{
+  Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancelarEdicion,abrirAgendaModal,cerrarAgendaModal,cambiarEstadoAgenda,showSection,renderAgenda,renderTabla});
+}catch(e){ console.warn('No se pudieron exponer funciones críticas:', e); }
