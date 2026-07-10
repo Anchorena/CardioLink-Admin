@@ -583,9 +583,18 @@ async function cargarAtencionesDesdeSupabase() {
 
   if (remotas.length > 0) {
     atenciones = remotas;
-    limpiarRegistrosCorruptosSilencioso();
+    const corruptosEliminados = limpiarRegistrosCorruptosSilencioso();
     localStorage.setItem(storageAtenciones, JSON.stringify(atenciones));
     console.log("Atenciones cargadas desde Supabase:", atenciones.length);
+
+    // Si se limpiaron registros corruptos mientras se estaba cargando desde la nube,
+    // hay que escribir la base limpia de vuelta en Supabase. Durante la carga normal
+    // programarSyncSupabase queda bloqueado por cargandoDesdeNube, por eso se fuerza acá.
+    if (corruptosEliminados > 0) {
+      cargandoDesdeNube = false;
+      await sincronizarAtencionesSupabase(true);
+      cargandoDesdeNube = true;
+    }
   } else if (Array.isArray(atenciones) && atenciones.length > 0) {
     console.log("Supabase está vacío. Se migran atenciones locales a la nube:", atenciones.length);
     cargandoDesdeNube = false;
@@ -718,9 +727,13 @@ function esAtencionCorrupta(a){
   const os=String(a.obraSocial||a.coberturaAtencion||'').trim();
   const prof=String(a.profesionalId||a.profesional||'').trim();
   const tieneIdentidad=!!(paciente||dni||tel);
+  const criticos=[paciente, prest, os, prof].map(x=>String(x||'').trim().toLowerCase());
+  const tieneUndefinedLiteral=criticos.includes('undefined');
   // Registro vacío creado por error: sin paciente y sin datos operativos reales.
   if(!tieneIdentidad && (!prest || !prof || !os))return true;
-  if(!tieneIdentidad && (String(os).toLowerCase()==='undefined' || String(prof).toLowerCase()==='undefined'))return true;
+  if(!tieneIdentidad && tieneUndefinedLiteral)return true;
+  // Registros del bug de WhatsApp: fecha y estados, pero paciente vacío con columnas undefined.
+  if(!paciente && tieneUndefinedLiteral)return true;
   return false;
 }
 function limpiarRegistrosCorruptosSilencioso(){
@@ -734,6 +747,22 @@ function limpiarRegistrosCorruptosSilencioso(){
   }
   return eliminados;
 }
+
+async function limpiarRegistrosCorruptosManual(){
+  const eliminados = limpiarRegistrosCorruptosSilencioso();
+  localStorage.setItem(storageAtenciones, JSON.stringify(atenciones));
+  if (supabaseClient && usuarioSupabase) {
+    await sincronizarAtencionesSupabase(true);
+  }
+  try { renderTabla(); } catch(e) { console.warn(e); }
+  try { if (typeof renderAgenda === 'function') renderAgenda(); } catch(e) { console.warn(e); }
+  try { renderStats(); } catch(e) { console.warn(e); }
+  alert(eliminados > 0
+    ? `Se eliminaron ${eliminados} registros corruptos/incompletos y se sincronizó Supabase.`
+    : 'No se encontraron registros corruptos/incompletos para eliminar.');
+}
+window.limpiarRegistrosCorruptosManual = limpiarRegistrosCorruptosManual;
+
 function asegurarValorSelect(id,valorFallback){
   const el=$(id);
   if(!el)return '';
