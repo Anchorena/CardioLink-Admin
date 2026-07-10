@@ -1609,9 +1609,10 @@ function actualizarExtrasPrestaciones(){
  });
 }
 function atencionesPerfil(){
+ const base = Array.isArray(atenciones) ? atenciones : [];
  if(esMedico()){
    const pid=profesionalIdUsuarioActual();
-   return atenciones.filter(a=>a.profesionalId===pid || a.cajaPerfil===pid);
+   return base.filter(a=>a.profesionalId===pid || a.cajaPerfil===pid);
  }
  const p=perfilObj();
  if(p.id==='general')return base;
