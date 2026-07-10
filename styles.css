@@ -789,3 +789,30 @@ body[data-rol="admin"] .solo-matias { display:none !important; }
   background:#ef4444;
   box-shadow:0 0 0 5px rgba(239,68,68,.14);
 }
+
+
+/* ===== v2.9.0 - modales de importación centrados ===== */
+#modalImportMedicloud,
+#modalImportWhatsapp{
+  position:fixed;
+  inset:0;
+  z-index:100000;
+  background:rgba(15,23,42,.62);
+  display:flex;
+  align-items:center;
+  justify-content:center;
+  padding:24px;
+}
+#modalImportMedicloud .modal-import-card,
+#modalImportWhatsapp .modal-import-card{
+  width:min(980px,96vw);
+  max-height:92vh;
+  overflow:auto;
+}
+#modalImportMedicloud textarea,
+#modalImportWhatsapp textarea{
+  width:100%;
+  min-height:260px;
+  resize:vertical;
+  box-sizing:border-box;
+}

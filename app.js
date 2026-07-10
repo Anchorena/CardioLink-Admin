@@ -3170,20 +3170,18 @@ function nuevaAtencionDesdePaciente(id){
 }
 
 
-/* ===== v2.8.9 FIX BOTONES LISTADO / AGENDA =====
-   Evita que los botones dependan solamente del onclick inline. Esto repara
-   editar/borrar en Listado y los botones de Agenda cuando el id viene como texto. */
-function cardioParseArg(raw){
+/* ===== v2.9.0 FIX ROBUSTO BOTONES / MODALES ===== */
+function cardio290Arg(raw){
   raw=String(raw||'').trim();
   if((raw.startsWith('"')&&raw.endsWith('"'))||(raw.startsWith("'")&&raw.endsWith("'"))){
     return raw.slice(1,-1).replace(/\\'/g,"'").replace(/\\"/g,'"');
   }
-  if(raw==='undefined'||raw==='null'||raw==='')return '';
+  if(raw==='undefined'||raw==='null')return '';
   return raw;
 }
-function cardioInlineArgs(onclickText, fnName){
-  const re=new RegExp(fnName.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\(([^)]*)\\)');
-  const m=String(onclickText||'').match(re);
+function cardio290ArgsFromOnclick(oc, fn){
+  const re=new RegExp(fn.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'\\(([^)]*)\\)');
+  const m=String(oc||'').match(re);
   if(!m)return [];
   const txt=m[1];
   const out=[]; let cur='', q=null;
@@ -3191,83 +3189,124 @@ function cardioInlineArgs(onclickText, fnName){
     const ch=txt[i];
     if(q){ cur+=ch; if(ch===q && txt[i-1] !== '\\') q=null; }
     else if(ch==='"'||ch==="'"){ q=ch; cur+=ch; }
-    else if(ch===','){ out.push(cardioParseArg(cur)); cur=''; }
+    else if(ch===','){ out.push(cardio290Arg(cur)); cur=''; }
     else cur+=ch;
   }
-  if(cur.trim()!=='' || txt.includes(',')) out.push(cardioParseArg(cur));
+  if(cur.trim()!=='' || txt.includes(',')) out.push(cardio290Arg(cur));
   return out;
 }
-function cardioReengancharBotonesCriticos(){
-  // Reenganche explícito de botones de agenda, por si un error previo cortó init().
-  const btn=$('btnAgendaActualizar');
-  if(btn && !btn.dataset.fix289){
-    btn.dataset.fix289='1';
-    btn.addEventListener('click', function(e){
-      e.preventDefault();
-      try{ renderAgenda(); }catch(err){ console.error('Error actualizando agenda:', err); alert('No se pudo actualizar la agenda. Revisar consola.'); }
-    });
+function cardio290IdDesdeBoton(btn){
+  const oc=btn?.getAttribute?.('onclick')||'';
+  const fns=['editarAtencion','eliminarAtencion','guardarEdicion','abrirAgendaModal','cambiarEstadoAgenda'];
+  for(const fn of fns){
+    const args=cardio290ArgsFromOnclick(oc,fn);
+    if(args[0])return args[0];
   }
-  const hoy=$('btnAgendaHoy');
-  if(hoy && !hoy.dataset.fix289){
-    hoy.dataset.fix289='1';
-    hoy.addEventListener('click', function(e){
-      e.preventDefault();
-      if($('agendaFecha'))$('agendaFecha').value=todayISO();
-      try{ renderAgenda(); }catch(err){ console.error('Error actualizando agenda:', err); }
-    });
-  }
+  return btn?.dataset?.id||'';
 }
-document.addEventListener('click', function(e){
-  const btn=e.target.closest('button');
-  if(!btn)return;
+async function cardio290CambiarEstado(id, estado){
+  if(!id||!estado)return;
+  const a=atenciones.find(x=>String(x.id)===String(id));
+  if(!a){ alert('No encontré la atención seleccionada. Actualizá y probá de nuevo.'); return; }
+  a.estadoTurno=estado;
+  a.estado=estado;
+  a.editadoPor=usuarioActualNombreCorto();
+  a.editadoEn=new Date().toISOString();
+  await saveAtenciones();
+  if(typeof renderAgenda==='function')renderAgenda();
+  if(typeof renderTabla==='function')renderTabla();
+  if(typeof renderStats==='function')renderStats();
+}
+function cardio290EjecutarBoton(btn,e){
+  if(!btn)return false;
+  const idBtn=btn.id||'';
   const oc=btn.getAttribute('onclick')||'';
-  if(!oc)return;
+  const texto=(btn.textContent||'').trim().toLowerCase();
   try{
+    if(idBtn==='btnAgendaActualizar'){
+      e?.preventDefault?.(); e?.stopPropagation?.();
+      renderAgenda();
+      return true;
+    }
+    if(idBtn==='btnAgendaHoy'){
+      e?.preventDefault?.(); e?.stopPropagation?.();
+      if($('agendaFecha'))$('agendaFecha').value=todayISO();
+      renderAgenda();
+      return true;
+    }
     if(oc.includes('editarAtencion(')){
-      e.preventDefault(); e.stopImmediatePropagation();
-      const [id]=cardioInlineArgs(oc,'editarAtencion');
-      if(id) editarAtencion(id);
-      if(oc.includes('cerrarAgendaModal')) cerrarAgendaModal();
-      if(oc.includes('showSection')) showSection('listado');
-      return;
+      e?.preventDefault?.(); e?.stopPropagation?.();
+      const [id]=cardio290ArgsFromOnclick(oc,'editarAtencion');
+      abrirModalEdicion(String(id));
+      if(oc.includes('cerrarAgendaModal'))cerrarAgendaModal();
+      if(oc.includes('showSection'))showSection('listado');
+      return true;
     }
     if(oc.includes('eliminarAtencion(')){
-      e.preventDefault(); e.stopImmediatePropagation();
-      const [id]=cardioInlineArgs(oc,'eliminarAtencion');
-      if(id) eliminarAtencion(id);
-      return;
+      e?.preventDefault?.(); e?.stopPropagation?.();
+      const [id]=cardio290ArgsFromOnclick(oc,'eliminarAtencion');
+      eliminarAtencion(String(id));
+      return true;
     }
     if(oc.includes('guardarEdicion(')){
-      e.preventDefault(); e.stopImmediatePropagation();
-      const [id]=cardioInlineArgs(oc,'guardarEdicion');
-      if(id) guardarEdicion(id);
-      return;
+      e?.preventDefault?.(); e?.stopPropagation?.();
+      const [id]=cardio290ArgsFromOnclick(oc,'guardarEdicion');
+      guardarEdicion(String(id));
+      return true;
     }
     if(oc.includes('cancelarEdicion(')){
-      e.preventDefault(); e.stopImmediatePropagation();
+      e?.preventDefault?.(); e?.stopPropagation?.();
       cancelarEdicion();
-      return;
+      return true;
     }
     if(oc.includes('abrirAgendaModal(') && !oc.includes('cambiarEstadoAgenda(')){
-      e.preventDefault(); e.stopImmediatePropagation();
-      const [id]=cardioInlineArgs(oc,'abrirAgendaModal');
-      if(id) abrirAgendaModal(id);
-      return;
+      e?.preventDefault?.(); e?.stopPropagation?.();
+      const [id]=cardio290ArgsFromOnclick(oc,'abrirAgendaModal');
+      abrirAgendaModal(String(id));
+      return true;
     }
     if(oc.includes('cambiarEstadoAgenda(')){
-      e.preventDefault(); e.stopImmediatePropagation();
-      const [id,estado]=cardioInlineArgs(oc,'cambiarEstadoAgenda');
-      if(id && estado) cambiarEstadoAgenda(id,estado);
-      if(oc.includes('abrirAgendaModal')) abrirAgendaModal(id);
-      return;
+      e?.preventDefault?.(); e?.stopPropagation?.();
+      const [id,estado]=cardio290ArgsFromOnclick(oc,'cambiarEstadoAgenda');
+      cardio290CambiarEstado(String(id),String(estado));
+      if(oc.includes('abrirAgendaModal'))setTimeout(()=>abrirAgendaModal(String(id)),60);
+      return true;
     }
-  }catch(err){ console.error('Error en botón CardioLink:', err); alert('No se pudo ejecutar el botón. Revisar consola.'); }
-}, true);
-document.addEventListener('DOMContentLoaded', cardioReengancharBotonesCriticos);
-setTimeout(cardioReengancharBotonesCriticos, 500);
-setTimeout(cardioReengancharBotonesCriticos, 1500);
-
-// Exposición explícita para navegadores que no publiquen funciones top-level en window.
-try{
-  Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancelarEdicion,abrirAgendaModal,cerrarAgendaModal,cambiarEstadoAgenda,showSection,renderAgenda,renderTabla});
-}catch(e){ console.warn('No se pudieron exponer funciones críticas:', e); }
+    // Fallback por texto dentro de agenda aunque el onclick esté roto o cacheado.
+    const row=btn.closest?.('tr,.agenda-turno-card');
+    if(row && row.querySelector?.('.agenda-status')){
+      const id=cardio290IdDesdeBoton(btn);
+      if(texto==='ver' || texto==='ver ficha'){
+        e?.preventDefault?.(); e?.stopPropagation?.(); abrirAgendaModal(id); return true;
+      }
+      if(texto==='sala'){
+        e?.preventDefault?.(); e?.stopPropagation?.(); cardio290CambiarEstado(id,'sala_espera'); return true;
+      }
+      if(texto==='atender'){
+        e?.preventDefault?.(); e?.stopPropagation?.(); cardio290CambiarEstado(id,'en_consulta'); return true;
+      }
+      if(texto==='atendido'){
+        e?.preventDefault?.(); e?.stopPropagation?.(); cardio290CambiarEstado(id,'atendido'); return true;
+      }
+    }
+  }catch(err){
+    console.error('Error en botón CardioLink v2.9.0:', err);
+    alert('No se pudo ejecutar el botón. Abrí consola y mandame el primer error rojo.');
+    return true;
+  }
+  return false;
+}
+document.addEventListener('click',function(e){
+  const btn=e.target.closest?.('button');
+  if(!btn)return;
+  const handled=cardio290EjecutarBoton(btn,e);
+  if(handled) e.stopImmediatePropagation?.();
+},true);
+function cardio290AsegurarBotones(){
+  const b1=$('btnAgendaActualizar'); if(b1&&!b1.dataset.cardio290){b1.dataset.cardio290='1'; b1.addEventListener('click',e=>cardio290EjecutarBoton(b1,e));}
+  const b2=$('btnAgendaHoy'); if(b2&&!b2.dataset.cardio290){b2.dataset.cardio290='1'; b2.addEventListener('click',e=>cardio290EjecutarBoton(b2,e));}
+}
+document.addEventListener('DOMContentLoaded',cardio290AsegurarBotones);
+setTimeout(cardio290AsegurarBotones,500);
+setTimeout(cardio290AsegurarBotones,1500);
+try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancelarEdicion,abrirAgendaModal,cerrarAgendaModal,cambiarEstadoAgenda,showSection,renderAgenda,renderTabla,abrirImportadorMedicloud,cerrarImportadorMedicloud,aplicarImportMedicloud,abrirImportadorWhatsapp,cerrarImportadorWhatsapp,aplicarImportWhatsapp});}catch(e){console.warn('Funciones críticas no expuestas:',e);}
