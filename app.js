@@ -618,6 +618,31 @@ function programarSyncSupabase() {
   }, 700);
 }
 
+let syncAtencionesEnCurso = false;
+let syncAtencionesPendiente = false;
+
+function registrosSincronizablesSupabase(lista = atenciones) {
+  const vistos = new Set();
+  const out = [];
+  (lista || []).forEach((a, idx) => {
+    if (!a || typeof a !== 'object') return;
+    if (!esMensajeInterno(a) && esAtencionCorrupta(a)) return;
+    let id = String(a.id || '').trim();
+    if (!id || id === 'undefined' || id === 'null') {
+      id = (esMensajeInterno(a) ? 'msg_' : 'att_') + Date.now() + '_' + idx + '_' + Math.random().toString(36).slice(2, 7);
+      a.id = id;
+    }
+    if (vistos.has(id)) {
+      // No mandar dos filas con el mismo id, porque Supabase rechaza la carga por primary key.
+      a.id = (esMensajeInterno(a) ? 'msg_' : 'att_') + Date.now() + '_' + idx + '_' + Math.random().toString(36).slice(2, 7);
+      id = String(a.id);
+    }
+    vistos.add(id);
+    out.push(a);
+  });
+  return out;
+}
+
 async function sincronizarAtencionesSupabase(forzar = false) {
   if (!supabaseClient || !usuarioSupabase) {
     console.warn("No se sincroniza: falta Supabase o usuario.");
@@ -626,40 +651,56 @@ async function sincronizarAtencionesSupabase(forzar = false) {
 
   if (cargandoDesdeNube && !forzar) return false;
 
-  const rows = atencionesOperativas(atenciones || []).map(a => ({
-    id: String(a.id),
-    payload: a,
-    updated_at: new Date().toISOString()
-  }));
-
-  const { error: deleteError } = await supabaseClient
-    .from("cardiolink_atenciones")
-    .delete()
-    .neq("id", "__nunca__");
-
-  if (deleteError) {
-    console.error("Error limpiando tabla Supabase:", deleteError);
-    alert("No se pudo limpiar/sincronizar Supabase: " + deleteError.message);
+  if (syncAtencionesEnCurso) {
+    syncAtencionesPendiente = true;
     return false;
   }
 
-  if (!rows.length) {
-    console.log("Supabase sincronizado: 0 atenciones.");
+  syncAtencionesEnCurso = true;
+  try {
+    // Incluye atenciones + mensajes internos. Antes los mensajes quedaban afuera y desaparecían al refrescar.
+    atenciones = registrosSincronizablesSupabase(atenciones);
+    localStorage.setItem(storageAtenciones, JSON.stringify(atenciones));
+
+    const rows = atenciones.map(a => ({
+      id: String(a.id),
+      payload: a,
+      updated_at: new Date().toISOString()
+    }));
+
+    // Reemplazo completo protegido por lock para evitar carreras entre autosync y clicks.
+    const { error: deleteError } = await supabaseClient
+      .from("cardiolink_atenciones")
+      .delete()
+      .neq("id", "__nunca__");
+
+    if (deleteError) {
+      console.error("Error limpiando tabla Supabase:", deleteError);
+      alert("No se pudo limpiar/sincronizar Supabase: " + deleteError.message);
+      return false;
+    }
+
+    if (rows.length) {
+      const { error: upsertError } = await supabaseClient
+        .from("cardiolink_atenciones")
+        .upsert(rows, { onConflict: "id" });
+
+      if (upsertError) {
+        console.error("Error sincronizando atenciones con Supabase:", upsertError);
+        alert("No se pudo sincronizar con Supabase: " + upsertError.message);
+        return false;
+      }
+    }
+
+    console.log("Supabase sincronizado:", rows.length, "registros");
     return true;
+  } finally {
+    syncAtencionesEnCurso = false;
+    if (syncAtencionesPendiente) {
+      syncAtencionesPendiente = false;
+      setTimeout(() => sincronizarAtencionesSupabase(false), 900);
+    }
   }
-
-  const { error: insertError } = await supabaseClient
-    .from("cardiolink_atenciones")
-    .insert(rows);
-
-  if (insertError) {
-    console.error("Error sincronizando atenciones con Supabase:", insertError);
-    alert("No se pudo sincronizar con Supabase: " + insertError.message);
-    return false;
-  }
-
-  console.log("Supabase sincronizado:", rows.length, "atenciones");
-  return true;
 }
 
 function bloquearAppPorLogin() {
@@ -686,8 +727,8 @@ let pacienteSeleccionadoPanelId=null;
 const defaults={
  profesionales:[
   {id:'general',nombre:'Vista General / Administración',area:'Todos los profesionales',prestaciones:[],valores:{consulta:0,electro:0,estudio:0,copagoConsulta:0,copagoElectro:0,copagoEstudio:0}},
-  {id:'matias',nombre:'Dr. Matías Anchorena',area:'Cardiología / Medicina Crítica',prestaciones:['Consulta','Electrocardiograma','ECG','Ecocardiograma Doppler','Holter','MAPA','Consulta + ECG','Consulta + Eco'],valores:{consulta:35000,electro:35000,estudio:60000,copagoConsulta:35000,copagoElectro:35000,copagoEstudio:50000}},
-  {id:'rogelio',nombre:'Dr. Rogelio Anchorena',area:'Cardiología',prestaciones:['Consulta','Electrocardiograma','ECG','Ecocardiograma Doppler','Holter','MAPA','Consulta + ECG','Consulta + Eco'],valores:{consulta:35000,electro:35000,estudio:60000,copagoConsulta:35000,copagoElectro:35000,copagoEstudio:50000}},
+  {id:'matias',nombre:'Dr. Matías Anchorena',area:'Cardiología / Medicina Crítica',prestaciones:['Consulta','Electrocardiograma','ECG','Ecocardiograma Doppler','Holter','MAPA'],valores:{consulta:35000,electro:35000,estudio:60000,copagoConsulta:35000,copagoElectro:35000,copagoEstudio:50000}},
+  {id:'rogelio',nombre:'Dr. Rogelio Anchorena',area:'Cardiología',prestaciones:['Consulta','Electrocardiograma','ECG','Ecocardiograma Doppler','Holter','MAPA'],valores:{consulta:35000,electro:35000,estudio:60000,copagoConsulta:35000,copagoElectro:35000,copagoEstudio:50000}},
   {id:'humberto_drago',nombre:'Dr. Fernández Drago Humberto',area:'Diagnóstico por Imágenes',prestaciones:['Ecografía abdominal','Ecografía renal','Ecografía tiroidea','Ecografía mamaria','Doppler arterial','Doppler venoso','Mamografía'],valores:{consulta:0,electro:0,estudio:60000,copagoConsulta:0,copagoElectro:0,copagoEstudio:0}},
   {id:'lucas_drago',nombre:'Dr. Drago Lucas',area:'Diagnóstico por Imágenes',prestaciones:['Ecografía abdominal','Ecografía renal','Ecografía tiroidea','Ecografía mamaria','Doppler arterial','Doppler venoso','Mamografía'],valores:{consulta:0,electro:0,estudio:60000,copagoConsulta:0,copagoElectro:0,copagoEstudio:0}}
  ],
@@ -699,6 +740,19 @@ const defaults={
 };
 
 let data=loadConfig();
+
+function esPrestacionCompuestaNombre(nombre){
+  const s=String(nombre||'').toLowerCase();
+  return s.includes('+') || s.includes(' + ') || s.includes('consulta +') || s.includes('eco +') || s.includes('holter +') || s.includes('mapa +') || s.includes('electro +') || s.includes('ecg +');
+}
+function limpiarPrestacionesCompuestasConfig(){
+  try{
+    (data.profesionales||[]).forEach(p=>{
+      p.prestaciones=(p.prestaciones||[]).filter(pr=>!esPrestacionCompuestaNombre(pr));
+    });
+    saveConfig?.();
+  }catch(e){console.warn('No se pudieron limpiar prestaciones compuestas:',e);}
+}
 data=normalizarConfigCritica(data);
 try{localStorage.setItem(storageConfig,JSON.stringify(data));}catch(e){}
 if(!Array.isArray(data.pacientes)) data.pacientes=[];
@@ -706,6 +760,7 @@ asegurarUsuariosConfig();
 if(!Array.isArray(data.colocadores)) data.colocadores=['Geraldine','Secretaría','Otro'];
 if(!data.reglasOS) data.reglasOS=structuredClone(defaults.reglasOS);
 let atenciones=loadAtenciones();
+limpiarPrestacionesCompuestasConfig();
 let editandoId=null;
 let guardarYContinuar=false;
 const $=id=>document.getElementById(id);
@@ -1995,7 +2050,7 @@ function renderLiquidacionColocacionesSolapa(){
   });
 }
 function idJS(id){return JSON.stringify(String(id));}
-function renderTabla(){const tbody=$('tablaAtenciones');tbody.innerHTML='';const datos=filtrar();renderResumenCaja(datos);actualizarResumenFacturaRogelio(datos);if(resumenFiltrosVisible)calcularLiquidacionColocaciones();const totalPaginas=Math.max(1,Math.ceil(datos.length/TAMANIO_PAGINA_LISTADO));if(paginaListado>totalPaginas)paginaListado=totalPaginas;if(paginaListado<1)paginaListado=1;actualizarPaginacionListado(datos.length,totalPaginas);const inicio=(paginaListado-1)*TAMANIO_PAGINA_LISTADO;const datosPagina=datos.slice(inicio,inicio+TAMANIO_PAGINA_LISTADO);if(!datos.length){tbody.innerHTML='<tr><td colspan="14">No hay registros para mostrar.</td></tr>';return}datosPagina.forEach(a=>{const e=evaluarEstado(a),m=dineroVisible(a),part=m.particular;const tr=document.createElement('tr');if(editandoId===a.id){tr.className='edit-row';tr.innerHTML=`<td><input type="date" id="e_fecha_${a.id}" value="${a.fecha||''}"></td><td><input id="e_paciente_${a.id}" value="${escapeHtml(a.paciente)}"><input id="e_obs_${a.id}" value="${escapeHtml(a.observaciones||'')}" placeholder="Obs."></td><td>${selectHTML('e_os_'+a.id,data.obrasSociales,a.obraSocial)}</td><td>${selectProfesionalesHTML('e_prof_'+a.id,a.profesionalId)}</td><td>${selectPrestacionesHTML('e_prest_'+a.id,a.profesionalId,a.prestacion)}</td><td>${selectHTML('e_consultaA_'+a.id,opcionesDestinos(a.consultaA),a.consultaA)}</td><td>${selectHTML('e_prestacionA_'+a.id,opcionesDestinos(a.prestacionA),a.prestacionA)}</td><td>${selectHTML('e_tipoCobro_'+a.id,['Sin cobro en caja','No cobrar','Copago','Particular','Particular + copago'],a.tipoCobro)}<div class="inline-checks-edit"><label><input type="checkbox" id="e_bonoConsulta_${a.id}" ${a.bonoConsulta?'checked':''}> Bono consulta</label><label><input type="checkbox" id="e_bonoEstudio_${a.id}" ${a.bonoEstudio?'checked':''}> Bono estudio</label><label><input type="checkbox" id="e_bonoFirmado_${a.id}" ${a.bonoFirmado?'checked':''}> Bono firmado</label><label><input type="checkbox" id="e_copiaImpresa_${a.id}" ${a.copiaImpresa?'checked':''}> Copia</label><label><input type="checkbox" id="e_fold2_${a.id}" ${a.fold2?'checked':''}> Fold2</label><label><input type="checkbox" id="e_planilla_${a.id}" ${a.planilla?'checked':''}> Planilla</label><label><input type="checkbox" id="e_colocacionLiquidable_${a.id}" ${a.colocacionLiquidable?'checked':''}> Colocación liquidable</label><label>Colocador/a ${selectHTML('e_colocador_'+a.id,['Geraldine','Secretaría','Otro'],a.colocador||'Geraldine')}</label></div></td><td>${selectHTML('e_formaPago_'+a.id,['No aplica','Efectivo','Transferencia','Mixto'],a.formaPago||'No aplica')}</td><td><input type="number" id="e_particular_${a.id}" value="${Number(a.montoConsulta||0)+Number(a.montoEstudio||0)}"></td><td><input type="number" id="e_copago_${a.id}" value="${Number(a.montoCopago||0)}"></td><td>${money(a.montoTotal)}</td><td class="estado-cell">${estadoHTML(a,e)}</td><td class="no-print actions-cell"><div class="edit-actions"><button class="small-btn" onclick="guardarEdicion(${idJS(a.id)})">Guardar</button><button class="small-btn" onclick="cancelarEdicion()">Cancelar</button></div></td>`}else{tr.innerHTML=`<td>${formatFecha(a.fecha)}</td><td><strong>${escapeHtml(a.paciente)}</strong>${a.observaciones?'<br><small>'+escapeHtml(a.observaciones)+'</small>':''}</td><td>${a.obraSocial}</td><td>${a.profesional}</td><td>${prestacionListado(a)}${badgeColocacion(a)}</td><td>${a.consultaA}</td><td>${a.prestacionA}</td><td>${a.tipoCobro||''}</td><td>${a.formaPago||'No aplica'}</td><td class="money-col">${money(part)}</td><td class="money-col">${money(m.copago)}</td><td class="money-col">${money(m.total)}</td><td class="estado-cell">${estadoHTML(a,e)}</td><td class="no-print actions-cell"><div class="edit-actions"><button onclick="editarAtencion(${idJS(a.id)})">Editar</button><button onclick="eliminarAtencion(${idJS(a.id)})">Borrar</button></div></td>`}tbody.appendChild(tr)})}
+function renderTabla(){const tbody=$('tablaAtenciones');tbody.innerHTML='';const datos=filtrar();renderResumenCaja(datos);actualizarResumenFacturaRogelio(datos);if(resumenFiltrosVisible)calcularLiquidacionColocaciones();const totalPaginas=Math.max(1,Math.ceil(datos.length/TAMANIO_PAGINA_LISTADO));if(paginaListado>totalPaginas)paginaListado=totalPaginas;if(paginaListado<1)paginaListado=1;actualizarPaginacionListado(datos.length,totalPaginas);const inicio=(paginaListado-1)*TAMANIO_PAGINA_LISTADO;const datosPagina=datos.slice(inicio,inicio+TAMANIO_PAGINA_LISTADO);if(!datos.length){tbody.innerHTML='<tr><td colspan="14">No hay registros para mostrar.</td></tr>';return}datosPagina.forEach(a=>{const e=evaluarEstado(a),m=dineroVisible(a),part=m.particular;const tr=document.createElement('tr');if(editandoId===a.id){tr.className='edit-row';tr.innerHTML=`<td><input type="date" id="e_fecha_${a.id}" value="${a.fecha||''}"></td><td><input id="e_paciente_${a.id}" value="${escapeHtml(a.paciente)}"><input id="e_obs_${a.id}" value="${escapeHtml(a.observaciones||'')}" placeholder="Obs."></td><td>${selectHTML('e_os_'+a.id,data.obrasSociales,a.obraSocial)}</td><td>${selectProfesionalesHTML('e_prof_'+a.id,a.profesionalId)}</td><td>${selectPrestacionesHTML('e_prest_'+a.id,a.profesionalId,a.prestacion)}</td><td>${selectHTML('e_consultaA_'+a.id,opcionesDestinos(a.consultaA),a.consultaA)}</td><td>${selectHTML('e_prestacionA_'+a.id,opcionesDestinos(a.prestacionA),a.prestacionA)}</td><td>${selectHTML('e_tipoCobro_'+a.id,['Sin cobro en caja','No cobrar','Copago','Particular','Particular + copago'],a.tipoCobro)}<div class="inline-checks-edit"><label><input type="checkbox" id="e_bonoConsulta_${a.id}" ${a.bonoConsulta?'checked':''}> Bono consulta</label><label><input type="checkbox" id="e_bonoEstudio_${a.id}" ${a.bonoEstudio?'checked':''}> Bono estudio</label><label><input type="checkbox" id="e_bonoFirmado_${a.id}" ${a.bonoFirmado?'checked':''}> Bono firmado</label><label><input type="checkbox" id="e_copiaImpresa_${a.id}" ${a.copiaImpresa?'checked':''}> Copia</label><label><input type="checkbox" id="e_fold2_${a.id}" ${a.fold2?'checked':''}> Fold2</label><label><input type="checkbox" id="e_planilla_${a.id}" ${a.planilla?'checked':''}> Planilla</label><label><input type="checkbox" id="e_colocacionLiquidable_${a.id}" ${a.colocacionLiquidable?'checked':''}> Colocación liquidable</label><label>Colocador/a ${selectHTML('e_colocador_'+a.id,['Geraldine','Secretaría','Otro'],a.colocador||'Geraldine')}</label></div></td><td>${selectHTML('e_formaPago_'+a.id,['No aplica','Efectivo','Transferencia','Mixto'],a.formaPago||'No aplica')}</td><td><input type="number" id="e_particular_${a.id}" value="${Number(a.montoConsulta||0)+Number(a.montoEstudio||0)}"></td><td><input type="number" id="e_copago_${a.id}" value="${Number(a.montoCopago||0)}"></td><td>${money(a.montoTotal)}</td><td class="estado-cell">${estadoHTML(a,e)}</td><td class="no-print actions-cell"><div class="edit-actions"><button class="small-btn" onclick="guardarEdicion(${idJS(a.id)})">Guardar</button><button class="small-btn" onclick="cancelarEdicion()">Cancelar</button></div></td>`}else{tr.innerHTML=`<td>${formatFecha(a.fecha)}</td><td><strong>${escapeHtml(a.paciente)}</strong>${a.observaciones?'<br><small>'+escapeHtml(a.observaciones)+'</small>':''}</td><td>${a.obraSocial}</td><td>${a.profesional}</td><td>${prestacionListado(a)}${badgeColocacion(a)}</td><td>${a.consultaA}</td><td>${a.prestacionA}</td><td>${a.tipoCobro||''}</td><td>${a.formaPago||'No aplica'}</td><td class="money-col">${money(part)}</td><td class="money-col">${money(m.copago)}</td><td class="money-col">${money(m.total)}</td><td class="estado-cell">${estadoHTML(a,e)}</td><td class="no-print actions-cell"><div class="edit-actions"><button type="button" data-action="listado-editar" data-id="${escapeHtml(a.id)}" onclick="editarAtencion(${idJS(a.id)})">Editar</button><button type="button" data-action="listado-borrar" data-id="${escapeHtml(a.id)}" onclick="eliminarAtencion(${idJS(a.id)})">Borrar</button></div></td>`}tbody.appendChild(tr)})}
 function actualizarPaginacionListado(totalRegistros,totalPaginas){
  const box=$('paginacionListado'),info=$('paginaInfo'),prev=$('btnPaginaAnterior'),next=$('btnPaginaSiguiente');
  if(!box||!info||!prev||!next)return;
@@ -3310,3 +3365,127 @@ document.addEventListener('DOMContentLoaded',cardio290AsegurarBotones);
 setTimeout(cardio290AsegurarBotones,500);
 setTimeout(cardio290AsegurarBotones,1500);
 try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancelarEdicion,abrirAgendaModal,cerrarAgendaModal,cambiarEstadoAgenda,showSection,renderAgenda,renderTabla,abrirImportadorMedicloud,cerrarImportadorMedicloud,aplicarImportMedicloud,abrirImportadorWhatsapp,cerrarImportadorWhatsapp,aplicarImportWhatsapp});}catch(e){console.warn('Funciones críticas no expuestas:',e);}
+
+
+/* ===== v2.9.1 REPARACION ESTABLE: botones, mensajes y prestaciones simples ===== */
+(function(){
+  const $id = (id) => document.getElementById(id);
+
+  function cl291EsCompuesta(nombre){
+    const s=String(nombre||'').toLowerCase();
+    return s.includes('+') || s.includes('consulta +') || s.includes('eco +') || s.includes('holter +') || s.includes('mapa +') || s.includes('ecg +') || s.includes('electro +');
+  }
+  function cl291PrestacionesSimples(items){
+    return [...new Set((items||[]).filter(pr=>pr && !cl291EsCompuesta(pr)))].sort();
+  }
+
+  try{
+    if(typeof data==='object' && data){
+      (data.profesionales||[]).forEach(p=>{ p.prestaciones = cl291PrestacionesSimples(p.prestaciones||[]); });
+      if(typeof saveConfig==='function') saveConfig();
+    }
+  }catch(e){ console.warn('v2.9.1 prestaciones simples:', e); }
+
+  // Sobrescribe selectores de prestaciones para que el desplegable principal solo tenga prestaciones simples.
+  window.allPrestaciones = allPrestaciones = function(){
+    return cl291PrestacionesSimples((data.profesionales||[]).flatMap(p=>p.prestaciones||[]));
+  };
+  window.actualizarPrestaciones = actualizarPrestaciones = function(){
+    const p = typeof profesionalCarga==='function' ? profesionalCarga() : null;
+    const items = cl291PrestacionesSimples(p?.prestaciones?.length ? p.prestaciones : allPrestaciones());
+    if($id('prestacion')) llenarSelect($id('prestacion'), items);
+    if(typeof actualizarExtrasPrestaciones==='function') actualizarExtrasPrestaciones();
+  };
+  window.selectPrestacionesHTML = selectPrestacionesHTML = function(id, prof, selected){
+    const p=(data.profesionales||[]).find(x=>x.id===prof);
+    const items=cl291PrestacionesSimples(p?.prestaciones?.length?p.prestaciones:allPrestaciones());
+    return selectHTML(id, items, selected);
+  };
+
+  function cl291FindAtencionIdFromElement(el){
+    const direct = el?.dataset?.id || el?.closest?.('[data-id]')?.dataset?.id;
+    if(direct) return String(direct);
+    const oc = el?.getAttribute?.('onclick') || '';
+    const m = oc.match(/\((['"]?)([^,'")]+)\1(?:,|\))/);
+    if(m && m[2]) return String(m[2]);
+    const row = el?.closest?.('tr,.agenda-turno-card');
+    if(row?.dataset?.id) return String(row.dataset.id);
+    return '';
+  }
+  function cl291GetAtencion(id){ return (atenciones||[]).find(a=>String(a.id)===String(id)); }
+
+  // Re-render de Agenda con data-id/data-action, sin depender de onclick frágil.
+  window.renderAgenda = renderAgenda = function(){
+    const fecha=$id('agendaFecha')?.value||todayISO();
+    const prof=$id('agendaProfesional')?.value||'';
+    const est=$id('agendaEstado')?.value||'';
+    const vista=$id('agendaVista')?.value||'tabla';
+    const datos=atencionesOperativas().filter(a=>{
+      if((a.fecha||'')!==fecha) return false;
+      if(prof && String(a.profesionalId||'')!==String(prof)) return false;
+      if(est && estadoTurno(a)!==est) return false;
+      return true;
+    }).sort((a,b)=>String(a.horaInicio||'').localeCompare(String(b.horaInicio||'')));
+    if($id('agendaConteo')) $id('agendaConteo').textContent=`${datos.length} turno(s) para la fecha seleccionada.`;
+    const tabla=$id('agendaTabla'), cards=$id('agendaTarjetas');
+    if(tabla){
+      tabla.innerHTML = datos.length ? datos.map(a=>`<tr data-id="${escapeHtml(a.id)}">
+        <td>${escapeHtml(a.horaInicio||'')}</td><td><strong>${escapeHtml(a.paciente||'')}</strong></td><td>${escapeHtml(a.profesional||'')}</td><td>${escapeHtml(a.prestacion||'')}</td><td>${escapeHtml(a.obraSocial||'')}</td><td>${estadoAgendaBadge(a)}</td>
+        <td class="agenda-actions"><button type="button" data-action="agenda-ver" data-id="${escapeHtml(a.id)}">Ver</button><button type="button" data-action="agenda-estado" data-estado="sala_espera" data-id="${escapeHtml(a.id)}">Sala</button><button type="button" data-action="agenda-estado" data-estado="en_consulta" data-id="${escapeHtml(a.id)}">Atender</button><button type="button" data-action="agenda-estado" data-estado="atendido" data-id="${escapeHtml(a.id)}">Atendido</button></td>
+      </tr>`).join('') : '<tr><td colspan="7">No hay turnos para mostrar.</td></tr>';
+    }
+    if(cards){
+      cards.innerHTML = datos.map(a=>`<div class="agenda-turno-card" data-id="${escapeHtml(a.id)}"><div><strong>${escapeHtml(a.horaInicio||'')}</strong> · ${escapeHtml(a.paciente||'')}</div><div>${escapeHtml(a.profesional||'')} · ${escapeHtml(a.prestacion||'')} · ${escapeHtml(a.obraSocial||'')}</div><div>${estadoAgendaBadge(a)}</div><div class="agenda-actions"><button type="button" data-action="agenda-ver" data-id="${escapeHtml(a.id)}">Ver ficha</button><button type="button" data-action="agenda-estado" data-estado="sala_espera" data-id="${escapeHtml(a.id)}">Sala</button><button type="button" data-action="agenda-estado" data-estado="en_consulta" data-id="${escapeHtml(a.id)}">Atender</button><button type="button" data-action="agenda-estado" data-estado="atendido" data-id="${escapeHtml(a.id)}">Atendido</button></div></div>`).join('');
+    }
+    const contTabla=$id('agendaTablaWrap'), contCards=$id('agendaTarjetas');
+    if(contTabla) contTabla.style.display = vista==='tabla' ? 'block' : 'none';
+    if(contCards) contCards.style.display = vista==='tarjetas' ? 'grid' : 'none';
+  };
+
+  window.abrirAgendaModal = abrirAgendaModal = function(id){
+    const a=cl291GetAtencion(id);
+    if(!a){ alert('No encontré la atención seleccionada. Actualizá y probá de nuevo.'); return; }
+    const m=$id('agendaModal'), title=$id('agendaModalTitulo'), body=$id('agendaModalBody');
+    if(!m||!body) return;
+    if(title) title.textContent=a.paciente||'Turno';
+    body.innerHTML=`<div class="agenda-modal-grid"><div><label>Horario</label><strong>${escapeHtml(a.horaInicio||'')}</strong></div><div><label>Paciente</label><strong>${escapeHtml(a.paciente||'')}</strong></div><div><label>Profesional</label><strong>${escapeHtml(a.profesional||'')}</strong></div><div><label>Prestación</label><strong>${escapeHtml(a.prestacion||'')}</strong></div><div><label>Cobertura</label><strong>${escapeHtml(a.obraSocial||'')}</strong></div><div><label>Teléfono</label><strong>${escapeHtml(a.telefono||'s/d')}</strong></div></div><h3>Estado del turno</h3><div class="agenda-state-grid">${Object.entries(ESTADOS_AGENDA).map(([k,e])=>`<button type="button" class="agenda-state-btn ${e.cls} ${estadoTurno(a)===k?'active':''}" data-action="agenda-estado-modal" data-id="${escapeHtml(a.id)}" data-estado="${k}"><i></i>${e.short}</button>`).join('')}</div><div class="agenda-actions modal-actions"><button type="button" data-action="listado-editar" data-id="${escapeHtml(a.id)}">Editar atención</button></div>`;
+    m.classList.remove('hidden');
+  };
+
+  window.cambiarEstadoAgenda = cambiarEstadoAgenda = function(id, estado){
+    const a=cl291GetAtencion(id);
+    if(!a){ alert('No encontré la atención seleccionada. Actualizá y probá de nuevo.'); return; }
+    a.estadoTurno=estado;
+    a.estado=estado;
+    a.estadoTurnoEditadoPor=typeof nombreUsuarioAuditoria==='function'?nombreUsuarioAuditoria():usuarioActualNombreCorto();
+    a.estadoTurnoEditadoEn=new Date().toISOString();
+    if(typeof selloAuditoriaEdicion==='function') selloAuditoriaEdicion(a);
+    saveAtenciones();
+    renderAgenda();
+    if(typeof renderTabla==='function') renderTabla();
+    if(typeof renderStats==='function') renderStats();
+  };
+
+  // Click único, robusto, para agenda/listado/mensajes/modales.
+  document.addEventListener('click', function(e){
+    const btn=e.target.closest?.('button');
+    if(!btn) return;
+    const action=btn.dataset?.action;
+    if(!action) return;
+    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation?.();
+    const id=cl291FindAtencionIdFromElement(btn);
+    if(action==='agenda-ver') return abrirAgendaModal(id);
+    if(action==='agenda-estado') return cambiarEstadoAgenda(id, btn.dataset.estado);
+    if(action==='agenda-estado-modal'){ cambiarEstadoAgenda(id, btn.dataset.estado); return abrirAgendaModal(id); }
+    if(action==='listado-editar') { if(typeof cerrarAgendaModal==='function') cerrarAgendaModal(); if(typeof showSection==='function') showSection('listado'); return abrirModalEdicion(String(id)); }
+    if(action==='listado-borrar') return eliminarAtencion(String(id));
+  }, true);
+
+  function cl291BotonesBasicos(){
+    const bAct=$id('btnAgendaActualizar'); if(bAct && !bAct.dataset.cl291){ bAct.dataset.cl291='1'; bAct.addEventListener('click',e=>{e.preventDefault();renderAgenda();},true); }
+    const bHoy=$id('btnAgendaHoy'); if(bHoy && !bHoy.dataset.cl291){ bHoy.dataset.cl291='1'; bHoy.addEventListener('click',e=>{e.preventDefault(); if($id('agendaFecha'))$id('agendaFecha').value=todayISO(); renderAgenda();},true); }
+  }
+  document.addEventListener('DOMContentLoaded', cl291BotonesBasicos);
+  setTimeout(cl291BotonesBasicos,500);
+  setTimeout(()=>{ try{ actualizarPrestaciones(); renderAgenda(); actualizarNotificacionMensajes?.(); }catch(e){} },1200);
+})();

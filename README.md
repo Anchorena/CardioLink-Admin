@@ -1,3 +1,3 @@
-CardioLink Admin v2.7.3
+CardioLink Admin v2.9.1
 
-Fix urgente: restaura funciones de configuración que rompían init (renderConfig/guardarValores) y mantiene solapa Pacientes v2.7.2.
+Repara agenda/listado/mensajes: botones robustos, sincronización Supabase sin duplicate key, mensajes internos persistentes y prestaciones principales simples.
