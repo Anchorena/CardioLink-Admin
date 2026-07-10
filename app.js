@@ -3867,3 +3867,284 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   document.addEventListener('DOMContentLoaded',()=>{convertirInputsHora293(document); renderExtrasDinamicos293();});
   setTimeout(()=>{convertirInputsHora293(document); renderExtrasDinamicos293();},500);
 })();
+
+/* ===== v2.9.4 MENSAJES CHAT, BLOQUES DE PRESTACIONES Y REGLAS EN EXTRAS ===== */
+(function(){
+  const $id=(id)=>document.getElementById(id);
+  const esc=(v)=> typeof escapeHtml==='function' ? escapeHtml(v) : String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const usuarioCortoActual=()=>{ try{return usuarioLoginCorto(perfilUsuarioActual().usuario||usuarioActualNombreCorto());}catch(e){return usuarioActualNombreCorto?.()||'local';} };
+  const esAdminActual=()=>{ try{return esDuenioMatias?.() || perfilUsuarioActual().rol==='admin';}catch(e){return false;} };
+
+  // Versión visible incluso si alguna etiqueta quedó cacheada en el login.
+  function actualizarVersionVisible294(){
+    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v2.9.4');
+    document.querySelectorAll('h2').forEach(el=>{ if((el.textContent||'').includes('CardioLink Admin v')) el.textContent='CardioLink Admin v2.9.4'; });
+    try{document.title='CardioLink Admin v2.9.4';}catch(e){}
+  }
+
+  // Base de bloques. Primer paso: queda operativo y más adelante se lleva a Configuración visual.
+  const BLOQUES_PRESTACIONES_294={
+    cardiologia:[
+      'Consulta','Ecocardiograma Doppler','MAPA','Holter','Electrocardiograma','ECG','Ergometría','Ecoestrés','Ecocardiograma transesofágico'
+    ],
+    diagnostico_imagenes:[
+      'Ecografía abdominal','Ecografía renal','Ecografía tiroidea','Ecografía mamaria','Ecografía pleural','Ecografía pulmonar','Ecodoppler de vasos del cuello','Doppler arterial de miembros inferiores','Doppler venoso de miembros inferiores','Doppler de vena porta','Doppler de aorta abdominal','Doppler radial','Mamografía'
+    ],
+    neuro_vascular:[
+      'Doppler / Dúplex transcraneal'
+    ],
+    neumonologia:[
+      'Consulta neumonología','Espirometría','VEF1'
+    ],
+    neuro:[
+      'Consulta neurología','Electroencefalograma'
+    ],
+    kinesiologia:[
+      'Consulta kinesiología','Sesión de kinesiología','Rehabilitación respiratoria','Rehabilitación motora'
+    ],
+    otras_especialidades:[
+      'Consulta'
+    ]
+  };
+  window.BLOQUES_PRESTACIONES_294=BLOQUES_PRESTACIONES_294;
+  function limpiarCompuesta294(nombre){
+    const s=String(nombre||'').toLowerCase();
+    return s.includes('+') || s.includes('consulta +') || s.includes('eco +') || s.includes('holter +') || s.includes('mapa +') || s.includes('electro +') || s.includes('ecg +');
+  }
+  function mergeUnicos294(arr){return [...new Set((arr||[]).filter(Boolean).filter(x=>!limpiarCompuesta294(x)))];}
+  function asegurarBloquesPrestaciones294(){
+    if(!data || !Array.isArray(data.profesionales)) return;
+    if(!data.bloquesPrestaciones) data.bloquesPrestaciones=BLOQUES_PRESTACIONES_294;
+    Object.entries(BLOQUES_PRESTACIONES_294).forEach(([k,items])=>{ if(!Array.isArray(data.bloquesPrestaciones[k])) data.bloquesPrestaciones[k]=items; });
+    (data.profesionales||[]).forEach(p=>{
+      if(!Array.isArray(p.bloquesPrestaciones)){
+        const area=String(p.area||'').toLowerCase();
+        const id=String(p.id||'');
+        if(id==='humberto_drago'||id==='lucas_drago'||area.includes('imagen')) p.bloquesPrestaciones=['diagnostico_imagenes'];
+        else if(id==='matias') p.bloquesPrestaciones=['cardiologia','neuro_vascular'];
+        else if(id==='rogelio') p.bloquesPrestaciones=['cardiologia'];
+        else p.bloquesPrestaciones=['otras_especialidades'];
+      }
+      const desdeBloques=(p.bloquesPrestaciones||[]).flatMap(b=>data.bloquesPrestaciones[b]||[]);
+      p.prestaciones=mergeUnicos294([...(p.prestaciones||[]), ...desdeBloques]);
+    });
+    try{saveConfig?.();}catch(e){}
+  }
+  asegurarBloquesPrestaciones294();
+
+  // Mejora de sync: deduplicación final de rows y merge seguro ante duplicate key.
+  function deduplicarAtenciones294(lista=atenciones){
+    const out=[]; const vistos=new Set();
+    (lista||[]).forEach((a,idx)=>{
+      if(!a || typeof a!=='object')return;
+      if(!esMensajeInterno(a) && typeof esAtencionCorrupta==='function' && esAtencionCorrupta(a))return;
+      let id=String(a.id??'').trim();
+      if(!id || id==='undefined' || id==='null' || vistos.has(id)){
+        id=(esMensajeInterno(a)?'msg_':'att_')+Date.now()+'_'+idx+'_'+Math.random().toString(36).slice(2,10);
+        a.id=id;
+      }
+      vistos.add(String(a.id)); out.push(a);
+    });
+    return out;
+  }
+  const syncOriginal294 = typeof sincronizarAtencionesSupabase==='function' ? sincronizarAtencionesSupabase : null;
+  if(syncOriginal294){
+    window.sincronizarAtencionesSupabase = sincronizarAtencionesSupabase = async function(forzar=false){
+      try{
+        atenciones=deduplicarAtenciones294(atenciones);
+        try{localStorage.setItem(storageAtenciones, JSON.stringify(atenciones));}catch(e){}
+        return await syncOriginal294.call(this,forzar);
+      }catch(err){
+        const msg=String(err?.message||err||'');
+        if(msg.toLowerCase().includes('duplicate key')){
+          atenciones=deduplicarAtenciones294(atenciones);
+          try{localStorage.setItem(storageAtenciones, JSON.stringify(atenciones));}catch(e){}
+        }
+        throw err;
+      }
+    };
+  }
+
+  // Prestaciones visibles por perfil: según bloques asignados, sin compuestas.
+  window.allPrestaciones = allPrestaciones = function(){
+    asegurarBloquesPrestaciones294();
+    return mergeUnicos294((data.profesionales||[]).flatMap(p=>p.prestaciones||[])).sort((a,b)=>String(a).localeCompare(String(b),'es'));
+  };
+  window.selectPrestacionesHTML = selectPrestacionesHTML = function(id, prof, selected){
+    asegurarBloquesPrestaciones294();
+    const p=(data.profesionales||[]).find(x=>x.id===prof);
+    const items=mergeUnicos294(p?.prestaciones?.length ? p.prestaciones : allPrestaciones()).sort((a,b)=>String(a).localeCompare(String(b),'es'));
+    return selectHTML(id, items, selected);
+  };
+  window.actualizarPrestaciones = actualizarPrestaciones = function(){
+    asegurarBloquesPrestaciones294();
+    const p=typeof profesionalCarga==='function' ? profesionalCarga() : null;
+    const items=mergeUnicos294(p?.prestaciones?.length ? p.prestaciones : allPrestaciones()).sort((a,b)=>String(a).localeCompare(String(b),'es'));
+    if($id('prestacion')) llenarSelect($id('prestacion'),items);
+    if(typeof actualizarExtrasPrestaciones==='function') actualizarExtrasPrestaciones();
+  };
+
+  // Reglas correctas para prestaciones adicionales del mismo turno, especialmente IOMA/OSDE/Rogelio.
+  function destinoPrestacionExtra294(profId, os, prestacion){
+    const regla=typeof getRegla==='function'?getRegla(os):'';
+    const t=typeof tipoPrest==='function'?tipoPrest(prestacion):'ESTUDIO';
+    if(profId==='matias' && t!=='CONSULTA'){
+      if(['IOMA_OSPRERA','OSDE','SANCOR_PREVENCION'].includes(regla)) return {consultaA:'Matías', prestacionA:'Rogelio', facturador: regla==='IOMA_OSPRERA'?'Fold2 / FEMEBA':'Rogelio'};
+      if(regla==='INTEGRAL') return {consultaA:'Matías', prestacionA:'Matías', facturador:'Matías'};
+    }
+    const prof=(data.profesionales||[]).find(p=>p.id===profId);
+    const nom=prof?.nombre || profId || 'A definir';
+    return {consultaA: t==='CONSULTA'?nom:'No aplica', prestacionA: t==='CONSULTA'?'No aplica':nom, facturador:nom};
+  }
+  function montosExtra294(profId, os, prestacion, tipoBase, formaBase, noCobrar){
+    const regla=typeof getRegla==='function'?getRegla(os):'';
+    const tipoPrestacion=typeof tipoPrest==='function'?tipoPrest(prestacion):'ESTUDIO';
+    let tipoCobro=tipoBase||'Sin cobro en caja', formaPago=formaBase||'No aplica', montoConsulta=0, montoEstudio=0, montoCopago=0, montoTotal=0;
+    if(noCobrar || tipoCobro==='No cobrar'){
+      return {tipoCobro:'No cobrar',formaPago:'No aplica',montoConsulta:0,montoEstudio:0,montoCopago:0,montoTotal:0,noCobrar:true};
+    }
+    if(os==='Particular' || regla==='COBERTURA_COBRA_PARTICULAR' || String(tipoCobro).includes('Particular')){
+      tipoCobro='Particular'; formaPago=formaPago==='No aplica'?'Efectivo':formaPago;
+      montoEstudio= tipoPrestacion==='CONSULTA' ? 0 : (valorDePrestacion?.(profId,prestacion)||0);
+      montoTotal=montoEstudio;
+    }else if(regla==='IOMA_OSPRERA' || String(tipoCobro).includes('Copago')){
+      tipoCobro='Copago'; formaPago=formaPago==='No aplica'?'Efectivo':formaPago;
+      montoCopago= tipoPrestacion==='CONSULTA' ? 0 : (copagoDePrestacion?.(profId,prestacion)||0);
+      // Si por configuración quedó en 0, usar copago estudio del profesional o fallback Matías.
+      if(!montoCopago && tipoPrestacion!=='CONSULTA'){
+        const p=(data.profesionales||[]).find(x=>x.id===profId) || (data.profesionales||[]).find(x=>x.id==='matias');
+        montoCopago=Number(p?.valores?.copagoEstudio||50000);
+      }
+      montoTotal=montoCopago;
+    }else{
+      tipoCobro='Sin cobro en caja'; formaPago='No aplica';
+    }
+    return {tipoCobro,formaPago,montoConsulta,montoEstudio,montoCopago,montoTotal,noCobrar:false};
+  }
+
+  const crearAtencionOriginal294 = typeof crearAtencionDesdeFormulario==='function' ? crearAtencionDesdeFormulario : null;
+  if(crearAtencionOriginal294){
+    window.crearAtencionDesdeFormulario = crearAtencionDesdeFormulario = function(prestacion, opciones={}){
+      const r=crearAtencionOriginal294.call(this, prestacion, opciones);
+      if(opciones && opciones.adicional && r){
+        const profId=r.profesionalId || $id('profesional')?.value || 'matias';
+        const os=r.obraSocial || $id('obraSocial')?.value || 'Particular';
+        Object.assign(r, destinoPrestacionExtra294(profId, os, r.prestacion));
+        Object.assign(r, montosExtra294(profId, os, r.prestacion, r.tipoCobro, r.formaPago, opciones.noCobrar));
+        r.cuentaConsulta=false;
+        r.bonoConsulta=false;
+        r.bonoEstudio=(tipoPrest?.(r.prestacion)!=='CONSULTA');
+      }
+      return r;
+    };
+  }
+
+  // Reemplaza creación de extra desde edición modal con la regla corregida.
+  window.crearExtraDesdeModal294 = function(base, prest, noCobrar){
+    const profId=$id('m_prof')?.value || base.profesionalId || 'matias';
+    const prof=(data.profesionales||[]).find(p=>p.id===profId)||{};
+    const os=$id('m_os')?.value || base.obraSocial || 'Particular';
+    const montos=montosExtra294(profId, os, prest, $id('m_tipoCobro')?.value || base.tipoCobro, $id('m_formaPago')?.value || base.formaPago, noCobrar);
+    const destinos=destinoPrestacionExtra294(profId, os, prest);
+    return {
+      ...base,
+      id:'att_'+Date.now()+'_'+Math.random().toString(36).slice(2,8),
+      grupoTurnoId:base.grupoTurnoId || ('turno_'+Date.now()),
+      fecha:$id('m_fecha')?.value || base.fecha || todayISO(),
+      horaInicio:typeof normalizarHora293==='function' ? (normalizarHora293($id('m_horaInicio')?.value)||$id('m_horaInicio')?.value||base.horaInicio||'') : ($id('m_horaInicio')?.value||base.horaInicio||''),
+      horaFin:typeof normalizarHora293==='function' ? (normalizarHora293($id('m_horaFin')?.value)||$id('m_horaFin')?.value||base.horaFin||'') : ($id('m_horaFin')?.value||base.horaFin||''),
+      paciente:$id('m_paciente')?.value.trim() || base.paciente || '',
+      dni:$id('m_dni')?.value.trim() || base.dni || '',
+      obraSocial:os,
+      coberturaAtencion:os,
+      profesionalId:profId,
+      profesional:prof.nombre||base.profesional||'',
+      prestacion:prest,
+      ...destinos,
+      cajaPerfil:profId,
+      reglaOS:typeof getRegla==='function'?getRegla(os):'',
+      ...montos,
+      cuentaConsulta:false,
+      bonoConsulta:false,
+      bonoEstudio:tipoPrest?.(prest)!=='CONSULTA',
+      bonoFirmado:false,
+      copiaImpresa:false,
+      requiereCopiaImpresa:tipoPrest?.(prest)!=='CONSULTA',
+      fold2:false, planilla:false,
+      colocacionLiquidable:typeof esPrestacionColocable==='function' && esPrestacionColocable(prest) ? ($id('m_colocacionLiquidable')?.checked||false) : false,
+      colocador:$id('m_colocador')?.value||base.colocador||'',
+      observaciones:[($id('m_obs')?.value||base.observaciones||'').trim(),'Prestación adicional agregada desde edición'].filter(Boolean).join(' | '),
+      creadoPor:typeof nombreUsuarioAuditoria==='function'?nombreUsuarioAuditoria():'',creadoUsuario:usuarioActualNombreCorto?.()||'',creadoRol:perfilUsuarioActual?.().rol||'',creadoEn:new Date().toISOString(),
+      editadoPor:'',editadoUsuario:'',editadoRol:'',editadoEn:''
+    };
+  };
+
+  // Intercepta guardar edición para corregir adicionales creados por v2.9.3 si quedaron con No aplica/$0.
+  const guardarModalPre294 = typeof guardarEdicionModal==='function' ? guardarEdicionModal : null;
+  if(guardarModalPre294){
+    window.guardarEdicionModal = guardarEdicionModal = function(id){
+      const antesIds=new Set((atenciones||[]).map(a=>String(a.id)));
+      guardarModalPre294.call(this,id);
+      (atenciones||[]).forEach(a=>{
+        if(!antesIds.has(String(a.id)) && String(a.observaciones||'').includes('Prestación adicional')){
+          const profId=a.profesionalId||'matias', os=a.obraSocial||'Particular';
+          Object.assign(a, destinoPrestacionExtra294(profId, os, a.prestacion));
+          Object.assign(a, montosExtra294(profId, os, a.prestacion, a.tipoCobro, a.formaPago, a.noCobrar));
+          a.cuentaConsulta=false; a.bonoConsulta=false; a.bonoEstudio=tipoPrest?.(a.prestacion)!=='CONSULTA';
+        }
+      });
+      try{saveAtenciones(); renderTabla?.(); renderAgenda?.(); renderStats?.();}catch(e){}
+    };
+  }
+
+  // Mensajes tipo chat + borrar.
+  function colorClaseMensaje294(m){
+    const u=String(m.deUsuario||'').toLowerCase();
+    if(u.includes('geraldine')||u.includes('secre')) return 'msg-color-secretaria';
+    if(u.includes('rogelio')) return 'msg-color-rogelio';
+    if(u.includes('humberto')||u.includes('lucas')||u.includes('drago')) return 'msg-color-drago';
+    if(u.includes('matias')) return 'msg-color-matias';
+    return 'msg-color-otro';
+  }
+  window.renderMensajes = renderMensajes = function(){
+    const box=$id('mensajesLista'); if(!box)return;
+    const filtro=$id('msgFiltro')?.value||'visibles';
+    const usr=usuarioCortoActual();
+    let datos=(atenciones||[]).filter(esMensajeInterno).sort((a,b)=>String(b.creadoEn||b.fecha||'').localeCompare(String(a.creadoEn||a.fecha||'')));
+    if(filtro==='enviados') datos=datos.filter(m=>m.deUsuario===usr);
+    else datos=datos.filter(m=>mensajeVisibleParaUsuario?.(m));
+    datos=datos.slice(0,120);
+    if(!datos.length){box.innerHTML='<p class="muted">No hay mensajes para mostrar.</p>';actualizarNotificacionMensajes?.();return;}
+    box.innerHTML=datos.map(m=>{
+      const propio=m.deUsuario===usr;
+      const visto=(m.leidoPor||[]).includes(usr);
+      const puedeBorrar=propio || esAdminActual();
+      return `<div class="mensaje-item chat ${propio?'propio':'ajeno'} ${visto?'visto':'nuevo'} ${colorClaseMensaje294(m)}" data-id="${esc(m.id)}">
+        <div class="mensaje-texto principal">${esc(m.texto||'')}</div>
+        <div class="mensaje-meta"><strong>${esc(m.deNombre||m.deUsuario||'Usuario')}</strong><span>${esc(fechaHoraAuditoria?.(m.creadoEn)||m.horaInicio||'')}</span></div>
+        <div class="mensaje-destino">Para: ${esc(nombreDestinoMensaje?.(m.destino)||m.destino||'Todos')}</div>
+        ${puedeBorrar?`<button type="button" class="mensaje-borrar" data-action="mensaje-borrar" data-id="${esc(m.id)}">Borrar</button>`:''}
+      </div>`;
+    }).join('');
+    actualizarNotificacionMensajes?.();
+  };
+  window.eliminarMensajeInterno294=function(id){
+    const m=(atenciones||[]).find(x=>String(x.id)===String(id));
+    if(!m || !esMensajeInterno(m)){alert('No encontré el mensaje.');return;}
+    const usr=usuarioCortoActual();
+    if(m.deUsuario!==usr && !esAdminActual()){alert('Solo podés borrar tus mensajes.');return;}
+    if(!confirm('¿Borrar este mensaje?'))return;
+    atenciones=(atenciones||[]).filter(x=>String(x.id)!==String(id));
+    try{saveAtenciones();}catch(e){}
+    renderMensajes(); actualizarNotificacionMensajes?.();
+  };
+  window.addEventListener('click',function(e){
+    const btn=e.target?.closest?.('button[data-action="mensaje-borrar"]');
+    if(!btn)return;
+    e.preventDefault(); e.stopPropagation(); e.stopImmediatePropagation?.();
+    eliminarMensajeInterno294(btn.dataset.id);
+  },true);
+
+  document.addEventListener('DOMContentLoaded',()=>{actualizarVersionVisible294(); asegurarBloquesPrestaciones294(); try{actualizarPrestaciones?.(); renderMensajes?.();}catch(e){} });
+  setTimeout(()=>{actualizarVersionVisible294(); asegurarBloquesPrestaciones294(); try{actualizarPrestaciones?.(); renderMensajes?.();}catch(e){}},800);
+})();
