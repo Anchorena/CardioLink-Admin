@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CardioLink Admin v2.8.7</title>
-<link rel="stylesheet" href="styles.css?v=287">
+<title>CardioLink Admin v2.8.8</title>
+<link rel="stylesheet" href="styles.css?v=288">
 </head>
 <body>
 <aside class="sidebar">
   <div class="brand">
-    <div class="brand-main">CardioLink Admin <span>v2.8.7</span></div>
+    <div class="brand-main">CardioLink Admin <span>v2.8.8</span></div>
     <div class="brand-by">by Matías Anchorena</div>
   </div>
   <button class="nav active" data-section="dashboard">Dashboard</button>
@@ -379,7 +379,7 @@
 
       <div id="printArea">
         <div class="print-title">
-          <h2>CardioLink Admin v2.8.7</h2>
+          <h2>CardioLink Admin v2.8.8</h2>
           <p>by Matías Anchorena — Listado filtrado</p>
           <p id="printMeta"></p>
         </div>
@@ -788,6 +788,7 @@
             <option value="OSDE">OSDE: estudio como Holter a Rogelio</option>
             <option value="INTEGRAL">Integral: no agrega consulta al estudio</option>
             <option value="TODO_MATIAS">Todo a Matías</option>
+            <option value="COBERTURA_COBRA_PARTICULAR">Cobertura informativa / cobra particular</option>
             <option value="SIN_REGLA">Sin regla automática</option>
           </select>
           <button class="primary" id="btnGuardarReglaOS">Guardar regla</button>
@@ -857,6 +858,7 @@
           <p class="danger-text">Importar reemplaza la base de esta computadora.</p>
           <button class="danger" id="btnBorrarDatos">Borrar atenciones de prueba</button>
           <button class="secondary" type="button" onclick="limpiarRegistrosCorruptosManual()">Limpiar registros corruptos / undefined</button>
+          <button class="secondary" type="button" onclick="repararReglasValoresBaseManual()">Reparar reglas y valores base</button>
           <p class="muted">Usar solo si aparecen filas vacías o con “undefined”. No borra atenciones reales con paciente cargado.</p>
         </div>
       </div>
@@ -865,6 +867,6 @@
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="app.js?v=287"></script>
+<script src="app.js?v=288"></script>
 </body>
 </html>
