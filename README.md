@@ -1,1 +1,1 @@
-CardioLink Admin v2.9.2 - corrige editar/borrar en listado y retorno de edición desde agenda.
+CardioLink Admin v2.9.3 - horarios 24 hs, edición con hora y prestaciones adicionales dinámicas.

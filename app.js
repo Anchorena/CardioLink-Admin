@@ -3646,3 +3646,224 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   document.addEventListener('DOMContentLoaded', ()=>setTimeout(()=>normalizarBotonesCriticos(document), 300));
   setTimeout(()=>normalizarBotonesCriticos(document), 1000);
 })();
+
+/* ===== v2.9.3 HORARIOS, EDICION Y PRESTACIONES ADICIONALES DINAMICAS ===== */
+(function(){
+  const $id = (id)=>document.getElementById(id);
+  const limpiarPrestExtraId = (p)=>String(p||'').replace(/[^a-zA-Z0-9]+/g,'_');
+  const esCompuesta293 = (p)=>String(p||'').includes('+') || /consulta\s*\+/i.test(String(p||''));
+  const prestacionesExtraDisponibles293 = ()=>{
+    try{
+      return [...new Set((data.profesionales||[]).flatMap(p=>p.prestaciones||[])
+        .filter(Boolean)
+        .filter(p=>!esCompuesta293(p))
+        .filter(p=>tipoPrest(p)!=='CONSULTA'))].sort((a,b)=>String(a).localeCompare(String(b),'es'));
+    }catch(e){return ['Ecocardiograma Doppler','MAPA','Holter','Electrocardiograma'];}
+  };
+  function normalizarHora293(v){
+    let s=String(v||'').trim().toLowerCase();
+    if(!s)return '';
+    s=s.replace(/hs?\.?/g,'').replace(/h/g,':').replace(/\s+/g,'');
+    const am=s.includes('am'), pm=s.includes('pm');
+    s=s.replace(/am|pm/g,'');
+    let hh=0, mm=0;
+    let m=s.match(/^(\d{1,2})[:.](\d{1,2})$/);
+    if(m){hh=Number(m[1]); mm=Number(m[2]);}
+    else if(/^\d{3,4}$/.test(s)){hh=Number(s.slice(0,-2)); mm=Number(s.slice(-2));}
+    else if(/^\d{1,2}$/.test(s)){hh=Number(s); mm=0;}
+    else return '';
+    if(pm && hh<12)hh+=12;
+    if(am && hh===12)hh=0;
+    if(!Number.isFinite(hh)||!Number.isFinite(mm)||hh<0||hh>23||mm<0||mm>59)return '';
+    return String(hh).padStart(2,'0')+':'+String(mm).padStart(2,'0');
+  }
+  window.normalizarHora293 = normalizarHora293;
+
+  function convertirInputsHora293(root=document){
+    ['horaInicio','horaFin','m_horaInicio','m_horaFin'].forEach(id=>{
+      const el=root.querySelector?.('#'+id) || $id(id);
+      if(el){
+        try{ el.type='text'; }catch(e){}
+        el.placeholder='13:00';
+        el.inputMode='numeric';
+        el.pattern='[0-2][0-9]:[0-5][0-9]';
+        if(!el.dataset.hora293){
+          el.dataset.hora293='1';
+          el.addEventListener('blur',()=>{ const h=normalizarHora293(el.value); if(h)el.value=h; });
+        }
+      }
+    });
+  }
+
+  function renderExtrasDinamicos293(){
+    const grid=document.querySelector('.prestaciones-extra-grid');
+    if(!grid)return;
+    const principal=$id('prestacion')?.value || '';
+    const items=prestacionesExtraDisponibles293();
+    grid.innerHTML=items.map(prest=>{
+      const disabled=prest===principal;
+      const safe=limpiarPrestExtraId(prest);
+      return `<label><input type="checkbox" class="extra-prestacion" data-prestacion="${escapeHtml(prest)}" id="extra_${safe}" ${disabled?'disabled':''}> ${escapeHtml(prest)} <span class="no-cobrar-inline"><input type="checkbox" id="noCobrar_${safe}"> No cobrar</span></label>`;
+    }).join('');
+  }
+
+  const actualizarExtrasOriginal293 = typeof actualizarExtrasPrestaciones === 'function' ? actualizarExtrasPrestaciones : null;
+  window.actualizarExtrasPrestaciones = actualizarExtrasPrestaciones = function(){
+    renderExtrasDinamicos293();
+    if(actualizarExtrasOriginal293){try{actualizarExtrasOriginal293.apply(this,arguments);}catch(e){}}
+    const prest=$id('prestacion')?.value||'';
+    document.querySelectorAll('.extra-prestacion').forEach(ch=>{
+      ch.disabled=ch.dataset.prestacion===prest;
+      if(ch.disabled)ch.checked=false;
+    });
+  };
+
+  window.prestacionesAdicionalesSeleccionadas = prestacionesAdicionalesSeleccionadas = function(prestPrincipal){
+    const extras=[];
+    document.querySelectorAll('.extra-prestacion:checked').forEach(ch=>{
+      const prest=ch.dataset.prestacion;
+      if(!prest || prest===prestPrincipal)return;
+      const noId='noCobrar_'+limpiarPrestExtraId(prest);
+      extras.push({prestacion:prest,noCobrar:!!$id(noId)?.checked});
+    });
+    return extras;
+  };
+
+  const crearOriginal293 = typeof crearAtencionDesdeFormulario === 'function' ? crearAtencionDesdeFormulario : null;
+  if(crearOriginal293){
+    window.crearAtencionDesdeFormulario = crearAtencionDesdeFormulario = function(prestacion, opciones={}){
+      if($id('horaInicio'))$id('horaInicio').value=normalizarHora293($id('horaInicio').value)||$id('horaInicio').value;
+      if($id('horaFin'))$id('horaFin').value=normalizarHora293($id('horaFin').value)||$id('horaFin').value;
+      return crearOriginal293.call(this,prestacion,opciones);
+    };
+  }
+
+  function selectExtrasModal293(a){
+    const grupo=String(a.grupoTurnoId||'');
+    const existentes=new Set((atenciones||[]).filter(x=>grupo && String(x.grupoTurnoId||'')===grupo && String(x.id)!==String(a.id)).map(x=>String(x.prestacion||'')));
+    const principal=String(a.prestacion||'');
+    const items=prestacionesExtraDisponibles293().filter(p=>p!==principal);
+    if(!items.length)return '';
+    return `<div class="full prestaciones-multiples-box modal-extra-box"><h3>Agregar prestaciones adicionales del mismo turno</h3><p>Cada prestación marcada se agrega como registro separado vinculado al mismo turno.</p><div class="prestaciones-extra-grid modal-extra-grid">${items.map(prest=>{
+      const ya=existentes.has(prest);
+      const safe=limpiarPrestExtraId(prest);
+      return `<label><input type="checkbox" class="m_extra_prestacion" data-prestacion="${escapeHtml(prest)}" id="m_extra_${safe}" ${ya?'checked disabled':''}> ${escapeHtml(prest)}${ya?' <small>ya cargada</small>':''} <span class="no-cobrar-inline"><input type="checkbox" id="m_noCobrar_${safe}" ${ya?'disabled':''}> No cobrar</span></label>`;
+    }).join('')}</div></div>`;
+  }
+
+  function crearExtraDesdeModal293(base, prest, noCobrar){
+    const profId=$id('m_prof')?.value || base.profesionalId || 'matias';
+    const prof=(data.profesionales||[]).find(p=>p.id===profId)||{};
+    const tipo=$id('m_tipoCobro')?.value || base.tipoCobro || 'Sin cobro en caja';
+    const os=$id('m_os')?.value || base.obraSocial || 'Particular';
+    const formaBase=$id('m_formaPago')?.value || base.formaPago || 'No aplica';
+    const regla=getRegla(os);
+    let tipoCobro=tipo, formaPago=formaBase, montoConsulta=0, montoEstudio=0, montoCopago=0, montoTotal=0;
+    if(noCobrar || tipo==='No cobrar'){
+      tipoCobro='No cobrar'; formaPago='No aplica';
+    }else if(os==='Particular' || regla==='COBERTURA_COBRA_PARTICULAR' || tipo.includes('Particular')){
+      tipoCobro='Particular'; formaPago=formaPago==='No aplica'?'Efectivo':formaPago;
+      montoEstudio=valorDePrestacion(profId, prest);
+    }else if(tipo.includes('Copago') || regla==='IOMA_OSPRERA'){
+      tipoCobro='Copago'; formaPago=formaPago==='No aplica'?'Efectivo':formaPago;
+      montoCopago=copagoDePrestacion(profId, prest);
+    }else{
+      tipoCobro='Sin cobro en caja'; formaPago='No aplica';
+    }
+    if(tipoCobro.includes('Particular'))montoTotal+=montoConsulta+montoEstudio;
+    if(tipoCobro.includes('Copago')||tipoCobro.includes('copago'))montoTotal+=montoCopago;
+    return {
+      ...base,
+      id:Date.now()+Math.floor(Math.random()*100000),
+      grupoTurnoId:base.grupoTurnoId || ('turno_'+Date.now()),
+      fecha:$id('m_fecha')?.value || base.fecha || todayISO(),
+      horaInicio:normalizarHora293($id('m_horaInicio')?.value) || $id('m_horaInicio')?.value || base.horaInicio || '',
+      horaFin:normalizarHora293($id('m_horaFin')?.value) || $id('m_horaFin')?.value || base.horaFin || '',
+      paciente:$id('m_paciente')?.value.trim() || base.paciente || '',
+      dni:$id('m_dni')?.value.trim() || base.dni || '',
+      obraSocial:os,
+      coberturaAtencion:os,
+      profesionalId:profId,
+      profesional:prof.nombre||base.profesional||'',
+      prestacion:prest,
+      consultaA:$id('m_consultaA')?.value || base.consultaA || 'Matías',
+      prestacionA:$id('m_prestacionA')?.value || base.prestacionA || 'Matías',
+      cajaPerfil:profId,
+      reglaOS:getRegla(os),
+      tipoCobro,formaPago,noCobrar:tipoCobro==='No cobrar',montoConsulta,montoEstudio,montoCopago,montoTotal,
+      cuentaConsulta:false,
+      bonoConsulta:false,
+      bonoEstudio:tipoPrest(prest)!=='CONSULTA',
+      bonoFirmado:false,
+      copiaImpresa:false,
+      requiereCopiaImpresa:tipoPrest(prest)!=='CONSULTA',
+      fold2:false, planilla:false,
+      colocacionLiquidable:esPrestacionColocable(prest) ? ($id('m_colocacionLiquidable')?.checked||false) : false,
+      colocador:$id('m_colocador')?.value||base.colocador||'',
+      observaciones:[($id('m_obs')?.value||base.observaciones||'').trim(),'Prestación adicional agregada desde edición'].filter(Boolean).join(' | '),
+      creadoPor:nombreUsuarioAuditoria(),creadoUsuario:usuarioActualNombreCorto(),creadoRol:perfilUsuarioActual().rol||'',creadoEn:new Date().toISOString(),
+      editadoPor:'',editadoUsuario:'',editadoRol:'',editadoEn:''
+    };
+  }
+
+  const abrirOriginal293 = typeof abrirModalEdicion === 'function' ? abrirModalEdicion : null;
+  if(abrirOriginal293){
+    window.abrirModalEdicion = abrirModalEdicion = function(id){
+      abrirOriginal293.call(this,id);
+      const modal=$id('modalEdicionAtencion');
+      const a=(atenciones||[]).find(x=>String(x.id)===String(id));
+      if(!modal||!a)return;
+      modal.dataset.atencionId=String(id);
+      const grid=modal.querySelector('.modal-form-grid');
+      if(grid && !$id('m_horaInicio')){
+        const fechaDiv=$id('m_fecha')?.closest('div');
+        const wrap=document.createElement('div');
+        wrap.innerHTML=`<label>Hora inicio</label><input type="text" id="m_horaInicio" placeholder="13:00" value="${escapeHtml(a.horaInicio||'')}">`;
+        const wrap2=document.createElement('div');
+        wrap2.innerHTML=`<label>Hora fin</label><input type="text" id="m_horaFin" placeholder="13:20" value="${escapeHtml(a.horaFin||'')}">`;
+        if(fechaDiv?.nextSibling){grid.insertBefore(wrap,fechaDiv.nextSibling);grid.insertBefore(wrap2,wrap.nextSibling);}else{grid.prepend(wrap2);grid.prepend(wrap);}        
+      }
+      if(grid && !modal.querySelector('.modal-extra-box')){
+        const obs=$id('m_obs')?.closest('.full');
+        const holder=document.createElement('div');
+        holder.innerHTML=selectExtrasModal293(a);
+        if(holder.firstElementChild){ grid.insertBefore(holder.firstElementChild, obs || null); }
+      }
+      convertirInputsHora293(modal);
+    };
+  }
+
+  const guardarModalOriginal293 = typeof guardarEdicionModal === 'function' ? guardarEdicionModal : null;
+  if(guardarModalOriginal293){
+    window.guardarEdicionModal = guardarEdicionModal = function(id){
+      const a=(atenciones||[]).find(x=>String(x.id)===String(id));
+      const grupo=a ? (a.grupoTurnoId || ('turno_'+Date.now())) : '';
+      if(a && !a.grupoTurnoId)a.grupoTurnoId=grupo;
+      const extras=[];
+      document.querySelectorAll('.m_extra_prestacion:checked:not(:disabled)').forEach(ch=>{
+        const prest=ch.dataset.prestacion;
+        if(!prest)return;
+        const safe=limpiarPrestExtraId(prest);
+        extras.push({prestacion:prest,noCobrar:!!$id('m_noCobrar_'+safe)?.checked});
+      });
+      if($id('m_horaInicio'))$id('m_horaInicio').value=normalizarHora293($id('m_horaInicio').value)||$id('m_horaInicio').value;
+      if($id('m_horaFin'))$id('m_horaFin').value=normalizarHora293($id('m_horaFin').value)||$id('m_horaFin').value;
+      guardarModalOriginal293.call(this,id);
+      const actualizado=(atenciones||[]).find(x=>String(x.id)===String(id));
+      if(actualizado){
+        if($id('m_horaInicio'))actualizado.horaInicio=$id('m_horaInicio').value;
+        if($id('m_horaFin'))actualizado.horaFin=$id('m_horaFin').value;
+        if(grupo)actualizado.grupoTurnoId=grupo;
+        const existentes=new Set((atenciones||[]).filter(x=>String(x.grupoTurnoId||'')===String(grupo)).map(x=>String(x.prestacion||'')));
+        extras.forEach(ex=>{ if(!existentes.has(ex.prestacion)){ atenciones.push(crearExtraDesdeModal293(actualizado,ex.prestacion,ex.noCobrar)); existentes.add(ex.prestacion); } });
+        saveAtenciones();
+        try{renderTabla();}catch(e){}
+        try{renderAgenda();}catch(e){}
+        try{renderStats();}catch(e){}
+      }
+    };
+  }
+
+  document.addEventListener('DOMContentLoaded',()=>{convertirInputsHora293(document); renderExtrasDinamicos293();});
+  setTimeout(()=>{convertirInputsHora293(document); renderExtrasDinamicos293();},500);
+})();
