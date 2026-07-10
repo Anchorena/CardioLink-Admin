@@ -874,3 +874,19 @@ body.dark .mensaje-burbuja.ajeno{background:#1e293b;}
 body.dark .mensaje-burbuja .mensaje-texto,body.dark .mensaje-burbuja .mensaje-info strong{color:#e5e7eb;}
 body.dark .mensaje-burbuja .mensaje-info,body.dark .mensaje-burbuja .mensaje-para{color:#cbd5e1;}
 @media(max-width:700px){.mensaje-burbuja{max-width:94%;}.dark-toggle{margin-bottom:100px!important;}}
+
+
+/* v2.9.6 - chat compacto, sidebar estable y prestaciones extra más ordenadas */
+.mensajes-items{display:flex;flex-direction:column;gap:8px;max-height:62vh;overflow:auto;padding:6px 10px;}
+.mensaje-burbuja{max-width:66%!important;padding:9px 11px 28px!important;border-radius:15px!important;line-height:1.25!important;box-shadow:0 4px 12px rgba(15,23,42,.08)!important;}
+.mensaje-burbuja .mensaje-texto{font-size:14px!important;font-weight:700!important;margin-bottom:4px!important;}
+.mensaje-burbuja .mensaje-info{font-size:10.5px!important;gap:6px!important;}
+.mensaje-burbuja .mensaje-para{font-size:10.5px!important;margin-top:2px!important;}
+.mensaje-burbuja .mensaje-borrar{right:8px!important;bottom:6px!important;padding:4px 8px!important;font-size:10.5px!important;}
+.mensaje-burbuja.msg-matias,.mensaje-burbuja.msg-secretaria,.mensaje-burbuja.msg-rogelio,.mensaje-burbuja.msg-drago,.mensaje-burbuja.msg-otro{border-top-width:3px!important;}
+#btnCerrarSesion{position:static!important;width:100%!important;min-width:0!important;margin-top:10px!important;box-shadow:none!important;}
+#btnDark.dark-toggle,.dark-toggle{margin-bottom:8px!important;}
+.sidebar{overflow-y:auto;padding-bottom:18px!important;}
+.nav.hidden-permission{display:none!important;}
+.prestaciones-extra-grid>label span:first-of-type{flex:1;}
+@media(max-width:700px){.mensaje-burbuja{max-width:88%!important;}.mensajes-items{max-height:58vh;}}

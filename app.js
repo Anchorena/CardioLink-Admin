@@ -4273,3 +4273,195 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   setTimeout(()=>{actualizarVersionVisible295(); ajustarLogout295(); try{renderAgenda(); renderMensajes();}catch(e){} },900);
   setInterval(()=>{actualizarVersionVisible295(); ajustarLogout295();},3000);
 })();
+
+
+/* ===== v2.9.6 AJUSTES: bloques por perfil, hora edición, chat compacto, permisos colocaciones ===== */
+(function(){
+  const $id=(id)=>document.getElementById(id);
+  const esc=(v)=> typeof escapeHtml==='function' ? escapeHtml(v) : String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+
+  const BLOQUES_296={
+    cardiologia:['Consulta','Ecocardiograma Doppler','MAPA','Holter','Electrocardiograma','ECG','Ergometría','Ecoestrés','Ecocardiograma transesofágico'],
+    diagnostico_imagenes:['Consulta','Ecografía abdominal','Ecografía renal','Ecografía tiroidea','Ecografía mamaria','Ecografía pleural','Ecografía pulmonar','Ecodoppler de vasos del cuello','Doppler arterial de miembros inferiores','Doppler venoso de miembros inferiores','Doppler de vena porta','Doppler de aorta abdominal','Doppler radial','Mamografía'],
+    neuro_vascular:['Doppler / Dúplex transcraneal'],
+    neumonologia:['Consulta neumonología','Espirometría','VEF1'],
+    neuro:['Consulta neurología','Electroencefalograma'],
+    kinesiologia:['Consulta kinesiología','Sesión de kinesiología','Rehabilitación respiratoria','Rehabilitación motora'],
+    otras_especialidades:['Consulta']
+  };
+  function limpiarCompuesta296(x){
+    const s=String(x||'').toLowerCase();
+    return !s || s.includes('+') || s.includes('consulta +') || s.includes('eco +') || s.includes('holter +') || s.includes('mapa +') || s.includes('electro +') || s.includes('ecg +');
+  }
+  function uniq296(arr){return [...new Set((arr||[]).filter(Boolean).filter(x=>!limpiarCompuesta296(x)))];}
+  function bloquesDefault296(prof){
+    const id=String(prof?.id||'');
+    const area=String(prof?.area||'').toLowerCase();
+    if(id==='humberto_drago' || id==='lucas_drago' || area.includes('imagen')) return ['diagnostico_imagenes'];
+    if(id==='matias') return ['cardiologia','neuro_vascular'];
+    if(id==='rogelio') return ['cardiologia'];
+    if(area.includes('neumo')) return ['neumonologia'];
+    if(area.includes('neuro')) return ['neuro'];
+    if(area.includes('kines')) return ['kinesiologia'];
+    return ['otras_especialidades'];
+  }
+  function asegurarBloques296(){
+    if(!window.data || !Array.isArray(data.profesionales)) return;
+    data.bloquesPrestaciones = Object.assign({}, BLOQUES_296, data.bloquesPrestaciones||{});
+    data.profesionales.forEach(p=>{
+      const def=bloquesDefault296(p);
+      // Para los perfiles conocidos corregimos los bloques aunque versiones previas hayan mezclado listas.
+      if(['matias','rogelio','humberto_drago','lucas_drago'].includes(String(p.id||''))){
+        p.bloquesPrestaciones=def;
+      }else if(!Array.isArray(p.bloquesPrestaciones) || !p.bloquesPrestaciones.length){
+        p.bloquesPrestaciones=def;
+      }
+    });
+    try{localStorage.setItem(storageConfig, JSON.stringify(data));}catch(e){}
+  }
+  function prestacionesDePerfil296(profId){
+    asegurarBloques296();
+    const p=(data.profesionales||[]).find(x=>String(x.id)===String(profId)) || (typeof profesionalCarga==='function'?profesionalCarga():null);
+    const bloques=(p?.bloquesPrestaciones&&p.bloquesPrestaciones.length?p.bloquesPrestaciones:bloquesDefault296(p));
+    let items=bloques.flatMap(b=> (data.bloquesPrestaciones||BLOQUES_296)[b] || BLOQUES_296[b] || []);
+    // Permite que perfiles nuevos con prestaciones manuales también las conserven, pero no para perfiles conocidos ya bloqueados.
+    if(p && !['matias','rogelio','humberto_drago','lucas_drago'].includes(String(p.id||''))){ items=items.concat(p.prestaciones||[]); }
+    return uniq296(items).sort((a,b)=>String(a).localeCompare(String(b),'es'));
+  }
+  window.prestacionesDePerfil296=prestacionesDePerfil296;
+
+  window.allPrestaciones = allPrestaciones = function(){
+    asegurarBloques296();
+    return uniq296(Object.values(data.bloquesPrestaciones||BLOQUES_296).flat()).sort((a,b)=>String(a).localeCompare(String(b),'es'));
+  };
+  window.selectPrestacionesHTML = selectPrestacionesHTML = function(id, prof, selected){
+    const items=prestacionesDePerfil296(prof);
+    return `<select id="${id}">`+items.map(x=>`<option ${x===selected?'selected':''}>${esc(x)}</option>`).join('')+'</select>';
+  };
+  window.actualizarPrestaciones = actualizarPrestaciones = function(){
+    const profId=$id('profesional')?.value || (typeof profesionalIdUsuarioActual==='function'?profesionalIdUsuarioActual():'matias') || 'matias';
+    const items=prestacionesDePerfil296(profId);
+    if($id('prestacion')){
+      const prev=$id('prestacion').value;
+      llenarSelect($id('prestacion'), items);
+      if(items.includes(prev)) $id('prestacion').value=prev;
+    }
+    if(typeof actualizarExtrasPrestaciones==='function') actualizarExtrasPrestaciones();
+  };
+
+  function safeId296(prest){return String(prest||'').replace(/[^a-zA-Z0-9_]+/g,'_');}
+  window.actualizarExtrasPrestaciones = actualizarExtrasPrestaciones = function(){
+    const grid=document.querySelector('.prestaciones-extra-grid');
+    if(!grid)return;
+    const profId=$id('profesional')?.value || (typeof profesionalIdUsuarioActual==='function'?profesionalIdUsuarioActual():'matias') || 'matias';
+    const principal=$id('prestacion')?.value || '';
+    const items=prestacionesDePerfil296(profId).filter(p=>p!==principal && !(typeof esConsulta==='function' && esConsulta(p)));
+    grid.innerHTML=items.map(prest=>{
+      const safe=safeId296(prest);
+      return `<label><input type="checkbox" class="extra-prestacion" data-prestacion="${esc(prest)}" id="extra_${safe}"> <span>${esc(prest)}</span> <span class="no-cobrar-inline"><input type="checkbox" id="noCobrar_${safe}"> No cobrar</span></label>`;
+    }).join('') || '<p class="muted">Este perfil no tiene prestaciones adicionales configuradas.</p>';
+  };
+
+  function actualizarExtrasModal296(){
+    const modal=$id('modalEdicionAtencion'); if(!modal)return;
+    const box=modal.querySelector('.modal-extra-box'); if(!box)return;
+    const grid=box.querySelector('.prestaciones-extra-grid'); if(!grid)return;
+    const id=modal.dataset.atencionId;
+    const base=(atenciones||[]).find(a=>String(a.id)===String(id));
+    const grupo=base?.grupoTurnoId;
+    const profId=$id('m_prof')?.value || base?.profesionalId || 'matias';
+    const principal=$id('m_prest')?.value || base?.prestacion || '';
+    const existentes=new Set((atenciones||[]).filter(x=>grupo && String(x.grupoTurnoId||'')===String(grupo) && String(x.id)!==String(id)).map(x=>String(x.prestacion||'')));
+    const items=prestacionesDePerfil296(profId).filter(p=>p!==principal && !(typeof esConsulta==='function' && esConsulta(p)));
+    grid.innerHTML=items.map(prest=>{
+      const safe=safeId296(prest); const ya=existentes.has(prest);
+      return `<label><input type="checkbox" class="m_extra_prestacion" data-prestacion="${esc(prest)}" id="m_extra_${safe}" ${ya?'checked disabled':''}> <span>${esc(prest)}${ya?' <small>ya cargada</small>':''}</span> <span class="no-cobrar-inline"><input type="checkbox" id="m_noCobrar_${safe}" ${ya?'disabled':''}> No cobrar</span></label>`;
+    }).join('') || '<p class="muted">Este perfil no tiene prestaciones adicionales configuradas.</p>';
+  }
+
+  const abrirPre296=typeof abrirModalEdicion==='function'?abrirModalEdicion:null;
+  if(abrirPre296){
+    window.abrirModalEdicion = abrirModalEdicion = function(id){
+      abrirPre296.call(this,id);
+      const modal=$id('modalEdicionAtencion'); const a=(atenciones||[]).find(x=>String(x.id)===String(id));
+      if(!modal||!a)return;
+      modal.dataset.atencionId=String(id);
+      const grid=modal.querySelector('.modal-form-grid');
+      if(grid && !$id('m_horaInicio')){
+        const fechaDiv=$id('m_fecha')?.closest('div');
+        const w1=document.createElement('div'); w1.innerHTML=`<label>Hora inicio</label><input type="text" id="m_horaInicio" placeholder="13:00" value="${esc(a.horaInicio||'')}">`;
+        const w2=document.createElement('div'); w2.innerHTML=`<label>Hora fin</label><input type="text" id="m_horaFin" placeholder="13:20" value="${esc(a.horaFin||'')}">`;
+        if(fechaDiv?.nextSibling){grid.insertBefore(w1,fechaDiv.nextSibling);grid.insertBefore(w2,w1.nextSibling);}else{grid.prepend(w2);grid.prepend(w1);}
+      }
+      const prest=$id('m_prest');
+      if(prest){
+        const items=prestacionesDePerfil296($id('m_prof')?.value || a.profesionalId);
+        const prev=prest.value || a.prestacion;
+        prest.innerHTML=items.map(x=>`<option ${x===prev?'selected':''}>${esc(x)}</option>`).join('');
+        if(items.includes(prev)) prest.value=prev;
+      }
+      $id('m_prof')?.addEventListener('change',()=>{
+        const items=prestacionesDePerfil296($id('m_prof').value);
+        if(prest){ prest.innerHTML=items.map(x=>`<option>${esc(x)}</option>`).join(''); }
+        actualizarExtrasModal296();
+      });
+      $id('m_prest')?.addEventListener('change',actualizarExtrasModal296);
+      actualizarExtrasModal296();
+    };
+  }
+
+  const guardarPre296=typeof guardarEdicionModal==='function'?guardarEdicionModal:null;
+  if(guardarPre296){
+    window.guardarEdicionModal = guardarEdicionModal = function(id){
+      const hiRaw=$id('m_horaInicio')?.value || '';
+      const hfRaw=$id('m_horaFin')?.value || '';
+      const hi=(typeof normalizarHora293==='function'?normalizarHora293(hiRaw):'') || hiRaw;
+      const hf=(typeof normalizarHora293==='function'?normalizarHora293(hfRaw):'') || hfRaw;
+      guardarPre296.call(this,id);
+      const a=(atenciones||[]).find(x=>String(x.id)===String(id));
+      if(a){
+        a.horaInicio=hi;
+        a.horaFin=hf;
+        try{selloAuditoriaEdicion?.(a);}catch(e){}
+        try{saveAtenciones();}catch(e){}
+        try{renderAgenda?.(); renderTabla?.(); renderStats?.();}catch(e){}
+      }
+    };
+  }
+
+  // Oculta Colocaciones/Pendientes a médicos comunes. Queda para Matías, Administración y Secretaría.
+  window.puedeVerColocaciones296=function(){
+    try{return esMatiasDuenio?.() || esSecretaria?.() || esAdminComun?.() || perfilObj?.().id==='general';}catch(e){return false;}
+  };
+  const seccionPre296=typeof seccionPermitida==='function'?seccionPermitida:null;
+  if(seccionPre296){
+    window.seccionPermitida = seccionPermitida = function(section){
+      if(section==='colocaciones') return window.puedeVerColocaciones296();
+      return seccionPre296.call(this,section);
+    };
+  }
+  const permisosPre296=typeof aplicarPermisosUI==='function'?aplicarPermisosUI:null;
+  if(permisosPre296){
+    window.aplicarPermisosUI = aplicarPermisosUI = function(){
+      permisosPre296.call(this);
+      document.querySelectorAll('.nav[data-section="colocaciones"]').forEach(b=>b.classList.toggle('hidden-permission',!window.puedeVerColocaciones296()));
+    };
+  }
+
+  function moverLogout296(){
+    const sidebar=document.querySelector('.sidebar'); const btn=$id('btnCerrarSesion');
+    if(sidebar && btn && btn.parentElement!==sidebar) sidebar.appendChild(btn);
+    if(btn){
+      btn.style.position='static'; btn.style.left='auto'; btn.style.right='auto'; btn.style.bottom='auto'; btn.style.width='100%'; btn.style.minWidth='0'; btn.style.marginTop='10px'; btn.style.zIndex='1'; btn.style.boxShadow='none';
+    }
+    const dark=$id('btnDark'); if(dark){dark.style.marginTop='18px'; dark.style.marginBottom='8px';}
+  }
+  function version296(){
+    try{document.title='CardioLink Admin v2.9.6';}catch(e){}
+    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v2.9.6');
+    document.querySelectorAll('h2').forEach(el=>{ if((el.textContent||'').includes('CardioLink Admin v')) el.textContent='CardioLink Admin v2.9.6'; });
+  }
+  document.addEventListener('DOMContentLoaded',()=>{asegurarBloques296(); version296(); moverLogout296(); try{actualizarPrestaciones(); aplicarPermisosUI(); renderAgenda?.(); renderMensajes?.();}catch(e){} });
+  setTimeout(()=>{asegurarBloques296(); version296(); moverLogout296(); try{actualizarPrestaciones(); aplicarPermisosUI(); renderAgenda?.(); renderMensajes?.();}catch(e){}},900);
+  setInterval(()=>{version296(); moverLogout296();},3000);
+})();

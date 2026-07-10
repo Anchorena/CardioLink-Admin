@@ -1,3 +1,3 @@
-# CardioLink Admin v2.9.5
+# CardioLink Admin v2.9.6
 
-Ajustes de hora en agenda, chat visual y botón cerrar sesión.
+Ajustes de prestaciones por bloque, agenda, chat y permisos.
