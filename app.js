@@ -4734,7 +4734,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
 /* ===== v2.9.8 - Carga pura e importación de pacientes desde Excel Medicloud ===== */
 (function(){
-  const VERSION_298='2.9.9';
+  const VERSION_298='3.0.0';
   const CONFIG_ROW_ID='__cardiolink_config_v1';
   let previewImportPacientes298=[];
 
@@ -4793,18 +4793,24 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     return bestScore?row[best]:'';
   }
   function rowToPaciente298(row, headers){
-    const apellido=val(pick(row,headers,['apellido','apellidos','surname']));
-    const nombre=val(pick(row,headers,['nombre','nombres','name']));
+    function byExact(names){
+      const wanted=names.map(norm);
+      for(const h of headers){ if(wanted.includes(norm(h))) return row[h]; }
+      return '';
+    }
+    const apellido=val(byExact(['Apellido','Apellidos'])) || val(pick(row,headers,['apellido','apellidos','surname']));
+    const nombre=val(byExact(['Nombre','Nombres'])) || val(pick(row,headers,['nombre','nombres','name']));
     const completo=val(pick(row,headers,['nombre y apellido','apellido y nombre','paciente','pacientes','nombre completo','persona','afiliado','beneficiario']));
-    const nom=val(completo) || val([apellido,nombre].filter(Boolean).join(' '));
-    const dni=onlyDigits(pick(row,headers,['dni','documento','numero documento','nro documento','doc','num doc','numero de dni','número de dni','n° de documento','nº de documento']));
-    const telefono=val(pick(row,headers,['telefono','teléfono','celular','telefono movil','móvil','movil','whatsapp','contacto','tel']));
-    let email=val(pick(row,headers,['email','mail','correo','correo electronico','e-mail']));
+    // Medicloud exporta Nombre y Apellido separados. Para CardioLink guardamos Apellido primero.
+    const nom=val([apellido,nombre].filter(Boolean).join(' ')) || val(completo);
+    const dni=onlyDigits(byExact(['N° de Documento','Nº de Documento','Nro Documento','Documento','DNI'])) || onlyDigits(pick(row,headers,['dni','documento','numero documento','nro documento','doc','num doc','numero de dni','número de dni','n° de documento','nº de documento']));
+    const telefono=val(byExact(['Teléfono','Telefono','Celular'])) || val(pick(row,headers,['telefono','teléfono','celular','telefono movil','móvil','movil','whatsapp','contacto','tel']));
+    let email=val(byExact(['E-Mail','Email','Mail','Correo'])) || val(pick(row,headers,['email','mail','correo','correo electronico','e-mail']));
     if(email && !/@/.test(email)) email='';
-    const fechaNacimiento=parseFechaPac(pick(row,headers,['fecha nacimiento','f nacimiento','fecha de nacimiento','nacimiento','fec nac','f. de nacimiento','fnac','fecha nac']));
+    const fechaNacimiento=parseFechaPac(byExact(['Fecha de Nacimiento','Fecha nacimiento','Nacimiento']) || pick(row,headers,['fecha nacimiento','f nacimiento','fecha de nacimiento','nacimiento','fec nac','f. de nacimiento','fnac','fecha nac']));
     const cobertura=val(pick(row,headers,['obra social','os','cobertura','prepaga','mutual','financiador','seguro medico','plan medico']));
     const afiliado=val(pick(row,headers,['numero afiliado','nro afiliado','número afiliado','afiliado nro','credencial','numero de afiliado','nro. afiliado','plan']));
-    const medico=val(pick(row,headers,['medico','médico','profesional']));
+    const medico=val(byExact(['Médico','Medico','Profesional'])) || val(pick(row,headers,['medico','médico','profesional']));
     const obsBase=val(pick(row,headers,['observaciones','nota','notas','comentarios','comentario']));
     const obs=[obsBase,medico?`Médico Medicloud: ${medico}`:''].filter(Boolean).join(' · ');
     return {
@@ -5056,9 +5062,134 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const inp=d('inputPacientesExcel'); if(inp && !inp.dataset.bound298){ inp.dataset.bound298='1'; inp.addEventListener('change',()=>procesarExcelPacientes298(inp.files?.[0])); }
   }
   function version298(){
-    try{document.title='CardioLink Admin v2.9.9';}catch(e){}
-    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v2.9.9');
+    try{document.title='CardioLink Admin v3.0.0';}catch(e){}
+    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v3.0.0');
   }
   document.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{bind298();version298();},450));
   setTimeout(()=>{bind298();version298();},1300);
+})();
+
+
+/* ===== v3.0.0 - import texto, nombres Medicloud, filtros finos y copiado rápido ===== */
+(function(){
+  function $id(id){return document.getElementById(id)}
+  function esc(v){return String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;')}
+  function clean(v){return String(v??'').trim()}
+  function digits(v){return String(v??'').replace(/\D/g,'')}
+  function copyText300(txt,label='dato'){
+    txt=String(txt||'').trim();
+    if(!txt){alert('No hay '+label+' cargado para copiar.');return;}
+    if(navigator.clipboard?.writeText){navigator.clipboard.writeText(txt).then(()=>toast300('Copiado: '+label)).catch(()=>fallbackCopy300(txt,label));}
+    else fallbackCopy300(txt,label);
+  }
+  function fallbackCopy300(txt,label){const ta=document.createElement('textarea');ta.value=txt;document.body.appendChild(ta);ta.select();document.execCommand('copy');ta.remove();toast300('Copiado: '+label);}
+  function toast300(msg){
+    let t=$id('toast300'); if(!t){t=document.createElement('div');t.id='toast300';t.className='toast300';document.body.appendChild(t);}
+    t.textContent=msg; t.classList.add('show'); clearTimeout(t._tm); t._tm=setTimeout(()=>t.classList.remove('show'),1400);
+  }
+  window.copyText300=copyText300;
+
+  function pendienteDetalle300(a,tipo){
+    if(!tipo) return true;
+    if(tipo==='firma') return !!((a.bonoConsulta||a.bonoEstudio)&&!a.bonoFirmado);
+    if(tipo==='copia') return !!((a.bonoEstudio||a.requiereCopiaImpresa)&&!a.copiaImpresa);
+    if(tipo==='informe') return !!(typeof esRegistroDeEstudio==='function' && esRegistroDeEstudio(a) && !a.estudioInformado);
+    if(tipo==='entrega') return !!(typeof esRegistroDeEstudio==='function' && esRegistroDeEstudio(a) && !(a.estudioImpreso||a.estudioEnviadoMail||a.estudioEnviadoWS));
+    return true;
+  }
+  const oldFiltrar300 = typeof filtrar==='function' ? filtrar : null;
+  if(oldFiltrar300){
+    window.filtrar = filtrar = function(){
+      const base=oldFiltrar300.apply(this,arguments);
+      const tipo=$id('fPendienteDetalle')?.value||'';
+      return tipo ? base.filter(a=>pendienteDetalle300(a,tipo)) : base;
+    }
+  }
+
+  function bindPendienteSelect300(){
+    const sel=$id('fPendienteDetalle');
+    if(sel && !sel.dataset.bound300){
+      sel.dataset.bound300='1';
+      sel.addEventListener('change',()=>{ try{modoPendientesGlobal=true; paginaListado=1; mostrarResumenFiltros?.(); renderTabla?.(); renderStats?.();}catch(e){console.warn(e)} });
+    }
+  }
+
+  function marcarPendientesResueltosModal300(){
+    ['m_bonoFirmado','m_copiaImpresa','m_estudioInformado','m_estudioImpreso'].forEach(id=>{const el=$id(id); if(el) el.checked=true;});
+    toast300('Pendientes marcados como resueltos en esta edición');
+  }
+  window.marcarPendientesResueltosModal300=marcarPendientesResueltosModal300;
+
+  function botonesCopiaAtencion300(a){
+    return `<div class="copy-row300">
+      <button type="button" class="copy-btn300" onclick="copyText300('${esc(a.dni||'')}','DNI')">Copiar DNI</button>
+      <button type="button" class="copy-btn300" onclick="copyText300('${esc(a.telefono||'')}','teléfono')">Copiar teléfono</button>
+      <button type="button" class="copy-btn300" onclick="copyText300('${esc(a.email||'')}','email')">Copiar email</button>
+      <button type="button" class="copy-btn300 ok" onclick="marcarPendientesResueltosModal300()">Tildar pendientes resueltos</button>
+    </div>`;
+  }
+
+  const oldAbrirModal300 = typeof abrirModalEdicion==='function' ? abrirModalEdicion : null;
+  if(oldAbrirModal300){
+    window.abrirModalEdicion = abrirModalEdicion = function(id){
+      oldAbrirModal300.apply(this,arguments);
+      setTimeout(()=>{
+        const modal=$id('modalEdicionAtencion'); if(!modal || modal.querySelector('.copy-row300')) return;
+        const a=(atenciones||[]).find(x=>String(x.id)===String(id)); if(!a) return;
+        const header=modal.querySelector('.modal-edit-header');
+        if(header) header.insertAdjacentHTML('afterend',botonesCopiaAtencion300(a));
+      },20);
+    }
+  }
+
+  const oldSeleccionarPaciente300 = typeof seleccionarPacientePanel==='function' ? seleccionarPacientePanel : null;
+  if(oldSeleccionarPaciente300){
+    window.seleccionarPacientePanel = seleccionarPacientePanel = function(id){
+      oldSeleccionarPaciente300.apply(this,arguments);
+      setTimeout(()=>{
+        const det=$id('pacienteDetalle'); if(!det || det.querySelector('.copy-row300')) return;
+        const p=(typeof buscarPacientePanelPorId==='function') ? buscarPacientePanelPorId(id) : null; if(!p) return;
+        const actions=det.querySelector('.paciente-ficha-actions');
+        const html=`<div class="copy-row300 compact">
+          <button type="button" class="copy-btn300" onclick="copyText300('${esc(p.dni||'')}','DNI')">Copiar DNI</button>
+          <button type="button" class="copy-btn300" onclick="copyText300('${esc(p.telefono||'')}','teléfono')">Copiar teléfono</button>
+          <button type="button" class="copy-btn300" onclick="copyText300('${esc(p.email||'')}','email')">Copiar email</button>
+        </div>`;
+        if(actions) actions.insertAdjacentHTML('beforeend',html);
+      },30);
+    }
+  }
+
+  // En el historial del paciente y el listado agregamos copiado por delegación liviana.
+  const oldRenderTabla300 = typeof renderTabla==='function' ? renderTabla : null;
+  if(oldRenderTabla300){
+    window.renderTabla = renderTabla = function(){
+      oldRenderTabla300.apply(this,arguments);
+      try{
+        document.querySelectorAll('#tablaAtenciones tr').forEach(tr=>{
+          if(tr.querySelector('.copy-mini300')) return;
+          const edit=tr.querySelector('[data-action="listado-editar"]'); if(!edit) return;
+          const id=edit.getAttribute('data-id'); const a=(atenciones||[]).find(x=>String(x.id)===String(id)); if(!a) return;
+          const td=tr.children?.[1]; if(!td) return;
+          td.insertAdjacentHTML('beforeend',`<div class="copy-mini300"><button type="button" onclick="copyText300('${esc(a.dni||'')}','DNI')">DNI</button><button type="button" onclick="copyText300('${esc(a.telefono||'')}','teléfono')">Tel</button><button type="button" onclick="copyText300('${esc(a.email||'')}','email')">Mail</button></div>`);
+        });
+      }catch(e){console.warn(e)}
+    }
+  }
+
+  function bindImportTexto300(){
+    const b1=$id('btnPacientesImportTextoMedicloud');
+    if(b1 && !b1.dataset.bound300){b1.dataset.bound300='1';b1.addEventListener('click',()=>{ if(typeof abrirImportadorMedicloud==='function') abrirImportadorMedicloud(); });}
+    const b2=$id('btnPacientesImportTextoWhatsapp');
+    if(b2 && !b2.dataset.bound300){b2.dataset.bound300='1';b2.addEventListener('click',()=>{ if(typeof abrirImportadorWhatsapp==='function') abrirImportadorWhatsapp(); });}
+  }
+
+  function version300(){
+    try{document.title='CardioLink Admin v3.0.0';}catch(e){}
+    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v3.0.0');
+    const pt=document.querySelector('.print-title h2'); if(pt) pt.textContent='CardioLink Admin v3.0.0';
+  }
+  function init300(){bindPendienteSelect300();bindImportTexto300();version300();}
+  document.addEventListener('DOMContentLoaded',()=>setTimeout(init300,700));
+  setTimeout(init300,1600);
 })();
