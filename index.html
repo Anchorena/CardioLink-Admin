@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CardioLink Admin v2.9.7</title>
-<link rel="stylesheet" href="styles.css?v=297">
+<link rel="stylesheet" href="styles.css?v=299">
 </head>
 <body>
 <aside class="sidebar">
@@ -330,6 +330,9 @@
         <button class="primary" type="button" id="btnPacientesBuscar">Buscar</button>
         <button class="secondary" type="button" id="btnPacientesTodos">Ver todos</button>
         <button class="secondary" type="button" id="btnPacientesDuplicados">Buscar duplicados</button>
+        <button class="primary" type="button" id="btnPacienteNuevoPuro">Cargar paciente</button>
+        <button class="secondary" type="button" id="btnPacientesImportExcel">Importar Excel Medicloud</button>
+        <input type="file" id="inputPacientesExcel" accept=".xlsx,.xls,.csv" hidden>
       </div>
     </div>
 
@@ -867,6 +870,7 @@
 </main>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
-<script src="app.js?v=297"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="app.js?v=299"></script>
 </body>
 </html>

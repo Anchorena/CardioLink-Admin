@@ -2234,7 +2234,7 @@ function verDineroPeriodo(){
 function ocultarDineroPeriodo(){$('dineroPeriodoResultado').textContent='';$('claveDinero').value=''}
 function setPrintMeta(){$('printMeta').textContent=`Perfil: ${perfilObj().nombre} | Registros: ${filtrar().length} | ${formatFecha(todayISO())}`}
 function exportarCSV(){const datos=filtrar();if(!datos.length){alert('No hay datos');return}const r=resumen(datos);const incluirValoresExport=!!$('incluirValoresImpresion')?.checked;const filas=[['CardioLink Admin v2.8.8'],['Perfil',perfilObj().nombre],['Consultas',r.consultas],['Estudios',r.estudios],[],['Fecha','Paciente','OS','Profesional','Prestación','Consulta a','Estudio a','Tipo','Forma','Particular visible','Copago visible','Total visible','Estado']];datos.forEach(a=>{const m=dineroVisible(a),e=evaluarEstado(a);filas.push([formatFecha(a.fecha),a.paciente,a.obraSocial,a.profesional,prestacionListado(a),a.consultaA,a.prestacionA,a.tipoCobro,a.formaPago,incluirValoresExport?m.particular:'',incluirValoresExport?m.copago:'',incluirValoresExport?m.total:'',e.txt])});const csv=filas.map(r=>r.map(c=>`"${String(c??'').replaceAll('"','""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_listado.csv';a.click()}
-function exportarBackup(){const b={app:'CardioLink Admin',version:'2.8.2',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
+function exportarBackup(){const b={app:'CardioLink Admin',version:'2.9.8',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
 function importarBackup(){const inp=$('inputImportBackup');if(!inp.files[0]){alert('Elegí archivo');return}if(!confirm('Reemplaza la base actual. ¿Continuar?'))return;const rd=new FileReader();rd.onload=e=>{try{const b=JSON.parse(e.target.result);if(!b.config||!b.atenciones)throw new Error();data=b.config;atenciones=b.atenciones;saveConfig();saveAtenciones();refreshSelects();renderConfig();cambiarPerfil('general');alert('Backup importado')}catch{alert('Backup inválido')}};rd.readAsText(inp.files[0])}
 
 function dniLimpio(v){return String(v||'').replace(/\D/g,'');}
@@ -4729,4 +4729,336 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   }
   document.addEventListener('DOMContentLoaded',()=>setTimeout(init297,350));
   setTimeout(init297,1200);
+})();
+
+
+/* ===== v2.9.8 - Carga pura e importación de pacientes desde Excel Medicloud ===== */
+(function(){
+  const VERSION_298='2.9.9';
+  const CONFIG_ROW_ID='__cardiolink_config_v1';
+  let previewImportPacientes298=[];
+
+  function d(id){return document.getElementById(id)}
+  function esc(v){return String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;')}
+  function clean(v){return String(v??'').replace(/<[^>]*>/g,' ').replace(/&nbsp;/gi,' ').replace(/\s+/g,' ').trim()}
+  function emptyLike(v){const n=norm(clean(v)); return !n || ['no ingresado','no informado','sin dato','sin datos','s/d','sd','null','undefined','no aplica'].includes(n);}
+  function val(v){return emptyLike(v)?'':clean(v)}
+  function onlyDigits(v){return String(v??'').replace(/\D/g,'')}
+  function norm(v){return String(v??'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim()}
+  function patientKeyName(v){return norm(v).replace(/\s+/g,' ')}
+  function splitName(nombre){
+    const s=clean(nombre).replace(/\s+/g,' ');
+    if(!s) return {nombreCompleto:''};
+    return {nombreCompleto:s};
+  }
+  function parseFechaPac(v){
+    if(!v && v!==0) return '';
+    if(v instanceof Date && !isNaN(v)){
+      const y=v.getFullYear(), m=String(v.getMonth()+1).padStart(2,'0'), d2=String(v.getDate()).padStart(2,'0');
+      return `${y}-${m}-${d2}`;
+    }
+    if(typeof v==='number'){
+      // Excel serial date.
+      const utc=Math.round((v-25569)*86400*1000);
+      const dt=new Date(utc);
+      if(!isNaN(dt) && dt.getFullYear()>1900 && dt.getFullYear()<2100){
+        const y=dt.getUTCFullYear(), m=String(dt.getUTCMonth()+1).padStart(2,'0'), d2=String(dt.getUTCDate()).padStart(2,'0');
+        return `${y}-${m}-${d2}`;
+      }
+    }
+    const s=clean(v).toLowerCase();
+    if(!s) return '';
+    const iso=s.match(/(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})/);
+    if(iso) return `${iso[1]}-${iso[2].padStart(2,'0')}-${iso[3].padStart(2,'0')}`;
+    const ar=s.match(/(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+    if(ar){let y=ar[3]; if(y.length===2)y='19'+y; return `${y}-${ar[2].padStart(2,'0')}-${ar[1].padStart(2,'0')}`;}
+    const meses={ene:1,enero:1,jan:1,january:1,feb:2,febrero:2,february:2,mar:3,marzo:3,march:3,abr:4,abril:4,apr:4,april:4,may:5,mayo:5,jun:6,junio:6,june:6,jul:7,julio:7,july:7,ago:8,agosto:8,aug:8,august:8,sep:9,set:9,sept:9,septiembre:9,setiembre:9,september:9,oct:10,octubre:10,october:10,nov:11,noviembre:11,november:11,dic:12,diciembre:12,dec:12,december:12};
+    const mt=s.match(/(\d{1,2})\s*(?:de\s*)?([a-záéíóúñ]{3,12})\s*(?:de\s*)?(\d{2,4})/i);
+    if(mt){let y=mt[3]; if(y.length===2)y='19'+y; const mm=meses[norm(mt[2])]; if(mm) return `${String(y).padStart(4,'0')}-${String(mm).padStart(2,'0')}-${String(mt[1]).padStart(2,'0')}`;}
+    try{ if(typeof fechaISODesdeTexto==='function') return fechaISODesdeTexto(s)||''; }catch(e){}
+    return '';
+  }
+  function headerScore(h, keys){
+    const n=norm(h).replace(/[^a-z0-9]/g,'');
+    for(const k of keys){
+      const nk=norm(k).replace(/[^a-z0-9]/g,'');
+      if(n===nk) return 3;
+      if(n.includes(nk) || nk.includes(n)) return 2;
+    }
+    return 0;
+  }
+  function pick(row, headers, keys){
+    let best='', bestScore=0;
+    headers.forEach(h=>{const sc=headerScore(h,keys); if(sc>bestScore){bestScore=sc; best=h;}});
+    return bestScore?row[best]:'';
+  }
+  function rowToPaciente298(row, headers){
+    const apellido=val(pick(row,headers,['apellido','apellidos','surname']));
+    const nombre=val(pick(row,headers,['nombre','nombres','name']));
+    const completo=val(pick(row,headers,['nombre y apellido','apellido y nombre','paciente','pacientes','nombre completo','persona','afiliado','beneficiario']));
+    const nom=val(completo) || val([apellido,nombre].filter(Boolean).join(' '));
+    const dni=onlyDigits(pick(row,headers,['dni','documento','numero documento','nro documento','doc','num doc','numero de dni','número de dni','n° de documento','nº de documento']));
+    const telefono=val(pick(row,headers,['telefono','teléfono','celular','telefono movil','móvil','movil','whatsapp','contacto','tel']));
+    let email=val(pick(row,headers,['email','mail','correo','correo electronico','e-mail']));
+    if(email && !/@/.test(email)) email='';
+    const fechaNacimiento=parseFechaPac(pick(row,headers,['fecha nacimiento','f nacimiento','fecha de nacimiento','nacimiento','fec nac','f. de nacimiento','fnac','fecha nac']));
+    const cobertura=val(pick(row,headers,['obra social','os','cobertura','prepaga','mutual','financiador','seguro medico','plan medico']));
+    const afiliado=val(pick(row,headers,['numero afiliado','nro afiliado','número afiliado','afiliado nro','credencial','numero de afiliado','nro. afiliado','plan']));
+    const medico=val(pick(row,headers,['medico','médico','profesional']));
+    const obsBase=val(pick(row,headers,['observaciones','nota','notas','comentarios','comentario']));
+    const obs=[obsBase,medico?`Médico Medicloud: ${medico}`:''].filter(Boolean).join(' · ');
+    return {
+      nombreCompleto: nom,
+      dni,
+      telefono,
+      email,
+      fechaNacimiento,
+      coberturaHabitual: cobertura,
+      numeroAfiliadoHabitual: afiliado,
+      observacionesAdministrativas: obs
+    };
+  }
+  function pacienteExistente298(p){
+    if(!Array.isArray(data.pacientes)) data.pacientes=[];
+    const dni=onlyDigits(p.dni);
+    if(dni){const x=data.pacientes.find(q=>onlyDigits(q.dni)===dni); if(x) return x;}
+    const tel=onlyDigits(p.telefono);
+    if(tel && tel.length>=7){const x=data.pacientes.find(q=>onlyDigits(q.telefono)===tel); if(x) return x;}
+    const mail=norm(p.email);
+    if(mail){const x=data.pacientes.find(q=>norm(q.email)===mail); if(x) return x;}
+    const nom=patientKeyName(p.nombreCompleto);
+    const fn=p.fechaNacimiento||'';
+    if(nom && fn){const x=data.pacientes.find(q=>patientKeyName(q.nombreCompleto||q.paciente)===nom && (q.fechaNacimiento||'')===fn); if(x) return x;}
+    return null;
+  }
+  function aplicarPaciente298(p, existente=null){
+    if(!Array.isArray(data.pacientes)) data.pacientes=[];
+    const ex=existente || pacienteExistente298(p);
+    const target=ex || {id:'pac_'+Date.now()+'_'+Math.random().toString(36).slice(2,8), historialCoberturas:[], creadoEn:new Date().toISOString(), creadoPor: (typeof usuarioActualNombreCorto==='function'?usuarioActualNombreCorto():'')};
+    if(!ex) data.pacientes.push(target);
+    const campos=['nombreCompleto','dni','telefono','email','fechaNacimiento','coberturaHabitual','numeroAfiliadoHabitual','observacionesAdministrativas'];
+    campos.forEach(k=>{ if(clean(p[k])) target[k]=clean(p[k]); });
+    target.actualizadoEn=new Date().toISOString();
+    target.actualizadoPor=typeof usuarioActualNombreCorto==='function'?usuarioActualNombreCorto():'';
+    if(target.coberturaHabitual){
+      target.historialCoberturas=Array.isArray(target.historialCoberturas)?target.historialCoberturas:[];
+      if(!target.historialCoberturas.some(h=>norm(h.cobertura||h.os)===norm(target.coberturaHabitual))){
+        target.historialCoberturas.push({fecha:typeof todayISO==='function'?todayISO():'', cobertura:target.coberturaHabitual, afiliado:target.numeroAfiliadoHabitual||'', origen:'importación/carga paciente'});
+      }
+    }
+    return {paciente:target, creado:!ex};
+  }
+  function cerrarModalPaciente298(){ const m=d('modalPacientes298'); if(m) m.remove(); }
+  window.cerrarModalPaciente298=cerrarModalPaciente298;
+  function modalPaciente298(titulo, html){
+    cerrarModalPaciente298();
+    const wrap=document.createElement('div');
+    wrap.id='modalPacientes298';
+    wrap.className='modal-backdrop modal-pacientes298';
+    wrap.innerHTML=`<div class="agenda-modal-card pacientes-import-card298">
+      <div class="modal-header"><div><h2>${esc(titulo)}</h2><p class="muted">Carga pacientes sin crear turno, consulta, caja ni agenda.</p></div><button class="modal-close" type="button" onclick="cerrarModalPaciente298()">×</button></div>
+      ${html}
+    </div>`;
+    document.body.appendChild(wrap);
+  }
+  function abrirCargaPacientePuro298(){
+    const osOpts=(data.obrasSociales||[]).map(os=>`<option>${esc(os)}</option>`).join('');
+    modalPaciente298('Cargar paciente',`<div class="form-grid paciente-edit-form">
+      <div><label>Apellido y nombre</label><input id="pac298Nombre" placeholder="Ej: Pérez Juan"></div>
+      <div><label>DNI</label><input id="pac298Dni" inputmode="numeric"></div>
+      <div><label>Fecha nacimiento</label><input type="date" id="pac298Nacimiento"></div>
+      <div><label>Teléfono</label><input id="pac298Telefono"></div>
+      <div><label>Email</label><input id="pac298Email"></div>
+      <div><label>Obra social / cobertura habitual</label><select id="pac298Cobertura"><option value="">Sin cobertura cargada</option>${osOpts}</select></div>
+      <div><label>Nº afiliado</label><input id="pac298Afiliado"></div>
+      <div style="grid-column:1/-1"><label>Observaciones administrativas</label><textarea id="pac298Obs" rows="3" placeholder="Dato administrativo útil. No genera evolución ni informe."></textarea></div>
+    </div>
+    <div class="modal-actions"><button class="secondary" type="button" onclick="cerrarModalPaciente298()">Cancelar</button><button class="primary" type="button" id="btnGuardarPacientePuro298">Guardar paciente</button></div>`);
+  }
+  window.abrirCargaPacientePuro298=abrirCargaPacientePuro298;
+  function guardarPacientePuro298(){
+    const p={
+      nombreCompleto: clean(d('pac298Nombre')?.value), dni: onlyDigits(d('pac298Dni')?.value), fechaNacimiento:d('pac298Nacimiento')?.value||'', telefono:clean(d('pac298Telefono')?.value), email:clean(d('pac298Email')?.value), coberturaHabitual:clean(d('pac298Cobertura')?.value), numeroAfiliadoHabitual:clean(d('pac298Afiliado')?.value), observacionesAdministrativas:clean(d('pac298Obs')?.value)
+    };
+    if(!p.nombreCompleto && !p.dni && !p.telefono){alert('Cargá al menos nombre, DNI o teléfono.');return;}
+    const ex=pacienteExistente298(p);
+    if(ex && !confirm('Ya existe un paciente probable. ¿Actualizar la ficha existente?')) return;
+    const r=aplicarPaciente298(p,ex);
+    try{saveConfig(); guardarConfigEnSupabase298(); renderPacientesPanel('',true); seleccionarPacientePanel(r.paciente.id);}catch(e){console.warn(e)}
+    cerrarModalPaciente298();
+    alert(r.creado?'Paciente cargado.':'Ficha del paciente actualizada.');
+  }
+  window.guardarPacientePuro298=guardarPacientePuro298;
+
+  function tablaHtmlMedicloudARows298(text){
+    const html=String(text||'');
+    if(!/<table[\s>]/i.test(html)) return [];
+    const doc=new DOMParser().parseFromString(html,'text/html');
+    const table=doc.querySelector('table');
+    if(!table) return [];
+    const trs=[...table.querySelectorAll('tr')];
+    if(!trs.length) return [];
+    const headers=[...trs[0].querySelectorAll('th,td')].map(c=>clean(c.textContent));
+    return trs.slice(1).map(tr=>{
+      const cells=[...tr.querySelectorAll('td,th')].map(c=>clean(c.textContent));
+      const obj={}; headers.forEach((h,i)=>obj[h||`Columna ${i+1}`]=cells[i]||'');
+      return obj;
+    }).filter(r=>Object.values(r).some(v=>clean(v)));
+  }
+  function abrirImportExcel298(){
+    const inp=d('inputPacientesExcel');
+    if(inp){ inp.value=''; inp.click(); }
+  }
+  window.abrirImportExcel298=abrirImportExcel298;
+  async function procesarExcelPacientes298(file){
+    if(!file) return;
+    if(!window.XLSX && !file.name.toLowerCase().endsWith('.csv')){
+      alert('No se cargó el lector de Excel. Revisá conexión a internet o probá recargar la página.'); return;
+    }
+    const buf=await file.arrayBuffer();
+    let rows=[];
+    try{
+      const lower=file.name.toLowerCase();
+      const textCandidate=new TextDecoder('utf-8').decode(buf.slice(0,2048));
+      if(lower.endsWith('.csv')){
+        const text=new TextDecoder('utf-8').decode(buf);
+        const wb=XLSX.read(text,{type:'string'});
+        rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
+      }else if(/<html|<table/i.test(textCandidate)){
+        const text=new TextDecoder('utf-8').decode(buf);
+        rows=tablaHtmlMedicloudARows298(text);
+      }else{
+        const wb=XLSX.read(buf,{type:'array',cellDates:true});
+        rows=XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''});
+      }
+    }catch(e){console.error(e);alert('No pude leer el Excel. Exportalo como .xlsx, .xls de Medicloud o .csv y probá de nuevo.');return;}
+    if(!rows.length){alert('El archivo no tiene filas para importar.');return;}
+    const headers=[...new Set(rows.flatMap(r=>Object.keys(r)))];
+    const parsed=rows.map((r,idx)=>({idx:idx+2, raw:r, paciente:rowToPaciente298(r,headers)})).filter(x=>x.paciente.nombreCompleto||x.paciente.dni||x.paciente.telefono||x.paciente.email);
+    previewImportPacientes298=parsed.map(x=>{
+      const ex=pacienteExistente298(x.paciente);
+      return {...x, existente:ex, accion:ex?'actualizar':'crear'};
+    });
+    renderPreviewExcel298(file.name);
+  }
+  function renderPreviewExcel298(filename){
+    const nuevos=previewImportPacientes298.filter(x=>x.accion==='crear').length;
+    const act=previewImportPacientes298.filter(x=>x.accion==='actualizar').length;
+    const sinDni=previewImportPacientes298.filter(x=>!x.paciente.dni).length;
+    const body=previewImportPacientes298.slice(0,80).map(x=>`<tr>
+      <td>${x.idx}</td><td><strong>${esc(x.paciente.nombreCompleto||'s/n')}</strong></td><td>${esc(x.paciente.dni||'')}</td><td>${esc(x.paciente.telefono||'')}</td><td>${esc(x.paciente.email||'')}</td><td>${esc(x.paciente.coberturaHabitual||'')}</td><td><span class="pill ${x.accion==='crear'?'ok':'warn'}">${x.accion==='crear'?'Nuevo':'Actualiza existente'}</span></td>
+    </tr>`).join('');
+    modalPaciente298('Importar pacientes desde Excel',`<div class="ok-box"><strong>Archivo:</strong> ${esc(filename)} · ${previewImportPacientes298.length} paciente(s) detectados · ${nuevos} nuevo(s) · ${act} existente(s) · ${sinDni} sin DNI.</div>
+      <p class="muted">Se importan solo fichas administrativas. No se crea turno, consulta, estudio, caja ni agenda. Si el DNI ya existe, se actualizan datos faltantes/mejores.</p>
+      <div class="import-preview-wrap298"><table class="tabla-mini"><thead><tr><th>Fila</th><th>Paciente</th><th>DNI</th><th>Teléfono</th><th>Email</th><th>Cobertura</th><th>Acción</th></tr></thead><tbody>${body||'<tr><td colspan="7">Sin filas válidas.</td></tr>'}</tbody></table></div>
+      ${previewImportPacientes298.length>80?'<p class="muted">Vista previa limitada a las primeras 80 filas.</p>':''}
+      <div class="modal-actions"><button class="secondary" type="button" onclick="cerrarModalPaciente298()">Cancelar</button><button class="primary" type="button" id="btnConfirmarImportPacientes298">Importar pacientes</button></div>`);
+  }
+  function confirmarImportPacientes298(){
+    if(!previewImportPacientes298.length){alert('No hay pacientes para importar.');return;}
+    let creados=0, actualizados=0, omitidos=0;
+    previewImportPacientes298.forEach(x=>{
+      const p=x.paciente;
+      if(!p.nombreCompleto && !p.dni && !p.telefono && !p.email){omitidos++;return;}
+      const ex=pacienteExistente298(p);
+      const r=aplicarPaciente298(p,ex);
+      if(r.creado) creados++; else actualizados++;
+    });
+    try{saveConfig(); guardarConfigEnSupabase298(); renderPacientesPanel('',true);}catch(e){console.warn(e)}
+    cerrarModalPaciente298();
+    alert(`Importación terminada. Nuevos: ${creados}. Actualizados: ${actualizados}. Omitidos: ${omitidos}.`);
+  }
+  window.confirmarImportPacientes298=confirmarImportPacientes298;
+
+  // Sincronización de configuración/pacientes con Supabase usando una fila técnica.
+  async function guardarConfigEnSupabase298(){
+    if(!supabaseClient || !usuarioSupabase) return false;
+    try{
+      const payload={tipoRegistro:'config', version:VERSION_298, config:data, updatedAt:new Date().toISOString()};
+      const {error}=await supabaseClient.from('cardiolink_atenciones').upsert([{id:CONFIG_ROW_ID,payload,updated_at:new Date().toISOString()}],{onConflict:'id'});
+      if(error) console.warn('No se pudo guardar config/pacientes en Supabase:',error.message);
+      return !error;
+    }catch(e){console.warn('Error config Supabase:',e);return false;}
+  }
+  window.guardarConfigEnSupabase298=guardarConfigEnSupabase298;
+
+  if(typeof cargarAtencionesDesdeSupabase==='function'){
+    const cargarOld298=cargarAtencionesDesdeSupabase;
+    window.cargarAtencionesDesdeSupabase = cargarAtencionesDesdeSupabase = async function(){
+      if(!supabaseClient || !usuarioSupabase) return cargarOld298.apply(this,arguments);
+      const { data: rows, error } = await supabaseClient.from('cardiolink_atenciones').select('id,payload,updated_at').order('updated_at',{ascending:false});
+      if(error){ console.error(error); alert('No se pudieron cargar las atenciones desde Supabase: '+error.message); throw error; }
+      const cfgRow=(rows||[]).find(r=>r.id===CONFIG_ROW_ID || r.payload?.tipoRegistro==='config');
+      if(cfgRow?.payload?.config){
+        try{ data=normalizarConfigCritica(cfgRow.payload.config); localStorage.setItem(storageConfig,JSON.stringify(data)); }catch(e){console.warn('Config remota inválida:',e);}
+      }
+      const remotas=(rows||[]).filter(r=>r.id!==CONFIG_ROW_ID && r.payload?.tipoRegistro!=='config').map(r=>r.payload).filter(Boolean);
+      cargandoDesdeNube=true;
+      if(remotas.length>0){
+        atenciones=remotas;
+        const corruptosEliminados=limpiarRegistrosCorruptosSilencioso();
+        localStorage.setItem(storageAtenciones,JSON.stringify(atenciones));
+        if(corruptosEliminados>0){ cargandoDesdeNube=false; await sincronizarAtencionesSupabase(true); cargandoDesdeNube=true; }
+      }else if(Array.isArray(atenciones)&&atenciones.length>0){
+        cargandoDesdeNube=false; await sincronizarAtencionesSupabase(true); return;
+      }else{
+        atenciones=[]; localStorage.setItem(storageAtenciones,JSON.stringify(atenciones));
+      }
+      cargandoDesdeNube=false;
+    };
+  }
+  if(typeof sincronizarAtencionesSupabase==='function'){
+    window.sincronizarAtencionesSupabase = sincronizarAtencionesSupabase = async function(forzar=false){
+      if(!supabaseClient || !usuarioSupabase) return false;
+      if(cargandoDesdeNube && !forzar) return false;
+      if(syncAtencionesEnCurso){ syncAtencionesPendiente=true; return false; }
+      syncAtencionesEnCurso=true;
+      try{
+        atenciones=registrosSincronizablesSupabase(atenciones);
+        localStorage.setItem(storageAtenciones,JSON.stringify(atenciones));
+        localStorage.setItem(storageConfig,JSON.stringify(data));
+        const rows=atenciones.map(a=>({id:String(a.id),payload:a,updated_at:new Date().toISOString()}));
+        rows.push({id:CONFIG_ROW_ID,payload:{tipoRegistro:'config',version:VERSION_298,config:data,updatedAt:new Date().toISOString()},updated_at:new Date().toISOString()});
+        const vistos=new Set();
+        const finalRows=[];
+        rows.forEach((r,idx)=>{ if(vistos.has(r.id) && r.id!==CONFIG_ROW_ID) r.id='att_'+Date.now()+'_'+idx+'_'+Math.random().toString(36).slice(2,8); vistos.add(r.id); finalRows.push(r); });
+        const {error:delErr}=await supabaseClient.from('cardiolink_atenciones').delete().neq('id','__nunca__');
+        if(delErr){console.error(delErr); alert('No se pudo limpiar/sincronizar Supabase: '+delErr.message); return false;}
+        const {error:upErr}=await supabaseClient.from('cardiolink_atenciones').upsert(finalRows,{onConflict:'id'});
+        if(upErr){console.error(upErr); alert('No se pudo sincronizar con Supabase: '+upErr.message); return false;}
+        console.log('Supabase sincronizado:',finalRows.length,'registros + config');
+        return true;
+      }finally{
+        syncAtencionesEnCurso=false;
+        if(syncAtencionesPendiente){ syncAtencionesPendiente=false; setTimeout(()=>sincronizarAtencionesSupabase(false),900); }
+      }
+    };
+  }
+
+  const saveConfigOld298=typeof saveConfig==='function'?saveConfig:null;
+  if(saveConfigOld298){
+    window.saveConfig = saveConfig = function(){
+      const r=saveConfigOld298.apply(this,arguments);
+      clearTimeout(window.__syncConfig298Timer);
+      window.__syncConfig298Timer=setTimeout(()=>guardarConfigEnSupabase298(),900);
+      return r;
+    };
+  }
+
+  function bind298(){
+    document.addEventListener('click',(e)=>{
+      const btn=e.target.closest?.('button'); if(!btn) return;
+      if(btn.id==='btnPacienteNuevoPuro') abrirCargaPacientePuro298();
+      if(btn.id==='btnPacientesImportExcel') abrirImportExcel298();
+      if(btn.id==='btnGuardarPacientePuro298') guardarPacientePuro298();
+      if(btn.id==='btnConfirmarImportPacientes298') confirmarImportPacientes298();
+    });
+    const inp=d('inputPacientesExcel'); if(inp && !inp.dataset.bound298){ inp.dataset.bound298='1'; inp.addEventListener('change',()=>procesarExcelPacientes298(inp.files?.[0])); }
+  }
+  function version298(){
+    try{document.title='CardioLink Admin v2.9.9';}catch(e){}
+    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v2.9.9');
+  }
+  document.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{bind298();version298();},450));
+  setTimeout(()=>{bind298();version298();},1300);
 })();

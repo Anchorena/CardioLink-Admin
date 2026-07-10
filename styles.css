@@ -905,3 +905,16 @@ body.dark .mensaje-burbuja .mensaje-info,body.dark .mensaje-burbuja .mensaje-par
 .prestaciones-preview{grid-column:1 / -1;margin-top:8px;font-size:.9rem;line-height:1.35;}
 body.dark .bloque-check{background:rgba(15,23,42,.5);}
 @media(max-width:900px){.bloques-config-grid{grid-template-columns:1fr;}.bloques-config-grid>div:last-child{grid-column:auto;}}
+
+
+/* ===== v2.9.8 - carga pura/importación pacientes ===== */
+.pacientes-toolbar{grid-template-columns:1fr auto auto auto auto auto !important;}
+.modal-pacientes298{z-index:12000;}
+.pacientes-import-card298{width:min(1100px,96vw);}
+.pacientes-import-card298 textarea{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:14px;padding:12px;font-size:15px;}
+.import-preview-wrap298{max-height:460px;overflow:auto;border:1px solid #e2e8f0;border-radius:16px;margin-top:14px;}
+.import-preview-wrap298 table{width:100%;}
+.import-preview-wrap298 th{position:sticky;top:0;background:#f8fafc;z-index:1;}
+.pill.ok{background:#dcfce7;color:#166534;border-radius:999px;padding:5px 9px;font-weight:800;}
+.pill.warn{background:#fef3c7;color:#92400e;border-radius:999px;padding:5px 9px;font-weight:800;}
+@media(max-width:1050px){.pacientes-toolbar{grid-template-columns:1fr !important;}.pacientes-toolbar button{width:100%;}}
