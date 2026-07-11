@@ -1135,3 +1135,18 @@ body.dark #btnCerrarPacienteGlobal{
 .copy-row300{
   flex-wrap:wrap;
 }
+
+
+/* ===== v3.5.0 ===== */
+.paciente-global-actions-top{display:flex;justify-content:flex-end;gap:10px;margin-bottom:14px;flex-wrap:wrap}
+.paciente-edit-global350 .form-grid{margin-top:6px}
+.global-paciente-modal{max-width:1180px;width:min(1180px,92vw);max-height:88vh;overflow:auto}
+.global-paciente-modal .modal-header{position:sticky;top:0;background:#fff;z-index:2;border-bottom:1px solid var(--border,#dbe3ef);padding-bottom:10px}
+body.dark .global-paciente-modal .modal-header{background:#111827}
+.mini-actions350{margin-top:14px;display:flex;gap:10px;flex-wrap:wrap}
+.coverage-pill320{cursor:pointer;text-align:left}
+.coverage-pill320.incomplete{border-color:#ffd3d3;background:#fff2f2;color:#991b1b}
+.ws-templates350{margin-top:18px;padding:16px;border:1px solid var(--border,#dbe3ef);border-radius:18px;background:#f8fafc;display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.ws-templates350 h3{width:100%;margin:0 0 4px 0;font-size:18px}
+#btnPendientesResueltosVisibles350{white-space:normal;min-width:190px}
+#btnRepararCoberturasMedicloud350{margin-top:10px}

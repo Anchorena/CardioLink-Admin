@@ -5676,3 +5676,273 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     }
   }catch(e){console.warn('v3.3 init pacientes extendidos',e)}
 })();
+
+
+/* ===== v3.5.0 - ficha editable global, limpieza coberturas, pendientes masivos y WS ===== */
+(function(){
+  function $id(id){return document.getElementById(id)}
+  function esc(v){try{return escapeHtml(String(v??''));}catch(e){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}}
+  function norm(v){try{return normalizarTexto(v)}catch(e){return String(v||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();}}
+  function dniClean(v){try{return dniLimpio(v)}catch(e){return String(v||'').replace(/\D/g,'')}}
+  function fechaHoy(){try{return todayISO()}catch(e){return new Date().toISOString().slice(0,10)}}
+  function version350(){
+    try{document.title='CardioLink Admin v3.5.0'}catch(e){}
+    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v3.5.0');
+    const pt=document.querySelector('.print-title h2'); if(pt)pt.textContent='CardioLink Admin v3.5.0';
+  }
+  function pacientesBase(){return Array.isArray(data?.pacientes)?data.pacientes:[];}
+  function pacienteClave(p){try{return clavePacientePanel(p)}catch(e){return p?.id||dniClean(p?.dni)||norm(p?.nombreCompleto||p?.paciente)}}
+  function nombrePac(p){try{return nombrePacientePanel(p)}catch(e){return p?.nombreCompleto||p?.paciente||'Paciente'}}
+  function atencionesPac(p){try{return atencionesPacienteGlobal(p)}catch(e){return []}}
+  function pacientePorClave350(k){
+    try{const p=buscarPacientePanelPorId(k); if(p)return p;}catch(e){}
+    return pacientesBase().find(p=>p.id===k || dniClean(p.dni)===dniClean(k) || norm(p.nombreCompleto||p.paciente)===norm(k)) || null;
+  }
+  function esCoberturaProfesional350(v){
+    const n=norm(v); if(!n)return false;
+    const nombres=['matias anchorena','dr matias anchorena','rogelio anchorena','dr rogelio anchorena','fernandez drago humberto','dr fernandez drago humberto','lucas drago','dr lucas drago','humberto drago'];
+    if(nombres.includes(n))return true;
+    if((data?.profesionales||[]).some(p=>norm(p.nombre)===n))return true;
+    if(n.includes('anchorena') || n.includes('fernandez drago'))return true;
+    return false;
+  }
+  function coberturaVisible350(p){
+    const v=String(p?.coberturaHabitual || p?.obraSocial || p?.cobertura || '').trim();
+    if(!v || /^(no ingresado|sin dato|s\/d|undefined|null)$/i.test(v) || esCoberturaProfesional350(v)) return 'Incompleto';
+    return v;
+  }
+  window.coberturaVisible350=coberturaVisible350;
+  window.coberturaPacienteNormalizada321=function(p){return coberturaVisible350(p)};
+  function limpiarCoberturasMedicloud350(silencioso=false){
+    let n=0;
+    pacientesBase().forEach(p=>{
+      const v=String(p.coberturaHabitual||p.obraSocial||p.cobertura||'').trim();
+      if(esCoberturaProfesional350(v)){
+        const nota=`${fechaHoy()}: se limpió cobertura importada como médico (${v}).`;
+        p.observacionesAdministrativas = [p.observacionesAdministrativas||'', nota].filter(Boolean).join('\n');
+        p.coberturaHabitual='';
+        if(p.obraSocial===v)p.obraSocial='';
+        if(p.cobertura===v)p.cobertura='';
+        p.actualizadoEn=new Date().toISOString();
+        n++;
+      }
+    });
+    if(n){
+      try{saveConfig();}catch(e){}
+      try{renderPacientesPanel?.('',true);}catch(e){}
+      try{renderEstadisticas?.();}catch(e){}
+      try{renderStats?.();}catch(e){}
+    }
+    if(!silencioso) alert(n?`Se limpiaron ${n} cobertura(s) mal importadas como nombre de médico. Ahora figuran como Incompleto.`:'No encontré coberturas mal importadas como médicos.');
+    return n;
+  }
+  window.limpiarCoberturasMedicloud350=limpiarCoberturasMedicloud350;
+
+  // Agrega botón manual de reparación en Configuración.
+  function asegurarBotonRepararCoberturas350(){
+    if($id('btnRepararCoberturasMedicloud350'))return;
+    const backupTitle=Array.from(document.querySelectorAll('#config h3')).find(h=>/backup/i.test(h.textContent||''));
+    const cont=backupTitle?.parentElement || document.querySelector('#config .config-grid') || document.querySelector('#config .card');
+    if(!cont)return;
+    const btn=document.createElement('button');
+    btn.id='btnRepararCoberturasMedicloud350';
+    btn.type='button';
+    btn.className='secondary';
+    btn.textContent='Reparar coberturas Medicloud';
+    btn.addEventListener('click',()=>limpiarCoberturasMedicloud350(false));
+    cont.appendChild(btn);
+  }
+
+  function osOptions350(actual=''){
+    const arr=['',...(data?.obrasSociales||[])];
+    if(actual && !arr.some(x=>norm(x)===norm(actual)) && !esCoberturaProfesional350(actual)) arr.push(actual);
+    return arr.map(os=>`<option value="${esc(os)}" ${String(os)===String(actual)?'selected':''}>${os?esc(os):'Sin cobertura cargada'}</option>`).join('');
+  }
+  function relacionOptions350(actual=''){
+    const arr=['','Madre','Padre','Hijo/a','Esposo/a','Familiar','Cuidador/a','Otro'];
+    if(actual && !arr.includes(actual))arr.push(actual);
+    return arr.map(x=>`<option value="${esc(x)}" ${x===actual?'selected':''}>${x?esc(x):'Sin especificar'}</option>`).join('');
+  }
+  function abrirPacienteGlobalDetalle350(k){
+    const p=pacientePorClave350(k); if(!p){alert('No encontré el paciente.');return;}
+    if(typeof ensurePacienteGlobalModal320==='function') try{ensurePacienteGlobalModal320()}catch(e){}
+    let modal=$id('pacienteGlobalModal');
+    if(!modal){
+      document.body.insertAdjacentHTML('beforeend',`<div id="pacienteGlobalModal" class="modal-backdrop hidden"><div class="modal global-paciente-modal"><div class="modal-header"><h2 id="pacienteGlobalTitulo">Ficha paciente</h2><button class="secondary" type="button" onclick="cerrarPacienteGlobal350()">Cerrar</button></div><div id="pacienteGlobalBody"></div></div></div>`);
+      modal=$id('pacienteGlobalModal');
+    }
+    const ats=atencionesPac(p); const ult=ats[0];
+    const title=$id('pacienteGlobalTitulo'); if(title)title.textContent=nombrePac(p);
+    const body=$id('pacienteGlobalBody'); if(!body)return;
+    body.innerHTML=`
+      <div class="paciente-global-actions-top"><button class="primary" type="button" onclick="nuevaAtencionDesdePaciente('${esc(pacienteClave(p))}')">Nueva atención</button><button class="secondary" type="button" onclick="editarPacienteGlobal350('${esc(pacienteClave(p))}')">Editar ficha</button></div>
+      <div class="paciente-ficha-grid global-paciente-grid">
+        <div><span>DNI</span><strong>${esc(p.dni||'s/d')}</strong></div>
+        <div><span>Teléfono</span><strong>${esc(p.telefono||'s/d')}</strong></div>
+        <div><span>Email</span><strong>${esc(p.email||'s/d')}</strong></div>
+        <div><span>Cobertura habitual</span><strong>${esc(coberturaVisible350(p))}</strong></div>
+        <div><span>Nº afiliado habitual</span><strong>${esc(p.numeroAfiliadoHabitual||p.numeroAfiliado||'s/d')}</strong></div>
+        <div><span>Contacto responsable</span><strong>${esc(p.contactoResponsableNombre||'s/d')}${p.contactoResponsableRelacion?' · '+esc(p.contactoResponsableRelacion):''}</strong></div>
+        <div><span>Teléfono contacto</span><strong>${esc(p.contactoResponsableTelefono||'s/d')}</strong></div>
+        <div><span>Email contacto</span><strong>${esc(p.contactoResponsableEmail||'s/d')}</strong></div>
+        <div><span>Fecha nacimiento</span><strong>${esc(p.fechaNacimiento?(typeof formatFecha==='function'?formatFecha(p.fechaNacimiento):p.fechaNacimiento):'s/d')}</strong></div>
+        <div><span>Total atenciones</span><strong>${ats.length}</strong></div>
+        <div><span>Última atención</span><strong>${ult?esc((typeof formatFecha==='function'?formatFecha(ult.fecha):ult.fecha)+' · '+(ult.prestacion||'')):'s/d'}</strong></div>
+      </div>
+      <div class="copy-row300 global-copy-row">
+        <button type="button" class="copy-btn300" onclick="copyText300('${esc(p.dni||'')}','DNI')">Copiar DNI</button>
+        <button type="button" class="copy-btn300" onclick="copyText300('${esc(p.telefono||'')}','teléfono')">Copiar teléfono</button>
+        <button type="button" class="copy-btn300" onclick="copyText300('${esc(p.email||'')}','email')">Copiar email</button>
+        <button type="button" class="copy-btn300" onclick="copyText300('${esc(p.contactoResponsableTelefono||'')}','teléfono contacto')">Copiar tel. contacto</button>
+        <button type="button" class="copy-btn300" onclick="copyText300('${esc(p.contactoResponsableEmail||'')}','email contacto')">Copiar mail contacto</button>
+      </div>
+      <h3>Últimas atenciones</h3>
+      <div class="paciente-historial-wrap"><table class="tabla-mini paciente-historial"><thead><tr><th>Fecha</th><th>Profesional</th><th>Prestación</th><th>OS</th><th></th></tr></thead><tbody>${ats.length?ats.slice(0,12).map(a=>`<tr><td>${typeof formatFecha==='function'?formatFecha(a.fecha):esc(a.fecha)}</td><td>${esc(a.profesional||'')}</td><td><strong>${esc((typeof prestacionListado==='function')?prestacionListado(a):a.prestacion)}</strong></td><td>${esc(a.obraSocial||'')}</td><td><button class="secondary" type="button" onclick="cerrarPacienteGlobal350();editarAtencion(${idJS(a.id)})">Editar</button></td></tr>`).join(''):'<tr><td colspan="5">Sin atenciones registradas.</td></tr>'}</tbody></table></div>`;
+    modal.classList.remove('hidden');
+  }
+  function editarPacienteGlobal350(k){
+    const p=pacientePorClave350(k); if(!p)return;
+    const body=$id('pacienteGlobalBody'); if(!body)return;
+    const coberturaActual=esCoberturaProfesional350(p.coberturaHabitual)?'':(p.coberturaHabitual||'');
+    body.innerHTML=`
+      <div class="paciente-edit-global350">
+        <div class="form-grid paciente-edit-form">
+          <div class="full-span"><label>Apellido y nombre</label><input id="gPacNombre" value="${esc(nombrePac(p))}"></div>
+          <div><label>DNI</label><input id="gPacDni" value="${esc(p.dni||'')}"></div>
+          <div><label>Fecha nacimiento</label><input type="date" id="gPacNacimiento" value="${esc(p.fechaNacimiento||'')}"></div>
+          <div><label>Teléfono paciente</label><input id="gPacTelefono" value="${esc(p.telefono||'')}"></div>
+          <div><label>Email paciente</label><input id="gPacEmail" value="${esc(p.email||'')}"></div>
+          <div><label>Cobertura habitual</label><select id="gPacCobertura">${osOptions350(coberturaActual)}</select></div>
+          <div><label>Nº afiliado habitual</label><input id="gPacAfiliado" value="${esc(p.numeroAfiliadoHabitual||'')}"></div>
+          <div class="form-subtitle full-span">Contacto responsable / familiar a cargo</div>
+          <div><label>Nombre contacto</label><input id="gPacContactoNombre" value="${esc(p.contactoResponsableNombre||'')}"></div>
+          <div><label>Relación</label><select id="gPacContactoRelacion">${relacionOptions350(p.contactoResponsableRelacion||'')}</select></div>
+          <div><label>Teléfono contacto</label><input id="gPacContactoTelefono" value="${esc(p.contactoResponsableTelefono||'')}"></div>
+          <div><label>Email contacto</label><input id="gPacContactoEmail" value="${esc(p.contactoResponsableEmail||'')}"></div>
+          <div class="full-span"><label>Observaciones administrativas</label><textarea id="gPacObs" rows="3">${esc(p.observacionesAdministrativas||'')}</textarea></div>
+        </div>
+        <div class="modal-actions"><button class="secondary" type="button" onclick="abrirPacienteGlobalDetalle350('${esc(k)}')">Cancelar</button><button class="primary" type="button" onclick="guardarPacienteGlobal350('${esc(k)}')">Guardar ficha</button></div>
+      </div>`;
+  }
+  function guardarPacienteGlobal350(k){
+    const original=pacientePorClave350(k); if(!original)return;
+    if(!Array.isArray(data.pacientes))data.pacientes=[];
+    let p=null; const dni=dniClean($id('gPacDni')?.value||original.dni||'');
+    if(original.id && !String(original.id).startsWith('legacy_'))p=data.pacientes.find(x=>x.id===original.id);
+    if(!p && dni)p=data.pacientes.find(x=>dniClean(x.dni)===dni);
+    if(!p){p={id:'pac_'+Date.now()+Math.floor(Math.random()*10000),historialCoberturas:[]};data.pacientes.push(p);}
+    p.nombreCompleto=($id('gPacNombre')?.value||'').trim();
+    p.dni=($id('gPacDni')?.value||'').trim();
+    p.fechaNacimiento=$id('gPacNacimiento')?.value||'';
+    p.telefono=($id('gPacTelefono')?.value||'').trim();
+    p.email=($id('gPacEmail')?.value||'').trim();
+    p.coberturaHabitual=$id('gPacCobertura')?.value||'';
+    p.numeroAfiliadoHabitual=($id('gPacAfiliado')?.value||'').trim();
+    p.contactoResponsableNombre=($id('gPacContactoNombre')?.value||'').trim();
+    p.contactoResponsableRelacion=$id('gPacContactoRelacion')?.value||'';
+    p.contactoResponsableTelefono=($id('gPacContactoTelefono')?.value||'').trim();
+    p.contactoResponsableEmail=($id('gPacContactoEmail')?.value||'').trim();
+    p.observacionesAdministrativas=($id('gPacObs')?.value||'').trim();
+    p.actualizadoEn=new Date().toISOString();
+    const ats=atencionesPac(original);
+    ats.forEach(a=>{a.pacienteId=p.id; a.paciente=p.nombreCompleto; a.dni=p.dni; a.telefono=p.telefono; a.email=p.email; a.fechaNacimiento=p.fechaNacimiento;});
+    try{saveConfig();saveAtenciones();}catch(e){}
+    try{renderPacientesPanel?.('',true);renderTabla?.();renderAgenda?.();renderEstadisticas?.();renderStats?.();}catch(e){}
+    abrirPacienteGlobalDetalle350(pacienteClave(p));
+    try{copyText300('Ficha guardada','') }catch(e){ alert('Ficha guardada'); }
+  }
+  window.abrirPacienteGlobalDetalle350=abrirPacienteGlobalDetalle350;
+  window.editarPacienteGlobal350=editarPacienteGlobal350;
+  window.guardarPacienteGlobal350=guardarPacienteGlobal350;
+  window.cerrarPacienteGlobal350=function(){ $id('pacienteGlobalModal')?.classList.add('hidden'); };
+
+  // Reemplaza apertura del buscador global por versión editable.
+  window.abrirPacienteGlobal320=function(k){abrirPacienteGlobalDetalle350(k)};
+
+  // Mejora edición desde solapa Pacientes: select con opción vacía y limpieza de médico como cobertura.
+  const oldEditarPac350=typeof editarPacientePanel==='function'?editarPacientePanel:null;
+  if(oldEditarPac350 && !oldEditarPac350.__v350){
+    const wrapped=function(id){
+      oldEditarPac350.apply(this,arguments);
+      setTimeout(()=>{
+        const sel=$id('pacEditCobertura'); if(sel){
+          const p=pacientePorClave350(id); const actual=esCoberturaProfesional350(p?.coberturaHabitual)?'':(p?.coberturaHabitual||sel.value||'');
+          sel.innerHTML=osOptions350(actual); sel.value=actual;
+        }
+      },30);
+    };
+    wrapped.__v350=true; window.editarPacientePanel=editarPacientePanel=wrapped;
+  }
+
+  // Contador de coberturas corregido: Incompleto arriba y médico no cuenta como OS.
+  window.renderContadorCoberturas350=function(){
+    const card=document.querySelector('#estadisticas .estadisticas-card'); if(!card)return;
+    let box=$id('contadorCoberturas320'); if(!box){box=document.createElement('div');box.id='contadorCoberturas320';box.className='chart-card contador-coberturas320';const charts=card.querySelector('.charts-grid'); if(charts)charts.insertAdjacentElement('beforebegin',box); else card.appendChild(box);}
+    const map=new Map();
+    (typeof todosPacientes==='function'?todosPacientes():pacientesBase()).filter(p=>p&&p.estado!=='fusionado').forEach(p=>{const key=dniClean(p.dni)||norm(nombrePac(p)); if(key && !map.has(key))map.set(key,p);});
+    const counts={}; Array.from(map.values()).forEach(p=>{const c=coberturaVisible350(p); counts[c]=(counts[c]||0)+1;});
+    const entries=Object.entries(counts).sort((a,b)=>(a[0]==='Incompleto'?-1:b[0]==='Incompleto'?1:b[1]-a[1]));
+    box.innerHTML=`<h3>Contador de coberturas de pacientes</h3><p class="muted">Conteo de fichas administrativas. Cobertura vacía o importada como médico aparece como <strong>Incompleto</strong>.</p><div class="coverage-grid320">${entries.length?entries.map(([k,v])=>`<button type="button" class="coverage-pill320 ${k==='Incompleto'?'incomplete':''}" onclick="showSection('pacientes');document.getElementById('pacientesBuscar').value='${k==='Incompleto'?'':esc(k)}';renderPacientesPanel(document.getElementById('pacientesBuscar').value,true)"><span>${esc(k)}</span><strong>${v}</strong></button>`).join(''):'<p class="muted">Sin pacientes cargados.</p>'}</div><div class="mini-actions350"><button class="secondary" type="button" onclick="limpiarCoberturasMedicloud350(false)">Reparar coberturas Medicloud</button></div>`;
+  };
+  const oldRenderEst350=typeof renderEstadisticas==='function'?renderEstadisticas:null;
+  if(oldRenderEst350 && !oldRenderEst350.__v350){
+    const wrapped=function(){oldRenderEst350.apply(this,arguments);window.renderContadorCoberturas350();};
+    wrapped.__v350=true; window.renderEstadisticas=renderEstadisticas=wrapped;
+  }
+
+  // Pendientes 3.5: botón para resolver todos los visibles según filtros.
+  function resolverPendiente(a){
+    if((a.bonoConsulta||a.bonoEstudio)) a.bonoFirmado=true;
+    if(a.bonoEstudio||a.requiereCopiaImpresa) a.copiaImpresa=true;
+    if(typeof esRegistroDeEstudio==='function' ? esRegistroDeEstudio(a) : !/consulta/i.test(a.prestacion||'')){
+      a.estudioInformado=true; a.estudioImpreso=true;
+    }
+    a.pendienteEnvio=false;
+    a.pendienteEntrega=false;
+    a.estudioEnviadoWS=a.estudioEnviadoWS||false;
+    a.actualizadoEn=new Date().toISOString();
+  }
+  function marcarPendientesVisiblesResueltos350(){
+    let lista=[]; try{lista=filtrar().filter(a=>typeof esPendienteAdministrativo==='function'?esPendienteAdministrativo(a):true);}catch(e){lista=[];}
+    if(!lista.length){alert('No hay pendientes visibles para marcar.');return;}
+    if(!confirm(`Vas a marcar como resueltos ${lista.length} registro(s) visibles según el filtro actual. ¿Continuar?`))return;
+    lista.forEach(resolverPendiente);
+    try{saveAtenciones();renderTabla();renderStats();renderAgenda();}catch(e){}
+    alert(`Listo. Se marcaron ${lista.length} pendiente(s) como resueltos.`);
+  }
+  window.marcarPendientesVisiblesResueltos350=marcarPendientesVisiblesResueltos350;
+  function asegurarBotonPendientes350(){
+    if($id('btnPendientesResueltosVisibles350'))return;
+    const sel=$id('fPendienteDetalle'); if(!sel)return;
+    const btn=document.createElement('button'); btn.id='btnPendientesResueltosVisibles350'; btn.type='button'; btn.className='secondary'; btn.textContent='Resolver pendientes visibles';
+    btn.addEventListener('click',marcarPendientesVisiblesResueltos350);
+    sel.insertAdjacentElement('afterend',btn);
+  }
+
+  // Plantillas WS 3.4: copiar desde el modal de agenda, sin reemplazar WhatsApp rápido del consultorio.
+  function textoWsTurno350(a,tipo='turno'){
+    const nom=a?.paciente||'paciente'; const fecha=a?.fecha?(typeof formatFecha==='function'?formatFecha(a.fecha):a.fecha):''; const hora=a?.horaInicio||''; const prest=a?.prestacion||'turno';
+    if(tipo==='holter')return `Hola ${nom}. Le recordamos su turno para Holter el ${fecha}${hora?' a las '+hora+' hs':''}. Traer DNI, orden/bono o autorización si corresponde. El equipo se retira según indicación del consultorio.`;
+    if(tipo==='mapa')return `Hola ${nom}. Le recordamos su turno para MAPA el ${fecha}${hora?' a las '+hora+' hs':''}. Traer DNI, orden/bono o autorización si corresponde. Venir con ropa cómoda para la colocación del equipo.`;
+    if(tipo==='eco')return `Hola ${nom}. Le recordamos su turno para ${prest} el ${fecha}${hora?' a las '+hora+' hs':''}. Traer DNI, estudios previos si tiene y orden/bono o autorización si corresponde.`;
+    return `Hola ${nom}. Le recordamos su turno para ${prest} el ${fecha}${hora?' a las '+hora+' hs':''}. Traer DNI y orden/bono o autorización si corresponde.`;
+  }
+  window.copiarWsTurno350=function(id,tipo){const a=(atenciones||[]).find(x=>String(x.id)===String(id)); if(!a){alert('No encontré el turno.');return;} try{copyText300(textoWsTurno350(a,tipo),'mensaje WhatsApp')}catch(e){navigator.clipboard?.writeText(textoWsTurno350(a,tipo));alert('Mensaje copiado');}};
+  const oldAgendaModal350=typeof abrirAgendaModal==='function'?abrirAgendaModal:null;
+  if(oldAgendaModal350 && !oldAgendaModal350.__v350){
+    const wrapped=function(id){
+      oldAgendaModal350.apply(this,arguments);
+      setTimeout(()=>{const body=$id('agendaModalBody'); if(body && !$id('wsTemplatesTurno350'))body.insertAdjacentHTML('beforeend',`<div id="wsTemplatesTurno350" class="ws-templates350"><h3>Copiar mensaje WhatsApp</h3><button type="button" class="secondary" onclick="copiarWsTurno350(${idJS(id)},'turno')">Recordatorio turno</button><button type="button" class="secondary" onclick="copiarWsTurno350(${idJS(id)},'holter')">Holter</button><button type="button" class="secondary" onclick="copiarWsTurno350(${idJS(id)},'mapa')">MAPA</button><button type="button" class="secondary" onclick="copiarWsTurno350(${idJS(id)},'eco')">Eco/estudio</button></div>`);},30);
+    };
+    wrapped.__v350=true; window.abrirAgendaModal=abrirAgendaModal=wrapped;
+  }
+
+  function init350(){
+    version350(); asegurarBotonRepararCoberturas350(); asegurarBotonPendientes350();
+    const fixed=limpiarCoberturasMedicloud350(true); if(fixed)console.log('v3.5 limpió coberturas:',fixed);
+    try{window.renderContadorCoberturas350();}catch(e){}
+  }
+  document.addEventListener('DOMContentLoaded',()=>setTimeout(init350,900));
+  setTimeout(init350,1800);
+  setInterval(()=>{try{version350();asegurarBotonRepararCoberturas350();asegurarBotonPendientes350();}catch(e){}},2500);
+})();
