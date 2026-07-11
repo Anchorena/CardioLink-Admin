@@ -4808,7 +4808,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     let email=val(byExact(['E-Mail','Email','Mail','Correo'])) || val(pick(row,headers,['email','mail','correo','correo electronico','e-mail']));
     if(email && !/@/.test(email)) email='';
     const fechaNacimiento=parseFechaPac(byExact(['Fecha de Nacimiento','Fecha nacimiento','Nacimiento']) || pick(row,headers,['fecha nacimiento','f nacimiento','fecha de nacimiento','nacimiento','fec nac','f. de nacimiento','fnac','fecha nac']));
-    const cobertura=val(pick(row,headers,['obra social','os','cobertura','prepaga','mutual','financiador','seguro medico','plan medico']));
+    const cobertura=val(byExact(['Obra Social','OS','Cobertura','Prepaga','Mutual','Financiador'])) || val(pick(row,headers,['obra social','cobertura','prepaga','mutual','financiador']));
     const afiliado=val(pick(row,headers,['numero afiliado','nro afiliado','número afiliado','afiliado nro','credencial','numero de afiliado','nro. afiliado','plan']));
     const medico=val(byExact(['Médico','Medico','Profesional'])) || val(pick(row,headers,['medico','médico','profesional']));
     const obsBase=val(pick(row,headers,['observaciones','nota','notas','comentarios','comentario']));
@@ -4828,10 +4828,8 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     if(!Array.isArray(data.pacientes)) data.pacientes=[];
     const dni=onlyDigits(p.dni);
     if(dni){const x=data.pacientes.find(q=>onlyDigits(q.dni)===dni); if(x) return x;}
-    const tel=onlyDigits(p.telefono);
-    if(tel && tel.length>=7){const x=data.pacientes.find(q=>onlyDigits(q.telefono)===tel); if(x) return x;}
-    const mail=norm(p.email);
-    if(mail){const x=data.pacientes.find(q=>norm(q.email)===mail); if(x) return x;}
+    // Teléfono y email pueden repetirse entre familiares a cargo.
+    // No se usan para fusionar pacientes automáticamente.
     const nom=patientKeyName(p.nombreCompleto);
     const fn=p.fechaNacimiento||'';
     if(nom && fn){const x=data.pacientes.find(q=>patientKeyName(q.nombreCompleto||q.paciente)===nom && (q.fechaNacimiento||'')===fn); if(x) return x;}
@@ -5245,7 +5243,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   setInterval(limpiarCopiasDeFilas310,1200);
 })();
 
-/* ===== v3.2.0 - agenda semana/mes, búsqueda global de pacientes y contador de coberturas ===== */
+/* ===== v3.2.1 - agenda semana/mes, búsqueda global de pacientes y contador de coberturas ===== */
 (function(){
   function $id(id){return document.getElementById(id)}
   function esc(v){
@@ -5268,9 +5266,9 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function mesNombre(d){return d.toLocaleDateString('es-AR',{month:'long',year:'numeric'});}
 
   function setVersion320(){
-    try{document.title='CardioLink Admin v3.2.0';}catch(e){}
-    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v3.2.0');
-    const pt=document.querySelector('.print-title h2'); if(pt) pt.textContent='CardioLink Admin v3.2.0';
+    try{document.title='CardioLink Admin v3.2.1';}catch(e){}
+    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v3.2.1');
+    const pt=document.querySelector('.print-title h2'); if(pt) pt.textContent='CardioLink Admin v3.2.1';
   }
 
   // ---------- Buscador global de pacientes ----------
@@ -5496,4 +5494,148 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   document.addEventListener('DOMContentLoaded',()=>setTimeout(init320,900));
   setTimeout(init320,1800);
   setInterval(()=>{try{setVersion320();ensureTopSearch320();}catch(e){}},2500);
+})();
+
+
+/* ===== v3.2.1 - ajustes datos familiares, agenda robusta y coberturas ===== */
+(function(){
+  function $id(id){return document.getElementById(id)}
+  function esc(v){try{return escapeHtml(String(v??''));}catch(e){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));}}
+  function norm(v){try{return normalizarTexto(v)}catch(e){return String(v||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();}}
+  function today(){try{return todayISO()}catch(e){return new Date().toISOString().slice(0,10)}}
+  function fmt(d){try{return formatFecha(d)}catch(e){return d||''}}
+  function isoDate(d){return d.toISOString().slice(0,10)}
+  function parseISO(s){const m=String(s||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);return m?new Date(+m[1],+m[2]-1,+m[3]):new Date();}
+  function lunes(d){const x=new Date(d.getFullYear(),d.getMonth(),d.getDate());const day=x.getDay();x.setDate(x.getDate()+(day===0?-6:1-day));return x;}
+  function diaCorto(d){return ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][d.getDay()];}
+  function nombreMes(d){return d.toLocaleDateString('es-AR',{month:'long',year:'numeric'});}
+  function hora(a){try{return horaAgenda295(a)}catch(e){return a?.horaInicio||'s/h'}}
+  function estado(a){try{return estadoTurno(a)}catch(e){return a?.estadoTurno||a?.estado||'reservado'}}
+  function atencionById(id){return (atenciones||[]).find(a=>String(a.id)===String(id));}
+  function operativas(){try{return atencionesOperativas()}catch(e){return (atenciones||[]).filter(a=>a && a.id && a.tipoRegistro!=='mensaje' && !a.__config);} }
+  function profFiltro(){let prof=$id('agendaProfesional')?.value||'';try{if(esMedico())prof=profesionalIdUsuarioActual(); if(esMatiasDuenio()&&!prof)prof='matias';}catch(e){} return prof;}
+  function setVersion321(){try{document.title='CardioLink Admin v3.2.1'}catch(e){};document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v3.2.1');const pt=document.querySelector('.print-title h2');if(pt)pt.textContent='CardioLink Admin v3.2.1';}
+
+  // No fusionar pacientes por teléfono/email: esos datos pueden pertenecer a familiar responsable.
+  window.pacienteExistenteSinTelefonoMail321=function(p){
+    if(!Array.isArray(data.pacientes)) data.pacientes=[];
+    const dni=String(p?.dni||'').replace(/\D/g,'');
+    if(dni){const x=data.pacientes.find(q=>String(q.dni||'').replace(/\D/g,'')===dni); if(x)return x;}
+    const nom=norm(p?.nombreCompleto||p?.paciente||'');
+    const fn=p?.fechaNacimiento||'';
+    if(nom && fn){const x=data.pacientes.find(q=>norm(q.nombreCompleto||q.paciente||'')===nom && (q.fechaNacimiento||'')===fn); if(x)return x;}
+    return null;
+  };
+
+  // Limpia visualmente coberturas que en importaciones anteriores quedaron como médico de Medicloud.
+  function esNombreProfesionalComoCobertura(v){
+    const n=norm(v);
+    if(!n)return false;
+    if(n==='matias anchorena' || n==='dr matias anchorena')return true;
+    if(n.includes('rogelio anchorena'))return true;
+    if(n.includes('fernandez drago') || n.includes('lucas drago') || n.includes('humberto drago'))return true;
+    if((data?.profesionales||[]).some(p=>norm(p.nombre)===n))return true;
+    return false;
+  }
+  window.coberturaPacienteNormalizada321=function(p){
+    const v=String(p?.coberturaHabitual || p?.obraSocial || p?.cobertura || '').trim();
+    if(!v || /^(no ingresado|sin dato|s\/d|undefined|null)$/i.test(v) || esNombreProfesionalComoCobertura(v)) return 'Incompleto';
+    return v;
+  };
+
+  // Buscador global más prolijo y clickeable.
+  function ajustarBuscador321(){
+    const box=$id('globalPatientSearchBox'); if(!box)return;
+    const label=box.querySelector('label'); if(label)label.textContent='Buscar paciente';
+    const inp=$id('globalPatientSearch'); if(inp)inp.placeholder='DNI, apellido, teléfono o email';
+  }
+
+  function datosAgendaDia(){
+    const fecha=$id('agendaFecha')?.value||today(); const prof=profFiltro(); const est=$id('agendaEstado')?.value||'';
+    return operativas().filter(a=>{
+      if((a.fecha||'')!==fecha)return false;
+      if(prof && String(a.profesionalId||'')!==String(prof))return false;
+      if(est && estado(a)!==est)return false;
+      return true;
+    }).sort((a,b)=>String(a.horaInicio||'99:99').localeCompare(String(b.horaInicio||'99:99')) || String(a.paciente||'').localeCompare(String(b.paciente||''),'es'));
+  }
+  function datosAgendaRango(desde,hasta){
+    const prof=profFiltro(); const est=$id('agendaEstado')?.value||'';
+    return operativas().filter(a=>{
+      const f=a.fecha||''; if(f<desde||f>hasta)return false;
+      if(prof && String(a.profesionalId||'')!==String(prof))return false;
+      if(est && estado(a)!==est)return false;
+      return true;
+    }).sort((a,b)=>(a.fecha||'').localeCompare(b.fecha||'') || String(a.horaInicio||'99:99').localeCompare(String(b.horaInicio||'99:99')) || String(a.paciente||'').localeCompare(String(b.paciente||''),'es'));
+  }
+  function mini(a){
+    return `<button type="button" class="cal-turno320 estado-${esc(estado(a))}" data-action="agenda-ver" data-id="${esc(a.id)}"><strong>${esc(hora(a))}</strong> ${esc(a.paciente||'')}<small>${esc(a.prestacion||'')} · ${esc(a.obraSocial||a.coberturaAtencion||'')}</small></button>`;
+  }
+  function renderTablaAgenda321(){
+    const tabla=$id('agendaTabla'), cards=$id('agendaTarjetas'), wrap=$id('agendaTablaWrap'), cal=$id('agendaCalendario320');
+    const datos=datosAgendaDia();
+    if($id('agendaResumen'))$id('agendaResumen').textContent=datos.length?`${datos.length} turno(s) para la fecha seleccionada.`:'No hay turnos para la fecha seleccionada.';
+    if(cal)cal.classList.add('hidden');
+    if(wrap){wrap.classList.remove('hidden');wrap.style.display='block';}
+    if(cards){cards.classList.add('hidden');cards.style.display='none';}
+    if(!tabla)return;
+    tabla.innerHTML=datos.length?datos.map(a=>`<tr data-id="${esc(a.id)}"><td>${esc(hora(a))}</td><td><strong>${esc(a.paciente||'')}</strong></td><td>${esc(a.profesional||'')}</td><td>${esc(a.prestacion||'')}</td><td>${esc(a.obraSocial||a.coberturaAtencion||'')}</td><td>${typeof estadoAgendaBadge==='function'?estadoAgendaBadge(a):esc(estado(a))}</td><td class="agenda-actions"><button type="button" data-action="agenda-ver" data-id="${esc(a.id)}">Ver</button><button type="button" data-action="agenda-estado" data-estado="sala_espera" data-id="${esc(a.id)}">Sala</button><button type="button" data-action="agenda-estado" data-estado="en_consulta" data-id="${esc(a.id)}">Atender</button><button type="button" data-action="agenda-estado" data-estado="atendido" data-id="${esc(a.id)}">Atendido</button></td></tr>`).join(''):'<tr><td colspan="7">No hay turnos para mostrar.</td></tr>';
+  }
+  function renderTarjetasAgenda321(){
+    const cards=$id('agendaTarjetas'), wrap=$id('agendaTablaWrap'), cal=$id('agendaCalendario320'); const datos=datosAgendaDia();
+    if($id('agendaResumen'))$id('agendaResumen').textContent=datos.length?`${datos.length} turno(s) para la fecha seleccionada.`:'No hay turnos para la fecha seleccionada.';
+    if(cal)cal.classList.add('hidden'); if(wrap){wrap.classList.add('hidden');wrap.style.display='none';}
+    if(cards){cards.classList.remove('hidden');cards.style.display='grid';cards.innerHTML=datos.map(a=>`<div class="agenda-turno-card" data-id="${esc(a.id)}"><div class="agenda-card-top"><strong>${esc(hora(a))}</strong>${typeof estadoAgendaBadge==='function'?estadoAgendaBadge(a):''}</div><div><strong>${esc(a.paciente||'')}</strong></div><div>${esc(a.profesional||'')} · ${esc(a.prestacion||'')} · ${esc(a.obraSocial||a.coberturaAtencion||'')}</div><div class="agenda-actions"><button type="button" data-action="agenda-ver" data-id="${esc(a.id)}">Ver ficha</button><button type="button" data-action="agenda-estado" data-estado="sala_espera" data-id="${esc(a.id)}">Sala</button><button type="button" data-action="agenda-estado" data-estado="en_consulta" data-id="${esc(a.id)}">Atender</button><button type="button" data-action="agenda-estado" data-estado="atendido" data-id="${esc(a.id)}">Atendido</button></div></div>`).join('');}
+  }
+  function renderSemanaAgenda321(){
+    const cal=$id('agendaCalendario320')||document.createElement('div'); if(!cal.id){cal.id='agendaCalendario320';cal.className='agenda-calendar320';$id('agendaTarjetas')?.insertAdjacentElement('afterend',cal);} const wrap=$id('agendaTablaWrap'), cards=$id('agendaTarjetas');
+    if(wrap){wrap.classList.add('hidden');wrap.style.display='none';} if(cards){cards.classList.add('hidden');cards.style.display='none';} cal.classList.remove('hidden');
+    const base=parseISO($id('agendaFecha')?.value||today()); const start=lunes(base); const days=Array.from({length:7},(_,i)=>{const d=new Date(start);d.setDate(start.getDate()+i);return d;});
+    const desde=isoDate(days[0]), hasta=isoDate(days[6]); const datos=datosAgendaRango(desde,hasta);
+    if($id('agendaResumen'))$id('agendaResumen').textContent=`Semana calendario: ${datos.length} turno(s) entre ${desde} y ${hasta}.`;
+    cal.innerHTML=`<div class="cal-head320"><strong>Semana del ${fmt(desde)} al ${fmt(hasta)}</strong><span>${datos.length} turno(s)</span></div><div class="week-grid320">${days.map(d=>{const iso=isoDate(d);const arr=datos.filter(a=>a.fecha===iso);return `<div class="day-col320"><h3>${diaCorto(d)} <span>${d.getDate()}/${d.getMonth()+1}</span></h3>${arr.length?arr.map(mini).join(''):'<p class="muted empty-day320">Sin turnos</p>'}</div>`}).join('')}</div>`;
+  }
+  function renderMesAgenda321(){
+    const cal=$id('agendaCalendario320')||document.createElement('div'); if(!cal.id){cal.id='agendaCalendario320';cal.className='agenda-calendar320';$id('agendaTarjetas')?.insertAdjacentElement('afterend',cal);} const wrap=$id('agendaTablaWrap'), cards=$id('agendaTarjetas');
+    if(wrap){wrap.classList.add('hidden');wrap.style.display='none';} if(cards){cards.classList.add('hidden');cards.style.display='none';} cal.classList.remove('hidden');
+    const base=parseISO($id('agendaFecha')?.value||today()); const first=new Date(base.getFullYear(),base.getMonth(),1); const start=lunes(first); const days=Array.from({length:42},(_,i)=>{const d=new Date(start);d.setDate(start.getDate()+i);return d;});
+    const datos=datosAgendaRango(isoDate(days[0]),isoDate(days[41])); const mesCount=datos.filter(a=>{const d=parseISO(a.fecha||'');return d.getMonth()===base.getMonth()&&d.getFullYear()===base.getFullYear();}).length;
+    if($id('agendaResumen'))$id('agendaResumen').textContent=`Mes calendario: ${nombreMes(base)}.`;
+    cal.innerHTML=`<div class="cal-head320"><strong>${nombreMes(base)}</strong><span>${mesCount} turno(s) del mes</span></div><div class="month-grid320">${days.map(d=>{const iso=isoDate(d);const arr=datos.filter(a=>a.fecha===iso);const other=d.getMonth()!==base.getMonth()?' other-month320':'';return `<div class="month-cell320${other}"><h3>${diaCorto(d)} ${d.getDate()}</h3>${arr.slice(0,5).map(mini).join('')}${arr.length>5?`<small class="muted">+${arr.length-5} más</small>`:arr.length?'':'<p class="muted empty-day320">—</p>'}</div>`}).join('')}</div>`;
+  }
+  window.renderAgenda = renderAgenda = function(){
+    try{agendaTextoPerfil&&agendaTextoPerfil();}catch(e){}
+    const sel=$id('agendaVista'); if(sel && !Array.from(sel.options).some(o=>o.value==='semana')) sel.insertAdjacentHTML('beforeend','<option value="semana">Semana calendario</option><option value="mes">Mes calendario</option>');
+    const vista=sel?.value||'tabla';
+    if(vista==='semana')return renderSemanaAgenda321();
+    if(vista==='mes')return renderMesAgenda321();
+    if(vista==='tarjetas')return renderTarjetasAgenda321();
+    return renderTablaAgenda321();
+  };
+  window.abrirAgendaModal = abrirAgendaModal = function(id){
+    const a=atencionById(id);
+    const m=$id('agendaModal'), title=$id('agendaModalTitulo'), body=$id('agendaModalBody');
+    if(!a||!m||!body){alert('No encontré la atención seleccionada. Actualizá y probá de nuevo.');return;}
+    if(title)title.textContent=a.paciente||'Turno';
+    body.innerHTML=`<div class="agenda-modal-grid"><div><label>Horario</label><strong>${esc(hora(a))}</strong></div><div><label>Fecha</label><strong>${fmt(a.fecha)}</strong></div><div><label>Paciente</label><strong>${esc(a.paciente||'')}</strong></div><div><label>Profesional</label><strong>${esc(a.profesional||'')}</strong></div><div><label>Prestación</label><strong>${esc(a.prestacion||'')}</strong></div><div><label>Cobertura</label><strong>${esc(a.obraSocial||a.coberturaAtencion||'')}</strong></div><div><label>Teléfono</label><strong>${esc(a.telefono||'s/d')}</strong></div><div><label>Email</label><strong>${esc(a.email||'s/d')}</strong></div></div><h3>Estado del turno</h3><div class="agenda-state-grid">${Object.entries(ESTADOS_AGENDA||{}).map(([k,e])=>`<button type="button" class="agenda-state-btn ${e.cls||''} ${estado(a)===k?'active':''}" data-action="agenda-estado-modal" data-id="${esc(a.id)}" data-estado="${k}"><i></i>${e.short||k}</button>`).join('')}</div><div class="agenda-actions modal-actions"><button type="button" data-action="listado-editar" data-id="${esc(a.id)}">Editar atención</button></div>`;
+    m.classList.remove('hidden');
+  };
+
+  // Reemplaza el contador de coberturas para que el médico Medicloud no cuente como cobertura.
+  window.renderContadorCoberturas321=function(){
+    const card=document.querySelector('#estadisticas .estadisticas-card'); if(!card)return;
+    let box=$id('contadorCoberturas320'); if(!box){box=document.createElement('div');box.id='contadorCoberturas320';box.className='chart-card contador-coberturas320';const charts=card.querySelector('.charts-grid'); if(charts)charts.insertAdjacentElement('beforebegin',box); else card.appendChild(box);}
+    const base=(typeof todosPacientes==='function'?todosPacientes():(data?.pacientes||[])).filter(p=>p&&p.estado!=='fusionado');
+    const map=new Map(); base.forEach(p=>{const k=String(p.dni||'').replace(/\D/g,'') || norm(p.nombreCompleto||p.paciente||''); if(k&&!map.has(k))map.set(k,p);});
+    const counts={}; Array.from(map.values()).forEach(p=>{const c=window.coberturaPacienteNormalizada321(p);counts[c]=(counts[c]||0)+1;});
+    const entries=Object.entries(counts).sort((a,b)=>(a[0]==='Incompleto'?-1:b[0]==='Incompleto'?1:b[1]-a[1]));
+    box.innerHTML=`<h3>Contador de coberturas de pacientes</h3><p class="muted">Conteo de fichas de pacientes. Si la cobertura está vacía o quedó cargado el médico de Medicloud, figura como <strong>Incompleto</strong>.</p><div class="coverage-grid320">${entries.length?entries.map(([k,v])=>`<div class="coverage-pill320 ${k==='Incompleto'?'incomplete':''}"><span>${esc(k)}</span><strong>${v}</strong></div>`).join(''):'<p class="muted">Sin pacientes cargados.</p>'}</div>`;
+  };
+  const oldEst321=typeof renderEstadisticas==='function'?renderEstadisticas:null;
+  if(oldEst321){window.renderEstadisticas=renderEstadisticas=function(){oldEst321.apply(this,arguments);window.renderContadorCoberturas321();};}
+
+  function init321(){setVersion321();ajustarBuscador321();try{renderAgenda();}catch(e){};try{window.renderContadorCoberturas321();}catch(e){}}
+  document.addEventListener('DOMContentLoaded',()=>setTimeout(init321,600));
+  setTimeout(init321,1200);
+  setInterval(()=>{try{setVersion321();ajustarBuscador321();}catch(e){}},2500);
 })();

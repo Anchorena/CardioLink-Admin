@@ -987,3 +987,18 @@ body.dark .cal-head320, body.dark .day-col320 h3, body.dark .month-cell320 h3, b
 body.dark .cal-turno320{background:#142e3b;color:#f8fafc;}
 body.dark .cal-turno320 small{color:#cbd5e1;}
 @media(max-width:1100px){.topbar{flex-direction:column}.global-patient-search-box{max-width:none;width:100%;}.week-grid320,.month-grid320{grid-template-columns:repeat(7,160px);}}
+
+
+/* ===== v3.2.1 - ajustes visuales buscador global y agenda ===== */
+.topbar{align-items:flex-start;gap:18px;}
+.profile-box,.global-patient-search-box{box-sizing:border-box;min-height:126px;}
+.global-patient-search-box{width:min(380px,100%);max-width:380px;padding:18px 18px 16px;border-radius:18px;}
+.global-patient-search-box label{font-size:15px;margin-bottom:8px;}
+.global-patient-search-inner{display:grid;grid-template-columns:1fr 44px;gap:10px;align-items:center;}
+.global-patient-search-inner input{height:46px;font-size:16px;padding:10px 14px;}
+.global-patient-search-inner button{width:44px;height:44px;font-size:26px;line-height:1;display:flex;align-items:center;justify-content:center;}
+.global-patient-results{top:92px;z-index:5000;}
+.agenda-table-wrap:not(.hidden){display:block!important;}
+.agenda-cards.hidden,.agenda-table-wrap.hidden,.agenda-calendar320.hidden{display:none!important;}
+.cal-turno320{white-space:normal;}
+@media(max-width:1100px){.profile-box,.global-patient-search-box{width:100%;max-width:none;min-height:auto}.topbar{align-items:stretch}.global-patient-results{top:88px}}
