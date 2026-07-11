@@ -1575,7 +1575,7 @@ function pacientesDesdeAtenciones(){
 }
 function mergePacienteInfo(dest, src){
  if(!dest || !src)return dest;
- ['nombreCompleto','dni','telefono','email','fechaNacimiento','coberturaHabitual','numeroAfiliadoHabitual'].forEach(k=>{
+ ['nombreCompleto','dni','telefono','email','fechaNacimiento','coberturaHabitual','numeroAfiliadoHabitual','contactoResponsableNombre','contactoResponsableRelacion','contactoResponsableTelefono','contactoResponsableEmail'].forEach(k=>{
    if(!dest[k] && src[k])dest[k]=src[k];
  });
  return dest;
@@ -2233,7 +2233,7 @@ function verDineroPeriodo(){
 }
 function ocultarDineroPeriodo(){$('dineroPeriodoResultado').textContent='';$('claveDinero').value=''}
 function setPrintMeta(){$('printMeta').textContent=`Perfil: ${perfilObj().nombre} | Registros: ${filtrar().length} | ${formatFecha(todayISO())}`}
-function exportarCSV(){const datos=filtrar();if(!datos.length){alert('No hay datos');return}const r=resumen(datos);const incluirValoresExport=!!$('incluirValoresImpresion')?.checked;const filas=[['CardioLink Admin v2.8.8'],['Perfil',perfilObj().nombre],['Consultas',r.consultas],['Estudios',r.estudios],[],['Fecha','Paciente','OS','Profesional','Prestación','Consulta a','Estudio a','Tipo','Forma','Particular visible','Copago visible','Total visible','Estado']];datos.forEach(a=>{const m=dineroVisible(a),e=evaluarEstado(a);filas.push([formatFecha(a.fecha),a.paciente,a.obraSocial,a.profesional,prestacionListado(a),a.consultaA,a.prestacionA,a.tipoCobro,a.formaPago,incluirValoresExport?m.particular:'',incluirValoresExport?m.copago:'',incluirValoresExport?m.total:'',e.txt])});const csv=filas.map(r=>r.map(c=>`"${String(c??'').replaceAll('"','""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_listado.csv';a.click()}
+function exportarCSV(){const datos=filtrar();if(!datos.length){alert('No hay datos');return}const r=resumen(datos);const incluirValoresExport=!!$('incluirValoresImpresion')?.checked;const filas=[['CardioLink Admin v3.3.0'],['Perfil',perfilObj().nombre],['Consultas',r.consultas],['Estudios',r.estudios],[],['Fecha','Paciente','OS','Profesional','Prestación','Consulta a','Estudio a','Tipo','Forma','Particular visible','Copago visible','Total visible','Estado']];datos.forEach(a=>{const m=dineroVisible(a),e=evaluarEstado(a);filas.push([formatFecha(a.fecha),a.paciente,a.obraSocial,a.profesional,prestacionListado(a),a.consultaA,a.prestacionA,a.tipoCobro,a.formaPago,incluirValoresExport?m.particular:'',incluirValoresExport?m.copago:'',incluirValoresExport?m.total:'',e.txt])});const csv=filas.map(r=>r.map(c=>`"${String(c??'').replaceAll('"','""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_listado.csv';a.click()}
 function exportarBackup(){const b={app:'CardioLink Admin',version:'2.9.8',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
 function importarBackup(){const inp=$('inputImportBackup');if(!inp.files[0]){alert('Elegí archivo');return}if(!confirm('Reemplaza la base actual. ¿Continuar?'))return;const rd=new FileReader();rd.onload=e=>{try{const b=JSON.parse(e.target.result);if(!b.config||!b.atenciones)throw new Error();data=b.config;atenciones=b.atenciones;saveConfig();saveAtenciones();refreshSelects();renderConfig();cambiarPerfil('general');alert('Backup importado')}catch{alert('Backup inválido')}};rd.readAsText(inp.files[0])}
 
@@ -3123,6 +3123,9 @@ function seleccionarPacientePanel(id){
     <div class="paciente-ficha-grid">
       <div><span>Cobertura habitual</span><strong>${escapeHtml(p.coberturaHabitual||'s/d')}</strong></div>
       <div><span>Nº afiliado habitual</span><strong>${escapeHtml(p.numeroAfiliadoHabitual||'s/d')}</strong></div>
+      <div><span>Contacto responsable</span><strong>${escapeHtml(p.contactoResponsableNombre||'s/d')}${p.contactoResponsableRelacion?' · '+escapeHtml(p.contactoResponsableRelacion):''}</strong></div>
+      <div><span>Teléfono contacto</span><strong>${escapeHtml(p.contactoResponsableTelefono||'s/d')}</strong></div>
+      <div><span>Email contacto</span><strong>${escapeHtml(p.contactoResponsableEmail||'s/d')}</strong></div>
       <div><span>Fecha nacimiento</span><strong>${escapeHtml(p.fechaNacimiento?formatFecha(p.fechaNacimiento):'s/d')}</strong></div>
       <div><span>Total atenciones</span><strong>${ats.length}</strong></div>
     </div>
@@ -3162,6 +3165,11 @@ function editarPacientePanel(id){
       <div><label>Fecha nacimiento</label><input type="date" id="pacEditNacimiento" value="${escapeHtml(fechaISODesdeTexto(p.fechaNacimiento||'')||p.fechaNacimiento||'')}"></div>
       <div><label>Cobertura habitual</label><select id="pacEditCobertura">${data.obrasSociales.map(os=>`<option ${os===(p.coberturaHabitual||'')?'selected':''}>${escapeHtml(os)}</option>`).join('')}</select></div>
       <div><label>Nº afiliado habitual</label><input id="pacEditAfiliado" value="${escapeHtml(p.numeroAfiliadoHabitual||'')}"></div>
+      <div class="form-subtitle full-span">Contacto responsable / familiar a cargo</div>
+      <div><label>Nombre contacto</label><input id="pacEditContactoNombre" value="${escapeHtml(p.contactoResponsableNombre||'')}" placeholder="Ej: madre, hijo, cuidador"></div>
+      <div><label>Relación</label><input id="pacEditContactoRelacion" value="${escapeHtml(p.contactoResponsableRelacion||'')}" placeholder="Madre / hijo / familiar"></div>
+      <div><label>Teléfono contacto</label><input id="pacEditContactoTelefono" value="${escapeHtml(p.contactoResponsableTelefono||'')}"></div>
+      <div><label>Email contacto</label><input id="pacEditContactoEmail" value="${escapeHtml(p.contactoResponsableEmail||'')}"></div>
     </div>
     <div class="modal-actions paciente-edit-actions">
       <button class="secondary" type="button" onclick="seleccionarPacientePanel('${escapeHtml(clavePacientePanel(p))}')">Cancelar</button>
@@ -3190,6 +3198,10 @@ function guardarPacientePanel(id){
   p.fechaNacimiento=$('pacEditNacimiento')?.value||'';
   p.coberturaHabitual=$('pacEditCobertura')?.value||'';
   p.numeroAfiliadoHabitual=$('pacEditAfiliado')?.value.trim()||'';
+  p.contactoResponsableNombre=$('pacEditContactoNombre')?.value.trim()||'';
+  p.contactoResponsableRelacion=$('pacEditContactoRelacion')?.value.trim()||'';
+  p.contactoResponsableTelefono=$('pacEditContactoTelefono')?.value.trim()||'';
+  p.contactoResponsableEmail=$('pacEditContactoEmail')?.value.trim()||'';
   p.actualizadoEn=new Date().toISOString();
 
   // Clave del arreglo: editar ficha actualiza el paciente seleccionado y adopta sus atenciones previas.
@@ -4840,7 +4852,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const ex=existente || pacienteExistente298(p);
     const target=ex || {id:'pac_'+Date.now()+'_'+Math.random().toString(36).slice(2,8), historialCoberturas:[], creadoEn:new Date().toISOString(), creadoPor: (typeof usuarioActualNombreCorto==='function'?usuarioActualNombreCorto():'')};
     if(!ex) data.pacientes.push(target);
-    const campos=['nombreCompleto','dni','telefono','email','fechaNacimiento','coberturaHabitual','numeroAfiliadoHabitual','observacionesAdministrativas'];
+    const campos=['nombreCompleto','dni','telefono','email','fechaNacimiento','coberturaHabitual','numeroAfiliadoHabitual','contactoResponsableNombre','contactoResponsableRelacion','contactoResponsableTelefono','contactoResponsableEmail','observacionesAdministrativas'];
     campos.forEach(k=>{ if(clean(p[k])) target[k]=clean(p[k]); });
     target.actualizadoEn=new Date().toISOString();
     target.actualizadoPor=typeof usuarioActualNombreCorto==='function'?usuarioActualNombreCorto():'';
@@ -4875,6 +4887,11 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       <div><label>Email</label><input id="pac298Email"></div>
       <div><label>Obra social / cobertura habitual</label><select id="pac298Cobertura"><option value="">Sin cobertura cargada</option>${osOpts}</select></div>
       <div><label>Nº afiliado</label><input id="pac298Afiliado"></div>
+      <div class="form-subtitle full-span">Contacto responsable / familiar a cargo</div>
+      <div><label>Nombre contacto</label><input id="pac298ContactoNombre" placeholder="Ej: María Pérez"></div>
+      <div><label>Relación</label><input id="pac298ContactoRelacion" placeholder="Madre / hijo / familiar / cuidador"></div>
+      <div><label>Teléfono contacto</label><input id="pac298ContactoTelefono"></div>
+      <div><label>Email contacto</label><input id="pac298ContactoEmail"></div>
       <div style="grid-column:1/-1"><label>Observaciones administrativas</label><textarea id="pac298Obs" rows="3" placeholder="Dato administrativo útil. No genera evolución ni informe."></textarea></div>
     </div>
     <div class="modal-actions"><button class="secondary" type="button" onclick="cerrarModalPaciente298()">Cancelar</button><button class="primary" type="button" id="btnGuardarPacientePuro298">Guardar paciente</button></div>`);
@@ -4882,7 +4899,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   window.abrirCargaPacientePuro298=abrirCargaPacientePuro298;
   function guardarPacientePuro298(){
     const p={
-      nombreCompleto: clean(d('pac298Nombre')?.value), dni: onlyDigits(d('pac298Dni')?.value), fechaNacimiento:d('pac298Nacimiento')?.value||'', telefono:clean(d('pac298Telefono')?.value), email:clean(d('pac298Email')?.value), coberturaHabitual:clean(d('pac298Cobertura')?.value), numeroAfiliadoHabitual:clean(d('pac298Afiliado')?.value), observacionesAdministrativas:clean(d('pac298Obs')?.value)
+      nombreCompleto: clean(d('pac298Nombre')?.value), dni: onlyDigits(d('pac298Dni')?.value), fechaNacimiento:d('pac298Nacimiento')?.value||'', telefono:clean(d('pac298Telefono')?.value), email:clean(d('pac298Email')?.value), coberturaHabitual:clean(d('pac298Cobertura')?.value), numeroAfiliadoHabitual:clean(d('pac298Afiliado')?.value), contactoResponsableNombre:clean(d('pac298ContactoNombre')?.value), contactoResponsableRelacion:clean(d('pac298ContactoRelacion')?.value), contactoResponsableTelefono:clean(d('pac298ContactoTelefono')?.value), contactoResponsableEmail:clean(d('pac298ContactoEmail')?.value), observacionesAdministrativas:clean(d('pac298Obs')?.value)
     };
     if(!p.nombreCompleto && !p.dni && !p.telefono){alert('Cargá al menos nombre, DNI o teléfono.');return;}
     const ex=pacienteExistente298(p);
@@ -5319,6 +5336,9 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         <div><span>DNI</span><strong>${esc(p.dni||'s/d')}</strong></div>
         <div><span>Teléfono</span><strong>${esc(p.telefono||'s/d')}</strong></div>
         <div><span>Email</span><strong>${esc(p.email||'s/d')}</strong></div>
+        <div><span>Contacto responsable</span><strong>${esc(p.contactoResponsableNombre||'s/d')}${p.contactoResponsableRelacion?' · '+esc(p.contactoResponsableRelacion):''}</strong></div>
+        <div><span>Teléfono contacto</span><strong>${esc(p.contactoResponsableTelefono||'s/d')}</strong></div>
+        <div><span>Email contacto</span><strong>${esc(p.contactoResponsableEmail||'s/d')}</strong></div>
         <div><span>Cobertura habitual</span><strong>${esc(p.coberturaHabitual||p.obraSocial||'Incompleto')}</strong></div>
         <div><span>Nº afiliado</span><strong>${esc(p.numeroAfiliadoHabitual||p.numeroAfiliado||'s/d')}</strong></div>
         <div><span>Fecha nacimiento</span><strong>${esc(p.fechaNacimiento?(typeof formatFecha==='function'?formatFecha(p.fechaNacimiento):p.fechaNacimiento):'s/d')}</strong></div>
@@ -5329,6 +5349,8 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         <button type="button" class="copy-btn300" onclick="copyText300('${esc(p.dni||'')}','DNI')">Copiar DNI</button>
         <button type="button" class="copy-btn300" onclick="copyText300('${esc(p.telefono||'')}','teléfono')">Copiar teléfono</button>
         <button type="button" class="copy-btn300" onclick="copyText300('${esc(p.email||'')}','email')">Copiar email</button>
+        <button type="button" class="copy-btn300" onclick="copyText300('${esc(p.contactoResponsableTelefono||'')}','teléfono contacto')">Copiar tel. contacto</button>
+        <button type="button" class="copy-btn300" onclick="copyText300('${esc(p.contactoResponsableEmail||'')}','email contacto')">Copiar mail contacto</button>
       </div>
       <div class="modal-actions global-paciente-actions">
         <button class="secondary" type="button" onclick="cerrarPacienteGlobal320();showSection('pacientes');seleccionarPacientePanel('${esc(clavePac320(p))}')">Ver en Pacientes</button>
@@ -5638,4 +5660,19 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   document.addEventListener('DOMContentLoaded',()=>setTimeout(init321,600));
   setTimeout(init321,1200);
   setInterval(()=>{try{setVersion321();ajustarBuscador321();}catch(e){}},2500);
+})();
+
+
+/* ===== v3.3.0 - ficha administrativa extendida ===== */
+(function(){
+  try{
+    if(window.data && Array.isArray(data.pacientes)){
+      data.pacientes.forEach(p=>{
+        p.contactoResponsableNombre=p.contactoResponsableNombre||'';
+        p.contactoResponsableRelacion=p.contactoResponsableRelacion||'';
+        p.contactoResponsableTelefono=p.contactoResponsableTelefono||'';
+        p.contactoResponsableEmail=p.contactoResponsableEmail||'';
+      });
+    }
+  }catch(e){console.warn('v3.3 init pacientes extendidos',e)}
 })();

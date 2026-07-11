@@ -1002,3 +1002,136 @@ body.dark .cal-turno320 small{color:#cbd5e1;}
 .agenda-cards.hidden,.agenda-table-wrap.hidden,.agenda-calendar320.hidden{display:none!important;}
 .cal-turno320{white-space:normal;}
 @media(max-width:1100px){.profile-box,.global-patient-search-box{width:100%;max-width:none;min-height:auto}.topbar{align-items:stretch}.global-patient-results{top:88px}}
+
+
+/* ===== v3.2.2 - ficha global de paciente prolija ===== */
+#pacienteGlobalModal{
+  z-index:30000 !important;
+  align-items:center !important;
+  justify-content:center !important;
+  padding:24px !important;
+  background:rgba(15,23,42,.55) !important;
+}
+#pacienteGlobalModal .global-paciente-modal{
+  width:min(960px,96vw) !important;
+  max-height:88vh !important;
+  overflow:auto !important;
+  background:var(--card,#fff) !important;
+  color:var(--text,#0f172a) !important;
+  border:1px solid var(--line,#dbe3ee) !important;
+  border-radius:24px !important;
+  padding:24px !important;
+  box-shadow:0 24px 70px rgba(15,23,42,.35) !important;
+  position:relative !important;
+}
+#pacienteGlobalModal .modal-header{
+  display:flex !important;
+  align-items:flex-start !important;
+  justify-content:space-between !important;
+  gap:16px !important;
+  margin:0 0 18px !important;
+  padding:0 0 14px !important;
+  border-bottom:1px solid var(--line,#e5e7eb) !important;
+  background:transparent !important;
+}
+#pacienteGlobalModal .modal-header h2{
+  margin:0 !important;
+  font-size:30px !important;
+  line-height:1.1 !important;
+}
+#btnCerrarPacienteGlobal{
+  flex:0 0 auto !important;
+  border:0 !important;
+  border-radius:999px !important;
+  padding:9px 16px !important;
+  min-height:auto !important;
+  background:#e5e7eb !important;
+  color:#111827 !important;
+  font-weight:900 !important;
+  cursor:pointer !important;
+}
+#pacienteGlobalBody .global-paciente-grid{
+  display:grid !important;
+  grid-template-columns:repeat(4,minmax(160px,1fr)) !important;
+  gap:12px !important;
+  margin:0 0 12px !important;
+}
+#pacienteGlobalBody .global-paciente-grid>div{
+  border:1px solid var(--line,#dbe3ee) !important;
+  border-radius:16px !important;
+  padding:13px 14px !important;
+  background:rgba(248,250,252,.9) !important;
+}
+#pacienteGlobalBody .global-copy-row{
+  margin:12px 0 14px !important;
+  padding:0 !important;
+  border:0 !important;
+  display:flex !important;
+  gap:10px !important;
+  flex-wrap:wrap !important;
+}
+#pacienteGlobalBody .global-paciente-actions{
+  position:static !important;
+  margin:12px 0 18px !important;
+  padding:14px 0 0 !important;
+  border-top:1px solid var(--line,#e5e7eb) !important;
+  background:transparent !important;
+  display:flex !important;
+  justify-content:flex-end !important;
+  gap:12px !important;
+}
+#pacienteGlobalBody h3{
+  margin:12px 0 10px !important;
+}
+#pacienteGlobalBody .paciente-historial-wrap{
+  max-height:260px !important;
+  overflow:auto !important;
+  border:1px solid var(--line,#dbe3ee) !important;
+  border-radius:16px !important;
+}
+#pacienteGlobalBody .paciente-historial-wrap table{
+  margin:0 !important;
+}
+body.dark #pacienteGlobalModal .global-paciente-modal{
+  background:#0f2633 !important;
+  color:#f8fafc !important;
+  border-color:#25465a !important;
+}
+body.dark #pacienteGlobalBody .global-paciente-grid>div{
+  background:#122c3a !important;
+  border-color:#25465a !important;
+}
+body.dark #btnCerrarPacienteGlobal{
+  background:#1f3b4c !important;
+  color:#f8fafc !important;
+}
+@media(max-width:900px){
+  #pacienteGlobalBody .global-paciente-grid{grid-template-columns:repeat(2,minmax(0,1fr)) !important;}
+}
+@media(max-width:560px){
+  #pacienteGlobalModal{align-items:flex-start !important;padding:12px !important;}
+  #pacienteGlobalModal .global-paciente-modal{width:100% !important;max-height:94vh !important;padding:16px !important;border-radius:18px !important;}
+  #pacienteGlobalBody .global-paciente-grid{grid-template-columns:1fr !important;}
+  #pacienteGlobalBody .global-paciente-actions{justify-content:stretch !important;flex-direction:column !important;}
+  #pacienteGlobalBody .global-paciente-actions button{width:100% !important;}
+}
+
+
+/* v3.3.0 - ficha paciente extendida */
+.form-subtitle.full-span,
+.full-span{
+  grid-column:1/-1;
+}
+.form-subtitle{
+  font-weight:800;
+  color:var(--ink);
+  margin-top:8px;
+  padding-top:10px;
+  border-top:1px solid var(--border);
+}
+.global-paciente-grid{
+  grid-template-columns:repeat(auto-fit,minmax(220px,1fr));
+}
+.copy-row300{
+  flex-wrap:wrap;
+}

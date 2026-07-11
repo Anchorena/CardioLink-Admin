@@ -1,7 +1,13 @@
-# CardioLink Admin v3.2.1
+# CardioLink Admin v3.3.0
 
-Ajustes sobre v3.2.0:
-- Permite repetir teléfono y email entre pacientes/familiares sin fusionarlos automáticamente.
-- Mejora el buscador global de paciente.
-- Repara agenda tabla/semana/mes y apertura de fichas desde tarjetas calendario.
-- Contador de coberturas muestra como Incompleto los pacientes sin cobertura o con médico importado desde Medicloud.
+Basado en v3.2.x. Incluye agenda día/semana/mes, buscador global, estadísticas de coberturas y ficha emergente corregida.
+
+## Nuevo en v3.3.0
+
+- Ficha administrativa extendida del paciente.
+- Contacto responsable/familiar a cargo: nombre, relación, teléfono y email.
+- Permite mantener teléfono/email repetidos entre pacientes sin fusionar automáticamente.
+- Los datos de contacto responsable se ven en Pacientes y en el buscador global.
+- Botones de copiar para DNI, teléfono/email propios y teléfono/email de contacto en la ficha emergente.
+
+No modifica reglas de obra social, caja, agenda ni sincronización Supabase.
