@@ -3,8 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CardioLink Admin v3.0.0</title>
-<link rel="stylesheet" href="styles.css?v=300">
+<title>CardioLink Admin v3.1.0</title>
+<link rel="stylesheet" href="styles.css?v=310">
 </head>
 <body>
 <aside class="sidebar">
@@ -331,9 +331,9 @@
         <button class="secondary" type="button" id="btnPacientesTodos">Ver todos</button>
         <button class="secondary" type="button" id="btnPacientesDuplicados">Buscar duplicados</button>
         <button class="primary" type="button" id="btnPacienteNuevoPuro">Cargar paciente</button>
-        <button class="secondary" type="button" id="btnPacientesImportTextoMedicloud">Importar texto Medicloud</button>
-        <button class="secondary" type="button" id="btnPacientesImportTextoWhatsapp">Importar texto WhatsApp</button>
-        <button class="secondary" type="button" id="btnPacientesImportExcel">Importar Excel Medicloud</button>
+        <button class="secondary" type="button" id="btnPacientesImportTextoMedicloud">Subir texto de otra app</button>
+        <button class="secondary" type="button" id="btnPacientesImportTextoWhatsapp">Subir texto WhatsApp</button>
+        <button class="secondary" type="button" id="btnPacientesImportExcel">Subir pacientes desde Excel</button>
         <input type="file" id="inputPacientesExcel" accept=".xlsx,.xls,.csv" hidden>
       </div>
     </div>
@@ -391,7 +391,7 @@
 
       <div id="printArea">
         <div class="print-title">
-          <h2>CardioLink Admin v3.0.0</h2>
+          <h2>CardioLink Admin v3.1.0</h2>
           <p>by Matías Anchorena — Listado filtrado</p>
           <p id="printMeta"></p>
         </div>
@@ -880,6 +880,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=300"></script>
+<script src="app.js?v=310"></script>
 </body>
 </html>

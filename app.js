@@ -5193,3 +5193,54 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   document.addEventListener('DOMContentLoaded',()=>setTimeout(init300,700));
   setTimeout(init300,1600);
 })();
+
+
+/* ===== v3.1.0 - prolijar pacientes: textos de importación y quitar copiar de filas ===== */
+(function(){
+  function $id(id){return document.getElementById(id)}
+  function setText(id,txt){const el=$id(id); if(el) el.textContent=txt;}
+  function limpiarCopiasDeFilas310(){
+    try{document.querySelectorAll('.copy-mini300').forEach(el=>el.remove());}catch(e){}
+  }
+  function ajustarBotonesPacientes310(){
+    setText('btnPacientesImportExcel','Subir pacientes desde Excel');
+    setText('btnPacientesImportTextoWhatsapp','Subir texto WhatsApp');
+    setText('btnPacientesImportTextoMedicloud','Subir texto de otra app');
+    // Títulos más genéricos en los modales de texto, sin cambiar el parser.
+    try{
+      const oldAbrirMed = typeof abrirImportadorMedicloud==='function' ? abrirImportadorMedicloud : null;
+      if(oldAbrirMed && !oldAbrirMed.__v310){
+        const wrapped=function(){
+          oldAbrirMed.apply(this,arguments);
+          setTimeout(()=>{
+            const m=document.getElementById('modalImportMedicloud');
+            if(!m) return;
+            const h=m.querySelector('h2'); if(h) h.textContent='Subir texto de otra app';
+            const p=m.querySelector('p'); if(p) p.textContent='Copiá los datos visibles de la app externa, pegalos acá y CardioLink evita duplicados por DNI.';
+            const ta=m.querySelector('textarea'); if(ta) ta.placeholder='Pegá acá el texto copiado desde la otra app';
+          },20);
+        };
+        wrapped.__v310=true;
+        window.abrirImportadorMedicloud = abrirImportadorMedicloud = wrapped;
+      }
+    }catch(e){console.warn(e)}
+  }
+  const oldRender310 = typeof renderTabla==='function' ? renderTabla : null;
+  if(oldRender310 && !oldRender310.__v310){
+    const wrapped=function(){
+      oldRender310.apply(this,arguments);
+      limpiarCopiasDeFilas310();
+    };
+    wrapped.__v310=true;
+    window.renderTabla = renderTabla = wrapped;
+  }
+  function version310(){
+    try{document.title='CardioLink Admin v3.1.0';}catch(e){}
+    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v3.1.0');
+    const pt=document.querySelector('.print-title h2'); if(pt) pt.textContent='CardioLink Admin v3.1.0';
+  }
+  function init310(){ajustarBotonesPacientes310();limpiarCopiasDeFilas310();version310();}
+  document.addEventListener('DOMContentLoaded',()=>setTimeout(init310,800));
+  setTimeout(init310,1800);
+  setInterval(limpiarCopiasDeFilas310,1200);
+})();
