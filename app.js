@@ -5244,3 +5244,256 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   setTimeout(init310,1800);
   setInterval(limpiarCopiasDeFilas310,1200);
 })();
+
+/* ===== v3.2.0 - agenda semana/mes, búsqueda global de pacientes y contador de coberturas ===== */
+(function(){
+  function $id(id){return document.getElementById(id)}
+  function esc(v){
+    try{return escapeHtml(String(v ?? ''));}catch(e){return String(v ?? '').replace(/[&<>'"]/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','"':'&quot;'}[c]));}
+  }
+  function fmtFechaISO(d){return d.toISOString().slice(0,10)}
+  function parseISODate(s){
+    const m=String(s||'').match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if(!m) return new Date();
+    return new Date(Number(m[1]), Number(m[2])-1, Number(m[3]));
+  }
+  function startOfWeek(date){
+    const d=new Date(date.getFullYear(),date.getMonth(),date.getDate());
+    const day=d.getDay();
+    const diff=(day===0?-6:1-day);
+    d.setDate(d.getDate()+diff);
+    return d;
+  }
+  function nombreDiaCorto(d){return ['Dom','Lun','Mar','Mié','Jue','Vie','Sáb'][d.getDay()];}
+  function mesNombre(d){return d.toLocaleDateString('es-AR',{month:'long',year:'numeric'});}
+
+  function setVersion320(){
+    try{document.title='CardioLink Admin v3.2.0';}catch(e){}
+    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v3.2.0');
+    const pt=document.querySelector('.print-title h2'); if(pt) pt.textContent='CardioLink Admin v3.2.0';
+  }
+
+  // ---------- Buscador global de pacientes ----------
+  function pacientesBusquedaGlobal(q){
+    q=String(q||'').trim();
+    if(q.length<2) return [];
+    try{
+      const lista = (typeof pacientesPanelFiltrados==='function') ? pacientesPanelFiltrados(q,false) : [];
+      return lista.slice(0,10);
+    }catch(e){
+      const nq=(typeof normalizarTexto==='function')?normalizarTexto(q):q.toLowerCase();
+      const nd=String(q).replace(/\D/g,'');
+      return (typeof todosPacientes==='function'?todosPacientes():(data?.pacientes||[])).filter(p=>{
+        const nombre=(p.nombreCompleto||p.paciente||'');
+        return (nd && String(p.dni||'').replace(/\D/g,'').includes(nd)) ||
+          (nd && String(p.telefono||'').replace(/\D/g,'').includes(nd)) ||
+          String(nombre).toLowerCase().includes(nq) || String(p.email||'').toLowerCase().includes(nq);
+      }).slice(0,10);
+    }
+  }
+  function clavePac320(p){try{return clavePacientePanel(p)}catch(e){return p.id || String(p.dni||'') || String(p.nombreCompleto||p.paciente||'')}}
+  function nombrePac320(p){try{return nombrePacientePanel(p)}catch(e){return p.nombreCompleto||p.paciente||'Paciente'}}
+  function atencionesPac320(p){try{return atencionesPacienteGlobal(p)}catch(e){return []}}
+  function pacientePorClave320(k){
+    try{return buscarPacientePanelPorId(k)}catch(e){return (data?.pacientes||[]).find(p=>p.id===k || String(p.dni||'')===k) || null;}
+  }
+  function ensurePacienteGlobalModal320(){
+    if($id('pacienteGlobalModal'))return;
+    document.body.insertAdjacentHTML('beforeend',`<div id="pacienteGlobalModal" class="modal-backdrop hidden">
+      <div class="modal global-paciente-modal">
+        <div class="modal-header"><h2 id="pacienteGlobalTitulo">Ficha paciente</h2><button class="secondary" type="button" id="btnCerrarPacienteGlobal">Cerrar</button></div>
+        <div id="pacienteGlobalBody"></div>
+      </div>
+    </div>`);
+    $id('btnCerrarPacienteGlobal')?.addEventListener('click',()=>cerrarPacienteGlobal320());
+    $id('pacienteGlobalModal')?.addEventListener('click',(e)=>{if(e.target?.id==='pacienteGlobalModal')cerrarPacienteGlobal320();});
+  }
+  function cerrarPacienteGlobal320(){ $id('pacienteGlobalModal')?.classList.add('hidden'); }
+  function abrirPacienteGlobal320(k){
+    const p=pacientePorClave320(k); if(!p){alert('No encontré el paciente.'); return;}
+    ensurePacienteGlobalModal320();
+    const ats=atencionesPac320(p);
+    const ult=ats[0];
+    const titulo=$id('pacienteGlobalTitulo'); if(titulo) titulo.textContent=nombrePac320(p);
+    const body=$id('pacienteGlobalBody'); if(!body)return;
+    body.innerHTML=`
+      <div class="paciente-ficha-grid global-paciente-grid">
+        <div><span>DNI</span><strong>${esc(p.dni||'s/d')}</strong></div>
+        <div><span>Teléfono</span><strong>${esc(p.telefono||'s/d')}</strong></div>
+        <div><span>Email</span><strong>${esc(p.email||'s/d')}</strong></div>
+        <div><span>Cobertura habitual</span><strong>${esc(p.coberturaHabitual||p.obraSocial||'Incompleto')}</strong></div>
+        <div><span>Nº afiliado</span><strong>${esc(p.numeroAfiliadoHabitual||p.numeroAfiliado||'s/d')}</strong></div>
+        <div><span>Fecha nacimiento</span><strong>${esc(p.fechaNacimiento?(typeof formatFecha==='function'?formatFecha(p.fechaNacimiento):p.fechaNacimiento):'s/d')}</strong></div>
+        <div><span>Total atenciones</span><strong>${ats.length}</strong></div>
+        <div><span>Última atención</span><strong>${ult?esc((typeof formatFecha==='function'?formatFecha(ult.fecha):ult.fecha)+' · '+(ult.prestacion||'')):'s/d'}</strong></div>
+      </div>
+      <div class="copy-row300 global-copy-row">
+        <button type="button" class="copy-btn300" onclick="copyText300('${esc(p.dni||'')}','DNI')">Copiar DNI</button>
+        <button type="button" class="copy-btn300" onclick="copyText300('${esc(p.telefono||'')}','teléfono')">Copiar teléfono</button>
+        <button type="button" class="copy-btn300" onclick="copyText300('${esc(p.email||'')}','email')">Copiar email</button>
+      </div>
+      <div class="modal-actions global-paciente-actions">
+        <button class="secondary" type="button" onclick="cerrarPacienteGlobal320();showSection('pacientes');seleccionarPacientePanel('${esc(clavePac320(p))}')">Ver en Pacientes</button>
+        <button class="primary" type="button" onclick="cerrarPacienteGlobal320();nuevaAtencionDesdePaciente('${esc(clavePac320(p))}')">Nueva atención</button>
+      </div>
+      <h3>Últimas atenciones</h3>
+      <div class="paciente-historial-wrap"><table class="tabla-mini paciente-historial">
+        <thead><tr><th>Fecha</th><th>Profesional</th><th>Prestación</th><th>OS</th><th></th></tr></thead>
+        <tbody>${ats.length?ats.slice(0,10).map(a=>`<tr><td>${typeof formatFecha==='function'?formatFecha(a.fecha):esc(a.fecha)}</td><td>${esc(a.profesional||'')}</td><td><strong>${esc((typeof prestacionListado==='function')?prestacionListado(a):a.prestacion)}</strong></td><td>${esc(a.obraSocial||'')}</td><td><button class="secondary" type="button" onclick="cerrarPacienteGlobal320();editarAtencion(${idJS(a.id)})">Editar</button></td></tr>`).join(''):'<tr><td colspan="5">Sin atenciones registradas.</td></tr>'}</tbody>
+      </table></div>`;
+    $id('pacienteGlobalModal')?.classList.remove('hidden');
+  }
+  window.abrirPacienteGlobal320=abrirPacienteGlobal320;
+  window.cerrarPacienteGlobal320=cerrarPacienteGlobal320;
+
+  function ensureTopSearch320(){
+    const top=document.querySelector('.topbar');
+    if(!top || $id('globalPatientSearchBox'))return;
+    const box=document.createElement('div');
+    box.className='global-patient-search-box';
+    box.id='globalPatientSearchBox';
+    box.innerHTML=`<label>Buscar paciente</label>
+      <div class="global-patient-search-inner"><input type="text" id="globalPatientSearch" placeholder="DNI, apellido, teléfono o email"><button type="button" id="globalPatientClear">×</button></div>
+      <div id="globalPatientResults" class="global-patient-results hidden"></div>`;
+    top.querySelector('.profile-box')?.insertAdjacentElement('afterend',box);
+    const inp=$id('globalPatientSearch'), res=$id('globalPatientResults');
+    function render(){
+      const lista=pacientesBusquedaGlobal(inp?.value||'');
+      if(!res)return;
+      if(!lista.length){res.classList.add('hidden');res.innerHTML='';return;}
+      res.innerHTML=lista.map(p=>`<button type="button" onclick="abrirPacienteGlobal320('${esc(clavePac320(p))}');document.getElementById('globalPatientResults')?.classList.add('hidden')"><strong>${esc(nombrePac320(p))}</strong><span>DNI ${esc(p.dni||'s/d')} · ${esc(p.telefono||'')}</span></button>`).join('');
+      res.classList.remove('hidden');
+    }
+    inp?.addEventListener('input',render);
+    inp?.addEventListener('keydown',(e)=>{if(e.key==='Enter'){e.preventDefault();const first=res?.querySelector('button'); if(first)first.click();}});
+    $id('globalPatientClear')?.addEventListener('click',()=>{if(inp)inp.value=''; if(res){res.innerHTML='';res.classList.add('hidden');}});
+    document.addEventListener('click',(e)=>{if(!box.contains(e.target))res?.classList.add('hidden');});
+  }
+
+  // ---------- Agenda semana / mes ----------
+  function ensureAgendaCalendar320(){
+    if($id('agendaCalendario320'))return $id('agendaCalendario320');
+    const ref=$id('agendaTarjetas');
+    const div=document.createElement('div');
+    div.id='agendaCalendario320';
+    div.className='agenda-calendar320 hidden';
+    ref?.insertAdjacentElement('afterend',div);
+    return div;
+  }
+  function ensureAgendaViewOptions320(){
+    const sel=$id('agendaVista'); if(!sel)return;
+    if(!Array.from(sel.options).some(o=>o.value==='semana'))sel.insertAdjacentHTML('beforeend','<option value="semana">Semana calendario</option><option value="mes">Mes calendario</option>');
+  }
+  function agendaDatosRango320(desde,hasta){
+    let prof=$id('agendaProfesional')?.value||'';
+    const estado=$id('agendaEstado')?.value||'';
+    try{ if(esMedico())prof=profesionalIdUsuarioActual(); if(esMatiasDuenio()&&!prof)prof='matias'; }catch(e){}
+    return (atenciones||[]).filter(a=>{
+      const f=a.fecha||'';
+      if(f<desde || f>hasta)return false;
+      if(prof && a.profesionalId!==prof)return false;
+      if(estado && estadoTurno(a)!==estado)return false;
+      return true;
+    }).sort((a,b)=>(a.fecha||'').localeCompare(b.fecha||'') || (a.horaInicio||'99:99').localeCompare(b.horaInicio||'99:99') || String(a.paciente||'').localeCompare(String(b.paciente||''),'es'));
+  }
+  function turnoMini320(a){
+    const hora=(typeof horaTurno==='function'?horaTurno(a):(a.horaInicio||'s/h'));
+    return `<button type="button" class="cal-turno320 estado-${estadoTurno(a)}" onclick="abrirAgendaModal(${idJS(a.id)})"><strong>${esc(hora)}</strong> ${esc(a.paciente||'')}<small>${esc(a.prestacion||'')} · ${esc(a.obraSocial||'')}</small></button>`;
+  }
+  function renderSemana320(cal){
+    const base=parseISODate($id('agendaFecha')?.value||fmtFechaISO(new Date()));
+    const start=startOfWeek(base);
+    const days=Array.from({length:7},(_,i)=>{const d=new Date(start);d.setDate(start.getDate()+i);return d;});
+    const desde=fmtFechaISO(days[0]), hasta=fmtFechaISO(days[6]);
+    const datos=agendaDatosRango320(desde,hasta);
+    cal.innerHTML=`<div class="cal-head320"><strong>Semana del ${typeof formatFecha==='function'?formatFecha(desde):desde} al ${typeof formatFecha==='function'?formatFecha(hasta):hasta}</strong><span>${datos.length} turno(s)</span></div>
+      <div class="week-grid320">${days.map(d=>{const iso=fmtFechaISO(d);const arr=datos.filter(a=>a.fecha===iso);return `<div class="day-col320"><h3>${nombreDiaCorto(d)} <span>${d.getDate()}/${d.getMonth()+1}</span></h3>${arr.length?arr.map(turnoMini320).join(''):'<p class="muted empty-day320">Sin turnos</p>'}</div>`}).join('')}</div>`;
+    if($id('agendaResumen'))$id('agendaResumen').textContent=`Semana calendario: ${datos.length} turno(s) entre ${desde} y ${hasta}.`;
+  }
+  function renderMes320(cal){
+    const base=parseISODate($id('agendaFecha')?.value||fmtFechaISO(new Date()));
+    const first=new Date(base.getFullYear(),base.getMonth(),1);
+    const gridStart=startOfWeek(first);
+    const days=Array.from({length:42},(_,i)=>{const d=new Date(gridStart);d.setDate(gridStart.getDate()+i);return d;});
+    const desde=fmtFechaISO(days[0]), hasta=fmtFechaISO(days[41]);
+    const datos=agendaDatosRango320(desde,hasta);
+    cal.innerHTML=`<div class="cal-head320"><strong>${mesNombre(base)}</strong><span>${datos.filter(a=>{const d=parseISODate(a.fecha||'');return d.getMonth()===base.getMonth()&&d.getFullYear()===base.getFullYear();}).length} turno(s) del mes</span></div>
+      <div class="month-grid320">${days.map(d=>{const iso=fmtFechaISO(d);const arr=datos.filter(a=>a.fecha===iso);const other=d.getMonth()!==base.getMonth()?' other-month320':'';return `<div class="month-cell320${other}"><h3>${nombreDiaCorto(d)} ${d.getDate()}</h3>${arr.slice(0,5).map(turnoMini320).join('')}${arr.length>5?`<small class="muted">+${arr.length-5} más</small>`:arr.length?'':'<p class="muted empty-day320">—</p>'}</div>`}).join('')}</div>`;
+    if($id('agendaResumen'))$id('agendaResumen').textContent=`Mes calendario: ${mesNombre(base)}.`;
+  }
+  function renderAgendaCalendario320(){
+    const vista=$id('agendaVista')?.value||'tabla';
+    const cal=ensureAgendaCalendar320();
+    if(!cal)return;
+    if(vista!=='semana' && vista!=='mes'){cal.classList.add('hidden'); return;}
+    $id('agendaTablaWrap')?.classList.add('hidden');
+    $id('agendaTarjetas')?.classList.add('hidden');
+    cal.classList.remove('hidden');
+    if(vista==='semana')renderSemana320(cal); else renderMes320(cal);
+  }
+
+  const oldRenderAgenda320 = typeof renderAgenda==='function' ? renderAgenda : null;
+  if(oldRenderAgenda320 && !oldRenderAgenda320.__v320){
+    const wrapped=function(){
+      oldRenderAgenda320.apply(this,arguments);
+      ensureAgendaViewOptions320();
+      renderAgendaCalendario320();
+    };
+    wrapped.__v320=true;
+    window.renderAgenda = renderAgenda = wrapped;
+  }
+
+  // ---------- Contador de coberturas de pacientes ----------
+  function coberturaPaciente320(p){
+    const v=String(p.coberturaHabitual || p.obraSocial || p.cobertura || '').trim();
+    if(!v || /^(no ingresado|sin dato|s\/d|undefined|null)$/i.test(v)) return 'Incompleto';
+    return v;
+  }
+  function pacientesUnicosCobertura320(){
+    const map=new Map();
+    try{
+      (typeof todosPacientes==='function'?todosPacientes():(data?.pacientes||[])).forEach(p=>{
+        if(!p || p.estado==='fusionado')return;
+        const k=(p.dni?String(p.dni).replace(/\D/g,''):'') || normalizarTexto(nombrePac320(p));
+        if(k && !map.has(k))map.set(k,p);
+      });
+    }catch(e){(data?.pacientes||[]).forEach(p=>{if(p?.id&&!map.has(p.id))map.set(p.id,p)});}
+    return Array.from(map.values());
+  }
+  function renderContadorCoberturas320(){
+    const card=document.querySelector('#estadisticas .estadisticas-card'); if(!card)return;
+    let box=$id('contadorCoberturas320');
+    if(!box){
+      box=document.createElement('div');
+      box.id='contadorCoberturas320';
+      box.className='chart-card contador-coberturas320';
+      const charts=card.querySelector('.charts-grid');
+      if(charts) charts.insertAdjacentElement('beforebegin',box); else card.appendChild(box);
+    }
+    const pacientes=pacientesUnicosCobertura320();
+    const counts={};
+    pacientes.forEach(p=>{const k=coberturaPaciente320(p);counts[k]=(counts[k]||0)+1;});
+    const entries=Object.entries(counts).sort((a,b)=>(a[0]==='Incompleto'?-1:b[0]==='Incompleto'?1:b[1]-a[1]));
+    box.innerHTML=`<h3>Contador de coberturas de pacientes</h3>
+      <p class="muted">Conteo de fichas de pacientes, independiente del rango de fechas de las estadísticas. Los datos vacíos figuran como <strong>Incompleto</strong>.</p>
+      <div class="coverage-grid320">${entries.length?entries.map(([k,v])=>`<div class="coverage-pill320 ${k==='Incompleto'?'incomplete':''}"><span>${esc(k)}</span><strong>${v}</strong></div>`).join(''):'<p class="muted">Sin pacientes cargados.</p>'}</div>`;
+  }
+  const oldRenderEstadisticas320 = typeof renderEstadisticas==='function' ? renderEstadisticas : null;
+  if(oldRenderEstadisticas320 && !oldRenderEstadisticas320.__v320){
+    const wrapped=function(){oldRenderEstadisticas320.apply(this,arguments); renderContadorCoberturas320();};
+    wrapped.__v320=true;
+    window.renderEstadisticas = renderEstadisticas = wrapped;
+  }
+
+  function init320(){
+    setVersion320();
+    ensureTopSearch320();
+    ensurePacienteGlobalModal320();
+    ensureAgendaViewOptions320();
+    renderAgendaCalendario320();
+    renderContadorCoberturas320();
+  }
+  document.addEventListener('DOMContentLoaded',()=>setTimeout(init320,900));
+  setTimeout(init320,1800);
+  setInterval(()=>{try{setVersion320();ensureTopSearch320();}catch(e){}},2500);
+})();
