@@ -938,3 +938,52 @@ body.dark .bloque-check{background:rgba(15,23,42,.5);}
 #btnPacientesImportExcel,#btnPacientesImportTextoWhatsapp,#btnPacientesImportTextoMedicloud{white-space:normal;line-height:1.05;min-width:190px;}
 #btnPacientesImportExcel{font-weight:900;}
 .copy-mini300{display:none!important;}
+
+/* ===== v3.2.0 ===== */
+.topbar{align-items:flex-start;gap:18px;}
+.global-patient-search-box{min-width:280px;max-width:360px;position:relative;background:rgba(255,255,255,.88);border:1px solid var(--border,#dbe3ee);border-radius:18px;padding:14px;box-shadow:0 8px 28px rgba(15,23,42,.08);}
+.global-patient-search-box label{font-weight:800;display:block;margin-bottom:6px;color:var(--text,#111827);}
+.global-patient-search-inner{display:flex;gap:8px;align-items:center;}
+.global-patient-search-inner input{width:100%;padding:10px 12px;border-radius:12px;border:1px solid var(--border,#dbe3ee);font-size:15px;}
+.global-patient-search-inner button{border:0;border-radius:50%;width:34px;height:34px;font-size:22px;font-weight:900;background:#e5e7eb;color:#111827;cursor:pointer;}
+.global-patient-results{position:absolute;left:12px;right:12px;top:86px;background:#fff;border:1px solid #dbe3ee;border-radius:14px;box-shadow:0 18px 38px rgba(15,23,42,.18);z-index:80;max-height:380px;overflow:auto;padding:8px;}
+.global-patient-results button{display:block;width:100%;text-align:left;background:#fff;border:0;border-bottom:1px solid #edf2f7;padding:10px;border-radius:10px;cursor:pointer;color:#111827;}
+.global-patient-results button:hover{background:#eef6ff;}
+.global-patient-results strong{display:block;font-size:15px;}
+.global-patient-results span{display:block;font-size:13px;color:#64748b;margin-top:2px;}
+.global-paciente-modal{max-width:980px;width:min(980px,92vw);}
+.global-paciente-grid{margin-bottom:10px;}
+.global-copy-row{margin:14px 0;}
+.global-paciente-actions{justify-content:flex-end;}
+.agenda-calendar320{margin-top:16px;}
+.cal-head320{display:flex;justify-content:space-between;align-items:center;margin:8px 0 14px;color:#0f172a;font-size:17px;}
+.week-grid320{display:grid;grid-template-columns:repeat(7,minmax(170px,1fr));gap:10px;overflow-x:auto;padding-bottom:8px;}
+.day-col320,.month-cell320{background:#fff;border:1px solid #dbe3ee;border-radius:16px;padding:10px;min-height:160px;box-shadow:0 6px 18px rgba(15,23,42,.05);}
+.day-col320 h3,.month-cell320 h3{font-size:15px;margin:0 0 8px;color:#111827;display:flex;justify-content:space-between;gap:8px;}
+.month-grid320{display:grid;grid-template-columns:repeat(7,minmax(150px,1fr));gap:8px;overflow-x:auto;padding-bottom:8px;}
+.month-cell320{min-height:135px;padding:8px;}
+.other-month320{opacity:.55;background:#f8fafc;}
+.cal-turno320{display:block;width:100%;border:0;border-left:5px solid #6366f1;background:#f1f5ff;border-radius:10px;text-align:left;padding:7px 8px;margin-bottom:7px;cursor:pointer;color:#111827;font-size:13px;line-height:1.2;}
+.cal-turno320:hover{filter:brightness(.98);transform:translateY(-1px);}
+.cal-turno320 strong{font-size:13px;margin-right:5px;}
+.cal-turno320 small{display:block;color:#475569;margin-top:3px;}
+.cal-turno320.estado-confirmado{border-left-color:#2dd4bf;background:#ecfeff;}
+.cal-turno320.estado-sala_espera{border-left-color:#06b6d4;background:#ecfeff;}
+.cal-turno320.estado-en_consulta{border-left-color:#9333ea;background:#f5f3ff;}
+.cal-turno320.estado-atendido{border-left-color:#6d5bb5;background:#f4f0ff;}
+.cal-turno320.estado-ausente,.cal-turno320.estado-cancelado{border-left-color:#ec4899;background:#fff1f2;}
+.empty-day320{font-size:13px;margin:8px 0;}
+.contador-coberturas320{margin:18px 0;}
+.coverage-grid320{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-top:12px;}
+.coverage-pill320{border:1px solid #dbe3ee;border-radius:14px;padding:10px 12px;background:#fff;display:flex;justify-content:space-between;align-items:center;gap:10px;}
+.coverage-pill320 span{font-weight:700;color:#334155;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+.coverage-pill320 strong{font-size:20px;color:#0f172a;}
+.coverage-pill320.incomplete{background:#fff7ed;border-color:#fed7aa;}
+.coverage-pill320.incomplete span,.coverage-pill320.incomplete strong{color:#9a3412;}
+body.dark .global-patient-search-box, body.dark .day-col320, body.dark .month-cell320, body.dark .coverage-pill320, body.dark .global-patient-results{background:#0f2633;border-color:#25465a;color:#f8fafc;}
+body.dark .global-patient-results button{background:#0f2633;color:#f8fafc;border-color:#25465a;}
+body.dark .global-patient-results button:hover{background:#17384a;}
+body.dark .cal-head320, body.dark .day-col320 h3, body.dark .month-cell320 h3, body.dark .global-patient-search-box label{color:#f8fafc;}
+body.dark .cal-turno320{background:#142e3b;color:#f8fafc;}
+body.dark .cal-turno320 small{color:#cbd5e1;}
+@media(max-width:1100px){.topbar{flex-direction:column}.global-patient-search-box{max-width:none;width:100%;}.week-grid320,.month-grid320{grid-template-columns:repeat(7,160px);}}

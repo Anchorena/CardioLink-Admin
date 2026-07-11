@@ -1,12 +1,12 @@
-# CardioLink Admin v3.1.0
+# CardioLink Admin v3.2.0
 
-Ajuste visual sobre v3.0.0 estable.
+Base: v3.1.0 estable.
 
-## Cambios
-- Renombra botones de Pacientes:
-  - Subir pacientes desde Excel
-  - Subir texto WhatsApp
-  - Subir texto de otra app
-- Quita botones Copiar DNI/Teléfono/Email de las filas del listado para evitar ensanchar la tabla.
-- Mantiene botones de copia dentro de la ventana emergente/ficha/modal.
-- No modifica reglas, caja, agenda, Supabase ni parser Excel.
+Cambios:
+- Agenda con vista tabla, tarjetas, semana calendario y mes calendario.
+- Buscador global de pacientes debajo del perfil activo, visible desde todas las solapas.
+- Ficha rápida de paciente en ventana emergente con copiar DNI, teléfono y email.
+- Estadísticas agrega contador de coberturas de pacientes independiente del rango de fechas.
+- Los pacientes sin cobertura habitual figuran como "Incompleto".
+
+No toca reglas de obra social, caja ni sincronización Supabase.
