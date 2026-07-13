@@ -1,13 +1,17 @@
-# CardioLink Admin v3.6.2
+# CardioLink Admin v3.7.0
 
-Correcciones sobre v3.6.1:
-- bienvenida automática con sesión real;
-- saludo correcto por rol;
-- selector inicial de profesional para Matías, administración y secretaría;
-- perfil activo y buscador alineados;
-- botón Cerrar sesión oculto hasta finalizar la carga;
-- Caja / reportes solo para Matías y administrador;
-- caja diaria del dashboard disponible para médicos y secretaría;
-- pendientes rápidos calculados sobre la misma base cargada;
-- elimina textos de prueba en uso publicado;
-- versión centralizada 3.6.2.
+Versión responsive para iPhone, iPad, Android, PC y Mac.
+
+## Cambios principales
+- Menú lateral plegable en teléfonos y tablets.
+- Barra superior móvil con acceso rápido al menú y buscador.
+- Agenda diaria convertida en tarjetas en teléfonos.
+- Vistas semanal y mensual táctiles con desplazamiento horizontal.
+- Formularios, dashboard, configuración y estadísticas adaptativos.
+- Modales casi a pantalla completa y botones de guardado accesibles.
+- Campos de 16 px para evitar zoom automático en Safari iPhone.
+- Soporte de áreas seguras (notch) y orientación vertical/horizontal.
+- Botones táctiles cómodos para iOS, iPadOS y Android.
+- Mantiene la experiencia completa de escritorio en PC y Mac.
+
+No modifica reglas, montos, permisos, Supabase ni estructura de datos.

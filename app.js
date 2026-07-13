@@ -4472,9 +4472,9 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const dark=$id('btnDark'); if(dark){dark.style.marginTop='18px'; dark.style.marginBottom='8px';}
   }
   function version296(){
-    try{document.title='CardioLink Admin v3.6.2';}catch(e){}
-    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v3.6.2');
-    document.querySelectorAll('h2').forEach(el=>{ if((el.textContent||'').includes('CardioLink Admin v')) el.textContent='CardioLink Admin v3.6.2'; });
+    try{document.title='CardioLink Admin v3.7.0';}catch(e){}
+    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v3.7.0');
+    document.querySelectorAll('h2').forEach(el=>{ if((el.textContent||'').includes('CardioLink Admin v')) el.textContent='CardioLink Admin v3.7.0'; });
   }
   document.addEventListener('DOMContentLoaded',()=>{asegurarBloques296(); version296(); moverLogout296(); try{actualizarPrestaciones(); aplicarPermisosUI(); renderAgenda?.(); renderMensajes?.();}catch(e){} });
   setTimeout(()=>{asegurarBloques296(); version296(); moverLogout296(); try{actualizarPrestaciones(); aplicarPermisosUI(); renderAgenda?.(); renderMensajes?.();}catch(e){}},900);
@@ -5953,7 +5953,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
 /* ===== v3.6.0 - Inicio inteligente y pulido administrativo ===== */
 (()=>{
-  const APP_VERSION='3.6.1';
+  const APP_VERSION='3.7.0';
   const $360=id=>document.getElementById(id);
   const esc360=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const norm360=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
@@ -6106,7 +6106,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 })();
 
 
-/* ===== v3.6.2 - bienvenida real, permisos y consistencia dashboard ===== */
+/* ===== v3.7.0 - bienvenida real, permisos y consistencia dashboard ===== */
 (function(){
   function id(x){return document.getElementById(x)}
   function all(){try{return Array.isArray(atenciones)?atenciones:[]}catch(e){return []}}
@@ -6138,4 +6138,37 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   });
   document.addEventListener('change',e=>{if(e.target?.id==='perfilActivo')setTimeout(refreshQuickPending362,100)});
   setInterval(refreshQuickPending362,2500);
+})();
+
+
+/* ===== v3.7.0 - experiencia responsive iPhone / iPad / Android ===== */
+(function initResponsive370(){
+  const $=id=>document.getElementById(id);
+  function isMobile370(){ return window.matchMedia('(max-width: 1024px)').matches; }
+  function setSidebar370(open){
+    document.body.classList.toggle('mobile-menu-open-370', !!open);
+    const btn=$('btnMobileMenu370');
+    const ov=$('mobileSidebarOverlay370');
+    if(btn){ btn.setAttribute('aria-expanded', open?'true':'false'); btn.textContent=open?'×':'☰'; }
+    if(ov){ ov.classList.toggle('hidden', !open); ov.setAttribute('aria-hidden', open?'false':'true'); }
+  }
+  function focusSearch370(){
+    const input=$('buscadorGlobal360');
+    if(!input) return;
+    setSidebar370(false);
+    input.scrollIntoView({behavior:'smooth',block:'center'});
+    setTimeout(()=>input.focus(),220);
+  }
+  function init(){
+    const menu=$('btnMobileMenu370'), search=$('btnMobileSearch370'), ov=$('mobileSidebarOverlay370');
+    if(menu) menu.addEventListener('click',()=>setSidebar370(!document.body.classList.contains('mobile-menu-open-370')));
+    if(search) search.addEventListener('click',focusSearch370);
+    if(ov) ov.addEventListener('click',()=>setSidebar370(false));
+    document.querySelectorAll('.sidebar .nav').forEach(b=>b.addEventListener('click',()=>{if(isMobile370()) setSidebar370(false);}));
+    document.addEventListener('keydown',e=>{if(e.key==='Escape') setSidebar370(false);});
+    window.addEventListener('resize',()=>{if(!isMobile370()) setSidebar370(false);});
+    window.addEventListener('orientationchange',()=>setTimeout(()=>setSidebar370(false),200));
+    document.documentElement.classList.add('responsive-370');
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init); else init();
 })();

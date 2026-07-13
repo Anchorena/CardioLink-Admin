@@ -2,14 +2,24 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CardioLink Admin v3.6.2</title>
-<link rel="stylesheet" href="styles.css?v=362">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#123f56">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<title>CardioLink Admin v3.7.0</title>
+<link rel="stylesheet" href="styles.css?v=370">
 </head>
 <body>
+<div class="mobile-appbar-370" aria-label="Barra móvil">
+  <button type="button" id="btnMobileMenu370" class="mobile-menu-btn-370" aria-label="Abrir menú" aria-expanded="false">☰</button>
+  <div class="mobile-app-title-370">CardioLink Admin <span>v3.7.0</span></div>
+  <button type="button" id="btnMobileSearch370" class="mobile-search-btn-370" aria-label="Buscar paciente">⌕</button>
+</div>
+<div id="mobileSidebarOverlay370" class="mobile-sidebar-overlay-370 hidden" aria-hidden="true"></div>
 <aside class="sidebar">
   <div class="brand">
-    <div class="brand-main">CardioLink Admin <span>v3.6.2</span></div>
+    <div class="brand-main">CardioLink Admin <span>v3.7.0</span></div>
     <div class="brand-by">by Matías Anchorena</div>
   </div>
   <button class="nav active" data-section="dashboard">Dashboard</button>
@@ -420,7 +430,7 @@
 
       <div id="printArea">
         <div class="print-title">
-          <h2>CardioLink Admin v3.6.2</h2>
+          <h2>CardioLink Admin v3.7.0</h2>
           <p>by Matías Anchorena — Listado filtrado</p>
           <p id="printMeta"></p>
         </div>
@@ -952,6 +962,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=362"></script>
+<script src="app.js?v=370"></script>
 </body>
 </html>
