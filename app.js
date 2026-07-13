@@ -264,7 +264,7 @@ function mostrarPantallaLogin() {
 
       <h1>CardioLink Admin</h1>
       <p class="login-subtitle">by Matías Anchorena</p>
-      <p class="login-meta">Versión 3.6.0 · 2026</p>
+      <p class="login-meta">Versión 3.7.1 · 2026</p>
     </div>
 
     <div class="login-fields">
@@ -5326,7 +5326,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     $id('btnCerrarPacienteGlobal')?.addEventListener('click',()=>cerrarPacienteGlobal320());
     $id('pacienteGlobalModal')?.addEventListener('click',(e)=>{if(e.target?.id==='pacienteGlobalModal')cerrarPacienteGlobal320();});
   }
-  function cerrarPacienteGlobal320(){ $id('pacienteGlobalModal')?.classList.add('hidden'); }
+  function cerrarPacienteGlobal320(){ $id('pacienteGlobalModal')?.classList.add('hidden'); document.body.classList.remove('patient-modal-open-371'); }
   function abrirPacienteGlobal320(k){
     const p=pacientePorClave320(k); if(!p){alert('No encontré el paciente.'); return;}
     ensurePacienteGlobalModal320();
@@ -5953,7 +5953,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
 /* ===== v3.6.0 - Inicio inteligente y pulido administrativo ===== */
 (()=>{
-  const APP_VERSION='3.7.0';
+  const APP_VERSION='3.7.1';
   const $360=id=>document.getElementById(id);
   const esc360=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const norm360=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
@@ -6009,7 +6009,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const modal=$360('welcomeModal360');if(!modal)return;
     if(isLocalPreview360() && !force) return;
     const u=currentUser360();
-    const key=`cl_welcome_${hasAuthenticatedSession360()?(usuarioActualNombreCorto?.()||'usuario'):'preview'}_${today360()}`;if(!force&&sessionStorage.getItem(key))return;
+    const key=`cl_welcome_${hasAuthenticatedSession360()?(usuarioActualNombreCorto?.()||'usuario'):'preview'}_${today360()}`;if(!force&&window.__welcomeShown371)return;
     $360('welcomeFecha360').textContent=new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
     $360('welcomeTitulo360').textContent=welcomeTitle360(u);
     $360('welcomeUsuario360').textContent=isLocalPreview360()?'Vista local de diseño':`Usuario conectado: ${u.nombre||u.usuario||''}`;
@@ -6018,7 +6018,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     if(sel){sel.innerHTML=(data?.profesionales||[]).map(p=>`<option value="${esc360(p.id)}">${esc360(p.nombre)}</option>`).join('');let target=currentProfileId360();if(target==='general')target=u.profesionalId||(data?.profesionales||[])[0]?.id;sel.value=target||'';sel.onchange=renderWelcomeSummary360;}
     renderWelcomeSummary360();modal.classList.remove('hidden');modal.dataset.key=key;
   }
-  function closeWelcome360(apply=true){const modal=$360('welcomeModal360');if(!modal)return;if(apply){const sel=$360('welcomePerfil360');if(sel&&!$360('welcomePerfilWrap360')?.classList.contains('hidden')&&sel.value){const pa=$360('perfilActivo');if(pa){pa.value=sel.value;pa.dispatchEvent(new Event('change',{bubbles:true}));}}sessionStorage.setItem(modal.dataset.key||`cl_welcome_${today360()}`,'1');}modal.classList.add('hidden');renderAdmin360();}
+  function closeWelcome360(apply=true){const modal=$360('welcomeModal360');if(!modal)return;if(apply){const sel=$360('welcomePerfil360');if(sel&&!$360('welcomePerfilWrap360')?.classList.contains('hidden')&&sel.value){const pa=$360('perfilActivo');if(pa){pa.value=sel.value;pa.dispatchEvent(new Event('change',{bubbles:true}));}}window.__welcomeShown371=true;}modal.classList.add('hidden');renderAdmin360();}
 
   function pendingBreakdown360(list){return [
     ['Falta informe',list.filter(a=>!a.estudioInformado).length,'informe'],
@@ -6059,7 +6059,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function renderSpotlight360(q){const box=$360('resultadosGlobal360');if(!box)return;const n=norm360(q);if(n.length<2){box.classList.add('hidden');box.innerHTML='';spotlightMatches360=[];return;}
     spotlightMatches360=patients360().filter(p=>norm360([patientLabel360(p),p.dni,p.telefono,p.email,p.telefonoResponsable,p.emailResponsable].join(' ')).includes(n)).slice(0,10);spotlightIndex360=spotlightMatches360.length?0:-1;
     box.innerHTML=spotlightMatches360.length?spotlightMatches360.map((p,i)=>`<button type="button" class="spotlight-item-360 ${i===0?'active':''}" data-patient-id="${esc360(p.id)}"><strong>${esc360(patientLabel360(p))}</strong><small>DNI ${esc360(p.dni||'s/d')} · ${esc360(p.obraSocial||p.coberturaHabitual||'Sin cobertura')}</small></button>`).join(''):'<p class="muted">Sin coincidencias.</p>';box.classList.remove('hidden');}
-  function openPatient360(p){if(!p)return;const id=p.id;try{if(typeof abrirFichaPacienteGlobal320==='function')abrirFichaPacienteGlobal320(id);else if(typeof abrirFichaPaciente==='function')abrirFichaPaciente(id);else{showSection('pacientes');}}catch(e){showSection('pacientes');}}
+  function openPatient360(p){if(!p)return;try{const key=(typeof clavePac320==='function'?clavePac320(p):(p.id||p.dni||''));if(typeof abrirPacienteGlobal320==='function'){abrirPacienteGlobal320(key);document.getElementById('buscadorGlobal360')?.blur();document.getElementById('pacienteGlobalModal')?.scrollTo?.(0,0);document.body.classList.add('patient-modal-open-371');return;}if(typeof abrirFichaPaciente==='function'){abrirFichaPaciente(p.id);return;}showSection('pacientes');setTimeout(()=>{if(typeof seleccionarPacientePanel==='function')seleccionarPacientePanel(key);},80);}catch(e){console.error('No se pudo abrir paciente desde búsqueda global',e);showSection('pacientes');}}
   function updateSpotlightActive360(){document.querySelectorAll('.spotlight-item-360').forEach((x,i)=>x.classList.toggle('active',i===spotlightIndex360));document.querySelectorAll('.spotlight-item-360')[spotlightIndex360]?.scrollIntoView({block:'nearest'});}
 
   function shiftAgenda360(dir){const inp=$360('agendaFecha');if(!inp)return;const d=new Date((inp.value||today360())+'T12:00:00');const vista=$360('agendaVista')?.value||'tabla';d.setDate(d.getDate()+dir*(vista==='mes'?30:vista==='semana'?7:1));inp.value=d.toISOString().slice(0,10);renderAgenda?.();}
@@ -6079,7 +6079,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function bind360(){
     $360('btnCerrarWelcome360')?.addEventListener('click',()=>closeWelcome360(true));$360('btnEntrarWelcome360')?.addEventListener('click',()=>closeWelcome360(true));$360('btnAbrirBienvenida360')?.addEventListener('click',()=>openWelcome360(true));
     $360('btnNotificaciones360')?.addEventListener('click',()=>{$360('notificationsPanel360')?.classList.toggle('hidden');renderNotifications360();});$360('btnCerrarNotificaciones360')?.addEventListener('click',()=>$360('notificationsPanel360')?.classList.add('hidden'));
-    document.addEventListener('click',e=>{const n=e.target.closest('[data-notif-action]');if(n){$360('notificationsPanel360')?.classList.add('hidden');const a=n.dataset.notifAction;if(a==='pendientes')openPendingFilter360('');else showSection(a==='pacientes'?'pacientes':'config');}const p=e.target.closest('[data-patient-id]');if(p&&p.closest('#resultadosGlobal360')){const patient=patients360().find(x=>String(x.id)===String(p.dataset.patientId));openPatient360(patient);$360('resultadosGlobal360')?.classList.add('hidden');}});
+    document.addEventListener('click',e=>{const n=e.target.closest('[data-notif-action]');if(n){$360('notificationsPanel360')?.classList.add('hidden');const a=n.dataset.notifAction;if(a==='pendientes')openPendingFilter360('');else showSection(a==='pacientes'?'pacientes':'config');}const p=e.target.closest('[data-patient-id]');if(p&&p.closest('#resultadosGlobal360')){const patient=patients360().find(x=>String(x.id)===String(p.dataset.patientId));openPatient360(patient);$360('resultadosGlobal360')?.classList.add('hidden');if($360('buscadorGlobal360'))$360('buscadorGlobal360').value='';}});
     const inp=$360('buscadorGlobal360');if(inp){inp.addEventListener('input',e=>renderSpotlight360(e.target.value));inp.addEventListener('keydown',e=>{if(e.key==='ArrowDown'){e.preventDefault();spotlightIndex360=Math.min(spotlightIndex360+1,spotlightMatches360.length-1);updateSpotlightActive360();}if(e.key==='ArrowUp'){e.preventDefault();spotlightIndex360=Math.max(spotlightIndex360-1,0);updateSpotlightActive360();}if(e.key==='Enter'&&spotlightIndex360>=0){e.preventDefault();openPatient360(spotlightMatches360[spotlightIndex360]);$360('resultadosGlobal360')?.classList.add('hidden');}if(e.key==='Escape')$360('resultadosGlobal360')?.classList.add('hidden');});}
     $360('btnAgendaAnterior360')?.addEventListener('click',()=>shiftAgenda360(-1));$360('btnAgendaSiguiente360')?.addEventListener('click',()=>shiftAgenda360(1));$360('btnAgendaHoy360')?.addEventListener('click',()=>{if($360('agendaFecha'))$360('agendaFecha').value=today360();renderAgenda?.();});
     $360('btnPersonalizarDashboard360')?.addEventListener('click',openDashboardConfig360);$360('btnCerrarDashboardConfig360')?.addEventListener('click',()=>$360('dashboardConfigModal360')?.classList.add('hidden'));$360('btnGuardarDashboard360')?.addEventListener('click',saveDashboardConfig360);
@@ -6172,3 +6172,5 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',init); else init();
 })();
+
+/* ===== v3.7.1 - fix búsqueda global y bienvenida ===== */
