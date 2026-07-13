@@ -264,7 +264,7 @@ function mostrarPantallaLogin() {
 
       <h1>CardioLink Admin</h1>
       <p class="login-subtitle">by Matías Anchorena</p>
-      <p class="login-meta">Versión 2.8.3 · 2026</p>
+      <p class="login-meta">Versión 3.6.0 · 2026</p>
     </div>
 
     <div class="login-fields">
@@ -5945,4 +5945,154 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   document.addEventListener('DOMContentLoaded',()=>setTimeout(init350,900));
   setTimeout(init350,1800);
   setInterval(()=>{try{version350();asegurarBotonRepararCoberturas350();asegurarBotonPendientes350();}catch(e){}},2500);
+})();
+
+
+/* ===== v3.6.0 - Inicio inteligente y pulido administrativo ===== */
+(()=>{
+  const APP_VERSION='3.6.1';
+  const $360=id=>document.getElementById(id);
+  const esc360=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const norm360=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
+  const today360=()=>new Date().toISOString().slice(0,10);
+  function setVersion360(){
+    document.title=`CardioLink Admin v${APP_VERSION}`;
+    document.querySelectorAll('.brand-main span').forEach(x=>x.textContent=`v${APP_VERSION}`);
+    document.querySelectorAll('.login-meta').forEach(x=>x.textContent=`Versión ${APP_VERSION} · 2026`);
+    const pt=document.querySelector('.print-title h2');if(pt)pt.textContent=`CardioLink Admin v${APP_VERSION}`;
+  }
+  function hasAuthenticatedSession360(){
+    try{return !!(window.usuarioSupabase?.email || window.usuarioSupabase?.id);}catch(e){return false;}
+  }
+  function isLocalPreview360(){return location.protocol==='file:' || !hasAuthenticatedSession360();}
+  function currentUser360(){
+    try{
+      const u=perfilUsuarioActual();
+      if(u && (u.nombre||u.usuario) && !/^local$/i.test(String(u.nombre||u.usuario||''))) return u;
+    }catch(e){}
+    const pid=$360('perfilActivo')?.value||'general';
+    return {nombre:profName360(pid)||'Vista local',rol:'preview',profesionalId:pid,usuario:'local'};
+  }
+  function currentProfileId360(){return $360('perfilActivo')?.value||currentUser360().profesionalId||'general';}
+  function profName360(id){return (data?.profesionales||[]).find(p=>p.id===id)?.nombre||id||'Vista general';}
+  function profileAtt360(date=today360(), pid=currentProfileId360()){
+    return (window.atenciones||[]).filter(a=>a&&a.fecha===date&&(pid==='general'||!pid||a.profesionalId===pid||a.profesional===profName360(pid)));
+  }
+  function isPending360(a){return !!(a&&(!a.estudioInformado||!a.estudioImpreso||a.pendienteEnvio||a.pendienteEntrega||a.bonoPendiente||a.autorizacionPendiente));}
+  function prestationCounts360(list){const c={};list.forEach(a=>{const k=String(a.prestacion||'Sin prestación').trim()||'Sin prestación';c[k]=(c[k]||0)+1;});return Object.entries(c).sort((a,b)=>b[1]-a[1]);}
+  function firstName360(n){const s=String(n||'').replace(/^Dr\.?\s*/i,'').replace(/^Dra\.?\s*/i,'').trim();return s||'Usuario';}
+  function welcomeTitle360(u){
+    if(isLocalPreview360()){
+      const nombre=profName360(currentProfileId360());
+      return nombre&&nombre!=='general' ? `Resumen de ${nombre}` : 'Vista previa local';
+    }
+    if(u.rol==='secretaria')return `Bienvenida, ${firstName360(u.nombre)}`;
+    const isDoc=['medico','duenio','admin'].includes(u.rol);return `Bienvenido${isDoc?' Dr.':''} ${firstName360(u.nombre)}`;
+  }
+  function renderWelcomeSummary360(){
+    const pid=$360('welcomePerfil360')?.value||currentProfileId360();const list=profileAtt360(today360(),pid);const pending=list.filter(isPending360);
+    const counts=prestationCounts360(list);const room=list.filter(a=>['sala_espera','en_sala','llego'].includes(a.estadoTurno||a.estado)).length;
+    const html=[`<div class="welcome-kpi-360"><span>Turnos de hoy</span><strong>${list.length}</strong></div>`,
+      ...counts.slice(0,8).map(([k,v])=>`<div class="welcome-kpi-360"><span>${esc360(k)}</span><strong>${v}</strong></div>`),
+      `<div class="welcome-kpi-360 warning"><span>Pendientes</span><strong>${pending.length}</strong></div>`,
+      `<div class="welcome-kpi-360"><span>En sala</span><strong>${room}</strong></div>`].join('');
+    if($360('welcomeResumen360'))$360('welcomeResumen360').innerHTML=html||'<p class="muted">No hay turnos asignados para hoy.</p>';
+  }
+  function openWelcome360(force=false){
+    const modal=$360('welcomeModal360');if(!modal)return;
+    if(isLocalPreview360() && !force) return;
+    const u=currentUser360();
+    const key=`cl_welcome_${hasAuthenticatedSession360()?(usuarioActualNombreCorto?.()||'usuario'):'preview'}_${today360()}`;if(!force&&sessionStorage.getItem(key))return;
+    $360('welcomeFecha360').textContent=new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+    $360('welcomeTitulo360').textContent=welcomeTitle360(u);
+    $360('welcomeUsuario360').textContent=isLocalPreview360()?'Vista local de prueba · el saludo real se muestra al ingresar desde GitHub Pages':`Usuario conectado: ${u.nombre||u.usuario||''}`;
+    const canChoose=isLocalPreview360()||u.rol==='secretaria'||u.rol==='admin'||u.rol==='duenio';const wrap=$360('welcomePerfilWrap360'),sel=$360('welcomePerfil360');
+    wrap?.classList.toggle('hidden',!canChoose);
+    if(sel){sel.innerHTML=(data?.profesionales||[]).map(p=>`<option value="${esc360(p.id)}">${esc360(p.nombre)}</option>`).join('');let target=currentProfileId360();if(target==='general')target=u.profesionalId||(data?.profesionales||[])[0]?.id;sel.value=target||'';sel.onchange=renderWelcomeSummary360;}
+    renderWelcomeSummary360();modal.classList.remove('hidden');modal.dataset.key=key;
+  }
+  function closeWelcome360(apply=true){const modal=$360('welcomeModal360');if(!modal)return;if(apply){const sel=$360('welcomePerfil360');if(sel&&!$360('welcomePerfilWrap360')?.classList.contains('hidden')&&sel.value){const pa=$360('perfilActivo');if(pa){pa.value=sel.value;pa.dispatchEvent(new Event('change',{bubbles:true}));}}sessionStorage.setItem(modal.dataset.key||`cl_welcome_${today360()}`,'1');}modal.classList.add('hidden');renderAdmin360();}
+
+  function pendingBreakdown360(list){return [
+    ['Falta informe',list.filter(a=>!a.estudioInformado).length,'informe'],
+    ['Falta copia',list.filter(a=>!a.copiaEstudioImpresa&&!a.estudioImpreso).length,'copia'],
+    ['Falta enviar/imprimir',list.filter(a=>a.pendienteEnvio||a.pendienteEntrega||(!a.estudioImpreso&&!a.estudioEnviadoMail&&!a.estudioEnviadoWS)).length,'envio'],
+    ['Falta firma/bono',list.filter(a=>a.bonoPendiente||a.bonoEstudioFirmado===false||a.bonoConsultaFirmado===false).length,'firma']
+  ];}
+  function openPendingFilter360(tipo){try{showSection('listado');modoPendientesGlobal=true;const sel=$360('filtroPendienteTipo300')||$360('filtroPendienteTipo');if(sel){sel.value=tipo;sel.dispatchEvent(new Event('change',{bubbles:true}));}renderTabla?.();}catch(e){console.warn(e)}}
+  window.openPendingFilter360=openPendingFilter360;
+  function computeNotifications360(){
+    const pid=currentProfileId360();const own=(window.atenciones||[]).filter(a=>a&&(pid==='general'||a.profesionalId===pid||a.profesional===profName360(pid)));const pend=own.filter(isPending360);
+    const pats=(typeof todosPacientes==='function'?todosPacientes():(data?.pacientes||[])).filter(p=>p&&p.estado!=='fusionado');
+    const noContact=pats.filter(p=>!p.telefono&&!p.email&&!p.telefonoResponsable&&!p.emailResponsable).length;
+    const noCover=pats.filter(p=>{const c=String(p.obraSocial||p.coberturaHabitual||'').trim();return !c||norm360(c).includes('matias anchorena')}).length;
+    const duplicates=0;const out=[];
+    if(pend.length)out.push({icon:'⚠️',text:`${pend.length} pendiente(s) del perfil activo`,action:'pendientes'});
+    if(noCover)out.push({icon:'🪪',text:`${noCover} paciente(s) con cobertura incompleta`,action:'pacientes'});
+    if(noContact)out.push({icon:'📞',text:`${noContact} paciente(s) sin datos de contacto`,action:'pacientes'});
+    const last=Number(localStorage.getItem('cl_last_backup')||0);if(!last||Date.now()-last>7*864e5)out.push({icon:'💾',text:'Conviene realizar un backup: pasaron más de 7 días',action:'config'});
+    return out;
+  }
+  function renderNotifications360(){const items=computeNotifications360();const badge=$360('badgeNotificaciones360');if(badge){badge.textContent=items.length;badge.style.display=items.length?'inline-flex':'none';}
+    const html=items.length?items.map((n,i)=>`<button type="button" class="notification-item-360" data-notif-action="${n.action}"><span>${n.icon}</span><span>${esc360(n.text)}</span></button>`).join(''):'<p class="muted">No hay alertas importantes.</p>';
+    if($360('notificationsList360'))$360('notificationsList360').innerHTML=html;if($360('notificacionesDashboard360'))$360('notificacionesDashboard360').innerHTML=html;
+  }
+  function renderDashboard360(){const list=profileAtt360();const board=$360('tableroPendientes360');if(board){board.innerHTML=pendingBreakdown360(list).map(([t,n,k])=>`<button type="button" onclick="openPendingFilter360('${k}')"><span>${esc360(t)}</span><strong>${n}</strong></button>`).join('');}
+    const prod=$360('produccionHoy360');if(prod){const cnt=prestationCounts360(list);prod.innerHTML=cnt.length?cnt.map(([k,v])=>`<div><span>${esc360(k)}</span><strong>${v}</strong></div>`).join(''):'<p class="muted">Sin prestaciones asignadas hoy.</p>';}
+    renderNotifications360();applyDashboardPrefs360();}
+  function dashboardPrefsKey360(){return `cl_dashboard_${usuarioActualNombreCorto?.()||'local'}`}
+  function getDashboardPrefs360(){try{return JSON.parse(localStorage.getItem(dashboardPrefsKey360())||'null')||{kpis:true,resumen:true,pendientes:true,notificaciones:true,produccion:true}}catch{return {kpis:true,resumen:true,pendientes:true,notificaciones:true,produccion:true}}}
+  function applyDashboardPrefs360(){const prefs=getDashboardPrefs360();document.querySelectorAll('[data-dashboard-widget]').forEach(x=>x.classList.toggle('dashboard-hidden-360',prefs[x.dataset.dashboardWidget]===false));}
+  function openDashboardConfig360(){const prefs=getDashboardPrefs360();document.querySelectorAll('[data-widget-toggle]').forEach(x=>x.checked=prefs[x.dataset.widgetToggle]!==false);$360('dashboardConfigModal360')?.classList.remove('hidden');}
+  function saveDashboardConfig360(){const p={};document.querySelectorAll('[data-widget-toggle]').forEach(x=>p[x.dataset.widgetToggle]=x.checked);localStorage.setItem(dashboardPrefsKey360(),JSON.stringify(p));$360('dashboardConfigModal360')?.classList.add('hidden');applyDashboardPrefs360();}
+
+  let spotlightIndex360=-1,spotlightMatches360=[];
+  function patients360(){return (typeof todosPacientes==='function'?todosPacientes():(data?.pacientes||[])).filter(p=>p&&p.estado!=='fusionado');}
+  function patientLabel360(p){return p.nombreCompleto||p.paciente||p.nombre||'Paciente';}
+  function renderSpotlight360(q){const box=$360('resultadosGlobal360');if(!box)return;const n=norm360(q);if(n.length<2){box.classList.add('hidden');box.innerHTML='';spotlightMatches360=[];return;}
+    spotlightMatches360=patients360().filter(p=>norm360([patientLabel360(p),p.dni,p.telefono,p.email,p.telefonoResponsable,p.emailResponsable].join(' ')).includes(n)).slice(0,10);spotlightIndex360=spotlightMatches360.length?0:-1;
+    box.innerHTML=spotlightMatches360.length?spotlightMatches360.map((p,i)=>`<button type="button" class="spotlight-item-360 ${i===0?'active':''}" data-patient-id="${esc360(p.id)}"><strong>${esc360(patientLabel360(p))}</strong><small>DNI ${esc360(p.dni||'s/d')} · ${esc360(p.obraSocial||p.coberturaHabitual||'Sin cobertura')}</small></button>`).join(''):'<p class="muted">Sin coincidencias.</p>';box.classList.remove('hidden');}
+  function openPatient360(p){if(!p)return;const id=p.id;try{if(typeof abrirFichaPacienteGlobal320==='function')abrirFichaPacienteGlobal320(id);else if(typeof abrirFichaPaciente==='function')abrirFichaPaciente(id);else{showSection('pacientes');}}catch(e){showSection('pacientes');}}
+  function updateSpotlightActive360(){document.querySelectorAll('.spotlight-item-360').forEach((x,i)=>x.classList.toggle('active',i===spotlightIndex360));document.querySelectorAll('.spotlight-item-360')[spotlightIndex360]?.scrollIntoView({block:'nearest'});}
+
+  function shiftAgenda360(dir){const inp=$360('agendaFecha');if(!inp)return;const d=new Date((inp.value||today360())+'T12:00:00');const vista=$360('agendaVista')?.value||'tabla';d.setDate(d.getDate()+dir*(vista==='mes'?30:vista==='semana'?7:1));inp.value=d.toISOString().slice(0,10);renderAgenda?.();}
+  function enhanceMonthClick360(){document.querySelectorAll('.month-cell320').forEach(cell=>{if(cell.dataset.nav360)return;cell.dataset.nav360='1';cell.style.cursor='pointer';cell.addEventListener('click',e=>{if(e.target.closest('button,.mini-turno320'))return;const h=cell.querySelector('h3')?.textContent||'';const n=(h.match(/(\d+)\s*$/)||[])[1];if(!n)return;const base=new Date(($360('agendaFecha')?.value||today360())+'T12:00:00');base.setDate(Number(n));$360('agendaFecha').value=base.toISOString().slice(0,10);$360('agendaVista').value='tabla';renderAgenda?.();});});}
+
+  function reorganizeConfig360(){const grid=document.querySelector('#config .config-grid');if(!grid)return;[...grid.children].forEach(card=>{const h=norm360(card.querySelector('h3')?.textContent||'');let g='mantenimiento';if(h.includes('profesional'))g='profesionales';if(h.includes('prestacion')||h.includes('bloque'))g='prestaciones';if(h.includes('obra social')||h.includes('regla')||h.includes('valor'))g='coberturas';if(h.includes('usuario')||h.includes('rol'))g='usuarios';if(h.includes('backup')||h.includes('mantenimiento')||h.includes('duplicado'))g='mantenimiento';card.dataset.configGroup360=g;});}
+  function filterConfig360(group){document.querySelectorAll('#config .config-grid > *').forEach(x=>x.classList.toggle('config-hidden-360',group!=='todos'&&x.dataset.configGroup360!==group));document.querySelectorAll('[data-config-group]').forEach(b=>b.classList.toggle('active',b.dataset.configGroup===group));}
+
+  function enrichStats360(){const card=document.querySelector('#estadisticas .estadisticas-card');if(!card)return;let box=$360('statsEnriched360');if(!box){box=document.createElement('div');box.id='statsEnriched360';box.className='stats-enriched-360';card.appendChild(box);}const desde=$360('statsDesde')?.value||'0000-00-00',hasta=$360('statsHasta')?.value||'9999-99-99',pid=$360('statsProfesional')?.value||'general';const list=(window.atenciones||[]).filter(a=>a&&a.fecha>=desde&&a.fecha<=hasta&&(pid==='general'||!pid||a.profesionalId===pid||a.profesional===profName360(pid)));
+    const os={},prod={},prof={};list.forEach(a=>{const o=a.obraSocial||a.coberturaAtencion||'Incompleto';os[o]=(os[o]||0)+1;const pr=a.prestacion||'Sin prestación';prod[pr]=(prod[pr]||0)+1;const pf=a.profesional||'Sin profesional';prof[pf]=(prof[pf]||0)+1;});
+    const tbl=(title,obj)=>`<div class="stats-table-360"><h3>${title}</h3>${Object.keys(obj).length?Object.entries(obj).sort((a,b)=>b[1]-a[1]).slice(0,15).map(([k,v])=>`<div><span>${esc360(k)}</span><strong>${v}</strong></div>`).join(''):'<p class="muted">Sin datos.</p>'}</div>`;
+    box.innerHTML=tbl('Atenciones por cobertura',os)+tbl('Prestaciones',prod)+tbl('Producción por profesional',prof);}
+
+  function improvePatientModal360(){const m=document.querySelector('.global-patient-modal320:not(.patient-improved-360), #modalFichaPacienteGlobal:not(.patient-improved-360)');if(!m)return;m.classList.add('patient-improved-360');const body=m.querySelector('.modal-body, .global-patient-card320')||m;const txt=body.textContent||'';}
+
+  function renderAdmin360(){setVersion360();renderDashboard360();reorganizeConfig360();enrichStats360();setTimeout(()=>{enhanceMonthClick360();improvePatientModal360();},80);}
+  function bind360(){
+    $360('btnCerrarWelcome360')?.addEventListener('click',()=>closeWelcome360(true));$360('btnEntrarWelcome360')?.addEventListener('click',()=>closeWelcome360(true));$360('btnAbrirBienvenida360')?.addEventListener('click',()=>openWelcome360(true));
+    $360('btnNotificaciones360')?.addEventListener('click',()=>{$360('notificationsPanel360')?.classList.toggle('hidden');renderNotifications360();});$360('btnCerrarNotificaciones360')?.addEventListener('click',()=>$360('notificationsPanel360')?.classList.add('hidden'));
+    document.addEventListener('click',e=>{const n=e.target.closest('[data-notif-action]');if(n){$360('notificationsPanel360')?.classList.add('hidden');const a=n.dataset.notifAction;if(a==='pendientes')openPendingFilter360('');else showSection(a==='pacientes'?'pacientes':'config');}const p=e.target.closest('[data-patient-id]');if(p&&p.closest('#resultadosGlobal360')){const patient=patients360().find(x=>String(x.id)===String(p.dataset.patientId));openPatient360(patient);$360('resultadosGlobal360')?.classList.add('hidden');}});
+    const inp=$360('buscadorGlobal360');if(inp){inp.addEventListener('input',e=>renderSpotlight360(e.target.value));inp.addEventListener('keydown',e=>{if(e.key==='ArrowDown'){e.preventDefault();spotlightIndex360=Math.min(spotlightIndex360+1,spotlightMatches360.length-1);updateSpotlightActive360();}if(e.key==='ArrowUp'){e.preventDefault();spotlightIndex360=Math.max(spotlightIndex360-1,0);updateSpotlightActive360();}if(e.key==='Enter'&&spotlightIndex360>=0){e.preventDefault();openPatient360(spotlightMatches360[spotlightIndex360]);$360('resultadosGlobal360')?.classList.add('hidden');}if(e.key==='Escape')$360('resultadosGlobal360')?.classList.add('hidden');});}
+    $360('btnAgendaAnterior360')?.addEventListener('click',()=>shiftAgenda360(-1));$360('btnAgendaSiguiente360')?.addEventListener('click',()=>shiftAgenda360(1));$360('btnAgendaHoy360')?.addEventListener('click',()=>{if($360('agendaFecha'))$360('agendaFecha').value=today360();renderAgenda?.();});
+    $360('btnPersonalizarDashboard360')?.addEventListener('click',openDashboardConfig360);$360('btnCerrarDashboardConfig360')?.addEventListener('click',()=>$360('dashboardConfigModal360')?.classList.add('hidden'));$360('btnGuardarDashboard360')?.addEventListener('click',saveDashboardConfig360);
+    $360('configTabs360')?.addEventListener('click',e=>{const b=e.target.closest('[data-config-group]');if(b)filterConfig360(b.dataset.configGroup);});
+    $360('perfilActivo')?.addEventListener('change',()=>setTimeout(renderAdmin360,80));
+    document.querySelectorAll('.nav').forEach(b=>b.addEventListener('click',()=>setTimeout(renderAdmin360,80)));
+  }
+  const oldRenderAgenda360=typeof renderAgenda==='function'?renderAgenda:null;if(oldRenderAgenda360){window.renderAgenda=renderAgenda=function(){const r=oldRenderAgenda360.apply(this,arguments);setTimeout(enhanceMonthClick360,20);return r;}}
+  const oldRenderStats360=typeof renderEstadisticas==='function'?renderEstadisticas:null;if(oldRenderStats360){window.renderEstadisticas=renderEstadisticas=function(){const r=oldRenderStats360.apply(this,arguments);setTimeout(enrichStats360,40);return r;}}
+  const oldExport360=typeof exportarBackup==='function'?exportarBackup:null;if(oldExport360){window.exportarBackup=exportarBackup=function(){localStorage.setItem('cl_last_backup',String(Date.now()));return oldExport360.apply(this,arguments);}}
+  function init360(){
+    setVersion360();bind360();renderAdmin360();document.body.classList.add('app-ready-360');
+    if(location.protocol!=='file:'){
+      let tries=0;
+      const waitWelcome=setInterval(()=>{
+        tries++;
+        if(hasAuthenticatedSession360()){clearInterval(waitWelcome);openWelcome360(false);}
+        else if(tries>=20)clearInterval(waitWelcome);
+      },250);
+    }
+  }
+  document.addEventListener('DOMContentLoaded',()=>setTimeout(init360,1000));setTimeout(()=>{setVersion360();document.body.classList.add('app-ready-360');},1800);setInterval(setVersion360,4000);
 })();
