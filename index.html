@@ -3,13 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CardioLink Admin v3.5.0</title>
-<link rel="stylesheet" href="styles.css?v=350">
+<title>CardioLink Admin v3.6.1</title>
+<link rel="stylesheet" href="styles.css?v=361">
 </head>
 <body>
 <aside class="sidebar">
   <div class="brand">
-    <div class="brand-main">CardioLink Admin <span>v3.5.0</span></div>
+    <div class="brand-main">CardioLink Admin <span>v3.6.1</span></div>
     <div class="brand-by">by Matías Anchorena</div>
   </div>
   <button class="nav active" data-section="dashboard">Dashboard</button>
@@ -34,14 +34,26 @@
       <p class="datetime" id="fechaHoraPanel"></p>
       <p class="session-user" id="usuarioActivoBox"></p>
     </div>
-    <div class="profile-box">
-      <label>Perfil activo</label>
-      <select id="perfilActivo"></select>
+    <div class="topbar-tools">
+      <div class="profile-box">
+        <label>Perfil activo</label>
+        <select id="perfilActivo"></select>
+      </div>
+      <div class="global-search-360">
+        <label>Buscar paciente</label>
+        <input id="buscadorGlobal360" type="search" placeholder="Apellido, DNI, teléfono o email" autocomplete="off">
+        <div id="resultadosGlobal360" class="spotlight-results-360 hidden"></div>
+      </div>
+      <button type="button" id="btnNotificaciones360" class="notification-btn-360" title="Notificaciones">🔔<span id="badgeNotificaciones360">0</span></button>
     </div>
   </header>
 
   <section id="dashboard" class="section visible">
-    <div class="stats">
+    <div class="dashboard-toolbar-360">
+      <button type="button" class="secondary" id="btnPersonalizarDashboard360">Personalizar dashboard</button>
+      <button type="button" class="secondary" id="btnAbrirBienvenida360">Resumen de hoy</button>
+    </div>
+    <div class="stats" data-dashboard-widget="kpis">
       <div class="card"><span>Atenciones perfil</span><strong id="statTotal">•••</strong><button type="button" id="btnToggleConteo" class="mini-link">Mostrar</button></div>
       <div class="card"><span>Hoy</span><strong id="statHoy">0</strong></div>
       <div class="card"><span>Pendientes</span><strong id="statPendientes">0</strong></div>
@@ -49,10 +61,24 @@
       <div class="card money"><span>Caja hoy copagos</span><strong id="statCopagos">$0</strong></div>
       <div class="card money"><span>Caja hoy total</span><strong id="statTotalCaja">$0</strong></div>
     </div>
-    <div class="card">
+    <div class="card" data-dashboard-widget="resumen">
       <h2>Resumen del perfil activo</h2>
       <p id="dashboardDetalle" style="display:none !important;"></p>
-      <button class="primary" id="btnIrCarga">Ir a carga rápida</button>
+      <button class="primary" id="btnIrCarga">Ir a carga de turno/atención</button>
+    </div>
+    <div class="dashboard-grid-360">
+      <div class="card" data-dashboard-widget="pendientes">
+        <h2>Pendientes rápidos</h2>
+        <div id="tableroPendientes360" class="quick-board-360"></div>
+      </div>
+      <div class="card" data-dashboard-widget="notificaciones">
+        <h2>Centro de notificaciones</h2>
+        <div id="notificacionesDashboard360" class="notification-list-360"></div>
+      </div>
+      <div class="card" data-dashboard-widget="produccion">
+        <h2>Producción de hoy</h2>
+        <div id="produccionHoy360" class="production-grid-360"></div>
+      </div>
     </div>
 
     <div class="card instructivo-general" id="instructivoPerfiles">
@@ -187,7 +213,10 @@
           <h2>Agenda / sala de espera</h2>
           <p class="muted" id="agendaTextoPerfil">Turnos del día según el perfil activo.</p>
         </div>
-        <div class="agenda-view-toggle">
+        <div class="agenda-view-toggle agenda-nav-360">
+          <button type="button" id="btnAgendaAnterior360" class="secondary" title="Anterior">‹</button>
+          <button type="button" id="btnAgendaHoy360" class="secondary">Hoy</button>
+          <button type="button" id="btnAgendaSiguiente360" class="secondary" title="Siguiente">›</button>
           <label>Vista</label>
           <select id="agendaVista">
             <option value="tabla">Tabla</option>
@@ -391,7 +420,7 @@
 
       <div id="printArea">
         <div class="print-title">
-          <h2>CardioLink Admin v3.5.0</h2>
+          <h2>CardioLink Admin v3.6.1</h2>
           <p>by Matías Anchorena — Listado filtrado</p>
           <p id="printMeta"></p>
         </div>
@@ -775,6 +804,14 @@
   <section id="config" class="section">
     <div class="card">
       <h2>Configuración</h2>
+      <div class="config-tabs-360" id="configTabs360">
+        <button type="button" data-config-group="todos" class="active">Todo</button>
+        <button type="button" data-config-group="profesionales">Profesionales</button>
+        <button type="button" data-config-group="prestaciones">Prestaciones</button>
+        <button type="button" data-config-group="coberturas">Coberturas y valores</button>
+        <button type="button" data-config-group="usuarios">Usuarios y permisos</button>
+        <button type="button" data-config-group="mantenimiento">Mantenimiento y backup</button>
+      </div>
       <div class="config-grid">
         <div>
           <h3>Valores por profesional</h3>
@@ -877,9 +914,44 @@
     </div>
   </section>
 </main>
+
+<div id="welcomeModal360" class="modal-overlay-360 hidden" role="dialog" aria-modal="true">
+  <div class="welcome-card-360">
+    <button type="button" class="modal-close-360" id="btnCerrarWelcome360">×</button>
+    <p class="welcome-date-360" id="welcomeFecha360"></p>
+    <h2 id="welcomeTitulo360">Bienvenido</h2>
+    <p id="welcomeUsuario360" class="muted"></p>
+    <div id="welcomePerfilWrap360" class="welcome-profile-360 hidden">
+      <label>¿Qué perfil profesional desea ver para trabajar?</label>
+      <select id="welcomePerfil360"></select>
+    </div>
+    <div id="welcomeResumen360" class="welcome-summary-360"></div>
+    <div class="modal-actions-360"><button type="button" class="primary" id="btnEntrarWelcome360">Comenzar</button></div>
+  </div>
+</div>
+
+<div id="notificationsPanel360" class="notifications-panel-360 hidden">
+  <div class="notifications-head-360"><strong>Notificaciones</strong><button type="button" id="btnCerrarNotificaciones360">×</button></div>
+  <div id="notificationsList360"></div>
+</div>
+
+<div id="dashboardConfigModal360" class="modal-overlay-360 hidden">
+  <div class="dashboard-config-card-360">
+    <button type="button" class="modal-close-360" id="btnCerrarDashboardConfig360">×</button>
+    <h2>Personalizar dashboard</h2>
+    <p class="muted">Esta elección se guarda para el usuario conectado.</p>
+    <label><input type="checkbox" data-widget-toggle="kpis"> Indicadores principales</label>
+    <label><input type="checkbox" data-widget-toggle="resumen"> Resumen del perfil</label>
+    <label><input type="checkbox" data-widget-toggle="pendientes"> Pendientes rápidos</label>
+    <label><input type="checkbox" data-widget-toggle="notificaciones"> Notificaciones</label>
+    <label><input type="checkbox" data-widget-toggle="produccion"> Producción de hoy</label>
+    <button type="button" class="primary" id="btnGuardarDashboard360">Guardar</button>
+  </div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=350"></script>
+<script src="app.js?v=361"></script>
 </body>
 </html>
