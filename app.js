@@ -158,7 +158,7 @@ function esSecretaria(){ const r=perfilUsuarioActual().rol; return r==='secretar
 function esAdminComun(){ const r=perfilUsuarioActual().rol; return r==='admin'; }
 function esMedico(){ const r=perfilUsuarioActual().rol; return r==='medico'; }
 function puedeVerFacturaRogelio(){ return esMatiasDuenio(); }
-function puedeVerCajaGlobal(){ return esMatiasDuenio(); }
+function puedeVerCajaGlobal(){ return esMatiasDuenio() || esAdminComun(); }
 function puedeGestionarConfig(){ return esMatiasDuenio() || esSecretaria() || esAdminComun(); }
 function profesionalIdUsuarioActual(){ return perfilUsuarioActual().profesionalId || ''; }
 function nombreUsuarioAuditoria(){
@@ -187,7 +187,7 @@ function auditoriaHTML(a){
   return `<div class="audit-box"><strong>Trazabilidad</strong><br><small>Carga: ${creado}<br>Última edición: ${editado}</small></div>`;
 }
 function seccionPermitida(section){
-  if(section==='caja') return esMatiasDuenio();
+  if(section==='caja') return esMatiasDuenio() || esAdminComun();
   if(esMatiasDuenio()) return true;
   if(esSecretaria() || esAdminComun()) return true;
   if(esMedico()) return ['dashboard','carga','agenda','mensajes','pacientes','listado','estadisticas','colocaciones','instructivos'].includes(section);
@@ -211,7 +211,7 @@ function aplicarPermisosUI(){
       pa.disabled=false;
     }
   }
-  document.querySelectorAll('.solo-matias').forEach(el=>el.classList.toggle('hidden-permission',!esMatiasDuenio()));
+  document.querySelectorAll('.solo-matias').forEach(el=>{const isCaja=el.dataset?.section==='caja';el.classList.toggle('hidden-permission',isCaja?!(esMatiasDuenio()||esAdminComun()):!esMatiasDuenio());});
   document.querySelectorAll('.no-medico').forEach(el=>el.classList.toggle('hidden-permission',esMedico()));
   document.querySelectorAll('.solo-config').forEach(el=>el.classList.toggle('hidden-permission',!puedeGestionarConfig()));
   const lock=document.querySelector('.money-lock');
@@ -537,11 +537,12 @@ function agregarBotonCerrarSesion() {
   const btn = document.createElement("button");
   btn.id = "btnCerrarSesion";
   btn.textContent = "Cerrar sesión";
-  btn.style.position = "fixed";
-  btn.style.left = "18px";
+  btn.style.position = "static";
+  btn.style.left = "auto";
   btn.style.right = "auto";
-  btn.style.bottom = "18px";
-  btn.style.zIndex = "9999";
+  btn.style.bottom = "auto";
+  btn.style.zIndex = "1";
+  btn.style.visibility = "hidden";
   btn.style.padding = "13px 18px";
   btn.style.borderRadius = "14px";
   btn.style.border = "none";
@@ -551,7 +552,9 @@ function agregarBotonCerrarSesion() {
   btn.style.cursor = "pointer";
   btn.style.boxShadow = "0 6px 20px rgba(0,0,0,.25)";
   btn.style.fontSize = "16px";
-  btn.style.minWidth = "190px";
+  btn.style.minWidth = "0";
+  btn.style.width = "100%";
+  btn.style.marginTop = "10px";
 
   btn.addEventListener("click", async () => {
     if (confirm("¿Cerrar sesión en CardioLink?")) {
@@ -4464,14 +4467,14 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const sidebar=document.querySelector('.sidebar'); const btn=$id('btnCerrarSesion');
     if(sidebar && btn && btn.parentElement!==sidebar) sidebar.appendChild(btn);
     if(btn){
-      btn.style.position='static'; btn.style.left='auto'; btn.style.right='auto'; btn.style.bottom='auto'; btn.style.width='100%'; btn.style.minWidth='0'; btn.style.marginTop='10px'; btn.style.zIndex='1'; btn.style.boxShadow='none';
+      btn.style.position='static'; btn.style.left='auto'; btn.style.right='auto'; btn.style.bottom='auto'; btn.style.width='100%'; btn.style.visibility=document.body.classList.contains('app-ready-360')?'visible':'hidden'; btn.style.minWidth='0'; btn.style.marginTop='10px'; btn.style.zIndex='1'; btn.style.boxShadow='none';
     }
     const dark=$id('btnDark'); if(dark){dark.style.marginTop='18px'; dark.style.marginBottom='8px';}
   }
   function version296(){
-    try{document.title='CardioLink Admin v2.9.6';}catch(e){}
-    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v2.9.6');
-    document.querySelectorAll('h2').forEach(el=>{ if((el.textContent||'').includes('CardioLink Admin v')) el.textContent='CardioLink Admin v2.9.6'; });
+    try{document.title='CardioLink Admin v3.6.2';}catch(e){}
+    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v3.6.2');
+    document.querySelectorAll('h2').forEach(el=>{ if((el.textContent||'').includes('CardioLink Admin v')) el.textContent='CardioLink Admin v3.6.2'; });
   }
   document.addEventListener('DOMContentLoaded',()=>{asegurarBloques296(); version296(); moverLogout296(); try{actualizarPrestaciones(); aplicarPermisosUI(); renderAgenda?.(); renderMensajes?.();}catch(e){} });
   setTimeout(()=>{asegurarBloques296(); version296(); moverLogout296(); try{actualizarPrestaciones(); aplicarPermisosUI(); renderAgenda?.(); renderMensajes?.();}catch(e){}},900);
@@ -5962,7 +5965,10 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const pt=document.querySelector('.print-title h2');if(pt)pt.textContent=`CardioLink Admin v${APP_VERSION}`;
   }
   function hasAuthenticatedSession360(){
-    try{return !!(window.usuarioSupabase?.email || window.usuarioSupabase?.id);}catch(e){return false;}
+    try{return !!(usuarioSupabase?.email || usuarioSupabase?.id || window.usuarioSupabase?.email || window.usuarioSupabase?.id);}catch(e){return false;}
+  }
+  function allAtt360(){
+    try{return Array.isArray(atenciones)?atenciones:(Array.isArray(window.atenciones)?window.atenciones:[]);}catch(e){return Array.isArray(window.atenciones)?window.atenciones:[];}
   }
   function isLocalPreview360(){return location.protocol==='file:' || !hasAuthenticatedSession360();}
   function currentUser360(){
@@ -5976,7 +5982,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function currentProfileId360(){return $360('perfilActivo')?.value||currentUser360().profesionalId||'general';}
   function profName360(id){return (data?.profesionales||[]).find(p=>p.id===id)?.nombre||id||'Vista general';}
   function profileAtt360(date=today360(), pid=currentProfileId360()){
-    return (window.atenciones||[]).filter(a=>a&&a.fecha===date&&(pid==='general'||!pid||a.profesionalId===pid||a.profesional===profName360(pid)));
+    return allAtt360().filter(a=>a&&a.fecha===date&&(pid==='general'||!pid||a.profesionalId===pid||a.profesional===profName360(pid)));
   }
   function isPending360(a){return !!(a&&(!a.estudioInformado||!a.estudioImpreso||a.pendienteEnvio||a.pendienteEntrega||a.bonoPendiente||a.autorizacionPendiente));}
   function prestationCounts360(list){const c={};list.forEach(a=>{const k=String(a.prestacion||'Sin prestación').trim()||'Sin prestación';c[k]=(c[k]||0)+1;});return Object.entries(c).sort((a,b)=>b[1]-a[1]);}
@@ -5987,7 +5993,8 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       return nombre&&nombre!=='general' ? `Resumen de ${nombre}` : 'Vista previa local';
     }
     if(u.rol==='secretaria')return `Bienvenida, ${firstName360(u.nombre)}`;
-    const isDoc=['medico','duenio','admin'].includes(u.rol);return `Bienvenido${isDoc?' Dr.':''} ${firstName360(u.nombre)}`;
+    if(u.rol==='admin')return `Bienvenido, ${firstName360(u.nombre)}`;
+    const isDoc=['medico','duenio'].includes(u.rol);return `Bienvenido${isDoc?' Dr.':''} ${firstName360(u.nombre)}`;
   }
   function renderWelcomeSummary360(){
     const pid=$360('welcomePerfil360')?.value||currentProfileId360();const list=profileAtt360(today360(),pid);const pending=list.filter(isPending360);
@@ -6005,7 +6012,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const key=`cl_welcome_${hasAuthenticatedSession360()?(usuarioActualNombreCorto?.()||'usuario'):'preview'}_${today360()}`;if(!force&&sessionStorage.getItem(key))return;
     $360('welcomeFecha360').textContent=new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
     $360('welcomeTitulo360').textContent=welcomeTitle360(u);
-    $360('welcomeUsuario360').textContent=isLocalPreview360()?'Vista local de prueba · el saludo real se muestra al ingresar desde GitHub Pages':`Usuario conectado: ${u.nombre||u.usuario||''}`;
+    $360('welcomeUsuario360').textContent=isLocalPreview360()?'Vista local de diseño':`Usuario conectado: ${u.nombre||u.usuario||''}`;
     const canChoose=isLocalPreview360()||u.rol==='secretaria'||u.rol==='admin'||u.rol==='duenio';const wrap=$360('welcomePerfilWrap360'),sel=$360('welcomePerfil360');
     wrap?.classList.toggle('hidden',!canChoose);
     if(sel){sel.innerHTML=(data?.profesionales||[]).map(p=>`<option value="${esc360(p.id)}">${esc360(p.nombre)}</option>`).join('');let target=currentProfileId360();if(target==='general')target=u.profesionalId||(data?.profesionales||[])[0]?.id;sel.value=target||'';sel.onchange=renderWelcomeSummary360;}
@@ -6022,7 +6029,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function openPendingFilter360(tipo){try{showSection('listado');modoPendientesGlobal=true;const sel=$360('filtroPendienteTipo300')||$360('filtroPendienteTipo');if(sel){sel.value=tipo;sel.dispatchEvent(new Event('change',{bubbles:true}));}renderTabla?.();}catch(e){console.warn(e)}}
   window.openPendingFilter360=openPendingFilter360;
   function computeNotifications360(){
-    const pid=currentProfileId360();const own=(window.atenciones||[]).filter(a=>a&&(pid==='general'||a.profesionalId===pid||a.profesional===profName360(pid)));const pend=own.filter(isPending360);
+    const pid=currentProfileId360();const own=allAtt360().filter(a=>a&&(pid==='general'||a.profesionalId===pid||a.profesional===profName360(pid)));const pend=own.filter(isPending360);
     const pats=(typeof todosPacientes==='function'?todosPacientes():(data?.pacientes||[])).filter(p=>p&&p.estado!=='fusionado');
     const noContact=pats.filter(p=>!p.telefono&&!p.email&&!p.telefonoResponsable&&!p.emailResponsable).length;
     const noCover=pats.filter(p=>{const c=String(p.obraSocial||p.coberturaHabitual||'').trim();return !c||norm360(c).includes('matias anchorena')}).length;
@@ -6061,7 +6068,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function reorganizeConfig360(){const grid=document.querySelector('#config .config-grid');if(!grid)return;[...grid.children].forEach(card=>{const h=norm360(card.querySelector('h3')?.textContent||'');let g='mantenimiento';if(h.includes('profesional'))g='profesionales';if(h.includes('prestacion')||h.includes('bloque'))g='prestaciones';if(h.includes('obra social')||h.includes('regla')||h.includes('valor'))g='coberturas';if(h.includes('usuario')||h.includes('rol'))g='usuarios';if(h.includes('backup')||h.includes('mantenimiento')||h.includes('duplicado'))g='mantenimiento';card.dataset.configGroup360=g;});}
   function filterConfig360(group){document.querySelectorAll('#config .config-grid > *').forEach(x=>x.classList.toggle('config-hidden-360',group!=='todos'&&x.dataset.configGroup360!==group));document.querySelectorAll('[data-config-group]').forEach(b=>b.classList.toggle('active',b.dataset.configGroup===group));}
 
-  function enrichStats360(){const card=document.querySelector('#estadisticas .estadisticas-card');if(!card)return;let box=$360('statsEnriched360');if(!box){box=document.createElement('div');box.id='statsEnriched360';box.className='stats-enriched-360';card.appendChild(box);}const desde=$360('statsDesde')?.value||'0000-00-00',hasta=$360('statsHasta')?.value||'9999-99-99',pid=$360('statsProfesional')?.value||'general';const list=(window.atenciones||[]).filter(a=>a&&a.fecha>=desde&&a.fecha<=hasta&&(pid==='general'||!pid||a.profesionalId===pid||a.profesional===profName360(pid)));
+  function enrichStats360(){const card=document.querySelector('#estadisticas .estadisticas-card');if(!card)return;let box=$360('statsEnriched360');if(!box){box=document.createElement('div');box.id='statsEnriched360';box.className='stats-enriched-360';card.appendChild(box);}const desde=$360('statsDesde')?.value||'0000-00-00',hasta=$360('statsHasta')?.value||'9999-99-99',pid=$360('statsProfesional')?.value||'general';const list=allAtt360().filter(a=>a&&a.fecha>=desde&&a.fecha<=hasta&&(pid==='general'||!pid||a.profesionalId===pid||a.profesional===profName360(pid)));
     const os={},prod={},prof={};list.forEach(a=>{const o=a.obraSocial||a.coberturaAtencion||'Incompleto';os[o]=(os[o]||0)+1;const pr=a.prestacion||'Sin prestación';prod[pr]=(prod[pr]||0)+1;const pf=a.profesional||'Sin profesional';prof[pf]=(prof[pf]||0)+1;});
     const tbl=(title,obj)=>`<div class="stats-table-360"><h3>${title}</h3>${Object.keys(obj).length?Object.entries(obj).sort((a,b)=>b[1]-a[1]).slice(0,15).map(([k,v])=>`<div><span>${esc360(k)}</span><strong>${v}</strong></div>`).join(''):'<p class="muted">Sin datos.</p>'}</div>`;
     box.innerHTML=tbl('Atenciones por cobertura',os)+tbl('Prestaciones',prod)+tbl('Producción por profesional',prof);}
@@ -6085,14 +6092,50 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   const oldExport360=typeof exportarBackup==='function'?exportarBackup:null;if(oldExport360){window.exportarBackup=exportarBackup=function(){localStorage.setItem('cl_last_backup',String(Date.now()));return oldExport360.apply(this,arguments);}}
   function init360(){
     setVersion360();bind360();renderAdmin360();document.body.classList.add('app-ready-360');
+    const logout=document.getElementById('btnCerrarSesion');if(logout)logout.style.visibility='visible';
     if(location.protocol!=='file:'){
       let tries=0;
       const waitWelcome=setInterval(()=>{
         tries++;
         if(hasAuthenticatedSession360()){clearInterval(waitWelcome);openWelcome360(false);}
-        else if(tries>=20)clearInterval(waitWelcome);
+        else if(tries>=60)clearInterval(waitWelcome);
       },250);
     }
   }
   document.addEventListener('DOMContentLoaded',()=>setTimeout(init360,1000));setTimeout(()=>{setVersion360();document.body.classList.add('app-ready-360');},1800);setInterval(setVersion360,4000);
+})();
+
+
+/* ===== v3.6.2 - bienvenida real, permisos y consistencia dashboard ===== */
+(function(){
+  function id(x){return document.getElementById(x)}
+  function all(){try{return Array.isArray(atenciones)?atenciones:[]}catch(e){return []}}
+  function profileName(pid){try{return (data.profesionales||[]).find(p=>p.id===pid)?.nombre||pid}catch(e){return pid}}
+  function currentList(){
+    const pid=id('perfilActivo')?.value||'general';
+    return all().filter(a=>a&&(pid==='general'||!pid||a.profesionalId===pid||a.profesional===profileName(pid)));
+  }
+  function isBad(a){try{return evaluarEstado(a).cls==='bad'}catch(e){return false}}
+  function refreshQuickPending362(){
+    const list=currentList();
+    const bad=list.filter(isBad);
+    const stat=id('statPendientes');if(stat)stat.textContent=bad.length;
+    const board=id('tableroPendientes360');if(!board)return;
+    const firma=bad.filter(a=>(a.bonoConsulta||a.bonoEstudio)&&!a.bonoFirmado).length;
+    const copia=bad.filter(a=>(a.bonoEstudio||a.requiereCopiaImpresa)&&!a.copiaImpresa).length;
+    const informe=list.filter(a=>a.requiereInforme===true&&!a.estudioInformado).length;
+    const envio=list.filter(a=>a.pendienteEnvio||a.pendienteEntrega).length;
+    const rows=[['Falta informe',informe,'informe'],['Falta copia',copia,'copia'],['Falta enviar/imprimir',envio,'envio'],['Falta firma/bono',firma,'firma']];
+    board.innerHTML=rows.map(r=>`<button type="button" onclick="openPendingFilter360('${r[2]}')"><span>${r[0]}</span><strong>${r[1]}</strong></button>`).join('');
+  }
+  const oldPerm=typeof aplicarPermisosUI==='function'?aplicarPermisosUI:null;
+  if(oldPerm){window.aplicarPermisosUI=aplicarPermisosUI=function(){oldPerm.apply(this,arguments);const u=perfilUsuarioActual();document.querySelectorAll('.nav[data-section="caja"]').forEach(b=>b.classList.toggle('hidden-permission',!(esMatiasDuenio()||u.rol==='admin')));};}
+  const oldStats=typeof renderStats==='function'?renderStats:null;
+  if(oldStats){window.renderStats=renderStats=function(){const r=oldStats.apply(this,arguments);setTimeout(refreshQuickPending362,0);return r;};}
+  document.addEventListener('DOMContentLoaded',()=>{
+    document.body.classList.add('loading-362');
+    setTimeout(()=>{document.body.classList.remove('loading-362');document.body.classList.add('app-ready-360');const b=id('btnCerrarSesion');if(b)b.style.visibility='visible';refreshQuickPending362();},1400);
+  });
+  document.addEventListener('change',e=>{if(e.target?.id==='perfilActivo')setTimeout(refreshQuickPending362,100)});
+  setInterval(refreshQuickPending362,2500);
 })();

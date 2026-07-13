@@ -1172,3 +1172,17 @@ html:not(.dummy) body:not(.app-ready-360) #btnCerrarSesion{visibility:hidden!imp
 body.dark .topbar-tools .global-search-360{background:#0f2633;border-color:#25465a;}
 @media(max-width:1250px){.topbar-tools{grid-template-columns:minmax(250px,1fr) minmax(280px,1.2fr) 48px;}}
 @media(max-width:900px){.topbar-tools{grid-template-columns:1fr!important;width:100%;}.topbar-tools .notification-btn-360{margin:0;align-self:start}.topbar-tools .profile-box,.topbar-tools .global-search-360{min-height:auto!important;}}
+
+
+/* ===== v3.6.2 ===== */
+/* Oculta completamente el logout hasta que la app termine de iniciar. */
+body:not(.app-ready-360) #btnCerrarSesion{display:none!important;}
+body.app-ready-360 #btnCerrarSesion{display:block!important;visibility:visible!important;position:static!important;width:100%!important;max-width:none!important;min-width:0!important;margin:10px 0 0!important;}
+/* Perfil y buscador con exactamente la misma geometría. */
+.topbar-tools{grid-template-columns:minmax(300px,1fr) minmax(300px,1fr) 52px!important;align-items:stretch!important;}
+.topbar-tools .profile-box,.topbar-tools .global-search-360{height:132px!important;min-height:132px!important;padding:20px!important;display:flex!important;flex-direction:column!important;justify-content:center!important;}
+.topbar-tools .profile-box select,.topbar-tools .global-search-360 input{height:48px!important;min-height:48px!important;font-size:16px!important;margin:0!important;}
+.topbar-tools .notification-btn-360{align-self:center!important;margin:0!important;}
+/* Caja/reportes nunca visible para secretaría o médicos. */
+body[data-rol="secretaria"] .nav[data-section="caja"],body[data-rol="medico"] .nav[data-section="caja"]{display:none!important;}
+@media(max-width:900px){.topbar-tools .profile-box,.topbar-tools .global-search-360{height:auto!important;min-height:104px!important;}}
