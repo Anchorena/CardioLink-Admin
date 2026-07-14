@@ -264,7 +264,7 @@ function mostrarPantallaLogin() {
 
       <h1>CardioLink Admin</h1>
       <p class="login-subtitle">by Matías Anchorena</p>
-      <p class="login-meta">Versión 3.7.1 · 2026</p>
+      <p class="login-meta">Versión 3.7.2 · 2026</p>
     </div>
 
     <div class="login-fields">
@@ -5953,7 +5953,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
 /* ===== v3.6.0 - Inicio inteligente y pulido administrativo ===== */
 (()=>{
-  const APP_VERSION='3.7.1';
+  const APP_VERSION='3.7.2';
   const $360=id=>document.getElementById(id);
   const esc360=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const norm360=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
@@ -6174,3 +6174,23 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 })();
 
 /* ===== v3.7.1 - fix búsqueda global y bienvenida ===== */
+
+
+/* ===== v3.7.2 - listado compacto en tablet horizontal ===== */
+(function(){
+  function initFiltrosCompactos372(){
+    const btn=document.getElementById('btnToggleFiltros372');
+    const panel=document.getElementById('listadoFiltros372');
+    if(!btn||!panel||btn.dataset.ready372==='1') return;
+    btn.dataset.ready372='1';
+    const sync=()=>{
+      const abierto=panel.classList.contains('open-372');
+      btn.textContent=abierto?'Ocultar filtros':'Mostrar filtros';
+      btn.setAttribute('aria-expanded',abierto?'true':'false');
+    };
+    btn.addEventListener('click',()=>{panel.classList.toggle('open-372');sync();});
+    sync();
+  }
+  document.addEventListener('DOMContentLoaded',initFiltrosCompactos372);
+  setTimeout(initFiltrosCompactos372,400);
+})();

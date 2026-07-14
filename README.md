@@ -1,3 +1,10 @@
+# CardioLink Admin v3.7.2
+
+- Mejora el listado en iPad/tablet horizontal y teléfonos en horizontal.
+- Los filtros quedan plegados bajo “Mostrar filtros” para aprovechar la altura de pantalla.
+- La tabla usa mayor espacio vertical y mantiene encabezado fijo.
+- No modifica datos, reglas, permisos ni Supabase.
+
 # CardioLink Admin v3.7.1
 
 Correcciones sobre v3.7.0:

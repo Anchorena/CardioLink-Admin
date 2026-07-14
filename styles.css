@@ -1304,3 +1304,27 @@ body.patient-modal-open-371{overflow:hidden!important}
   #pacienteGlobalModal .global-copy-row{grid-template-columns:1fr!important}
   #pacienteGlobalModal .global-paciente-actions{grid-template-columns:1fr!important}
 }
+
+
+/* ===== v3.7.2 - listado más usable en tablet/móvil horizontal ===== */
+.listado-title-row-372{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.filtros-toggle-372{display:none}
+
+@media (max-width:1024px) and (orientation:landscape){
+  #listado .card{padding-top:14px}
+  .listado-title-row-372{position:sticky;top:74px;z-index:25;background:var(--card,#fff);padding:6px 0 10px}
+  .filtros-toggle-372{display:inline-flex!important;align-items:center;justify-content:center;min-height:42px;padding:8px 16px!important;width:auto!important}
+  #listadoFiltros372.filters-collapsible-372{display:none!important}
+  #listadoFiltros372.filters-collapsible-372.open-372{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:9px!important;padding:10px;border:1px solid var(--line,#dbe3ea);border-radius:14px;background:rgba(148,163,184,.06);margin-bottom:12px}
+  #listadoFiltros372 input,#listadoFiltros372 select,#listadoFiltros372 button,#listadoFiltros372 label{min-height:42px!important;margin:0!important}
+  #listado .tabla-listado-wrap{max-height:calc(100vh - 190px)!important;overflow:auto!important}
+  #listado .tabla-listado-wrap thead th{top:0!important}
+  #listado .resumen-caja,#listado .liquidacion-box{margin-bottom:8px}
+}
+
+@media (max-width:700px){
+  .listado-title-row-372{align-items:center}
+  .filtros-toggle-372{display:inline-flex!important;width:auto!important;min-height:42px!important;padding:8px 14px!important}
+  #listadoFiltros372.filters-collapsible-372{display:none!important}
+  #listadoFiltros372.filters-collapsible-372.open-372{display:grid!important;grid-template-columns:1fr!important;gap:8px!important}
+}
