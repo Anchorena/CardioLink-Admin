@@ -1,4 +1,4 @@
-# CardioLink Admin v3.8.0
+# CardioLink Admin v3.8.1
 
 Versión estable de cierre del módulo administrativo y preparación para CardioLink HC 4.0.
 

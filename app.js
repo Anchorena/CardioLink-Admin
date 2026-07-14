@@ -5953,7 +5953,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
 /* ===== v3.6.0 - Inicio inteligente y pulido administrativo ===== */
 (()=>{
-  const APP_VERSION='3.8.0';
+  const APP_VERSION='3.8.1';
   const $360=id=>document.getElementById(id);
   const esc360=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const norm360=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
@@ -6065,7 +6065,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function shiftAgenda360(dir){const inp=$360('agendaFecha');if(!inp)return;const d=new Date((inp.value||today360())+'T12:00:00');const vista=$360('agendaVista')?.value||'tabla';d.setDate(d.getDate()+dir*(vista==='mes'?30:vista==='semana'?7:1));inp.value=d.toISOString().slice(0,10);renderAgenda?.();}
   function enhanceMonthClick360(){document.querySelectorAll('.month-cell320').forEach(cell=>{if(cell.dataset.nav360)return;cell.dataset.nav360='1';cell.style.cursor='pointer';cell.addEventListener('click',e=>{if(e.target.closest('button,.mini-turno320'))return;const h=cell.querySelector('h3')?.textContent||'';const n=(h.match(/(\d+)\s*$/)||[])[1];if(!n)return;const base=new Date(($360('agendaFecha')?.value||today360())+'T12:00:00');base.setDate(Number(n));$360('agendaFecha').value=base.toISOString().slice(0,10);$360('agendaVista').value='tabla';renderAgenda?.();});});}
 
-  function reorganizeConfig360(){const grid=document.querySelector('#config .config-grid');if(!grid)return;[...grid.children].forEach(card=>{const h=norm360(card.querySelector('h3')?.textContent||'');let g='mantenimiento';if(h.includes('profesional'))g='profesionales';if(h.includes('prestacion')||h.includes('bloque'))g='prestaciones';if(h.includes('obra social')||h.includes('regla')||h.includes('valor'))g='coberturas';if(h.includes('usuario')||h.includes('rol'))g='usuarios';if(h.includes('backup')||h.includes('mantenimiento')||h.includes('duplicado'))g='mantenimiento';card.dataset.configGroup360=g;});}
+  function reorganizeConfig360(){const grid=document.querySelector('#config .config-grid');if(!grid)return;[...grid.children].forEach(card=>{if(card.dataset.configGroupCard==='sistema'){card.dataset.configGroup360='sistema';return;}const h=norm360(card.querySelector('h3')?.textContent||'');let g='mantenimiento';if(h.includes('profesional'))g='profesionales';if(h.includes('prestacion')||h.includes('bloque'))g='prestaciones';if(h.includes('obra social')||h.includes('regla')||h.includes('valor'))g='coberturas';if(h.includes('usuario')||h.includes('rol'))g='usuarios';if(h.includes('backup')||h.includes('mantenimiento')||h.includes('duplicado'))g='mantenimiento';card.dataset.configGroup360=g;});}
   function filterConfig360(group){document.querySelectorAll('#config .config-grid > *').forEach(x=>x.classList.toggle('config-hidden-360',group!=='todos'&&x.dataset.configGroup360!==group));document.querySelectorAll('[data-config-group]').forEach(b=>b.classList.toggle('active',b.dataset.configGroup===group));}
 
   function enrichStats360(){const card=document.querySelector('#estadisticas .estadisticas-card');if(!card)return;let box=$360('statsEnriched360');if(!box){box=document.createElement('div');box.id='statsEnriched360';box.className='stats-enriched-360';card.appendChild(box);}const desde=$360('statsDesde')?.value||'0000-00-00',hasta=$360('statsHasta')?.value||'9999-99-99',pid=$360('statsProfesional')?.value||'general';const list=allAtt360().filter(a=>a&&a.fecha>=desde&&a.fecha<=hasta&&(pid==='general'||!pid||a.profesionalId===pid||a.profesional===profName360(pid)));
@@ -6196,7 +6196,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 })();
 
 
-/* ===== v3.8.0 - PWA, estado de conexión y preparación segura para HC 4.0 ===== */
+/* ===== v3.8.1 - PWA, estado de conexión y preparación segura para HC 4.0 ===== */
 (function init380(){
   const $=id=>document.getElementById(id);
   let deferredPrompt380=null;
@@ -6214,7 +6214,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   async function registerSW380(){
     if(!('serviceWorker' in navigator) || location.protocol==='file:')return;
     try{
-      const reg=await navigator.serviceWorker.register('./sw.js?v=380',{scope:'./'});
+      const reg=await navigator.serviceWorker.register('./sw.js?v=381',{scope:'./'});
       reg.update().catch(()=>{});
     }catch(e){ console.warn('No se pudo registrar la PWA:',e); }
   }
@@ -6306,7 +6306,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       }
       if(!a.hcMeta)a.hcMeta={schemaVersion:1,evoluciones:0,informes:0,adjuntos:0};
     });
-    data.hcPreparacion={schemaVersion:1,preparadoEn:new Date().toISOString(),versionApp:'3.8.0'};
+    data.hcPreparacion={schemaVersion:1,preparadoEn:new Date().toISOString(),versionApp:'3.8.1'};
     try{saveConfig();saveAtenciones();}catch(e){console.warn(e);}
     try{await sincronizarAtencionesSupabase(true);}catch(e){console.warn('Sincronización HC pendiente:',e);}
     renderHC380();
@@ -6314,14 +6314,16 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   }
 
   function initConfigGroups380(){
+    // Integrar App/HC al mismo filtro modular sin usar display inline.
+    // La v3.8.0 ocultaba todos los paneles al entrar en esta pestaña y esos
+    // estilos quedaban pegados, por eso luego las demás pestañas aparecían vacías.
+    document.querySelectorAll('[data-config-group-card="sistema"]').forEach(c=>{
+      c.dataset.configGroup360='sistema';
+      c.style.removeProperty('display');
+    });
+    document.querySelectorAll('#config .config-grid > *').forEach(c=>c.style.removeProperty('display'));
     document.querySelectorAll('[data-config-group="sistema"]').forEach(b=>b.addEventListener('click',()=>{
-      document.querySelectorAll('#config .config-grid > div').forEach(c=>c.style.display='none');
-      document.querySelectorAll('[data-config-group-card="sistema"]').forEach(c=>c.style.display='block');
-      document.querySelectorAll('#configTabs360 button').forEach(x=>x.classList.toggle('active',x===b));
       renderHC380(); refreshInstall380();
-    }));
-    document.querySelectorAll('#configTabs360 button:not([data-config-group="sistema"])').forEach(b=>b.addEventListener('click',()=>{
-      document.querySelectorAll('[data-config-group-card="sistema"]').forEach(c=>c.style.display=b.dataset.configGroup==='todos'?'block':'none');
     }));
   }
 

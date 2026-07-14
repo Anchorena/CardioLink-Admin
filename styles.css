@@ -1340,3 +1340,40 @@ body.patient-modal-open-371{overflow:hidden!important}
 .hc-ready-grid-380{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px}.hc-ready-grid-380 span{display:flex;justify-content:space-between;padding:9px 11px;border:1px solid #dce5ec;border-radius:10px;background:#fff}
 @media(max-width:760px){.app-status-380{right:calc(12px + env(safe-area-inset-right));bottom:calc(12px + env(safe-area-inset-bottom));font-size:12px;padding:7px 10px}.hc-ready-grid-380{grid-template-columns:1fr}.config-system-380{padding:16px}}
 @media(display-mode:standalone){body{overscroll-behavior-y:none}.mobile-appbar-370{padding-top:env(safe-area-inset-top)}}
+
+
+/* ===== v3.8.1 - corrección lista de pacientes y pestañas de Configuración ===== */
+.paciente-panel-item{
+  box-sizing:border-box!important;
+  height:auto!important;
+  min-height:86px!important;
+  overflow:visible!important;
+  display:flex!important;
+  flex-direction:column!important;
+  align-items:stretch!important;
+  justify-content:center!important;
+  gap:2px!important;
+  white-space:normal!important;
+}
+.paciente-panel-item strong,
+.paciente-panel-item span{
+  position:static!important;
+  width:100%!important;
+  white-space:normal!important;
+  overflow-wrap:anywhere!important;
+}
+.paciente-panel-item.active{
+  box-shadow:0 0 0 1px #2563eb inset!important;
+}
+#config .config-grid > *{
+  visibility:visible;
+}
+#config .config-grid > *.config-hidden-360{
+  display:none!important;
+}
+@media(max-width:700px){
+  .pacientes-lista{gap:10px!important;padding:2px 3px 8px!important}
+  .paciente-panel-item{min-height:94px!important;padding:13px 15px!important;border-radius:18px!important}
+  .paciente-panel-item strong{font-size:18px!important;line-height:1.2!important;margin-bottom:3px!important}
+  .paciente-panel-item span{font-size:14px!important;line-height:1.28!important}
+}
