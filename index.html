@@ -7,19 +7,23 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<title>CardioLink Admin v3.7.2</title>
-<link rel="stylesheet" href="styles.css?v=372">
+<title>CardioLink Admin v3.8.0</title>
+<link rel="manifest" href="manifest.webmanifest?v=380">
+<link rel="apple-touch-icon" href="icons/icon-192.png?v=380">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png?v=380">
+<link rel="stylesheet" href="styles.css?v=380">
 </head>
 <body>
 <div class="mobile-appbar-370" aria-label="Barra móvil">
   <button type="button" id="btnMobileMenu370" class="mobile-menu-btn-370" aria-label="Abrir menú" aria-expanded="false">☰</button>
-  <div class="mobile-app-title-370">CardioLink Admin <span>v3.7.1</span></div>
+  <div class="mobile-app-title-370">CardioLink Admin <span>v3.8.0</span></div>
   <button type="button" id="btnMobileSearch370" class="mobile-search-btn-370" aria-label="Buscar paciente">⌕</button>
 </div>
 <div id="mobileSidebarOverlay370" class="mobile-sidebar-overlay-370 hidden" aria-hidden="true"></div>
+<div id="appStatus380" class="app-status-380 online" role="status" aria-live="polite"><span class="status-dot-380"></span><span id="appStatusText380">Conectado</span></div>
 <aside class="sidebar">
   <div class="brand">
-    <div class="brand-main">CardioLink Admin <span>v3.7.1</span></div>
+    <div class="brand-main">CardioLink Admin <span>v3.8.0</span></div>
     <div class="brand-by">by Matías Anchorena</div>
   </div>
   <button class="nav active" data-section="dashboard">Dashboard</button>
@@ -433,7 +437,7 @@
 
       <div id="printArea">
         <div class="print-title">
-          <h2>CardioLink Admin v3.7.2</h2>
+          <h2>CardioLink Admin v3.8.0</h2>
           <p>by Matías Anchorena — Listado filtrado</p>
           <p id="printMeta"></p>
         </div>
@@ -824,6 +828,7 @@
         <button type="button" data-config-group="coberturas">Coberturas y valores</button>
         <button type="button" data-config-group="usuarios">Usuarios y permisos</button>
         <button type="button" data-config-group="mantenimiento">Mantenimiento y backup</button>
+        <button type="button" data-config-group="sistema">App y preparación HC</button>
       </div>
       <div class="config-grid">
         <div>
@@ -923,6 +928,22 @@
           <button class="secondary" type="button" onclick="repararReglasValoresBaseManual()">Reparar reglas y valores base</button>
           <p class="muted">Usar solo si aparecen filas vacías o con “undefined”. No borra atenciones reales con paciente cargado.</p>
         </div>
+
+        <div class="config-system-380" data-config-group-card="sistema">
+          <h3>Instalación como app</h3>
+          <p class="muted">Instalá CardioLink en iPhone, iPad, Android, Windows o Mac para abrirlo como una aplicación.</p>
+          <button class="primary" type="button" id="btnInstalarApp380">Instalar CardioLink</button>
+          <button class="secondary" type="button" id="btnAyudaInstalar380">Cómo instalar</button>
+          <p id="estadoInstalacion380" class="muted"></p>
+        </div>
+
+        <div class="config-system-380" data-config-group-card="sistema">
+          <h3>Preparación para CardioLink HC 4.0</h3>
+          <p class="muted">Verifica que pacientes y atenciones tengan identificadores estables para vincular futuras evoluciones, informes y adjuntos.</p>
+          <button class="primary" type="button" id="btnRevisarHC380">Revisar estructura</button>
+          <button class="secondary" type="button" id="btnPrepararHC380">Preparar vínculos faltantes</button>
+          <div id="resultadoHC380" class="hc-readiness-380"></div>
+        </div>
       </div>
     </div>
   </section>
@@ -965,6 +986,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=372"></script>
+<script src="app.js?v=380"></script>
 </body>
 </html>

@@ -5953,7 +5953,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
 /* ===== v3.6.0 - Inicio inteligente y pulido administrativo ===== */
 (()=>{
-  const APP_VERSION='3.7.2';
+  const APP_VERSION='3.8.0';
   const $360=id=>document.getElementById(id);
   const esc360=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const norm360=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
@@ -6193,4 +6193,149 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   }
   document.addEventListener('DOMContentLoaded',initFiltrosCompactos372);
   setTimeout(initFiltrosCompactos372,400);
+})();
+
+
+/* ===== v3.8.0 - PWA, estado de conexión y preparación segura para HC 4.0 ===== */
+(function init380(){
+  const $=id=>document.getElementById(id);
+  let deferredPrompt380=null;
+
+  function setStatus380(){
+    const el=$('appStatus380'), tx=$('appStatusText380');
+    if(!el||!tx)return;
+    const online=navigator.onLine;
+    el.classList.toggle('online',online);
+    el.classList.toggle('offline',!online);
+    tx.textContent=online?'Conectado':'Sin conexión';
+    el.title=online?'CardioLink conectado a internet':'Los cambios necesitan conexión para sincronizar con Supabase';
+  }
+
+  async function registerSW380(){
+    if(!('serviceWorker' in navigator) || location.protocol==='file:')return;
+    try{
+      const reg=await navigator.serviceWorker.register('./sw.js?v=380',{scope:'./'});
+      reg.update().catch(()=>{});
+    }catch(e){ console.warn('No se pudo registrar la PWA:',e); }
+  }
+
+  function standalone380(){
+    return window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone===true;
+  }
+
+  function refreshInstall380(){
+    const btn=$('btnInstalarApp380'), st=$('estadoInstalacion380');
+    if(!btn)return;
+    if(standalone380()){
+      btn.disabled=true; btn.textContent='CardioLink ya está instalado';
+      if(st)st.textContent='Se está ejecutando como aplicación instalada.';
+    }else if(deferredPrompt380){
+      btn.disabled=false; btn.textContent='Instalar CardioLink';
+      if(st)st.textContent='Instalación disponible en este dispositivo.';
+    }else{
+      btn.disabled=false; btn.textContent='Ver instrucciones de instalación';
+      if(st)st.textContent='En iPhone/iPad se instala desde Compartir → Agregar a inicio.';
+    }
+  }
+
+  async function install380(){
+    if(deferredPrompt380){
+      deferredPrompt380.prompt();
+      try{ await deferredPrompt380.userChoice; }catch(e){}
+      deferredPrompt380=null; refreshInstall380();
+      return;
+    }
+    ayudaInstalar380();
+  }
+
+  function ayudaInstalar380(){
+    const ios=/iphone|ipad|ipod/i.test(navigator.userAgent);
+    const android=/android/i.test(navigator.userAgent);
+    const msg=ios
+      ? 'En Safari: tocá Compartir y elegí “Agregar a pantalla de inicio”.'
+      : android
+        ? 'En Chrome: abrí el menú ⋮ y elegí “Instalar aplicación” o “Agregar a pantalla principal”.'
+        : 'En Chrome o Edge: buscá el icono Instalar en la barra de direcciones o abrí el menú del navegador y elegí Instalar CardioLink.';
+    alert(msg);
+  }
+
+  function cleanDni380(v){return String(v||'').replace(/\D/g,'');}
+  function patientForAttention380(a){
+    const list=Array.isArray(data?.pacientes)?data.pacientes:[];
+    if(a?.pacienteId){ const p=list.find(x=>x.id===a.pacienteId); if(p)return p; }
+    const d=cleanDni380(a?.dni); if(d){ const p=list.find(x=>cleanDni380(x.dni)===d); if(p)return p; }
+    const n=String(a?.paciente||'').trim().toLowerCase();
+    return n?list.find(x=>String(x.nombreCompleto||x.paciente||`${x.apellido||''} ${x.nombre||''}`).trim().toLowerCase()===n):null;
+  }
+
+  function reportHC380(){
+    const ps=Array.isArray(data?.pacientes)?data.pacientes:[];
+    const ats=Array.isArray(window.atenciones)?window.atenciones:[];
+    const pSinId=ps.filter(p=>!String(p.id||'').trim()).length;
+    const aSinId=ats.filter(a=>!String(a.id||'').trim()).length;
+    const aSinPaciente=ats.filter(a=>!String(a.pacienteId||'').trim()).length;
+    const aSinProf=ats.filter(a=>!String(a.profesionalId||'').trim()).length;
+    const vinculables=ats.filter(a=>!a.pacienteId && patientForAttention380(a)).length;
+    return {pacientes:ps.length,atenciones:ats.length,pSinId,aSinId,aSinPaciente,aSinProf,vinculables};
+  }
+
+  function renderHC380(r=reportHC380()){
+    const el=$('resultadoHC380'); if(!el)return r;
+    const listo=r.pSinId===0&&r.aSinId===0&&r.aSinPaciente===0&&r.aSinProf===0;
+    el.innerHTML=`<div class="hc-ready-summary-380 ${listo?'ready':'warning'}"><strong>${listo?'Estructura lista para HC 4.0':'Hay vínculos por completar'}</strong><span>${r.pacientes} pacientes · ${r.atenciones} atenciones</span></div>
+      <div class="hc-ready-grid-380">
+        <span>Pacientes sin ID <b>${r.pSinId}</b></span><span>Atenciones sin ID <b>${r.aSinId}</b></span>
+        <span>Sin vínculo a paciente <b>${r.aSinPaciente}</b></span><span>Sin profesional <b>${r.aSinProf}</b></span>
+        <span>Vinculables automáticamente <b>${r.vinculables}</b></span>
+      </div>`;
+    return r;
+  }
+
+  async function prepararHC380(){
+    const ps=Array.isArray(data?.pacientes)?data.pacientes:[];
+    const ats=Array.isArray(window.atenciones)?window.atenciones:[];
+    let np=0,na=0,nv=0,nprof=0;
+    ps.forEach(p=>{ if(!p.id){p.id='pac_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8);np++;} });
+    ats.forEach(a=>{
+      if(!a.id){a.id='at_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8);na++;}
+      if(!a.atencionId)a.atencionId=a.id;
+      if(!a.pacienteId){const p=patientForAttention380(a);if(p){a.pacienteId=p.id;nv++;}}
+      if(!a.profesionalId){
+        const prof=(data?.profesionales||[]).find(p=>String(p.nombre||'').trim().toLowerCase()===String(a.profesional||'').trim().toLowerCase());
+        if(prof){a.profesionalId=prof.id;nprof++;}
+      }
+      if(!a.hcMeta)a.hcMeta={schemaVersion:1,evoluciones:0,informes:0,adjuntos:0};
+    });
+    data.hcPreparacion={schemaVersion:1,preparadoEn:new Date().toISOString(),versionApp:'3.8.0'};
+    try{saveConfig();saveAtenciones();}catch(e){console.warn(e);}
+    try{await sincronizarAtencionesSupabase(true);}catch(e){console.warn('Sincronización HC pendiente:',e);}
+    renderHC380();
+    alert(`Preparación completada. Pacientes identificados: ${np}. Atenciones identificadas: ${na}. Vínculos a paciente: ${nv}. Profesionales vinculados: ${nprof}.`);
+  }
+
+  function initConfigGroups380(){
+    document.querySelectorAll('[data-config-group="sistema"]').forEach(b=>b.addEventListener('click',()=>{
+      document.querySelectorAll('#config .config-grid > div').forEach(c=>c.style.display='none');
+      document.querySelectorAll('[data-config-group-card="sistema"]').forEach(c=>c.style.display='block');
+      document.querySelectorAll('#configTabs360 button').forEach(x=>x.classList.toggle('active',x===b));
+      renderHC380(); refreshInstall380();
+    }));
+    document.querySelectorAll('#configTabs360 button:not([data-config-group="sistema"])').forEach(b=>b.addEventListener('click',()=>{
+      document.querySelectorAll('[data-config-group-card="sistema"]').forEach(c=>c.style.display=b.dataset.configGroup==='todos'?'block':'none');
+    }));
+  }
+
+  function init(){
+    setStatus380(); registerSW380(); refreshInstall380(); initConfigGroups380(); renderHC380();
+    $('btnInstalarApp380')?.addEventListener('click',install380);
+    $('btnAyudaInstalar380')?.addEventListener('click',ayudaInstalar380);
+    $('btnRevisarHC380')?.addEventListener('click',()=>renderHC380());
+    $('btnPrepararHC380')?.addEventListener('click',()=>{
+      if(confirm('Esto completa identificadores y vínculos faltantes sin borrar datos. ¿Continuar?')) prepararHC380();
+    });
+    window.addEventListener('online',setStatus380); window.addEventListener('offline',setStatus380);
+    window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt380=e;refreshInstall380();});
+    window.addEventListener('appinstalled',()=>{deferredPrompt380=null;refreshInstall380();});
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
 })();

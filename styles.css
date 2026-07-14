@@ -1328,3 +1328,15 @@ body.patient-modal-open-371{overflow:hidden!important}
   #listadoFiltros372.filters-collapsible-372{display:none!important}
   #listadoFiltros372.filters-collapsible-372.open-372{display:grid!important;grid-template-columns:1fr!important;gap:8px!important}
 }
+
+
+/* ===== v3.8.0 PWA + estado + preparación HC ===== */
+.app-status-380{position:fixed;right:18px;bottom:18px;z-index:1100;display:flex;align-items:center;gap:7px;padding:8px 12px;border-radius:999px;background:#fff;border:1px solid #d6e0e8;box-shadow:0 8px 25px rgba(15,35,55,.14);font-size:13px;font-weight:700;color:#526277;transition:.2s}
+.app-status-380 .status-dot-380{width:9px;height:9px;border-radius:50%;background:#22a06b}
+.app-status-380.offline{background:#fff3f3;color:#a61b1b;border-color:#f1c6c6}.app-status-380.offline .status-dot-380{background:#d92d20}
+.config-system-380{border:1px solid #d9e4ec;border-radius:18px;padding:20px;background:#fbfdff}
+.config-system-380 button{margin:5px 6px 5px 0}
+.hc-readiness-380{margin-top:14px}.hc-ready-summary-380{display:flex;justify-content:space-between;gap:10px;align-items:center;padding:12px 14px;border-radius:12px}.hc-ready-summary-380.ready{background:#e9f8f0;color:#176b47}.hc-ready-summary-380.warning{background:#fff5e8;color:#8a4b0f}
+.hc-ready-grid-380{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;margin-top:10px}.hc-ready-grid-380 span{display:flex;justify-content:space-between;padding:9px 11px;border:1px solid #dce5ec;border-radius:10px;background:#fff}
+@media(max-width:760px){.app-status-380{right:calc(12px + env(safe-area-inset-right));bottom:calc(12px + env(safe-area-inset-bottom));font-size:12px;padding:7px 10px}.hc-ready-grid-380{grid-template-columns:1fr}.config-system-380{padding:16px}}
+@media(display-mode:standalone){body{overscroll-behavior-y:none}.mobile-appbar-370{padding-top:env(safe-area-inset-top)}}

@@ -1,15 +1,13 @@
-# CardioLink Admin v3.7.2
+# CardioLink Admin v3.8.0
 
-- Mejora el listado en iPad/tablet horizontal y teléfonos en horizontal.
-- Los filtros quedan plegados bajo “Mostrar filtros” para aprovechar la altura de pantalla.
-- La tabla usa mayor espacio vertical y mantiene encabezado fijo.
-- No modifica datos, reglas, permisos ni Supabase.
+Versión estable de cierre del módulo administrativo y preparación para CardioLink HC 4.0.
 
-# CardioLink Admin v3.7.1
+## Novedades
+- PWA instalable en iPhone, iPad, Android, Windows y Mac.
+- Indicador de conexión.
+- Caché de la interfaz con actualización de versión.
+- Revisión y preparación no destructiva de IDs/vínculos para futura HC.
+- Mantiene agenda, pacientes, caja, reglas, mensajes, estadísticas y responsive de v3.7.2.
 
-Correcciones sobre v3.7.0:
-- búsqueda global tipo Spotlight abre correctamente la ficha del paciente en PC, Mac, iPhone, iPad y Android;
-- resultados móviles se despliegan debajo del buscador;
-- modal del paciente centrado y adaptado a pantallas táctiles;
-- botón limpiar de Pacientes no ocupa toda la fila en móvil;
-- bienvenida vuelve a mostrarse una vez por cada apertura autenticada de la app.
+## Archivos a subir
+Subir todos los archivos y carpetas del ZIP, incluida la carpeta `icons`, `manifest.webmanifest` y `sw.js`.
