@@ -7,23 +7,23 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<title>CardioLink Admin v3.8.1</title>
-<link rel="manifest" href="manifest.webmanifest?v=381">
-<link rel="apple-touch-icon" href="icons/icon-192.png?v=381">
-<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png?v=381">
-<link rel="stylesheet" href="styles.css?v=381">
+<title>CardioLink Admin v3.8.2</title>
+<link rel="manifest" href="manifest.webmanifest?v=382">
+<link rel="apple-touch-icon" href="icons/icon-192.png?v=382">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png?v=382">
+<link rel="stylesheet" href="styles.css?v=382">
 </head>
 <body>
 <div class="mobile-appbar-370" aria-label="Barra móvil">
   <button type="button" id="btnMobileMenu370" class="mobile-menu-btn-370" aria-label="Abrir menú" aria-expanded="false">☰</button>
-  <div class="mobile-app-title-370">CardioLink Admin <span>v3.8.1</span></div>
+  <div class="mobile-app-title-370">CardioLink Admin <span>v3.8.2</span></div>
   <button type="button" id="btnMobileSearch370" class="mobile-search-btn-370" aria-label="Buscar paciente">⌕</button>
 </div>
 <div id="mobileSidebarOverlay370" class="mobile-sidebar-overlay-370 hidden" aria-hidden="true"></div>
 <div id="appStatus380" class="app-status-380 online" role="status" aria-live="polite"><span class="status-dot-380"></span><span id="appStatusText380">Conectado</span></div>
 <aside class="sidebar">
   <div class="brand">
-    <div class="brand-main">CardioLink Admin <span>v3.8.1</span></div>
+    <div class="brand-main">CardioLink Admin <span>v3.8.2</span></div>
     <div class="brand-by">by Matías Anchorena</div>
   </div>
   <button class="nav active" data-section="dashboard">Dashboard</button>
@@ -437,7 +437,7 @@
 
       <div id="printArea">
         <div class="print-title">
-          <h2>CardioLink Admin v3.8.1</h2>
+          <h2>CardioLink Admin v3.8.2</h2>
           <p>by Matías Anchorena — Listado filtrado</p>
           <p id="printMeta"></p>
         </div>
@@ -937,6 +937,34 @@
           <p id="estadoInstalacion380" class="muted"></p>
         </div>
 
+
+
+        <div class="config-system-380 system-health-card-382" data-config-group-card="sistema">
+          <h3>Estado del sistema</h3>
+          <p class="muted">Diagnóstico rápido de conexión, sesión, sincronización, backup y preparación para HC.</p>
+          <div id="systemHealth382" class="system-health-grid-382"></div>
+          <div class="inline-actions-382">
+            <button class="primary" type="button" id="btnRefreshHealth382">Actualizar diagnóstico</button>
+            <button class="secondary" type="button" id="btnSyncNow382">Sincronizar ahora</button>
+          </div>
+        </div>
+
+        <div class="maintenance-card data-quality-card-382">
+          <h3>Calidad de datos</h3>
+          <p class="muted">Detecta fichas incompletas, duplicados probables y registros que conviene corregir antes de comenzar CardioLink HC.</p>
+          <div id="dataQuality382" class="data-quality-grid-382"></div>
+          <div class="inline-actions-382">
+            <button class="primary" type="button" id="btnRefreshQuality382">Revisar datos</button>
+            <button class="secondary" type="button" id="btnGoPatients382">Ir a Pacientes</button>
+          </div>
+        </div>
+
+        <div class="maintenance-card audit-card-382">
+          <h3>Auditoría resumida</h3>
+          <p class="muted">Resumen de altas, ediciones, fusiones y usuarios que realizaron cambios.</p>
+          <div id="auditSummary382" class="audit-summary-382"></div>
+          <button class="secondary" type="button" id="btnExportAudit382">Exportar auditoría JSON</button>
+        </div>
         <div class="config-system-380" data-config-group-card="sistema">
           <h3>Preparación para CardioLink HC 4.0</h3>
           <p class="muted">Verifica que pacientes y atenciones tengan identificadores estables para vincular futuras evoluciones, informes y adjuntos.</p>
@@ -986,6 +1014,6 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=381"></script>
+<script src="app.js?v=382"></script>
 </body>
 </html>

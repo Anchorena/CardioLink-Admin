@@ -1377,3 +1377,12 @@ body.patient-modal-open-371{overflow:hidden!important}
   .paciente-panel-item strong{font-size:18px!important;line-height:1.2!important;margin-bottom:3px!important}
   .paciente-panel-item span{font-size:14px!important;line-height:1.28!important}
 }
+
+/* ===== v3.8.2 - paneles de estabilización final ===== */
+.system-health-grid-382,.data-quality-grid-382{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:14px 0}
+.health-item-382,.quality-item-382{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 14px;border:1px solid #d7e1e8;border-radius:14px;background:#f8fafc}
+.health-item-382 span,.quality-item-382 span{font-weight:700;color:#53677a}.health-item-382 b,.quality-item-382 b{text-align:right;overflow-wrap:anywhere}
+.health-item-382.ok,.quality-item-382.ok{border-color:#bfe8d1;background:#effbf4}.health-item-382.warn,.quality-item-382.warn{border-color:#f2d7a5;background:#fff8eb}.health-item-382.danger,.quality-item-382.danger{border-color:#f0b6b6;background:#fff1f1}
+.inline-actions-382{display:flex;gap:10px;flex-wrap:wrap}.audit-kpis-382{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:14px 0}.audit-kpis-382 span{display:flex;justify-content:space-between;gap:10px;padding:12px;border:1px solid #d7e1e8;border-radius:14px;background:#f8fafc}
+.update-banner-382{position:fixed;left:50%;bottom:max(18px,env(safe-area-inset-bottom));transform:translateX(-50%);z-index:99999;display:flex;align-items:center;gap:14px;max-width:min(92vw,720px);padding:12px 14px;border-radius:16px;background:#123f56;color:white;box-shadow:0 12px 35px #0004}.update-banner-382 button{background:white;color:#123f56;border:0;border-radius:10px;padding:9px 12px;font-weight:800}
+@media(max-width:720px){.system-health-grid-382,.data-quality-grid-382,.audit-kpis-382{grid-template-columns:1fr}.inline-actions-382>*{width:100%}.update-banner-382{width:calc(100vw - 24px);flex-direction:column;align-items:stretch;text-align:center}}

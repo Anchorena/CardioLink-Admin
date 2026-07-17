@@ -5953,7 +5953,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
 /* ===== v3.6.0 - Inicio inteligente y pulido administrativo ===== */
 (()=>{
-  const APP_VERSION='3.8.1';
+  const APP_VERSION='3.8.2';
   const $360=id=>document.getElementById(id);
   const esc360=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const norm360=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
@@ -6214,7 +6214,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   async function registerSW380(){
     if(!('serviceWorker' in navigator) || location.protocol==='file:')return;
     try{
-      const reg=await navigator.serviceWorker.register('./sw.js?v=381',{scope:'./'});
+      const reg=await navigator.serviceWorker.register('./sw.js?v=382',{scope:'./'});
       reg.update().catch(()=>{});
     }catch(e){ console.warn('No se pudo registrar la PWA:',e); }
   }
@@ -6306,7 +6306,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       }
       if(!a.hcMeta)a.hcMeta={schemaVersion:1,evoluciones:0,informes:0,adjuntos:0};
     });
-    data.hcPreparacion={schemaVersion:1,preparadoEn:new Date().toISOString(),versionApp:'3.8.1'};
+    data.hcPreparacion={schemaVersion:1,preparadoEn:new Date().toISOString(),versionApp:'3.8.2'};
     try{saveConfig();saveAtenciones();}catch(e){console.warn(e);}
     try{await sincronizarAtencionesSupabase(true);}catch(e){console.warn('Sincronización HC pendiente:',e);}
     renderHC380();
@@ -6338,6 +6338,162 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     window.addEventListener('online',setStatus380); window.addEventListener('offline',setStatus380);
     window.addEventListener('beforeinstallprompt',e=>{e.preventDefault();deferredPrompt380=e;refreshInstall380();});
     window.addEventListener('appinstalled',()=>{deferredPrompt380=null;refreshInstall380();});
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
+})();
+
+/* ===== v3.8.2 - estabilización final, diagnóstico, calidad y auditoría ===== */
+(function init382(){
+  const $=id=>document.getElementById(id);
+  const norm=v=>String(v??'').trim();
+  const lower=v=>norm(v).toLowerCase();
+  const digits=v=>norm(v).replace(/\D/g,'');
+  const fmtDate=ts=>{
+    if(!ts)return 'Sin registro';
+    const d=new Date(Number(ts)||ts);
+    return Number.isNaN(d.getTime())?'Sin registro':d.toLocaleString('es-AR');
+  };
+
+  function patients382(){ return Array.isArray(data?.pacientes)?data.pacientes:[]; }
+  function attentions382(){ return Array.isArray(window.atenciones)?window.atenciones:[]; }
+  function isBadCoverage382(v){
+    const s=lower(v);
+    if(!s)return true;
+    return s==='undefined'||s==='null'||s==='no ingresado'||s.includes('matias anchorena')||s.includes('matías anchorena')||s.includes('rogelio anchorena')||s.includes('fernandez drago')||s.includes('fernández drago');
+  }
+
+  function qualityReport382(){
+    const ps=patients382().filter(p=>!p.fusionadoEn&&!p.inactivo);
+    const ats=attentions382();
+    const noDni=ps.filter(p=>!digits(p.dni)).length;
+    const noCoverage=ps.filter(p=>isBadCoverage382(p.obraSocial||p.cobertura||p.coberturaHabitual)).length;
+    const noContact=ps.filter(p=>!digits(p.telefono||p.tel)&&!norm(p.email)&&!digits(p.telefonoContacto)&&!norm(p.emailContacto)).length;
+    const noBirth=ps.filter(p=>!norm(p.fechaNacimiento)).length;
+    const dniMap=new Map();
+    ps.forEach(p=>{const d=digits(p.dni);if(d)dniMap.set(d,(dniMap.get(d)||0)+1);});
+    const duplicatedDni=[...dniMap.values()].filter(n=>n>1).reduce((a,n)=>a+n,0);
+    const orphan=ats.filter(a=>!norm(a.pacienteId)||!ps.some(p=>p.id===a.pacienteId)).length;
+    const noProf=ats.filter(a=>!norm(a.profesionalId)).length;
+    return {total:ps.length,noDni,noCoverage,noContact,noBirth,duplicatedDni,orphan,noProf};
+  }
+
+  function renderQuality382(){
+    const el=$('dataQuality382');if(!el)return;
+    const r=qualityReport382();
+    const items=[
+      ['Pacientes activos',r.total,'ok'],['Sin DNI',r.noDni,r.noDni?'warn':'ok'],['Cobertura incompleta',r.noCoverage,r.noCoverage?'warn':'ok'],
+      ['Sin contacto',r.noContact,r.noContact?'warn':'ok'],['Sin fecha de nacimiento',r.noBirth,r.noBirth?'warn':'ok'],['DNI duplicados',r.duplicatedDni,r.duplicatedDni?'danger':'ok'],
+      ['Atenciones sin paciente válido',r.orphan,r.orphan?'danger':'ok'],['Atenciones sin profesional ID',r.noProf,r.noProf?'warn':'ok']
+    ];
+    el.innerHTML=items.map(([t,n,c])=>`<div class="quality-item-382 ${c}"><span>${t}</span><b>${n}</b></div>`).join('');
+  }
+
+  function auditData382(){
+    const ats=attentions382();
+    const patientAudit=Array.isArray(data?.auditoriaPacientes)?data.auditoriaPacientes:[];
+    const users=new Set();let created=0,edited=0;
+    ats.forEach(a=>{
+      if(a.creadoPor||a.creadoEn)created++;
+      if(a.editadoPor||a.editadoEn)edited++;
+      [a.creadoPor,a.editadoPor].filter(Boolean).forEach(x=>users.add(String(x)));
+    });
+    patientAudit.forEach(x=>{if(x.usuario)users.add(String(x.usuario));});
+    return {created,edited,fusions:patientAudit.filter(x=>x.tipo==='fusion_paciente').length,users:[...users],patientAudit};
+  }
+
+  function renderAudit382(){
+    const el=$('auditSummary382');if(!el)return;
+    const r=auditData382();
+    el.innerHTML=`<div class="audit-kpis-382"><span>Atenciones con alta registrada <b>${r.created}</b></span><span>Atenciones editadas <b>${r.edited}</b></span><span>Fusiones de pacientes <b>${r.fusions}</b></span><span>Usuarios detectados <b>${r.users.length}</b></span></div><p class="muted">${r.users.length?'Usuarios: '+r.users.slice(0,8).join(', '):'Todavía no hay usuarios registrados en auditoría.'}</p>`;
+  }
+
+  function exportAudit382(){
+    const r=auditData382();
+    const payload={app:'CardioLink Admin',version:'3.8.2',exportadoEn:new Date().toISOString(),resumen:{altas:r.created,ediciones:r.edited,fusiones:r.fusions,usuarios:r.users},atenciones:attentions382().map(a=>({id:a.id,pacienteId:a.pacienteId,paciente:a.paciente,creadoPor:a.creadoPor,creadoEn:a.creadoEn,editadoPor:a.editadoPor,editadoEn:a.editadoEn})),auditoriaPacientes:r.patientAudit};
+    const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Auditoria_'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
+  }
+
+  function healthReport382(){
+    let session='No iniciada';
+    try{session=usuarioSupabase?.email||window.usuarioSupabase?.email||'No iniciada';}catch(e){}
+    const lastBackup=localStorage.getItem('cl_last_backup');
+    const lastSync=localStorage.getItem('cl_last_sync_382');
+    const hc=typeof reportHC380==='function'?reportHC380():null;
+    return {online:navigator.onLine,session,lastBackup,lastSync,hc};
+  }
+
+  function renderHealth382(){
+    const el=$('systemHealth382');if(!el)return;
+    const r=healthReport382();
+    const hcReady=!r.hc||(!r.hc.pSinId&&!r.hc.aSinId&&!r.hc.aSinPaciente&&!r.hc.aSinProf);
+    const items=[
+      ['Internet',r.online?'Conectado':'Sin conexión',r.online?'ok':'danger'],
+      ['Sesión Supabase',r.session,r.session==='No iniciada'?'warn':'ok'],
+      ['Última sincronización',fmtDate(r.lastSync),r.lastSync?'ok':'warn'],
+      ['Último backup',fmtDate(r.lastBackup),r.lastBackup?'ok':'warn'],
+      ['Versión','3.8.2','ok'],
+      ['Preparación HC',hcReady?'Lista':'Revisar vínculos',hcReady?'ok':'warn']
+    ];
+    el.innerHTML=items.map(([t,v,c])=>`<div class="health-item-382 ${c}"><span>${t}</span><b>${v}</b></div>`).join('');
+  }
+
+  async function syncNow382(){
+    const btn=$('btnSyncNow382');if(btn){btn.disabled=true;btn.textContent='Sincronizando…';}
+    try{
+      if(typeof sincronizarAtencionesSupabase==='function'){
+        const ok=await sincronizarAtencionesSupabase(true);
+        if(ok!==false)localStorage.setItem('cl_last_sync_382',String(Date.now()));
+      }
+      renderHealth382();
+    }catch(e){console.error(e);alert('No se pudo sincronizar. Revisá la conexión o volvé a iniciar sesión.');}
+    finally{if(btn){btn.disabled=false;btn.textContent='Sincronizar ahora';}}
+  }
+
+  function goPatients382(){
+    const nav=document.querySelector('[data-section="pacientes"]');
+    if(nav)nav.click();
+    setTimeout(()=>document.getElementById('pacientes')?.scrollIntoView({behavior:'smooth',block:'start'}),100);
+  }
+
+  function installSyncTracker382(){
+    if(window.__syncTracker382)return;window.__syncTracker382=true;
+    if(typeof sincronizarAtencionesSupabase!=='function')return;
+    const old=sincronizarAtencionesSupabase;
+    window.sincronizarAtencionesSupabase=sincronizarAtencionesSupabase=async function(){
+      const result=await old.apply(this,arguments);
+      if(result!==false)localStorage.setItem('cl_last_sync_382',String(Date.now()));
+      renderHealth382();
+      return result;
+    };
+  }
+
+  function initUpdateNotice382(){
+    if(!('serviceWorker' in navigator)||location.protocol==='file:')return;
+    navigator.serviceWorker.getRegistration('./').then(reg=>{
+      if(!reg)return;
+      const show=()=>{
+        if(document.getElementById('updateBanner382'))return;
+        const b=document.createElement('div');b.id='updateBanner382';b.className='update-banner-382';
+        b.innerHTML='<span>Hay una nueva versión de CardioLink disponible.</span><button type="button">Actualizar ahora</button>';
+        b.querySelector('button').onclick=()=>{reg.waiting?.postMessage({type:'SKIP_WAITING'});location.reload();};
+        document.body.appendChild(b);
+      };
+      if(reg.waiting)show();
+      reg.addEventListener('updatefound',()=>{const w=reg.installing;if(w)w.addEventListener('statechange',()=>{if(w.state==='installed'&&navigator.serviceWorker.controller)show();});});
+    }).catch(()=>{});
+    navigator.serviceWorker.addEventListener('controllerchange',()=>{if(!window.__reloaded382){window.__reloaded382=true;location.reload();}});
+  }
+
+  function init(){
+    renderQuality382();renderAudit382();renderHealth382();installSyncTracker382();initUpdateNotice382();
+    $('btnRefreshQuality382')?.addEventListener('click',renderQuality382);
+    $('btnRefreshHealth382')?.addEventListener('click',renderHealth382);
+    $('btnSyncNow382')?.addEventListener('click',syncNow382);
+    $('btnGoPatients382')?.addEventListener('click',goPatients382);
+    $('btnExportAudit382')?.addEventListener('click',exportAudit382);
+    window.addEventListener('online',renderHealth382);window.addEventListener('offline',renderHealth382);
+    document.querySelectorAll('[data-config-group="sistema"],[data-config-group="mantenimiento"]').forEach(b=>b.addEventListener('click',()=>setTimeout(()=>{renderHealth382();renderQuality382();renderAudit382();},50)));
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
 })();
