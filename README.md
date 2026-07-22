@@ -1,12 +1,9 @@
-# CardioLink Admin v3.8.3
+# CardioLink Admin v3.8.4 LTS
 
-Versión final administrativa enfocada en pendientes y calidad de datos.
+Versión estable de cierre del módulo administrativo.
 
-## Novedades
-- Solapa Pendientes con filtros y etiquetas accionables.
-- Reglas automáticas de no-aplica para Particular/PAMI y OSDE en firma/copia.
-- Estado de retiro físico de informes.
-- Navegación y contadores de pendientes unificados.
-- Calidad de datos operativa y editable.
-- Instructivo actualizado.
-- Preparada para CardioLink HC 4.0.
+## Novedad principal
+- Calidad de datos operativa: filtra pacientes sin DNI, cobertura, contacto o fecha de nacimiento.
+- Permite completar el dato directamente y el paciente desaparece de la lista al guardar.
+- Mantiene acceso a la ficha completa.
+- Conserva Pendientes, PWA, agenda responsive y preparación HC.
