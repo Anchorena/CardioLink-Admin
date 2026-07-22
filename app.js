@@ -6306,7 +6306,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       }
       if(!a.hcMeta)a.hcMeta={schemaVersion:1,evoluciones:0,informes:0,adjuntos:0};
     });
-    data.hcPreparacion={schemaVersion:1,preparadoEn:new Date().toISOString(),versionApp:'3.8.5'};
+    data.hcPreparacion={schemaVersion:1,preparadoEn:new Date().toISOString(),versionApp:'3.8.6'};
     try{saveConfig();saveAtenciones();}catch(e){console.warn(e);}
     try{await sincronizarAtencionesSupabase(true);}catch(e){console.warn('Sincronización HC pendiente:',e);}
     renderHC380();
@@ -6417,7 +6417,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
   function exportAudit382(){
     const r=auditData382();
-    const payload={app:'CardioLink Admin',version:'3.8.5',exportadoEn:new Date().toISOString(),resumen:{altas:r.created,ediciones:r.edited,fusiones:r.fusions,usuarios:r.users},atenciones:attentions382().map(a=>({id:a.id,pacienteId:a.pacienteId,paciente:a.paciente,creadoPor:a.creadoPor,creadoEn:a.creadoEn,editadoPor:a.editadoPor,editadoEn:a.editadoEn})),auditoriaPacientes:r.patientAudit};
+    const payload={app:'CardioLink Admin',version:'3.8.6',exportadoEn:new Date().toISOString(),resumen:{altas:r.created,ediciones:r.edited,fusiones:r.fusions,usuarios:r.users},atenciones:attentions382().map(a=>({id:a.id,pacienteId:a.pacienteId,paciente:a.paciente,creadoPor:a.creadoPor,creadoEn:a.creadoEn,editadoPor:a.editadoPor,editadoEn:a.editadoEn})),auditoriaPacientes:r.patientAudit};
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
     const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Auditoria_'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
   }
@@ -6440,7 +6440,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       ['Sesión Supabase',r.session,r.session==='No iniciada'?'warn':'ok'],
       ['Última sincronización',fmtDate(r.lastSync),r.lastSync?'ok':'warn'],
       ['Último backup',fmtDate(r.lastBackup),r.lastBackup?'ok':'warn'],
-      ['Versión','3.8.5','ok'],
+      ['Versión','3.8.6','ok'],
       ['Preparación HC',hcReady?'Lista':'Revisar vínculos',hcReady?'ok':'warn']
     ];
     el.innerHTML=items.map(([t,v,c])=>`<div class="health-item-382 ${c}"><span>${t}</span><b>${v}</b></div>`).join('');
@@ -6602,7 +6602,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 })();
 
 
-/* ===== CardioLink Admin v3.8.5 LTS: completar fichas incompletas ===== */
+/* ===== CardioLink Admin v3.8.6 LTS: completar fichas incompletas ===== */
 (function init384(){
   const norm=v=>String(v??'').trim().toLowerCase();
   const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -6639,7 +6639,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const modal=document.getElementById('qualityModal383');if(!modal)return;
     const ps=rows384();
     const labels={dni:'Sin DNI',cobertura:'Cobertura incompleta',contacto:'Sin contacto',nacimiento:'Sin fecha de nacimiento'};
-    modal.innerHTML=`<div class="quality-card383 quality-card384"><button class="modal-close-360" onclick="document.getElementById('qualityModal383').classList.add('hidden')">×</button><h2>Completar fichas de pacientes</h2><div class="quality-toolbar384"><label>Dato faltante<select id="qualityKind384"><option value="dni" ${qualityKind384==='dni'?'selected':''}>Sin DNI</option><option value="cobertura" ${qualityKind384==='cobertura'?'selected':''}>Cobertura incompleta</option><option value="contacto" ${qualityKind384==='contacto'?'selected':''}>Sin contacto</option><option value="nacimiento" ${qualityKind384==='nacimiento'?'selected':''}>Sin fecha de nacimiento</option></select></label><label>Buscar<input id="qualitySearch384" type="search" placeholder="Apellido, nombre o DNI" value="${esc(qualityQuery384)}"></label></div><p><strong>${ps.length}</strong> paciente(s) en “${labels[qualityKind384]}”. Completá el dato y guardá: el paciente sale automáticamente de la lista.</p><div class="quality-list384">${ps.map(p=>{const id=esc(p.id||patientKey384(p));return `<article class="quality-row384"><div class="quality-patient384"><strong>${esc(patientName384(p))}</strong><span>DNI ${esc(p.dni||'s/d')} · ${esc(p.telefono||'sin teléfono')} · ${esc(p.coberturaHabitual||p.obraSocial||'sin cobertura')}</span></div><div class="quality-edit384">${input384(p)}</div><div class="quality-actions384"><button class="primary" onclick="guardarCalidad384('${id}')">Guardar</button><button class="secondary" onclick="document.getElementById('qualityModal383').classList.add('hidden');editarPacienteGlobal350('${esc(patientKey384(p))}')">Ficha completa</button></div></article>`}).join('')||'<div class="empty383">No hay pacientes pendientes en esta categoría.</div>'}</div></div>`;
+    modal.innerHTML=`<div class="quality-card383 quality-card384"><button class="modal-close-360" onclick="document.getElementById('qualityModal383').classList.add('hidden')">×</button><h2>Completar fichas de pacientes</h2><div class="quality-toolbar384"><label>Dato faltante<select id="qualityKind384"><option value="dni" ${qualityKind384==='dni'?'selected':''}>Sin DNI</option><option value="cobertura" ${qualityKind384==='cobertura'?'selected':''}>Cobertura incompleta</option><option value="contacto" ${qualityKind384==='contacto'?'selected':''}>Sin contacto</option><option value="nacimiento" ${qualityKind384==='nacimiento'?'selected':''}>Sin fecha de nacimiento</option></select></label><label>Buscar<input id="qualitySearch384" type="search" placeholder="Apellido, nombre o DNI" value="${esc(qualityQuery384)}"></label></div><p><strong>${ps.length}</strong> paciente(s) en “${labels[qualityKind384]}”. Completá el dato y guardá: el paciente sale automáticamente de la lista.</p><div class="quality-list384">${ps.map(p=>{const id=esc(p.id||patientKey384(p));return `<article class="quality-row384"><div class="quality-patient384"><strong>${esc(patientName384(p))}</strong><span>DNI ${esc(p.dni||'s/d')} · ${esc(p.telefono||'sin teléfono')} · ${esc(p.coberturaHabitual||p.obraSocial||'sin cobertura')}</span></div><div class="quality-edit384">${input384(p)}</div><div class="quality-actions384"><button class="primary" onclick="guardarCalidad384('${id}')">Guardar</button><button class="secondary" type="button" onclick="abrirFichaCompletaCalidad387('${esc(patientKey384(p))}')">Abrir ficha completa</button></div></article>`}).join('')||'<div class="empty383">No hay pacientes pendientes en esta categoría.</div>'}</div></div>`;
     document.getElementById('qualityKind384')?.addEventListener('change',e=>{qualityKind384=e.target.value;qualityQuery384='';renderQuality384()});
     document.getElementById('qualitySearch384')?.addEventListener('input',e=>{qualityQuery384=e.target.value;renderQuality384()});
   }
@@ -6663,4 +6663,154 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     if(qualityButton){e.preventDefault();window.qualityPatients383(qualityButton.dataset.qualityKind);return;}
     if(e.target?.id==='btnRefreshQuality382'){e.preventDefault();window.qualityPatients383('dni');}
   },true);
+})();
+
+/* ===== CardioLink Admin v3.8.6 LTS: calidad robusta + eliminación completa de paciente ===== */
+(function init386(){
+  const norm386=v=>String(v??'').trim().toLowerCase();
+  const esc386=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  function nombre386(p){return p?.apellidoNombre||p?.nombreCompleto||p?.paciente||p?.nombre||'Paciente';}
+  function clave386(p){try{return typeof pacienteClave==='function'?pacienteClave(p):(p?.id||p?.dni||nombre386(p));}catch{return p?.id||p?.dni||nombre386(p)}}
+  function dni386(v){return String(v||'').replace(/\D/g,'');}
+  function puedeEliminar386(){try{return typeof esAdmin==='function'?esAdmin():true}catch{return true}}
+  function paciente386(key){
+    const ps=(data?.pacientes||[]);
+    let p=ps.find(x=>String(x.id||'')===String(key));
+    if(!p) p=ps.find(x=>String(clave386(x))===String(key));
+    if(!p){
+      const todos=typeof todosPacientes==='function'?todosPacientes():ps;
+      p=todos.find(x=>String(x.id||'')===String(key)||String(clave386(x))===String(key));
+    }
+    return p||null;
+  }
+  function atenciones386(p){
+    if(!p)return[];
+    const id=String(p.id||'');
+    const d=dni386(p.dni);
+    const n=norm386(nombre386(p));
+    return (atenciones||[]).filter(a=>{
+      if(a?.tipoRegistro==='config'||(typeof esMensajeInterno==='function'&&esMensajeInterno(a)))return false;
+      if(id&&String(a.pacienteId||'')===id)return true;
+      if(d&&dni386(a.dni)===d)return true;
+      return !!n&&norm386(a.paciente||'')===n;
+    });
+  }
+  async function eliminarPacienteCompleto386(key){
+    if(!puedeEliminar386()){alert('Solo Matías / administración puede eliminar pacientes completos.');return false;}
+    const p=paciente386(key);if(!p){alert('No encontré el paciente.');return false;}
+    const relacionados=atenciones386(p);
+    const nom=nombre386(p);
+    const aviso=`Vas a eliminar definitivamente a ${nom}.\n\nTambién se eliminarán ${relacionados.length} consulta(s) o estudio(s) vinculados. Esta acción no se puede deshacer salvo restaurando un backup.\n\nEscribí ELIMINAR para confirmar:`;
+    const escrito=prompt(aviso,'');
+    if(escrito!=='ELIMINAR'){if(escrito!==null)alert('No se eliminó el paciente. La confirmación no coincidió.');return false;}
+    const ids=new Set(relacionados.map(a=>String(a.id)));
+    atenciones=(atenciones||[]).filter(a=>!ids.has(String(a.id)));
+    if(!Array.isArray(data.pacientes))data.pacientes=[];
+    const pk=String(p.id||''); const pclave=String(clave386(p)); const pdni=dni386(p.dni); const pnom=norm386(nombre386(p));
+    data.pacientes=data.pacientes.filter(x=>{
+      if(pk&&String(x.id||'')===pk)return false;
+      if(String(clave386(x))===pclave)return false;
+      if(pdni&&dni386(x.dni)===pdni)return false;
+      return !(pnom&&norm386(nombre386(x))===pnom&&!dni386(x.dni));
+    });
+    if(!Array.isArray(data.auditoriaPacientes))data.auditoriaPacientes=[];
+    data.auditoriaPacientes.push({tipo:'eliminacion_paciente',pacienteId:p.id||'',paciente:nom,dni:p.dni||'',atencionesEliminadas:relacionados.length,usuario:(typeof usrActual==='function'?usrActual():'administrador'),fecha:new Date().toISOString()});
+    try{saveConfig();saveAtenciones();await (typeof guardarConfigEnSupabase298==='function'?guardarConfigEnSupabase298():Promise.resolve());await (typeof sincronizarAtencionesSupabase==='function'?sincronizarAtencionesSupabase(true):Promise.resolve());}catch(e){console.error(e);alert('Se eliminó localmente, pero la sincronización falló. Volvé a iniciar sesión y sincronizá.');}
+    try{document.getElementById('qualityModal383')?.classList.add('hidden');document.getElementById('pacienteGlobalModal')?.classList.add('hidden');renderPacientesPanel?.('',true);renderQuality382?.();renderHealth382?.();renderPendientes383?.();}catch(e){}
+    const det=document.getElementById('pacienteDetalle');if(det)det.innerHTML='<h3>Paciente eliminado</h3><p class="muted">El registro y sus atenciones vinculadas fueron eliminados.</p>';
+    alert(`Paciente eliminado: ${nom}. Registros vinculados eliminados: ${relacionados.length}.`);
+    return true;
+  }
+  window.eliminarPacienteCompleto386=eliminarPacienteCompleto386;
+
+  // Bandeja de calidad robusta. Reemplaza el render anterior y agrega eliminar paciente.
+  const qualityOld386=window.qualityPatients383;
+  window.qualityPatients383=function(kind){
+    if(['dni','cobertura','contacto','nacimiento'].includes(kind)){
+      try{
+        // La implementación v3.8.5 conserva estado interno; la invocamos primero.
+        qualityOld386?.(kind);
+        setTimeout(()=>{
+          const modal=document.getElementById('qualityModal383');
+          if(!modal)return;
+          modal.querySelectorAll('.quality-row384').forEach(row=>{
+            if(row.querySelector('.delete-patient386'))return;
+            const full=row.querySelector('[onclick*="editarPacienteGlobal350"]');
+            const onclick=full?.getAttribute('onclick')||'';
+            const m=onclick.match(/editarPacienteGlobal350\('([^']+)'\)/);
+            if(!m)return;
+            const key=m[1];
+            const btn=document.createElement('button');btn.type='button';btn.className='danger delete-patient386';btn.textContent='Eliminar paciente';btn.addEventListener('click',()=>eliminarPacienteCompleto386(key));
+            row.querySelector('.quality-actions384')?.appendChild(btn);
+          });
+        },0);
+        return;
+      }catch(e){console.error(e);}
+    }
+    return qualityOld386?.(kind);
+  };
+
+  // Delegación reforzada: especialmente Cobertura incompleta, aunque el contenido se vuelva a renderizar.
+  document.addEventListener('click',e=>{
+    let el=e.target?.closest?.('[data-quality-kind]');
+    if(el){e.preventDefault();e.stopPropagation();window.qualityPatients383(el.dataset.qualityKind);return;}
+    el=e.target?.closest?.('#dataQuality382 .quality-item-382');
+    if(!el)return;
+    const t=norm386(el.textContent);
+    const kind=t.includes('cobertura incompleta')?'cobertura':t.includes('sin dni')?'dni':t.includes('sin contacto')?'contacto':t.includes('sin fecha de nacimiento')?'nacimiento':'';
+    if(kind){e.preventDefault();e.stopPropagation();window.qualityPatients383(kind);}
+  },true);
+
+  // Botón Eliminar en ficha de Pacientes.
+  const selOld386=typeof seleccionarPacientePanel==='function'?seleccionarPacientePanel:null;
+  if(selOld386){window.seleccionarPacientePanel=seleccionarPacientePanel=function(id){const r=selOld386.apply(this,arguments);setTimeout(()=>{const actions=document.querySelector('#pacienteDetalle .paciente-ficha-actions');if(actions&&!actions.querySelector('.delete-patient386')){const b=document.createElement('button');b.type='button';b.className='danger delete-patient386';b.textContent='Eliminar paciente';b.onclick=()=>eliminarPacienteCompleto386(id);actions.appendChild(b);}},0);return r;};}
+
+  // Botón Eliminar en ficha emergente global.
+  const openOld386=typeof abrirPacienteGlobalDetalle350==='function'?abrirPacienteGlobalDetalle350:null;
+  if(openOld386){window.abrirPacienteGlobalDetalle350=abrirPacienteGlobalDetalle350=function(k){const r=openOld386.apply(this,arguments);setTimeout(()=>{const actions=document.querySelector('#pacienteGlobalBody .paciente-global-actions-top');if(actions&&!actions.querySelector('.delete-patient386')){const b=document.createElement('button');b.type='button';b.className='danger delete-patient386';b.textContent='Eliminar paciente';b.onclick=()=>eliminarPacienteCompleto386(k);actions.appendChild(b);}},0);return r;};}
+
+  function refrescarVersion386(){
+    document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(x=>x.textContent='v3.8.6');
+    document.title='CardioLink Admin v3.8.6';
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(refrescarVersion386,300));else setTimeout(refrescarVersion386,300);
+})();
+
+
+/* ===== CardioLink Admin v3.8.7 LTS: abrir ficha completa desde calidad de datos ===== */
+(function init387(){
+  window.abrirFichaCompletaCalidad387=function(key){
+    try{
+      const quality=document.getElementById('qualityModal383');
+      if(quality) quality.classList.add('hidden');
+      // Abre la ficha emergente unificada sin cambiar de solapa ni volver a Configuración.
+      if(typeof window.abrirPacienteGlobalDetalle350==='function'){
+        window.abrirPacienteGlobalDetalle350(key);
+      }else if(typeof window.abrirPacienteGlobal320==='function'){
+        window.abrirPacienteGlobal320(key);
+      }else{
+        alert('No se pudo abrir la ficha completa del paciente.');
+      }
+      // Refuerzo para que el modal quede por encima de Configuración en todos los navegadores.
+      setTimeout(()=>{
+        const modal=document.getElementById('pacienteGlobalModal');
+        if(modal){
+          modal.classList.remove('hidden');
+          modal.style.zIndex='10050';
+          const focusable=modal.querySelector('button, input, select, textarea');
+          focusable?.focus?.({preventScroll:true});
+        }
+      },0);
+    }catch(e){
+      console.error('Error al abrir ficha completa desde calidad de datos',e);
+      alert('No se pudo abrir la ficha completa del paciente.');
+    }
+  };
+
+  function version387(){
+    document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(x=>x.textContent='v3.8.7');
+    document.title='CardioLink Admin v3.8.7';
+  }
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>setTimeout(version387,300));
+  else setTimeout(version387,300);
 })();

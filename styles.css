@@ -1416,3 +1416,11 @@ body.patient-modal-open-371{overflow:hidden!important}
   transform:translateY(-1px);
 }
 .quality-action-385:active{transform:translateY(0)}
+
+/* v3.8.6 LTS */
+.quality-action-385{cursor:pointer;touch-action:manipulation;position:relative;z-index:1}
+.quality-action-385:hover,.quality-action-385:focus-visible{transform:translateY(-1px);box-shadow:0 8px 20px rgba(15,52,70,.12);outline:3px solid rgba(37,99,235,.18)}
+.quality-actions384{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+button.danger.delete-patient386{background:#fee2e2!important;color:#991b1b!important;border:1px solid #fecaca!important}
+button.danger.delete-patient386:hover{background:#fecaca!important}
+@media(max-width:700px){.quality-actions384 button{width:100%}.paciente-ficha-actions .delete-patient386,.paciente-global-actions-top .delete-patient386{width:100%}}
