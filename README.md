@@ -1,9 +1,3 @@
-# CardioLink Admin v3.8.4 LTS
+CardioLink Admin v3.8.5 LTS
 
-Versión estable de cierre del módulo administrativo.
-
-## Novedad principal
-- Calidad de datos operativa: filtra pacientes sin DNI, cobertura, contacto o fecha de nacimiento.
-- Permite completar el dato directamente y el paciente desaparece de la lista al guardar.
-- Mantiene acceso a la ficha completa.
-- Conserva Pendientes, PWA, agenda responsive y preparación HC.
+Corrección de las tarjetas de Calidad de datos: Sin DNI, Cobertura incompleta, Sin contacto y Sin fecha de nacimiento ahora son botones accesibles y abren la bandeja editable.

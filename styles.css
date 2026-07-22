@@ -1397,3 +1397,22 @@ body.patient-modal-open-371{overflow:hidden!important}
 /* ===== v3.8.4 LTS - edición directa de fichas incompletas ===== */
 .quality-card384{width:min(1180px,96vw)!important}.quality-toolbar384{display:grid;grid-template-columns:280px 1fr;gap:12px;margin:16px 0}.quality-toolbar384 label{font-weight:800}.quality-toolbar384 select,.quality-toolbar384 input{width:100%;margin-top:6px}.quality-list384{display:grid;gap:12px}.quality-row384{display:grid;grid-template-columns:minmax(220px,1fr) minmax(280px,1.4fr) auto;gap:14px;align-items:center;border:1px solid #d7e2ea;border-radius:16px;padding:14px;background:#fff}.quality-patient384{display:grid;gap:4px}.quality-patient384 strong{font-size:1.05rem}.quality-patient384 span{color:#617487;font-size:.9rem}.quality-edit384 input,.quality-edit384 select{width:100%;margin:0}.quality-contact384{display:grid;grid-template-columns:1fr 1fr;gap:8px}.quality-actions384{display:flex;gap:8px;flex-wrap:wrap}.quality-actions384 button{min-width:110px}
 @media(max-width:800px){.quality-toolbar384,.quality-row384{grid-template-columns:1fr}.quality-contact384{grid-template-columns:1fr}.quality-actions384 button{width:100%}.quality-card384{padding:18px!important}}
+
+
+/* ===== v3.8.5 LTS - calidad de datos clickeable ===== */
+.quality-action-385{
+  width:100%;
+  font:inherit;
+  color:inherit;
+  text-align:left;
+  cursor:pointer;
+  appearance:none;
+  -webkit-appearance:none;
+}
+.quality-action-385:hover,
+.quality-action-385:focus-visible{
+  outline:3px solid rgba(37,99,235,.28);
+  border-color:#2563eb;
+  transform:translateY(-1px);
+}
+.quality-action-385:active{transform:translateY(0)}

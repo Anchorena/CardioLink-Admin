@@ -6306,7 +6306,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       }
       if(!a.hcMeta)a.hcMeta={schemaVersion:1,evoluciones:0,informes:0,adjuntos:0};
     });
-    data.hcPreparacion={schemaVersion:1,preparadoEn:new Date().toISOString(),versionApp:'3.8.4'};
+    data.hcPreparacion={schemaVersion:1,preparadoEn:new Date().toISOString(),versionApp:'3.8.5'};
     try{saveConfig();saveAtenciones();}catch(e){console.warn(e);}
     try{await sincronizarAtencionesSupabase(true);}catch(e){console.warn('Sincronización HC pendiente:',e);}
     renderHC380();
@@ -6385,7 +6385,15 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       ['Sin contacto',r.noContact,r.noContact?'warn':'ok'],['Sin fecha de nacimiento',r.noBirth,r.noBirth?'warn':'ok'],['DNI duplicados',r.duplicatedDni,r.duplicatedDni?'danger':'ok'],
       ['Atenciones sin paciente válido',r.orphan,r.orphan?'danger':'ok'],['Atenciones sin profesional ID',r.noProf,r.noProf?'warn':'ok']
     ];
-    el.innerHTML=items.map(([t,n,c])=>`<div class="quality-item-382 ${c}"><span>${t}</span><b>${n}</b></div>`).join('');
+    const kindByTitle={'Sin DNI':'dni','Cobertura incompleta':'cobertura','Sin contacto':'contacto','Sin fecha de nacimiento':'nacimiento'};
+    el.innerHTML=items.map(([t,n,c])=>{
+      const kind=kindByTitle[t];
+      if(kind){
+        return `<button type="button" class="quality-item-382 quality-action-385 ${c}" data-quality-kind="${kind}" aria-label="Abrir pacientes: ${t}"><span>${t}</span><b>${n}</b></button>`;
+      }
+      return `<div class="quality-item-382 ${c}"><span>${t}</span><b>${n}</b></div>`;
+    }).join('');
+    el.querySelectorAll('[data-quality-kind]').forEach(btn=>btn.addEventListener('click',()=>window.qualityPatients383?.(btn.dataset.qualityKind)));
   }
 
   function auditData382(){
@@ -6409,7 +6417,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
   function exportAudit382(){
     const r=auditData382();
-    const payload={app:'CardioLink Admin',version:'3.8.4',exportadoEn:new Date().toISOString(),resumen:{altas:r.created,ediciones:r.edited,fusiones:r.fusions,usuarios:r.users},atenciones:attentions382().map(a=>({id:a.id,pacienteId:a.pacienteId,paciente:a.paciente,creadoPor:a.creadoPor,creadoEn:a.creadoEn,editadoPor:a.editadoPor,editadoEn:a.editadoEn})),auditoriaPacientes:r.patientAudit};
+    const payload={app:'CardioLink Admin',version:'3.8.5',exportadoEn:new Date().toISOString(),resumen:{altas:r.created,ediciones:r.edited,fusiones:r.fusions,usuarios:r.users},atenciones:attentions382().map(a=>({id:a.id,pacienteId:a.pacienteId,paciente:a.paciente,creadoPor:a.creadoPor,creadoEn:a.creadoEn,editadoPor:a.editadoPor,editadoEn:a.editadoEn})),auditoriaPacientes:r.patientAudit};
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
     const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Auditoria_'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
   }
@@ -6432,7 +6440,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       ['Sesión Supabase',r.session,r.session==='No iniciada'?'warn':'ok'],
       ['Última sincronización',fmtDate(r.lastSync),r.lastSync?'ok':'warn'],
       ['Último backup',fmtDate(r.lastBackup),r.lastBackup?'ok':'warn'],
-      ['Versión','3.8.4','ok'],
+      ['Versión','3.8.5','ok'],
       ['Preparación HC',hcReady?'Lista':'Revisar vínculos',hcReady?'ok':'warn']
     ];
     el.innerHTML=items.map(([t,v,c])=>`<div class="health-item-382 ${c}"><span>${t}</span><b>${v}</b></div>`).join('');
@@ -6587,14 +6595,14 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     document.getElementById('pendBuscar383')?.addEventListener('input',renderPendientes383);
     document.querySelectorAll('.nav[data-section]').forEach(b=>{if(!b.dataset.v383){b.dataset.v383='1';b.addEventListener('click',()=>{if(b.dataset.section==='pendientes383')showSection('pendientes383')})}});
     // Enhance quality cards using their visible text
-    document.querySelectorAll('#qualityData382 .quality-item382, .quality-grid382 > *').forEach(el=>{const t=norm(el.textContent);let k=t.includes('sin dni')?'dni':t.includes('cobertura incompleta')?'cobertura':t.includes('sin contacto')?'contacto':t.includes('sin fecha')?'nacimiento':'';if(k){el.classList.add('clickable383');el.addEventListener('click',()=>qualityPatients383(k))}});
+    document.querySelectorAll('#dataQuality382 .quality-item-382, .data-quality-grid-382 > *').forEach(el=>{const t=norm(el.textContent);let k=t.includes('sin dni')?'dni':t.includes('cobertura incompleta')?'cobertura':t.includes('sin contacto')?'contacto':t.includes('sin fecha')?'nacimiento':'';if(k){el.classList.add('clickable383');el.addEventListener('click',()=>qualityPatients383(k))}});
     renderPendientes383();
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(bind383,500));else setTimeout(bind383,500);
 })();
 
 
-/* ===== CardioLink Admin v3.8.4 LTS: completar fichas incompletas ===== */
+/* ===== CardioLink Admin v3.8.5 LTS: completar fichas incompletas ===== */
 (function init384(){
   const norm=v=>String(v??'').trim().toLowerCase();
   const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -6650,5 +6658,9 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     renderQuality384();
   };
   // LTS: al tocar Revisar datos abre directamente la bandeja editable.
-  document.addEventListener('click',e=>{if(e.target?.id==='btnRefreshQuality382'){e.preventDefault();window.qualityPatients383('dni');}},true);
+  document.addEventListener('click',e=>{
+    const qualityButton=e.target?.closest?.('[data-quality-kind]');
+    if(qualityButton){e.preventDefault();window.qualityPatients383(qualityButton.dataset.qualityKind);return;}
+    if(e.target?.id==='btnRefreshQuality382'){e.preventDefault();window.qualityPatients383('dni');}
+  },true);
 })();
