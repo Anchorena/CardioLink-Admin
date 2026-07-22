@@ -5953,7 +5953,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
 /* ===== v3.6.0 - Inicio inteligente y pulido administrativo ===== */
 (()=>{
-  const APP_VERSION='3.8.2';
+  const APP_VERSION='3.8.3';
   const $360=id=>document.getElementById(id);
   const esc360=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const norm360=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
@@ -6306,7 +6306,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       }
       if(!a.hcMeta)a.hcMeta={schemaVersion:1,evoluciones:0,informes:0,adjuntos:0};
     });
-    data.hcPreparacion={schemaVersion:1,preparadoEn:new Date().toISOString(),versionApp:'3.8.2'};
+    data.hcPreparacion={schemaVersion:1,preparadoEn:new Date().toISOString(),versionApp:'3.8.3'};
     try{saveConfig();saveAtenciones();}catch(e){console.warn(e);}
     try{await sincronizarAtencionesSupabase(true);}catch(e){console.warn('Sincronización HC pendiente:',e);}
     renderHC380();
@@ -6409,7 +6409,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
   function exportAudit382(){
     const r=auditData382();
-    const payload={app:'CardioLink Admin',version:'3.8.2',exportadoEn:new Date().toISOString(),resumen:{altas:r.created,ediciones:r.edited,fusiones:r.fusions,usuarios:r.users},atenciones:attentions382().map(a=>({id:a.id,pacienteId:a.pacienteId,paciente:a.paciente,creadoPor:a.creadoPor,creadoEn:a.creadoEn,editadoPor:a.editadoPor,editadoEn:a.editadoEn})),auditoriaPacientes:r.patientAudit};
+    const payload={app:'CardioLink Admin',version:'3.8.3',exportadoEn:new Date().toISOString(),resumen:{altas:r.created,ediciones:r.edited,fusiones:r.fusions,usuarios:r.users},atenciones:attentions382().map(a=>({id:a.id,pacienteId:a.pacienteId,paciente:a.paciente,creadoPor:a.creadoPor,creadoEn:a.creadoEn,editadoPor:a.editadoPor,editadoEn:a.editadoEn})),auditoriaPacientes:r.patientAudit};
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
     const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Auditoria_'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
   }
@@ -6432,7 +6432,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       ['Sesión Supabase',r.session,r.session==='No iniciada'?'warn':'ok'],
       ['Última sincronización',fmtDate(r.lastSync),r.lastSync?'ok':'warn'],
       ['Último backup',fmtDate(r.lastBackup),r.lastBackup?'ok':'warn'],
-      ['Versión','3.8.2','ok'],
+      ['Versión','3.8.3','ok'],
       ['Preparación HC',hcReady?'Lista':'Revisar vínculos',hcReady?'ok':'warn']
     ];
     el.innerHTML=items.map(([t,v,c])=>`<div class="health-item-382 ${c}"><span>${t}</span><b>${v}</b></div>`).join('');
@@ -6496,4 +6496,99 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     document.querySelectorAll('[data-config-group="sistema"],[data-config-group="mantenimiento"]').forEach(b=>b.addEventListener('click',()=>setTimeout(()=>{renderHealth382();renderQuality382();renderAudit382();},50)));
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',init);else init();
+})();
+
+
+/* ===== CardioLink Admin v3.8.3: Pendientes y calidad de datos ===== */
+(function(){
+  const V='383';
+  let currentTab='todos';
+  let undo383=null;
+  const norm=s=>String(s||'').trim().toLowerCase();
+  const isStudy=a=>{try{return typeof esRegistroDeEstudio==='function'?esRegistroDeEstudio(a):!norm(a.prestacion).includes('consulta')}catch{return !norm(a.prestacion).includes('consulta')}};
+  function isParticular383(a){const os=norm(a.obraSocial);return os==='particular'||os==='pami'}
+  function isOsde383(a){return norm(a.obraSocial)==='osde'}
+  function applyNA383(a){
+    if(!a||typeof a!=='object'||String(a.tipo||'').includes('mensaje'))return;
+    if(isParticular383(a)){a.noAplicaFirmaBono=true;a.noAplicaCopiaFacturacion=true;}
+    else if(isOsde383(a)){a.noAplicaFirmaBono=true;a.noAplicaCopiaFacturacion=true;}
+    else {if(a.noAplicaFirmaBono==='auto')delete a.noAplicaFirmaBono;if(a.noAplicaCopiaFacturacion==='auto')delete a.noAplicaCopiaFacturacion;}
+  }
+  function pendientes383(a){
+    if(!a||typeof a!=='object'||(typeof esMensajeInterno==='function'&&esMensajeInterno(a)))return [];
+    applyNA383(a);
+    const out=[];
+    const requiereFirma=!!(a.bonoConsulta||a.bonoEstudio);
+    const requiereCopia=!!(a.bonoEstudio||a.requiereCopiaImpresa);
+    if(requiereFirma&&!a.noAplicaFirmaBono&&!a.bonoFirmado)out.push('firma');
+    if(requiereCopia&&!a.noAplicaCopiaFacturacion&&!a.copiaImpresa)out.push('copia');
+    if(isStudy(a)&&!a.estudioInformado)out.push('informe');
+    if(isStudy(a)&&a.estudioInformado&&!(a.estudioImpreso||a.estudioEnviadoMail||a.estudioEnviadoWS))out.push('entrega');
+    if(isStudy(a)&&a.estudioImpreso&&!a.retiradoFisico&&!a.estudioEnviadoMail&&!a.estudioEnviadoWS)out.push('retiro');
+    if(a.requiereAutorizacion&&!a.autorizacionCompleta)out.push('autorizacion');
+    return out;
+  }
+  window.pendientesDeAtencion383=pendientes383;
+  function base383(){try{return typeof atencionesPerfil==='function'?atencionesPerfil().filter(a=>!(typeof esMensajeInterno==='function'&&esMensajeInterno(a))):atenciones}catch{return atenciones||[]}}
+  function labels383(k){return {firma:'Falta firma / bono',copia:'Falta copia facturación',informe:'Falta informe',entrega:'Falta imprimir / enviar',retiro:'Pendiente de retiro',autorizacion:'Falta autorización'}[k]||k}
+  function counts383(list){const c={todos:0,firma:0,copia:0,informe:0,entrega:0,retiro:0,autorizacion:0};list.forEach(a=>{const p=pendientes383(a);if(p.length)c.todos++;p.forEach(k=>c[k]++)});return c}
+  function esc383(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
+  function renderPendientes383(){
+    const box=document.getElementById('pendientesLista383');if(!box)return;
+    let list=base383().filter(a=>pendientes383(a).length);
+    const c=counts383(base383());
+    document.querySelectorAll('#pendientesTabs383 [data-pendtab]').forEach(b=>{const k=b.dataset.pendtab;b.classList.toggle('active',k===currentTab);const s=b.querySelector('span');if(s)s.textContent=c[k]||0});
+    const nav=document.getElementById('badgePendientesNav383');if(nav){nav.textContent=c.todos;nav.classList.toggle('zero',!c.todos)}
+    if(currentTab!=='todos')list=list.filter(a=>pendientes383(a).includes(currentTab));
+    const q=norm(document.getElementById('pendBuscar383')?.value);if(q)list=list.filter(a=>norm([a.paciente,a.dni,a.prestacion,a.obraSocial,a.profesional].join(' ')).includes(q));
+    const desc=document.getElementById('pendOrden383')?.value==='desc';list.sort((a,b)=>(String(a.fecha||'').localeCompare(String(b.fecha||'')))*(desc?-1:1));
+    if(!list.length){box.innerHTML='<div class="empty383">No hay pendientes en esta categoría.</div>';return}
+    box.innerHTML=list.map(a=>{const ps=pendientes383(a);return `<article class="pend-card383"><div class="pend-main383"><div class="pend-date383">${esc383(typeof formatFecha==='function'?formatFecha(a.fecha):a.fecha)}${a.horaInicio?' · '+esc383(a.horaInicio):''}</div><h3>${esc383(a.paciente||'Paciente')}</h3><p>${esc383(a.prestacion||'')} · ${esc383(a.profesional||'')}</p><p class="muted">${esc383(a.obraSocial||'Sin cobertura')} · DNI ${esc383(a.dni||'s/d')}</p></div><div class="pend-tags383">${ps.map(k=>`<button type="button" class="pend-tag383 p-${k}" onclick="resolverPendiente383('${esc383(a.id)}','${k}')">${esc383(labels383(k))}</button>`).join('')}<button type="button" class="secondary open383" onclick="editarAtencion('${esc383(a.id)}')">Abrir</button></div></article>`}).join('');
+  }
+  window.renderPendientes383=renderPendientes383;
+  function audit383(a,k){a.auditoriaPendientes=Array.isArray(a.auditoriaPendientes)?a.auditoriaPendientes:[];let u={};try{u=perfilUsuarioActual()||{}}catch{}a.auditoriaPendientes.push({tipo:k,accion:'resuelto',fecha:new Date().toISOString(),usuario:u.nombre||u.usuario||'usuario'});}
+  function resolverPendiente383(id,k){
+    const a=(atenciones||[]).find(x=>String(x.id)===String(id));if(!a)return;
+    const prev=JSON.parse(JSON.stringify(a));
+    if(k==='firma')a.bonoFirmado=true;
+    if(k==='copia')a.copiaImpresa=true;
+    if(k==='informe')a.estudioInformado=true;
+    if(k==='entrega'){a.estudioImpreso=true;a.disponibleRetiro=true;}
+    if(k==='retiro'){a.retiradoFisico=true;a.fechaRetiroFisico=new Date().toISOString();}
+    if(k==='autorizacion')a.autorizacionCompleta=true;
+    audit383(a,k);try{saveAtenciones();renderTabla?.();renderStats?.();renderAgenda?.()}catch(e){console.error(e)}renderPendientes383();
+    undo383={id,prev};toastUndo383(labels383(k)+' resuelto');
+  }
+  window.resolverPendiente383=resolverPendiente383;
+  function toastUndo383(msg){let t=document.getElementById('undoToast383');if(!t){t=document.createElement('div');t.id='undoToast383';t.className='undo-toast383';document.body.appendChild(t)}t.innerHTML=`<span>${esc383(msg)}</span><button type="button" onclick="deshacerPendiente383()">Deshacer</button>`;t.classList.add('show');clearTimeout(t._tm);t._tm=setTimeout(()=>{t.classList.remove('show');undo383=null},6500)}
+  window.deshacerPendiente383=function(){if(!undo383)return;const i=(atenciones||[]).findIndex(x=>String(x.id)===String(undo383.id));if(i>=0){atenciones[i]=undo383.prev;saveAtenciones();renderPendientes383();renderTabla?.();renderStats?.()}document.getElementById('undoToast383')?.classList.remove('show');undo383=null};
+
+  // Un único cálculo para dashboard/listados nuevos.
+  const oldEval=typeof evaluarEstado==='function'?evaluarEstado:null;
+  window.evaluarEstado=evaluarEstado=function(a){const p=pendientes383(a).filter(k=>k==='firma'||k==='copia');return p.length?{txt:'Falta: '+p.map(k=>k==='firma'?'firma':'copia').join(' + '),cls:'bad'}:{txt:'OK',cls:'ok'}};
+  const oldBadges=typeof badgesInforme==='function'?badgesInforme:null;
+  window.badgesInforme=badgesInforme=function(a){if(!isStudy(a))return '';const p=pendientes383(a),b=[];b.push(a.estudioInformado?'<span class="badge ok informe-badge">Informado</span>':'<span class="badge bad informe-badge">Pend. informe</span>');if(a.estudioImpreso)b.push('<span class="badge ok informe-badge">Impreso</span>');if(a.estudioEnviadoMail)b.push('<span class="badge ok informe-badge">Mail</span>');if(a.estudioEnviadoWS)b.push('<span class="badge ok informe-badge">WS</span>');if(a.retiradoFisico)b.push('<span class="badge ok informe-badge">Retirado</span>');else if(a.estudioImpreso&&!a.estudioEnviadoMail&&!a.estudioEnviadoWS)b.push('<span class="badge bad informe-badge">Pend. retiro</span>');else if(p.includes('entrega'))b.push('<span class="badge bad informe-badge">Pend. impresión/envío</span>');return `<div class="estado-informe">${b.join(' ')}</div>`};
+
+  const originalSave=typeof saveAtenciones==='function'?saveAtenciones:null;
+  if(originalSave&&!originalSave.__v383){const w=function(){(atenciones||[]).forEach(applyNA383);return originalSave.apply(this,arguments)};w.__v383=true;window.saveAtenciones=saveAtenciones=w;}
+  (atenciones||[]).forEach(applyNA383);
+
+  const oldShow=typeof showSection==='function'?showSection:null;
+  if(oldShow&&!oldShow.__v383){const w=function(id){if(id==='pendientes383'){document.querySelectorAll('.section').forEach(s=>s.classList.remove('visible'));document.getElementById(id)?.classList.add('visible');document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.section===id));if(document.getElementById('tituloBienvenida'))document.getElementById('tituloBienvenida').textContent='Pendientes';if(document.getElementById('subtituloPerfil'))document.getElementById('subtituloPerfil').textContent='Bandeja operativa por fecha y tipo';renderPendientes383();return}return oldShow.apply(this,arguments)};w.__v383=true;window.showSection=showSection=w;}
+
+  // Clicks de calidad de datos: abre listado editable en modal.
+  function qualityPatients383(kind){const ps=(data.pacientes||[]).filter(p=>{if(kind==='dni')return !String(p.dni||'').trim();if(kind==='cobertura')return !String(p.obraSocial||p.cobertura||'').trim()||norm(p.obraSocial||p.cobertura).includes('matias anchorena');if(kind==='contacto')return !String(p.telefono||'').trim()&&!String(p.email||'').trim()&&!String(p.telefonoContacto||'').trim()&&!String(p.emailContacto||'').trim();if(kind==='nacimiento')return !String(p.fechaNacimiento||'').trim();return false});let m=document.getElementById('qualityModal383');if(!m){m=document.createElement('div');m.id='qualityModal383';m.className='modal-overlay-360 hidden';document.body.appendChild(m)}m.innerHTML=`<div class="quality-card383"><button class="modal-close-360" onclick="document.getElementById('qualityModal383').classList.add('hidden')">×</button><h2>Pacientes para completar</h2><p>${ps.length} registro(s)</p><div class="quality-list383">${ps.map(p=>`<div><strong>${esc383(p.apellidoNombre||p.nombreCompleto||p.nombre||'Paciente')}</strong><span>DNI ${esc383(p.dni||'s/d')} · ${esc383(p.telefono||'sin contacto')}</span><button class="secondary" onclick="document.getElementById('qualityModal383').classList.add('hidden');editarPacienteGlobal350('${esc383(typeof pacienteClave==='function'?pacienteClave(p):(p.id||p.dni))}')">Editar</button></div>`).join('')||'<p>No hay registros.</p>'}</div></div>`;m.classList.remove('hidden')}
+  window.qualityPatients383=qualityPatients383;
+
+  function bind383(){
+    document.querySelectorAll('#pendientesTabs383 [data-pendtab]').forEach(b=>b.addEventListener('click',()=>{currentTab=b.dataset.pendtab;renderPendientes383()}));
+    document.getElementById('btnRefreshPend383')?.addEventListener('click',renderPendientes383);
+    document.getElementById('pendOrden383')?.addEventListener('change',renderPendientes383);
+    document.getElementById('pendBuscar383')?.addEventListener('input',renderPendientes383);
+    document.querySelectorAll('.nav[data-section]').forEach(b=>{if(!b.dataset.v383){b.dataset.v383='1';b.addEventListener('click',()=>{if(b.dataset.section==='pendientes383')showSection('pendientes383')})}});
+    // Enhance quality cards using their visible text
+    document.querySelectorAll('#qualityData382 .quality-item382, .quality-grid382 > *').forEach(el=>{const t=norm(el.textContent);let k=t.includes('sin dni')?'dni':t.includes('cobertura incompleta')?'cobertura':t.includes('sin contacto')?'contacto':t.includes('sin fecha')?'nacimiento':'';if(k){el.classList.add('clickable383');el.addEventListener('click',()=>qualityPatients383(k))}});
+    renderPendientes383();
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(bind383,500));else setTimeout(bind383,500);
 })();
