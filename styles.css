@@ -1424,3 +1424,9 @@ body.patient-modal-open-371{overflow:hidden!important}
 button.danger.delete-patient386{background:#fee2e2!important;color:#991b1b!important;border:1px solid #fecaca!important}
 button.danger.delete-patient386:hover{background:#fecaca!important}
 @media(max-width:700px){.quality-actions384 button{width:100%}.paciente-ficha-actions .delete-patient386,.paciente-global-actions-top .delete-patient386{width:100%}}
+
+
+/* v3.9.0 - ficha administrativa ampliada */
+.paciente-ficha-grid.global-paciente-grid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));}
+@media(max-width:760px){.paciente-edit-form{grid-template-columns:1fr!important}.paciente-ficha-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:480px){.paciente-ficha-grid{grid-template-columns:1fr}}

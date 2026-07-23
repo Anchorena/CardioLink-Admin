@@ -1,3 +1,10 @@
+CardioLink Admin v3.9.0 LTS
+
+## v3.9.0 LTS
+- Ficha de paciente ampliada con sexo, localidad, dirección y provincia.
+- Corrección reforzada del acceso desde Calidad de datos a Cobertura incompleta.
+- Base estable v3.8.7 conservada; sin cambios todavía en roles, aranceles ni facturación estimada.
+
 CardioLink Admin v3.8.7 LTS
 
 Corrección de las tarjetas de Calidad de datos: Sin DNI, Cobertura incompleta, Sin contacto y Sin fecha de nacimiento ahora son botones accesibles y abren la bandeja editable.

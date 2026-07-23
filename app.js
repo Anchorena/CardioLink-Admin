@@ -1578,7 +1578,7 @@ function pacientesDesdeAtenciones(){
 }
 function mergePacienteInfo(dest, src){
  if(!dest || !src)return dest;
- ['nombreCompleto','dni','telefono','email','fechaNacimiento','coberturaHabitual','numeroAfiliadoHabitual','contactoResponsableNombre','contactoResponsableRelacion','contactoResponsableTelefono','contactoResponsableEmail'].forEach(k=>{
+ ['nombreCompleto','dni','telefono','email','fechaNacimiento','sexo','localidad','direccion','provincia','coberturaHabitual','numeroAfiliadoHabitual','contactoResponsableNombre','contactoResponsableRelacion','contactoResponsableTelefono','contactoResponsableEmail'].forEach(k=>{
    if(!dest[k] && src[k])dest[k]=src[k];
  });
  return dest;
@@ -3130,6 +3130,10 @@ function seleccionarPacientePanel(id){
       <div><span>Teléfono contacto</span><strong>${escapeHtml(p.contactoResponsableTelefono||'s/d')}</strong></div>
       <div><span>Email contacto</span><strong>${escapeHtml(p.contactoResponsableEmail||'s/d')}</strong></div>
       <div><span>Fecha nacimiento</span><strong>${escapeHtml(p.fechaNacimiento?formatFecha(p.fechaNacimiento):'s/d')}</strong></div>
+      <div><span>Sexo</span><strong>${escapeHtml(p.sexo||'s/d')}</strong></div>
+      <div><span>Localidad</span><strong>${escapeHtml(p.localidad||'s/d')}</strong></div>
+      <div><span>Dirección</span><strong>${escapeHtml(p.direccion||'s/d')}</strong></div>
+      <div><span>Provincia</span><strong>${escapeHtml(p.provincia||'Buenos Aires')}</strong></div>
       <div><span>Total atenciones</span><strong>${ats.length}</strong></div>
     </div>
     <div class="paciente-mini-resumen">
@@ -3166,6 +3170,10 @@ function editarPacientePanel(id){
       <div><label>Teléfono</label><input id="pacEditTelefono" value="${escapeHtml(p.telefono||'')}"></div>
       <div><label>Email</label><input id="pacEditEmail" value="${escapeHtml(p.email||'')}"></div>
       <div><label>Fecha nacimiento</label><input type="date" id="pacEditNacimiento" value="${escapeHtml(fechaISODesdeTexto(p.fechaNacimiento||'')||p.fechaNacimiento||'')}"></div>
+      <div><label>Sexo</label><select id="pacEditSexo"><option value="">No definido</option><option value="Masculino" ${p.sexo==='Masculino'?'selected':''}>Masculino</option><option value="Femenino" ${p.sexo==='Femenino'?'selected':''}>Femenino</option></select></div>
+      <div><label>Localidad</label><input id="pacEditLocalidad" value="${escapeHtml(p.localidad||'')}"></div>
+      <div><label>Dirección</label><input id="pacEditDireccion" value="${escapeHtml(p.direccion||'')}"></div>
+      <div><label>Provincia</label><input id="pacEditProvincia" value="${escapeHtml(p.provincia||'Buenos Aires')}"></div>
       <div><label>Cobertura habitual</label><select id="pacEditCobertura">${data.obrasSociales.map(os=>`<option ${os===(p.coberturaHabitual||'')?'selected':''}>${escapeHtml(os)}</option>`).join('')}</select></div>
       <div><label>Nº afiliado habitual</label><input id="pacEditAfiliado" value="${escapeHtml(p.numeroAfiliadoHabitual||'')}"></div>
       <div class="form-subtitle full-span">Contacto responsable / familiar a cargo</div>
@@ -3199,6 +3207,10 @@ function guardarPacientePanel(id){
   p.telefono=$('pacEditTelefono')?.value.trim()||'';
   p.email=$('pacEditEmail')?.value.trim()||'';
   p.fechaNacimiento=$('pacEditNacimiento')?.value||'';
+  p.sexo=$('pacEditSexo')?.value||'';
+  p.localidad=$('pacEditLocalidad')?.value.trim()||'';
+  p.direccion=$('pacEditDireccion')?.value.trim()||'';
+  p.provincia=$('pacEditProvincia')?.value.trim()||'Buenos Aires';
   p.coberturaHabitual=$('pacEditCobertura')?.value||'';
   p.numeroAfiliadoHabitual=$('pacEditAfiliado')?.value.trim()||'';
   p.contactoResponsableNombre=$('pacEditContactoNombre')?.value.trim()||'';
@@ -5345,6 +5357,10 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         <div><span>Cobertura habitual</span><strong>${esc(p.coberturaHabitual||p.obraSocial||'Incompleto')}</strong></div>
         <div><span>Nº afiliado</span><strong>${esc(p.numeroAfiliadoHabitual||p.numeroAfiliado||'s/d')}</strong></div>
         <div><span>Fecha nacimiento</span><strong>${esc(p.fechaNacimiento?(typeof formatFecha==='function'?formatFecha(p.fechaNacimiento):p.fechaNacimiento):'s/d')}</strong></div>
+        <div><span>Sexo</span><strong>${esc(p.sexo||'s/d')}</strong></div>
+        <div><span>Localidad</span><strong>${esc(p.localidad||'s/d')}</strong></div>
+        <div><span>Dirección</span><strong>${esc(p.direccion||'s/d')}</strong></div>
+        <div><span>Provincia</span><strong>${esc(p.provincia||'Buenos Aires')}</strong></div>
         <div><span>Total atenciones</span><strong>${ats.length}</strong></div>
         <div><span>Última atención</span><strong>${ult?esc((typeof formatFecha==='function'?formatFecha(ult.fecha):ult.fecha)+' · '+(ult.prestacion||'')):'s/d'}</strong></div>
       </div>
@@ -5813,6 +5829,10 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
           <div class="full-span"><label>Apellido y nombre</label><input id="gPacNombre" value="${esc(nombrePac(p))}"></div>
           <div><label>DNI</label><input id="gPacDni" value="${esc(p.dni||'')}"></div>
           <div><label>Fecha nacimiento</label><input type="date" id="gPacNacimiento" value="${esc(p.fechaNacimiento||'')}"></div>
+          <div><label>Sexo</label><select id="gPacSexo"><option value="">No definido</option><option value="Masculino" ${p.sexo==='Masculino'?'selected':''}>Masculino</option><option value="Femenino" ${p.sexo==='Femenino'?'selected':''}>Femenino</option></select></div>
+          <div><label>Localidad</label><input id="gPacLocalidad" value="${esc(p.localidad||'')}"></div>
+          <div><label>Dirección</label><input id="gPacDireccion" value="${esc(p.direccion||'')}"></div>
+          <div><label>Provincia</label><input id="gPacProvincia" value="${esc(p.provincia||'Buenos Aires')}"></div>
           <div><label>Teléfono paciente</label><input id="gPacTelefono" value="${esc(p.telefono||'')}"></div>
           <div><label>Email paciente</label><input id="gPacEmail" value="${esc(p.email||'')}"></div>
           <div><label>Cobertura habitual</label><select id="gPacCobertura">${osOptions350(coberturaActual)}</select></div>
@@ -5837,6 +5857,10 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     p.nombreCompleto=($id('gPacNombre')?.value||'').trim();
     p.dni=($id('gPacDni')?.value||'').trim();
     p.fechaNacimiento=$id('gPacNacimiento')?.value||'';
+    p.sexo=$id('gPacSexo')?.value||'';
+    p.localidad=($id('gPacLocalidad')?.value||'').trim();
+    p.direccion=($id('gPacDireccion')?.value||'').trim();
+    p.provincia=($id('gPacProvincia')?.value||'Buenos Aires').trim()||'Buenos Aires';
     p.telefono=($id('gPacTelefono')?.value||'').trim();
     p.email=($id('gPacEmail')?.value||'').trim();
     p.coberturaHabitual=$id('gPacCobertura')?.value||'';
@@ -6306,7 +6330,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       }
       if(!a.hcMeta)a.hcMeta={schemaVersion:1,evoluciones:0,informes:0,adjuntos:0};
     });
-    data.hcPreparacion={schemaVersion:1,preparadoEn:new Date().toISOString(),versionApp:'3.8.6'};
+    data.hcPreparacion={schemaVersion:1,preparadoEn:new Date().toISOString(),versionApp:'3.9.0'};
     try{saveConfig();saveAtenciones();}catch(e){console.warn(e);}
     try{await sincronizarAtencionesSupabase(true);}catch(e){console.warn('Sincronización HC pendiente:',e);}
     renderHC380();
@@ -6389,7 +6413,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     el.innerHTML=items.map(([t,n,c])=>{
       const kind=kindByTitle[t];
       if(kind){
-        return `<button type="button" class="quality-item-382 quality-action-385 ${c}" data-quality-kind="${kind}" aria-label="Abrir pacientes: ${t}"><span>${t}</span><b>${n}</b></button>`;
+        return `<button type="button" class="quality-item-382 quality-action-385 ${c}" data-quality-kind="${kind}" onclick="window.qualityPatients383 && window.qualityPatients383('${kind}')" aria-label="Abrir pacientes: ${t}"><span>${t}</span><b>${n}</b></button>`;
       }
       return `<div class="quality-item-382 ${c}"><span>${t}</span><b>${n}</b></div>`;
     }).join('');
@@ -6417,7 +6441,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
   function exportAudit382(){
     const r=auditData382();
-    const payload={app:'CardioLink Admin',version:'3.8.6',exportadoEn:new Date().toISOString(),resumen:{altas:r.created,ediciones:r.edited,fusiones:r.fusions,usuarios:r.users},atenciones:attentions382().map(a=>({id:a.id,pacienteId:a.pacienteId,paciente:a.paciente,creadoPor:a.creadoPor,creadoEn:a.creadoEn,editadoPor:a.editadoPor,editadoEn:a.editadoEn})),auditoriaPacientes:r.patientAudit};
+    const payload={app:'CardioLink Admin',version:'3.9.0',exportadoEn:new Date().toISOString(),resumen:{altas:r.created,ediciones:r.edited,fusiones:r.fusions,usuarios:r.users},atenciones:attentions382().map(a=>({id:a.id,pacienteId:a.pacienteId,paciente:a.paciente,creadoPor:a.creadoPor,creadoEn:a.creadoEn,editadoPor:a.editadoPor,editadoEn:a.editadoEn})),auditoriaPacientes:r.patientAudit};
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
     const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Auditoria_'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
   }
@@ -6440,7 +6464,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       ['Sesión Supabase',r.session,r.session==='No iniciada'?'warn':'ok'],
       ['Última sincronización',fmtDate(r.lastSync),r.lastSync?'ok':'warn'],
       ['Último backup',fmtDate(r.lastBackup),r.lastBackup?'ok':'warn'],
-      ['Versión','3.8.6','ok'],
+      ['Versión','3.9.0','ok'],
       ['Preparación HC',hcReady?'Lista':'Revisar vínculos',hcReady?'ok':'warn']
     ];
     el.innerHTML=items.map(([t,v,c])=>`<div class="health-item-382 ${c}"><span>${t}</span><b>${v}</b></div>`).join('');
@@ -6813,4 +6837,15 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>setTimeout(version387,300));
   else setTimeout(version387,300);
+})();
+
+
+/* ===== CardioLink Admin v3.9.0 LTS: ficha administrativa ampliada ===== */
+(function init390(){
+  function version390(){
+    document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(x=>x.textContent='v3.9.0');
+    document.querySelectorAll('h2').forEach(x=>{if(/^CardioLink Admin v3\.8\.7$/.test(x.textContent.trim()))x.textContent='CardioLink Admin v3.9.0';});
+    document.title='CardioLink Admin v3.9.0';
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(version390,500));else setTimeout(version390,500);
 })();
