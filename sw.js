@@ -1,5 +1,5 @@
-const CACHE='cardiolink-admin-390';
-const SHELL=['./','./index.html','./styles.css?v=390','./app.js?v=390','./manifest.webmanifest?v=390','./icons/icon-192.png','./icons/icon-512.png'];
+const CACHE='cardiolink-admin-3100';
+const SHELL=['./','./index.html','./styles.css?v=3100','./app.js?v=3100','./manifest.webmanifest?v=3100','./icons/icon-192.png','./icons/icon-512.png'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting()))});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()))});
 self.addEventListener('fetch',e=>{

@@ -6609,12 +6609,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   if(oldShow&&!oldShow.__v383){const w=function(id){if(id==='pendientes383'){document.querySelectorAll('.section').forEach(s=>s.classList.remove('visible'));document.getElementById(id)?.classList.add('visible');document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.section===id));if(document.getElementById('tituloBienvenida'))document.getElementById('tituloBienvenida').textContent='Pendientes';if(document.getElementById('subtituloPerfil'))document.getElementById('subtituloPerfil').textContent='Bandeja operativa por fecha y tipo';renderPendientes383();return}return oldShow.apply(this,arguments)};w.__v383=true;window.showSection=showSection=w;}
 
   // Clicks de calidad de datos: abre listado editable en modal.
-  function qualityPatients383(kind){const ps=(data.pacientes||[]).filter(p=>{if(kind==='dni')return !String(p.dni||'').trim();if(kind==='cobertura')return !String(p.obraSocial||p.cobertura||'').trim()||norm(p.obraSocial||p.cobertura).includes('matias anchorena');if(kind==='contacto')return !String(p.telefono||'').trim()&&!String(p.email||'').trim()&&!String(p.telefonoContacto||'').trim()&&!String(p.emailContacto||'').trim();if(kind==='nacimiento')return !String(p.fechaNacimiento||'').trim();
-if(kind==='sexo')return !String(p.sexo||'').trim();
-if(kind==='localidad')return !String(p.localidad||'').trim();
-if(kind==='direccion')return !String(p.direccion||'').trim();
-if(kind==='provincia')return !String(p.provincia||'').trim();
-return false});let m=document.getElementById('qualityModal383');if(!m){m=document.createElement('div');m.id='qualityModal383';m.className='modal-overlay-360 hidden';document.body.appendChild(m)}m.innerHTML=`<div class="quality-card383"><button class="modal-close-360" onclick="document.getElementById('qualityModal383').classList.add('hidden')">×</button><h2>Pacientes para completar</h2><p>${ps.length} registro(s)</p><div class="quality-list383">${ps.map(p=>`<div><strong>${esc383(p.apellidoNombre||p.nombreCompleto||p.nombre||'Paciente')}</strong><span>DNI ${esc383(p.dni||'s/d')} · ${esc383(p.telefono||'sin contacto')}</span><button class="secondary" onclick="document.getElementById('qualityModal383').classList.add('hidden');editarPacienteGlobal350('${esc383(typeof pacienteClave==='function'?pacienteClave(p):(p.id||p.dni))}')">Editar</button></div>`).join('')||'<p>No hay registros.</p>'}</div></div>`;m.classList.remove('hidden')}
+  function qualityPatients383(kind){const ps=(data.pacientes||[]).filter(p=>{if(kind==='dni')return !String(p.dni||'').trim();if(kind==='cobertura')return !String(p.obraSocial||p.cobertura||'').trim()||norm(p.obraSocial||p.cobertura).includes('matias anchorena');if(kind==='contacto')return !String(p.telefono||'').trim()&&!String(p.email||'').trim()&&!String(p.telefonoContacto||'').trim()&&!String(p.emailContacto||'').trim();if(kind==='nacimiento')return !String(p.fechaNacimiento||'').trim();return false});let m=document.getElementById('qualityModal383');if(!m){m=document.createElement('div');m.id='qualityModal383';m.className='modal-overlay-360 hidden';document.body.appendChild(m)}m.innerHTML=`<div class="quality-card383"><button class="modal-close-360" onclick="document.getElementById('qualityModal383').classList.add('hidden')">×</button><h2>Pacientes para completar</h2><p>${ps.length} registro(s)</p><div class="quality-list383">${ps.map(p=>`<div><strong>${esc383(p.apellidoNombre||p.nombreCompleto||p.nombre||'Paciente')}</strong><span>DNI ${esc383(p.dni||'s/d')} · ${esc383(p.telefono||'sin contacto')}</span><button class="secondary" onclick="document.getElementById('qualityModal383').classList.add('hidden');editarPacienteGlobal350('${esc383(typeof pacienteClave==='function'?pacienteClave(p):(p.id||p.dni))}')">Editar</button></div>`).join('')||'<p>No hay registros.</p>'}</div></div>`;m.classList.remove('hidden')}
   window.qualityPatients383=qualityPatients383;
 
   function bind383(){
@@ -6856,135 +6851,38 @@ return false});let m=document.getElementById('qualityModal383');if(!m){m=documen
 })();
 
 
-/* ===== CardioLink Admin v3.9.0 LTS FINAL: versionado único + calidad de datos completa ===== */
-(function init390LTSFinal(){
-  const APP_VERSION_390='3.9.0 LTS';
-  const norm390=v=>String(v??'').trim().toLowerCase();
-  const esc390=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-  const digits390=v=>String(v??'').replace(/\D/g,'');
-  const patientName390=p=>p?.apellidoNombre||p?.nombreCompleto||p?.paciente||p?.nombre||'Paciente';
-  const patientKey390=p=>{try{return typeof pacienteClave==='function'?pacienteClave(p):(p?.id||p?.dni||patientName390(p));}catch{return p?.id||p?.dni||patientName390(p)}};
-  const activePatients390=()=>Array.isArray(data?.pacientes)?data.pacientes.filter(p=>!p.fusionadoEn&&!p.inactivo):[];
-  function badCoverage390(v){
-    const x=norm390(v);
-    return !x||['undefined','null','no ingresado','sin cobertura'].includes(x)||x.includes('matias anchorena')||x.includes('matías anchorena')||x.includes('rogelio anchorena')||x.includes('fernandez drago')||x.includes('fernández drago');
-  }
-  function missing390(p,k){
-    if(k==='dni')return !digits390(p.dni);
-    if(k==='cobertura')return badCoverage390(p.coberturaHabitual||p.obraSocial||p.cobertura);
-    if(k==='contacto')return !String(p.telefono||'').trim()&&!String(p.email||'').trim()&&!String(p.contactoResponsableTelefono||p.telefonoContacto||'').trim()&&!String(p.contactoResponsableEmail||p.emailContacto||'').trim();
-    if(k==='nacimiento')return !String(p.fechaNacimiento||'').trim();
-    if(k==='sexo')return !String(p.sexo||'').trim();
-    if(k==='localidad')return !String(p.localidad||'').trim();
-    if(k==='direccion')return !String(p.direccion||'').trim();
-    if(k==='provincia')return !String(p.provincia||'').trim();
-    return false;
-  }
-  const labels390={dni:'Sin DNI',cobertura:'Cobertura incompleta',contacto:'Sin contacto',nacimiento:'Sin fecha de nacimiento',sexo:'Sin sexo',localidad:'Sin localidad',direccion:'Sin dirección',provincia:'Sin provincia'};
-  function version390(){
-    document.title='CardioLink Admin v3.9.0 LTS';
-    document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(el=>el.textContent='v3.9.0 LTS');
-    document.querySelectorAll('h2').forEach(el=>{
-      const t=String(el.textContent||'');
-      if(t.includes('CardioLink Admin v')||t.includes('Instructivo CardioLink Admin v')){
-        el.textContent=t.includes('Instructivo')?'Instructivo CardioLink Admin v3.9.0 LTS':'CardioLink Admin v3.9.0 LTS';
-      }
-    });
-    document.querySelectorAll('.login-meta').forEach(el=>el.textContent='Versión 3.9.0 LTS · 2026');
-  }
-  function report390(){
-    const ps=activePatients390();
-    const ats=Array.isArray(atenciones)?atenciones.filter(a=>a?.tipoRegistro!=='config'):[];
-    const counts={};Object.keys(labels390).forEach(k=>counts[k]=ps.filter(p=>missing390(p,k)).length);
-    const dniMap=new Map();ps.forEach(p=>{const d=digits390(p.dni);if(d)dniMap.set(d,(dniMap.get(d)||0)+1)});
-    counts.duplicados=[...dniMap.values()].filter(n=>n>1).reduce((a,n)=>a+n,0);
-    counts.orphan=ats.filter(a=>!norm390(a.pacienteId)||!ps.some(p=>String(p.id||'')===String(a.pacienteId||''))).length;
-    counts.noProf=ats.filter(a=>!norm390(a.profesionalId)).length;
-    counts.total=ps.length;return counts;
-  }
-  window.renderQuality382=function(){
-    const el=document.getElementById('dataQuality382');if(!el)return;
-    const r=report390();
-    const actionable=[['dni',r.dni],['cobertura',r.cobertura],['contacto',r.contacto],['nacimiento',r.nacimiento],['sexo',r.sexo],['localidad',r.localidad],['direccion',r.direccion],['provincia',r.provincia]];
-    el.innerHTML=`<div class="quality-item-382 ok"><span>Pacientes activos</span><b>${r.total}</b></div>`+
-      actionable.map(([k,n])=>`<button type="button" class="quality-item-382 quality-action-385 ${n?'warn':'ok'}" data-quality-kind="${k}"><span>${labels390[k]}</span><b>${n}</b></button>`).join('')+
-      `<div class="quality-item-382 ${r.duplicados?'danger':'ok'}"><span>DNI duplicados</span><b>${r.duplicados}</b></div><div class="quality-item-382 ${r.orphan?'danger':'ok'}"><span>Atenciones sin paciente válido</span><b>${r.orphan}</b></div><div class="quality-item-382 ${r.noProf?'warn':'ok'}"><span>Atenciones sin profesional ID</span><b>${r.noProf}</b></div>`;
+/* ===== CardioLink Admin v3.10.0: calidad de datos con fuente unificada ===== */
+(function initQuality310(){
+  'use strict';
+  const VERSION='3.10.0';
+  const labels={
+    dni:'Sin DNI', cobertura:'Cobertura incompleta', contacto:'Sin teléfono / contacto',
+    nacimiento:'Sin fecha de nacimiento', sexo:'Sin sexo', localidad:'Sin localidad',
+    direccion:'Sin dirección', provincia:'Sin provincia'
   };
-  function osOptions390(current){
-    const src=['',...(data?.obrasSociales||[]).map(x=>typeof x==='string'?x:(x?.nombre||x?.label||'')),...(data?.reglasOS||[]).map(x=>x?.nombre||x?.obraSocial||'')];
-    const names=[...new Set(src.filter((x,i)=>x||i===0))];
-    return names.map(n=>`<option value="${esc390(n)}" ${String(n)===String(current||'')?'selected':''}>${esc390(n||'Seleccionar cobertura')}</option>`).join('');
-  }
-  let kind390='dni',query390='';
-  function rows390(){let ps=activePatients390().filter(p=>missing390(p,kind390));if(query390){const q=norm390(query390);ps=ps.filter(p=>norm390([patientName390(p),p.dni,p.telefono,p.email,p.localidad,p.sexo,p.coberturaHabitual,p.obraSocial].join(' ')).includes(q))}return ps.sort((a,b)=>patientName390(a).localeCompare(patientName390(b),'es'))}
-  function input390(p,id){
-    if(kind390==='dni')return `<input id="q390_${id}_dni" inputmode="numeric" placeholder="DNI" value="${esc390(p.dni||'')}">`;
-    if(kind390==='cobertura')return `<select id="q390_${id}_cob">${osOptions390(badCoverage390(p.coberturaHabitual||p.obraSocial||p.cobertura)?'':(p.coberturaHabitual||p.obraSocial||p.cobertura))}</select>`;
-    if(kind390==='nacimiento')return `<input id="q390_${id}_nac" type="date" value="${esc390(p.fechaNacimiento||'')}">`;
-    if(kind390==='sexo')return `<select id="q390_${id}_sexo"><option value="">No definido</option><option value="Masculino" ${p.sexo==='Masculino'?'selected':''}>Masculino</option><option value="Femenino" ${p.sexo==='Femenino'?'selected':''}>Femenino</option><option value="Otro" ${p.sexo==='Otro'?'selected':''}>Otro</option></select>`;
-    if(kind390==='localidad')return `<input id="q390_${id}_localidad" placeholder="Localidad" value="${esc390(p.localidad||'')}">`;
-    if(kind390==='direccion')return `<input id="q390_${id}_direccion" placeholder="Dirección" value="${esc390(p.direccion||'')}">`;
-    if(kind390==='provincia')return `<input id="q390_${id}_provincia" placeholder="Provincia" value="${esc390(p.provincia||'Buenos Aires')}">`;
-    return `<div class="quality-contact384"><input id="q390_${id}_tel" inputmode="tel" placeholder="Teléfono paciente" value="${esc390(p.telefono||'')}"><input id="q390_${id}_mail" type="email" placeholder="Email paciente" value="${esc390(p.email||'')}"><input id="q390_${id}_rtel" inputmode="tel" placeholder="Teléfono responsable" value="${esc390(p.contactoResponsableTelefono||p.telefonoContacto||'')}"><input id="q390_${id}_rmail" type="email" placeholder="Email responsable" value="${esc390(p.contactoResponsableEmail||p.emailContacto||'')}"></div>`;
-  }
-  function renderModal390(){
-    const modal=document.getElementById('qualityModal383');if(!modal)return;const ps=rows390();
-    modal.innerHTML=`<div class="quality-card383 quality-card384"><button class="modal-close-360" type="button" id="closeQuality390">×</button><h2>Completar fichas de pacientes</h2><div class="quality-toolbar384"><label>Dato faltante<select id="qualityKind390">${Object.entries(labels390).map(([k,l])=>`<option value="${k}" ${kind390===k?'selected':''}>${l}</option>`).join('')}</select></label><label>Buscar<input id="qualitySearch390" type="search" placeholder="Apellido, nombre o DNI" value="${esc390(query390)}"></label></div><p><strong>${ps.length}</strong> paciente(s) en “${labels390[kind390]}”. Completá el dato y guardá.</p><div class="quality-list384">${ps.map(p=>{const raw=String(p.id||patientKey390(p));const id=raw.replace(/[^a-zA-Z0-9_-]/g,'_');return `<article class="quality-row384" data-patient-key="${esc390(raw)}"><div class="quality-patient384"><strong>${esc390(patientName390(p))}</strong><span>DNI ${esc390(p.dni||'s/d')} · ${esc390(p.telefono||'sin teléfono')} · ${esc390(p.coberturaHabitual||p.obraSocial||'sin cobertura')}</span></div><div class="quality-edit384">${input390(p,id)}</div><div class="quality-actions384"><button class="primary save-quality390" type="button" data-id="${esc390(raw)}" data-dom-id="${id}">Guardar</button><button class="secondary open-quality390" type="button" data-key="${esc390(patientKey390(p))}">Abrir ficha completa</button>${typeof window.eliminarPacienteCompleto386==='function'?`<button class="danger delete-quality390" type="button" data-key="${esc390(patientKey390(p))}">Eliminar paciente</button>`:''}</div></article>`}).join('')||'<div class="empty383">No hay pacientes pendientes en esta categoría.</div>'}</div></div>`;
-    document.getElementById('closeQuality390')?.addEventListener('click',()=>modal.classList.add('hidden'));
-    document.getElementById('qualityKind390')?.addEventListener('change',e=>{kind390=e.target.value;query390='';renderModal390()});
-    document.getElementById('qualitySearch390')?.addEventListener('input',e=>{query390=e.target.value;renderModal390()});
-    modal.querySelectorAll('.save-quality390').forEach(b=>b.addEventListener('click',()=>save390(b.dataset.id,b.dataset.domId)));
-    modal.querySelectorAll('.open-quality390').forEach(b=>b.addEventListener('click',()=>{modal.classList.add('hidden');window.abrirFichaCompletaCalidad387?.(b.dataset.key)}));
-    modal.querySelectorAll('.delete-quality390').forEach(b=>b.addEventListener('click',()=>window.eliminarPacienteCompleto386?.(b.dataset.key)));
-  }
-  function save390(rawId,domId){
-    const p=activePatients390().find(x=>String(x.id||patientKey390(x))===String(rawId));if(!p)return;
-    const val=s=>document.getElementById(s)?.value||'';
-    if(kind390==='dni')p.dni=val(`q390_${domId}_dni`).trim();
-    if(kind390==='cobertura'){const v=val(`q390_${domId}_cob`);p.coberturaHabitual=v;p.obraSocial=v;p.cobertura=v;}
-    if(kind390==='nacimiento')p.fechaNacimiento=val(`q390_${domId}_nac`);
-    if(kind390==='sexo')p.sexo=val(`q390_${domId}_sexo`);
-    if(kind390==='localidad')p.localidad=val(`q390_${domId}_localidad`).trim();
-    if(kind390==='direccion')p.direccion=val(`q390_${domId}_direccion`).trim();
-    if(kind390==='provincia')p.provincia=val(`q390_${domId}_provincia`).trim()||'Buenos Aires';
-    if(kind390==='contacto'){p.telefono=val(`q390_${domId}_tel`).trim();p.email=val(`q390_${domId}_mail`).trim();p.contactoResponsableTelefono=val(`q390_${domId}_rtel`).trim();p.contactoResponsableEmail=val(`q390_${domId}_rmail`).trim();}
-    p.actualizadoEn=new Date().toISOString();
-    try{saveConfig?.();saveAtenciones?.();renderPacientesPanel?.('',true)}catch(e){console.error(e)}
-    window.renderQuality382();renderModal390();
-  }
-  window.qualityPatients383=function(kind='dni'){
-    if(!Object.prototype.hasOwnProperty.call(labels390,kind))kind='dni';kind390=kind;query390='';
-    let modal=document.getElementById('qualityModal383');if(!modal){modal=document.createElement('div');modal.id='qualityModal383';modal.className='modal-overlay-360 hidden';document.body.appendChild(modal)}
-    renderModal390();modal.classList.remove('hidden');modal.style.zIndex='10040';
-  };
-  document.addEventListener('click',e=>{
-    const btn=e.target?.closest?.('[data-quality-kind]');
-    if(btn){e.preventDefault();e.stopImmediatePropagation();window.qualityPatients383(btn.dataset.qualityKind);return;}
-    if(e.target?.closest?.('#btnRefreshQuality382')){e.preventDefault();e.stopImmediatePropagation();window.renderQuality382();window.qualityPatients383('dni');}
-  },true);
-  function boot390(){version390();window.renderQuality382();setTimeout(version390,800);setTimeout(version390,2200)}
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot390);else boot390();
-})();
-
-/* ===== CardioLink Admin v3.9.0 LTS HOTFIX 2: calidad persistente y version estable ===== */
-(function qualityHotfix3902(){
-  const VERSION='3.9.0 LTS';
-  const labels={dni:'Sin DNI',cobertura:'Cobertura incompleta',contacto:'Sin teléfono / contacto',nacimiento:'Sin fecha de nacimiento',sexo:'Sin sexo',localidad:'Sin localidad',direccion:'Sin dirección',provincia:'Sin provincia'};
-  const norm=v=>String(v??'').trim().toLowerCase();
+  const norm=v=>String(v??'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
   const digits=v=>String(v??'').replace(/\D/g,'');
-  let rendering=false;
+  const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const name=p=>p?.apellidoNombre||p?.nombreCompleto||p?.paciente||p?.nombre||'Paciente';
+  const key=p=>{try{return typeof pacienteClave==='function'?pacienteClave(p):(p?.id||p?.dni||name(p));}catch{return p?.id||p?.dni||name(p)}};
 
-  function patients(){
-    try{return Array.isArray(data?.pacientes)?data.pacientes.filter(p=>!p?.fusionadoEn&&!p?.inactivo):[];}catch(e){return [];}
+  function sourcePatients(){
+    try{
+      const src=typeof todosPacientes==='function' ? todosPacientes() : (Array.isArray(data?.pacientes)?data.pacientes:[]);
+      return (Array.isArray(src)?src:[]).filter(p=>p && p.estado!=='fusionado' && !p.fusionadoEn && !p.inactivo);
+    }catch(e){console.error('Calidad: no se pudieron leer pacientes',e);return []}
   }
   function badCoverage(v){
     const s=norm(v);
-    return !s||['undefined','null','no ingresado','sin cobertura','s/d'].includes(s)||s.includes('matias anchorena')||s.includes('matías anchorena')||s.includes('rogelio anchorena')||s.includes('fernandez drago')||s.includes('fernández drago');
+    return !s || ['undefined','null','no ingresado','sin cobertura','s/d','incompleto'].includes(s) ||
+      s.includes('matias anchorena') || s.includes('rogelio anchorena') || s.includes('fernandez drago');
   }
   function missing(p,k){
     if(k==='dni') return !digits(p?.dni);
     if(k==='cobertura') return badCoverage(p?.coberturaHabitual||p?.obraSocial||p?.cobertura);
-    if(k==='contacto') return !String(p?.telefono||p?.tel||'').trim()&&!String(p?.email||'').trim()&&!String(p?.contactoResponsableTelefono||p?.telefonoContacto||'').trim()&&!String(p?.contactoResponsableEmail||p?.emailContacto||'').trim();
+    if(k==='contacto') return !String(p?.telefono||p?.tel||'').trim() && !String(p?.email||'').trim() &&
+      !String(p?.contactoResponsableTelefono||p?.telefonoContacto||'').trim() &&
+      !String(p?.contactoResponsableEmail||p?.emailContacto||'').trim();
     if(k==='nacimiento') return !String(p?.fechaNacimiento||'').trim();
     if(k==='sexo') return !String(p?.sexo||'').trim();
     if(k==='localidad') return !String(p?.localidad||'').trim();
@@ -6992,137 +6890,99 @@ return false});let m=document.getElementById('qualityModal383');if(!m){m=documen
     if(k==='provincia') return !String(p?.provincia||'').trim();
     return false;
   }
-  function enforceVersion(){
-    try{document.title=`CardioLink Admin v${VERSION}`;}catch(e){}
-    document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(el=>el.textContent=`v${VERSION}`);
-    document.querySelectorAll('.login-meta').forEach(el=>el.textContent=`Versión ${VERSION} · 2026`);
-    document.querySelectorAll('h2').forEach(el=>{
-      const t=String(el.textContent||'');
-      if(t.includes('Instructivo CardioLink Admin v')) el.textContent=`Instructivo CardioLink Admin v${VERSION}`;
-      else if(t.includes('CardioLink Admin v')) el.textContent=`CardioLink Admin v${VERSION}`;
-    });
+  function persistentPatient(p){
+    try{
+      if(typeof asegurarPacientePersistente==='function') return asegurarPacientePersistente(p);
+      if(!Array.isArray(data.pacientes)) data.pacientes=[];
+      let dest=data.pacientes.find(x=>String(x.id||'')===String(p.id||''));
+      const d=digits(p.dni);
+      if(!dest&&d)dest=data.pacientes.find(x=>digits(x.dni)===d);
+      if(!dest){dest={...p,id:(String(p.id||'').startsWith('legacy_')||!p.id)?'pac_'+Date.now()+'_'+Math.random().toString(36).slice(2,7):p.id};data.pacientes.push(dest)}
+      return dest;
+    }catch(e){console.error('Calidad: no se pudo persistir paciente',e);return null}
   }
-  function renderCards(){
-    const root=document.getElementById('dataQuality382');
-    if(!root||rendering)return;
-    rendering=true;
-    const ps=patients();
-    const entries=Object.keys(labels).map(k=>[k,ps.filter(p=>missing(p,k)).length]);
-    const dniMap=new Map();ps.forEach(p=>{const d=digits(p.dni);if(d)dniMap.set(d,(dniMap.get(d)||0)+1)});
-    const dup=[...dniMap.values()].filter(n=>n>1).reduce((a,n)=>a+n,0);
-    root.innerHTML=`<div class="quality-item-382 ok"><span>Pacientes activos</span><b>${ps.length}</b></div>`+
-      entries.map(([k,n])=>`<button type="button" class="quality-item-382 quality-action-385 ${n?'warn':'ok'}" data-quality-hotfix="${k}"><span>${labels[k]}</span><b>${n}</b></button>`).join('')+
-      `<div class="quality-item-382 ${dup?'danger':'ok'}"><span>DNI duplicados</span><b>${dup}</b></div>`;
-    rendering=false;
+  function report(){
+    const ps=sourcePatients(); const counts={total:ps.length};
+    Object.keys(labels).forEach(k=>counts[k]=ps.filter(p=>missing(p,k)).length);
+    const map=new Map();ps.forEach(p=>{const d=digits(p.dni);if(d)map.set(d,(map.get(d)||0)+1)});
+    counts.duplicados=[...map.values()].filter(n=>n>1).reduce((a,n)=>a+n,0);
+    return counts;
   }
-  function openKind(k){
-    if(typeof window.qualityPatients383==='function'){
-      window.qualityPatients383(k);
-    }else{
-      alert('No se pudo abrir la bandeja de calidad de datos.');
-    }
-  }
-  document.addEventListener('click',function(e){
-    const b=e.target?.closest?.('[data-quality-hotfix]');
-    if(!b)return;
-    e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
-    openKind(b.dataset.qualityHotfix);
-  },true);
-  function boot(){
-    enforceVersion();renderCards();
-    const root=document.getElementById('dataQuality382');
-    if(root){
-      const obs=new MutationObserver(()=>{if(!rendering)setTimeout(renderCards,0)});
-      obs.observe(root,{childList:true,subtree:true,characterData:true});
-    }
-    setInterval(()=>{enforceVersion();renderCards();},1500);
-  }
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
-})();
-
-
-/* ===== CardioLink Admin v3.9.1 CALIDAD FINAL ===== */
-(function cardioQuality391Final(){
-  'use strict';
-  const labels={
-    dni:'Sin DNI', cobertura:'Cobertura incompleta', contacto:'Sin teléfono / contacto',
-    nacimiento:'Sin fecha de nacimiento', sexo:'Sin sexo', localidad:'Sin localidad',
-    direccion:'Sin dirección', provincia:'Sin provincia'
+  window.renderQuality382=function(){
+    const root=document.getElementById('dataQuality382'); if(!root)return;
+    const r=report();
+    root.innerHTML=`<div class="quality-item-382 ok"><span>Pacientes activos</span><b>${r.total}</b></div>`+
+      Object.keys(labels).map(k=>`<button type="button" class="quality-item-382 quality-action-385 ${r[k]?'warn':'ok'}" data-quality310="${k}"><span>${labels[k]}</span><b>${r[k]}</b></button>`).join('')+
+      `<div class="quality-item-382 ${r.duplicados?'danger':'ok'}"><span>DNI duplicados</span><b>${r.duplicados}</b></div>`;
   };
-  const norm=v=>String(v??'').trim().toLowerCase();
-  const digits=v=>String(v??'').replace(/\D/g,'');
-  const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
-  const active=()=>Array.isArray(window.data?.pacientes)?window.data.pacientes.filter(p=>!p?.fusionadoEn&&!p?.inactivo):[];
-  const name=p=>p?.apellidoNombre||p?.nombreCompleto||p?.paciente||p?.nombre||'Paciente';
-  const key=p=>{try{return typeof window.pacienteClave==='function'?window.pacienteClave(p):(p?.id||p?.dni||name(p));}catch{return p?.id||p?.dni||name(p)}};
-  const badCoverage=v=>{const s=norm(v);return !s||['undefined','null','no ingresado','sin cobertura','s/d'].includes(s)||s.includes('matias anchorena')||s.includes('matías anchorena')||s.includes('rogelio anchorena')||s.includes('fernandez drago')||s.includes('fernández drago');};
-  function missing(p,k){
-    if(k==='dni')return !digits(p?.dni);
-    if(k==='cobertura')return badCoverage(p?.coberturaHabitual||p?.obraSocial||p?.cobertura);
-    if(k==='contacto')return !String(p?.telefono||p?.tel||'').trim()&&!String(p?.email||'').trim()&&!String(p?.contactoResponsableTelefono||p?.telefonoContacto||'').trim()&&!String(p?.contactoResponsableEmail||p?.emailContacto||'').trim();
-    if(k==='nacimiento')return !String(p?.fechaNacimiento||'').trim();
-    if(k==='sexo')return !String(p?.sexo||'').trim();
-    if(k==='localidad')return !String(p?.localidad||'').trim();
-    if(k==='direccion')return !String(p?.direccion||'').trim();
-    if(k==='provincia')return !String(p?.provincia||'').trim();
-    return false;
-  }
-  let rendering=false, currentKind='dni', query='';
-  function renderCards(){
-    const root=document.getElementById('dataQuality382'); if(!root||rendering)return;
-    rendering=true;
-    const ps=active();
-    const cards=Object.keys(labels).map(k=>{const n=ps.filter(p=>missing(p,k)).length;return `<button type="button" class="quality-item-382 quality-action-385 ${n?'warn':'ok'}" data-quality-final="${k}"><span>${labels[k]}</span><b>${n}</b></button>`}).join('');
-    const m=new Map();ps.forEach(p=>{const d=digits(p.dni);if(d)m.set(d,(m.get(d)||0)+1)});const dup=[...m.values()].filter(n=>n>1).reduce((a,n)=>a+n,0);
-    root.innerHTML=`<div class="quality-item-382 ok"><span>Pacientes activos</span><b>${ps.length}</b></div>${cards}<div class="quality-item-382 ${dup?'danger':'ok'}"><span>DNI duplicados</span><b>${dup}</b></div>`;
-    rendering=false;
+
+  let currentKind='dni', currentQuery='';
+  function filteredRows(){
+    let ps=sourcePatients().filter(p=>missing(p,currentKind));
+    if(currentQuery){const q=norm(currentQuery);ps=ps.filter(p=>norm([name(p),p.dni,p.telefono,p.email,p.localidad,p.sexo,p.coberturaHabitual,p.obraSocial].join(' ')).includes(q))}
+    return ps.sort((a,b)=>name(a).localeCompare(name(b),'es'));
   }
   function coverageOptions(current){
-    const names=['',...(window.data?.obrasSociales||[]).map(x=>typeof x==='string'?x:(x?.nombre||x?.label||'')),...(window.data?.reglasOS||[]).map(x=>x?.nombre||x?.obraSocial||'')];
-    return [...new Set(names)].map(n=>`<option value="${esc(n)}" ${String(n)===String(current||'')?'selected':''}>${esc(n||'Seleccionar cobertura')}</option>`).join('');
+    const raw=['',...(data?.obrasSociales||[]).map(x=>typeof x==='string'?x:(x?.nombre||x?.label||''))];
+    const list=[...new Set(raw.filter((v,i)=>i===0||v))];
+    return list.map(v=>`<option value="${esc(v)}" ${String(v)===String(current||'')?'selected':''}>${esc(v||'Seleccionar cobertura')}</option>`).join('');
   }
-  function rows(){let ps=active().filter(p=>missing(p,currentKind));if(query){const q=norm(query);ps=ps.filter(p=>norm([name(p),p.dni,p.telefono,p.email,p.localidad,p.sexo,p.coberturaHabitual,p.obraSocial].join(' ')).includes(q));}return ps.sort((a,b)=>name(a).localeCompare(name(b),'es'));}
-  function field(p,id){
-    if(currentKind==='dni')return `<input id="q391_${id}_dni" inputmode="numeric" placeholder="DNI" value="${esc(p.dni||'')}">`;
-    if(currentKind==='cobertura')return `<select id="q391_${id}_cob">${coverageOptions(badCoverage(p.coberturaHabitual||p.obraSocial||p.cobertura)?'':(p.coberturaHabitual||p.obraSocial||p.cobertura))}</select>`;
-    if(currentKind==='nacimiento')return `<input id="q391_${id}_nac" type="date" value="${esc(p.fechaNacimiento||'')}">`;
-    if(currentKind==='sexo')return `<select id="q391_${id}_sexo"><option value="">No definido</option><option value="Masculino" ${p.sexo==='Masculino'?'selected':''}>Masculino</option><option value="Femenino" ${p.sexo==='Femenino'?'selected':''}>Femenino</option><option value="Otro" ${p.sexo==='Otro'?'selected':''}>Otro</option></select>`;
-    if(currentKind==='localidad')return `<input id="q391_${id}_localidad" placeholder="Localidad" value="${esc(p.localidad||'')}">`;
-    if(currentKind==='direccion')return `<input id="q391_${id}_direccion" placeholder="Dirección" value="${esc(p.direccion||'')}">`;
-    if(currentKind==='provincia')return `<input id="q391_${id}_provincia" placeholder="Provincia" value="${esc(p.provincia||'Buenos Aires')}">`;
-    return `<div class="quality-contact384"><input id="q391_${id}_tel" inputmode="tel" placeholder="Teléfono paciente" value="${esc(p.telefono||'')}"><input id="q391_${id}_mail" type="email" placeholder="Email paciente" value="${esc(p.email||'')}"><input id="q391_${id}_rtel" inputmode="tel" placeholder="Teléfono responsable" value="${esc(p.contactoResponsableTelefono||p.telefonoContacto||'')}"><input id="q391_${id}_rmail" type="email" placeholder="Email responsable" value="${esc(p.contactoResponsableEmail||p.emailContacto||'')}"></div>`;
+  function field(p,domId){
+    if(currentKind==='dni')return `<input id="q310_${domId}_dni" inputmode="numeric" placeholder="DNI" value="${esc(p.dni||'')}">`;
+    if(currentKind==='cobertura')return `<select id="q310_${domId}_cob">${coverageOptions(badCoverage(p.coberturaHabitual||p.obraSocial||p.cobertura)?'':(p.coberturaHabitual||p.obraSocial||p.cobertura))}</select>`;
+    if(currentKind==='nacimiento')return `<input id="q310_${domId}_nac" type="date" value="${esc(p.fechaNacimiento||'')}">`;
+    if(currentKind==='sexo')return `<select id="q310_${domId}_sexo"><option value="">No definido</option><option value="Masculino" ${p.sexo==='Masculino'?'selected':''}>Masculino</option><option value="Femenino" ${p.sexo==='Femenino'?'selected':''}>Femenino</option><option value="Otro" ${p.sexo==='Otro'?'selected':''}>Otro</option></select>`;
+    if(currentKind==='localidad')return `<input id="q310_${domId}_localidad" placeholder="Localidad" value="${esc(p.localidad||'')}">`;
+    if(currentKind==='direccion')return `<input id="q310_${domId}_direccion" placeholder="Dirección" value="${esc(p.direccion||'')}">`;
+    if(currentKind==='provincia')return `<input id="q310_${domId}_provincia" placeholder="Provincia" value="${esc(p.provincia||'')}">`;
+    return `<div class="quality-contact384"><input id="q310_${domId}_tel" inputmode="tel" placeholder="Teléfono" value="${esc(p.telefono||'')}"><input id="q310_${domId}_mail" type="email" placeholder="Email" value="${esc(p.email||'')}"><input id="q310_${domId}_rtel" inputmode="tel" placeholder="Teléfono responsable" value="${esc(p.contactoResponsableTelefono||p.telefonoContacto||'')}"><input id="q310_${domId}_rmail" type="email" placeholder="Email responsable" value="${esc(p.contactoResponsableEmail||p.emailContacto||'')}"></div>`;
   }
-  function ensureModal(){let m=document.getElementById('qualityModal391');if(!m){m=document.createElement('div');m.id='qualityModal391';m.className='modal-overlay-360 hidden';m.style.zIndex='10080';document.body.appendChild(m);}return m;}
+  function ensureModal(){
+    let m=document.getElementById('qualityModal383');
+    if(!m){m=document.createElement('div');m.id='qualityModal383';m.className='modal-overlay-360 hidden';document.body.appendChild(m)}
+    return m;
+  }
   function renderModal(){
-    const modal=ensureModal(), ps=rows();
-    modal.innerHTML=`<div class="quality-card383 quality-card384"><button class="modal-close-360" type="button" data-q391-close>×</button><h2>Completar fichas de pacientes</h2><div class="quality-toolbar384"><label>Dato faltante<select data-q391-kind>${Object.entries(labels).map(([k,l])=>`<option value="${k}" ${currentKind===k?'selected':''}>${l}</option>`).join('')}</select></label><label>Buscar<input data-q391-search type="search" placeholder="Apellido, nombre o DNI" value="${esc(query)}"></label></div><p><strong>${ps.length}</strong> paciente(s) en “${labels[currentKind]}”.</p><div class="quality-list384">${ps.map(p=>{const raw=String(p.id||key(p));const id=raw.replace(/[^a-zA-Z0-9_-]/g,'_');return `<article class="quality-row384"><div class="quality-patient384"><strong>${esc(name(p))}</strong><span>DNI ${esc(p.dni||'s/d')} · ${esc(p.telefono||'sin teléfono')} · ${esc(p.coberturaHabitual||p.obraSocial||p.cobertura||'sin cobertura')}</span></div><div class="quality-edit384">${field(p,id)}</div><div class="quality-actions384"><button class="primary" type="button" data-q391-save="${esc(raw)}" data-q391-dom="${id}">Guardar</button><button class="secondary" type="button" data-q391-open="${esc(key(p))}">Abrir ficha completa</button></div></article>`}).join('')||'<div class="empty383">No hay pacientes pendientes en esta categoría.</div>'}</div></div>`;
-    modal.classList.remove('hidden');
+    const m=ensureModal(), ps=filteredRows();
+    m.innerHTML=`<div class="quality-card383 quality-card384"><button class="modal-close-360" type="button" data-q310-close>×</button><h2>Completar fichas de pacientes</h2><div class="quality-toolbar384"><label>Dato faltante<select data-q310-kind>${Object.entries(labels).map(([k,l])=>`<option value="${k}" ${currentKind===k?'selected':''}>${l}</option>`).join('')}</select></label><label>Buscar<input data-q310-search type="search" placeholder="Apellido, nombre o DNI" value="${esc(currentQuery)}"></label></div><p><strong>${ps.length}</strong> paciente(s) en “${labels[currentKind]}”.</p><div class="quality-list384">${ps.map(p=>{const raw=String(p.id||key(p));const dom=raw.replace(/[^a-zA-Z0-9_-]/g,'_');return `<article class="quality-row384"><div class="quality-patient384"><strong>${esc(name(p))}</strong><span>DNI ${esc(p.dni||'s/d')} · ${esc(p.telefono||'sin teléfono')} · ${esc(p.coberturaHabitual||p.obraSocial||p.cobertura||'sin cobertura')}</span></div><div class="quality-edit384">${field(p,dom)}</div><div class="quality-actions384"><button class="primary" type="button" data-q310-save="${esc(raw)}" data-q310-dom="${dom}">Guardar</button><button class="secondary" type="button" data-q310-open="${esc(key(p))}">Abrir ficha completa</button></div></article>`}).join('')||'<div class="empty383">No hay pacientes pendientes en esta categoría.</div>'}</div></div>`;
   }
-  function save(raw,dom){
-    const p=active().find(x=>String(x.id||key(x))===String(raw));if(!p)return;
-    const val=s=>document.getElementById(s)?.value||'';
-    if(currentKind==='dni')p.dni=val(`q391_${dom}_dni`).trim();
-    if(currentKind==='cobertura'){const v=val(`q391_${dom}_cob`);p.coberturaHabitual=v;p.obraSocial=v;p.cobertura=v;}
-    if(currentKind==='nacimiento')p.fechaNacimiento=val(`q391_${dom}_nac`);
-    if(currentKind==='sexo')p.sexo=val(`q391_${dom}_sexo`);
-    if(currentKind==='localidad')p.localidad=val(`q391_${dom}_localidad`).trim();
-    if(currentKind==='direccion')p.direccion=val(`q391_${dom}_direccion`).trim();
-    if(currentKind==='provincia')p.provincia=val(`q391_${dom}_provincia`).trim()||'Buenos Aires';
-    if(currentKind==='contacto'){p.telefono=val(`q391_${dom}_tel`).trim();p.email=val(`q391_${dom}_mail`).trim();p.contactoResponsableTelefono=val(`q391_${dom}_rtel`).trim();p.contactoResponsableEmail=val(`q391_${dom}_rmail`).trim();}
+  function savePatient(raw,dom){
+    const src=sourcePatients().find(p=>String(p.id||key(p))===String(raw)); if(!src)return;
+    const p=persistentPatient(src); if(!p)return;
+    const val=id=>document.getElementById(id)?.value||'';
+    if(currentKind==='dni')p.dni=val(`q310_${dom}_dni`).trim();
+    else if(currentKind==='cobertura'){const v=val(`q310_${dom}_cob`);p.coberturaHabitual=v;p.obraSocial=v;p.cobertura=v}
+    else if(currentKind==='nacimiento')p.fechaNacimiento=val(`q310_${dom}_nac`);
+    else if(currentKind==='sexo')p.sexo=val(`q310_${dom}_sexo`);
+    else if(currentKind==='localidad')p.localidad=val(`q310_${dom}_localidad`).trim();
+    else if(currentKind==='direccion')p.direccion=val(`q310_${dom}_direccion`).trim();
+    else if(currentKind==='provincia')p.provincia=val(`q310_${dom}_provincia`).trim();
+    else {p.telefono=val(`q310_${dom}_tel`).trim();p.email=val(`q310_${dom}_mail`).trim();p.contactoResponsableTelefono=val(`q310_${dom}_rtel`).trim();p.contactoResponsableEmail=val(`q310_${dom}_rmail`).trim()}
     p.actualizadoEn=new Date().toISOString();
-    try{window.saveConfig?.();window.saveAtenciones?.();window.renderPacientesPanel?.('',true);}catch(err){console.error(err);}
-    renderCards();renderModal();
+    try{saveConfig();if(typeof guardarConfigEnSupabase298==='function')guardarConfigEnSupabase298();renderPacientesPanel?.('',true)}catch(e){console.error('Calidad: error guardando',e)}
+    window.renderQuality382();renderModal();
   }
-  window.renderQuality382=renderCards;
-  window.qualityPatients383=function(k='dni'){currentKind=labels[k]?k:'dni';query='';renderModal();};
-  window.addEventListener('click',e=>{
-    const card=e.target?.closest?.('[data-quality-final]');if(card){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();window.qualityPatients383(card.dataset.qualityFinal);return;}
-    const close=e.target?.closest?.('[data-q391-close]');if(close){e.preventDefault();ensureModal().classList.add('hidden');return;}
-    const saveBtn=e.target?.closest?.('[data-q391-save]');if(saveBtn){e.preventDefault();save(saveBtn.dataset.q391Save,saveBtn.dataset.q391Dom);return;}
-    const open=e.target?.closest?.('[data-q391-open]');if(open){e.preventDefault();ensureModal().classList.add('hidden');window.abrirFichaCompletaCalidad387?.(open.dataset.q391Open);return;}
-  },true);
-  window.addEventListener('change',e=>{if(e.target?.matches?.('[data-q391-kind]')){currentKind=e.target.value;query='';renderModal();}},true);
-  window.addEventListener('input',e=>{if(e.target?.matches?.('[data-q391-search]')){query=e.target.value;renderModal();}},true);
-  function boot(){renderCards();const root=document.getElementById('dataQuality382');if(root){new MutationObserver(()=>{if(!rendering&&!root.querySelector('[data-quality-final]'))renderCards();}).observe(root,{childList:true});}}
-  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
+  window.qualityPatients383=function(kind='dni'){
+    currentKind=Object.prototype.hasOwnProperty.call(labels,kind)?kind:'dni';currentQuery='';
+    const m=ensureModal();renderModal();m.classList.remove('hidden');m.style.zIndex='10040';
+  };
+
+  document.addEventListener('click',e=>{
+    const card=e.target.closest?.('[data-quality310]');
+    if(card){e.preventDefault();window.qualityPatients383(card.dataset.quality310);return}
+    if(e.target.closest?.('[data-q310-close]')){ensureModal().classList.add('hidden');return}
+    const save=e.target.closest?.('[data-q310-save]');if(save){savePatient(save.dataset.q310Save,save.dataset.q310Dom);return}
+    const open=e.target.closest?.('[data-q310-open]');if(open){ensureModal().classList.add('hidden');if(typeof window.abrirFichaCompletaCalidad387==='function')window.abrirFichaCompletaCalidad387(open.dataset.q310Open);else{showSection('pacientes');setTimeout(()=>seleccionarPacientePanel?.(open.dataset.q310Open),80)}return}
+    if(e.target.closest?.('#btnRefreshQuality382')){window.renderQuality382();return}
+  });
+  document.addEventListener('change',e=>{if(e.target.matches?.('[data-q310-kind]')){currentKind=e.target.value;currentQuery='';renderModal()}});
+  document.addEventListener('input',e=>{if(e.target.matches?.('[data-q310-search]')){currentQuery=e.target.value;renderModal();document.querySelector('[data-q310-search]')?.focus()}});
+
+  function setVersion(){
+    document.title=`CardioLink Admin v${VERSION}`;
+    document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(el=>el.textContent=`v${VERSION}`);
+    document.querySelectorAll('.login-meta').forEach(el=>el.textContent=`Versión ${VERSION} · 2026`);
+  }
+  function boot(){setVersion();window.renderQuality382();setTimeout(window.renderQuality382,1200);setTimeout(window.renderQuality382,3500)}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();

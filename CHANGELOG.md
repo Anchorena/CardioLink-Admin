@@ -1,6 +1,8 @@
-# CardioLink Admin v3.9.1 — Calidad final
+# CardioLink Admin v3.10.0
 
-- Reemplazo funcional del módulo Calidad de datos.
-- Un solo manejador de eventos para todos los botones.
-- Corrección de: cobertura, DNI, contacto, fecha de nacimiento, sexo, localidad, dirección y provincia.
-- Eliminación de la dependencia de listeners que se perdían al redibujar la pantalla.
+- Calidad de datos usa la misma fuente unificada que la pantalla Pacientes.
+- Detecta pacientes persistentes y pacientes reconstruidos desde atenciones.
+- Corrige todos los filtros y la apertura de sus listados.
+- Al guardar una ficha legacy, crea o actualiza su registro persistente.
+- Elimina el refresco intermitente que sobrescribía tarjetas y eventos.
+- Renueva el caché PWA.
