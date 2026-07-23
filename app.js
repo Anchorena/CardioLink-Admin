@@ -39,6 +39,7 @@ function usuarioActualNombreCorto(){
 }
 function usuariosDefault(){
   return [
+    {id:'administrador',usuario:'administrador',aliases:['admin','cardiolink.admin'],nombre:'Administrador CardioLink',rol:'admin',profesionalId:'',especialidad:'Administración del sistema',activo:true,permisos:{todo:true}},
     {id:'matias',usuario:'matias',aliases:['matias.anchorena','drm.anchorena'],nombre:'Dr. Matías Anchorena',rol:'duenio',profesionalId:'matias',especialidad:'Medicina Intensiva y Cardiología',activo:true,soloMatias:true},
     {id:'geraldine',usuario:'geraldine',aliases:['geral','secretaria1'],nombre:'Geraldine',rol:'secretaria',profesionalId:'',especialidad:'Administración',activo:true},
     {id:'secretaria',usuario:'secretaria',aliases:['administracion','admin_secretaria'],nombre:'Secretaría',rol:'secretaria',profesionalId:'',especialidad:'Administración',activo:true},
@@ -157,9 +158,11 @@ function esMatiasDuenio(){
 function esSecretaria(){ const r=perfilUsuarioActual().rol; return r==='secretaria'; }
 function esAdminComun(){ const r=perfilUsuarioActual().rol; return r==='admin'; }
 function esMedico(){ const r=perfilUsuarioActual().rol; return r==='medico'; }
-function puedeVerFacturaRogelio(){ return esMatiasDuenio(); }
+function puedeVerFacturaRogelio(){ return esMatiasDuenio() || esAdminComun(); }
 function puedeVerCajaGlobal(){ return esMatiasDuenio() || esAdminComun(); }
-function puedeGestionarConfig(){ return esMatiasDuenio() || esSecretaria() || esAdminComun(); }
+function puedeGestionarConfig(){ return esMatiasDuenio() || esAdminComun(); }
+function puedeVerFacturacionEconomica(){ return esMatiasDuenio() || esAdminComun(); }
+function puedeGestionarOperacion(){ return esMatiasDuenio() || esAdminComun() || esSecretaria(); }
 function profesionalIdUsuarioActual(){ return perfilUsuarioActual().profesionalId || ''; }
 function nombreUsuarioAuditoria(){
   const u=perfilUsuarioActual();
@@ -187,7 +190,7 @@ function auditoriaHTML(a){
   return `<div class="audit-box"><strong>Trazabilidad</strong><br><small>Carga: ${creado}<br>Última edición: ${editado}</small></div>`;
 }
 function seccionPermitida(section){
-  if(section==='caja') return esMatiasDuenio() || esAdminComun();
+  if(section==='caja') return esMatiasDuenio() || esAdminComun() || esSecretaria();
   if(esMatiasDuenio()) return true;
   if(esSecretaria() || esAdminComun()) return true;
   if(esMedico()) return ['dashboard','carga','agenda','mensajes','pacientes','listado','estadisticas','colocaciones','instructivos'].includes(section);
@@ -211,9 +214,10 @@ function aplicarPermisosUI(){
       pa.disabled=false;
     }
   }
-  document.querySelectorAll('.solo-matias').forEach(el=>{const isCaja=el.dataset?.section==='caja';el.classList.toggle('hidden-permission',isCaja?!(esMatiasDuenio()||esAdminComun()):!esMatiasDuenio());});
+  document.querySelectorAll('.solo-matias').forEach(el=>{const isCaja=el.dataset?.section==='caja';el.classList.toggle('hidden-permission',isCaja?!(esMatiasDuenio()||esAdminComun()||esSecretaria()):!(esMatiasDuenio()||esAdminComun()));});
   document.querySelectorAll('.no-medico').forEach(el=>el.classList.toggle('hidden-permission',esMedico()));
   document.querySelectorAll('.solo-config').forEach(el=>el.classList.toggle('hidden-permission',!puedeGestionarConfig()));
+  document.querySelectorAll('.solo-facturacion').forEach(el=>el.classList.toggle('hidden-permission',!puedeVerFacturacionEconomica()));
   const lock=document.querySelector('.money-lock');
   if(lock) lock.classList.toggle('hidden-permission',!puedeVerCajaGlobal());
   const fOS=$('fOS');
@@ -3131,6 +3135,8 @@ function seleccionarPacientePanel(id){
       <div><span>Email contacto</span><strong>${escapeHtml(p.contactoResponsableEmail||'s/d')}</strong></div>
       <div><span>Fecha nacimiento</span><strong>${escapeHtml(p.fechaNacimiento?formatFecha(p.fechaNacimiento):'s/d')}</strong></div>
       <div><span>Total atenciones</span><strong>${ats.length}</strong></div>
+        <div><span>Primera atención</span><strong>${ats.length?esc((typeof formatFecha==='function'?formatFecha(ats[ats.length-1].fecha):ats[ats.length-1].fecha)):'s/d'}</strong></div>
+        <div><span>Último profesional</span><strong>${ult?esc(ult.profesional||'s/d'):'s/d'}</strong></div>
     </div>
     <div class="paciente-mini-resumen">
       ${Object.entries(porProf).map(([prof,n])=>`<span>${escapeHtml(prof)}: <strong>${n}</strong></span>`).join('') || '<span>Sin atenciones registradas</span>'}
@@ -5345,6 +5351,10 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         <div><span>Cobertura habitual</span><strong>${esc(p.coberturaHabitual||p.obraSocial||'Incompleto')}</strong></div>
         <div><span>Nº afiliado</span><strong>${esc(p.numeroAfiliadoHabitual||p.numeroAfiliado||'s/d')}</strong></div>
         <div><span>Fecha nacimiento</span><strong>${esc(p.fechaNacimiento?(typeof formatFecha==='function'?formatFecha(p.fechaNacimiento):p.fechaNacimiento):'s/d')}</strong></div>
+        <div><span>Sexo</span><strong>${esc(p.sexo||'s/d')}</strong></div>
+        <div><span>Localidad</span><strong>${esc(p.localidad||'s/d')}</strong></div>
+        <div><span>Dirección</span><strong>${esc(p.direccion||'s/d')}</strong></div>
+        <div><span>Provincia</span><strong>${esc(p.provincia||'Buenos Aires')}</strong></div>
         <div><span>Total atenciones</span><strong>${ats.length}</strong></div>
         <div><span>Última atención</span><strong>${ult?esc((typeof formatFecha==='function'?formatFecha(ult.fecha):ult.fecha)+' · '+(ult.prestacion||'')):'s/d'}</strong></div>
       </div>
@@ -5813,9 +5823,13 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
           <div class="full-span"><label>Apellido y nombre</label><input id="gPacNombre" value="${esc(nombrePac(p))}"></div>
           <div><label>DNI</label><input id="gPacDni" value="${esc(p.dni||'')}"></div>
           <div><label>Fecha nacimiento</label><input type="date" id="gPacNacimiento" value="${esc(p.fechaNacimiento||'')}"></div>
+          <div><label>Sexo</label><select id="gPacSexo"><option value="">Seleccionar</option><option value="Masculino" ${p.sexo==='Masculino'?'selected':''}>Masculino</option><option value="Femenino" ${p.sexo==='Femenino'?'selected':''}>Femenino</option><option value="No definido" ${p.sexo==='No definido'?'selected':''}>No definido</option></select></div>
+          <div><label>Localidad</label><input id="gPacLocalidad" value="${esc(p.localidad||'')}"></div>
+          <div><label>Dirección</label><input id="gPacDireccion" value="${esc(p.direccion||'')}"></div>
+          <div><label>Provincia</label><input id="gPacProvincia" value="${esc(p.provincia||'Buenos Aires')}"></div>
           <div><label>Teléfono paciente</label><input id="gPacTelefono" value="${esc(p.telefono||'')}"></div>
           <div><label>Email paciente</label><input id="gPacEmail" value="${esc(p.email||'')}"></div>
-          <div><label>Cobertura habitual</label><select id="gPacCobertura">${osOptions350(coberturaActual)}</select></div>
+          <div><label>Cobertura habitual</label><select id="gPacCobertura">${osOptions350(coberturaActual)}</select><input id="gPacCoberturaNueva" placeholder="O escribir nueva cobertura"><small class="muted">Si no existe, se agregará al guardar.</small></div>
           <div><label>Nº afiliado habitual</label><input id="gPacAfiliado" value="${esc(p.numeroAfiliadoHabitual||'')}"></div>
           <div class="form-subtitle full-span">Contacto responsable / familiar a cargo</div>
           <div><label>Nombre contacto</label><input id="gPacContactoNombre" value="${esc(p.contactoResponsableNombre||'')}"></div>
@@ -5837,9 +5851,15 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     p.nombreCompleto=($id('gPacNombre')?.value||'').trim();
     p.dni=($id('gPacDni')?.value||'').trim();
     p.fechaNacimiento=$id('gPacNacimiento')?.value||'';
+    p.sexo=$id('gPacSexo')?.value||'';
+    p.localidad=($id('gPacLocalidad')?.value||'').trim();
+    p.direccion=($id('gPacDireccion')?.value||'').trim();
+    p.provincia=($id('gPacProvincia')?.value||'Buenos Aires').trim();
     p.telefono=($id('gPacTelefono')?.value||'').trim();
     p.email=($id('gPacEmail')?.value||'').trim();
-    p.coberturaHabitual=$id('gPacCobertura')?.value||'';
+    const coberturaNueva=($id('gPacCoberturaNueva')?.value||'').trim();
+    p.coberturaHabitual=coberturaNueva||$id('gPacCobertura')?.value||'';
+    if(coberturaNueva && !data.obrasSociales.some(x=>norm(x)===norm(coberturaNueva))) data.obrasSociales.push(coberturaNueva);
     p.numeroAfiliadoHabitual=($id('gPacAfiliado')?.value||'').trim();
     p.contactoResponsableNombre=($id('gPacContactoNombre')?.value||'').trim();
     p.contactoResponsableRelacion=$id('gPacContactoRelacion')?.value||'';
@@ -6369,12 +6389,16 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const noCoverage=ps.filter(p=>isBadCoverage382(p.obraSocial||p.cobertura||p.coberturaHabitual)).length;
     const noContact=ps.filter(p=>!digits(p.telefono||p.tel)&&!norm(p.email)&&!digits(p.telefonoContacto)&&!norm(p.emailContacto)).length;
     const noBirth=ps.filter(p=>!norm(p.fechaNacimiento)).length;
+    const noSex=ps.filter(p=>!norm(p.sexo)).length;
+    const noLocality=ps.filter(p=>!norm(p.localidad)).length;
+    const noEmail=ps.filter(p=>!norm(p.email)).length;
+    const noPhone=ps.filter(p=>!digits(p.telefono||p.tel)).length;
     const dniMap=new Map();
     ps.forEach(p=>{const d=digits(p.dni);if(d)dniMap.set(d,(dniMap.get(d)||0)+1);});
     const duplicatedDni=[...dniMap.values()].filter(n=>n>1).reduce((a,n)=>a+n,0);
     const orphan=ats.filter(a=>!norm(a.pacienteId)||!ps.some(p=>p.id===a.pacienteId)).length;
     const noProf=ats.filter(a=>!norm(a.profesionalId)).length;
-    return {total:ps.length,noDni,noCoverage,noContact,noBirth,duplicatedDni,orphan,noProf};
+    return {total:ps.length,noDni,noCoverage,noContact,noBirth,noSex,noLocality,noEmail,noPhone,duplicatedDni,orphan,noProf};
   }
 
   function renderQuality382(){
@@ -6382,10 +6406,10 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const r=qualityReport382();
     const items=[
       ['Pacientes activos',r.total,'ok'],['Sin DNI',r.noDni,r.noDni?'warn':'ok'],['Cobertura incompleta',r.noCoverage,r.noCoverage?'warn':'ok'],
-      ['Sin contacto',r.noContact,r.noContact?'warn':'ok'],['Sin fecha de nacimiento',r.noBirth,r.noBirth?'warn':'ok'],['DNI duplicados',r.duplicatedDni,r.duplicatedDni?'danger':'ok'],
+      ['Sin teléfono',r.noPhone,r.noPhone?'warn':'ok'],['Sin mail',r.noEmail,r.noEmail?'warn':'ok'],['Sin fecha de nacimiento',r.noBirth,r.noBirth?'warn':'ok'],['Sin sexo',r.noSex,r.noSex?'warn':'ok'],['Sin localidad',r.noLocality,r.noLocality?'warn':'ok'],['DNI duplicados',r.duplicatedDni,r.duplicatedDni?'danger':'ok'],
       ['Atenciones sin paciente válido',r.orphan,r.orphan?'danger':'ok'],['Atenciones sin profesional ID',r.noProf,r.noProf?'warn':'ok']
     ];
-    const kindByTitle={'Sin DNI':'dni','Cobertura incompleta':'cobertura','Sin contacto':'contacto','Sin fecha de nacimiento':'nacimiento'};
+    const kindByTitle={'Sin DNI':'dni','Cobertura incompleta':'cobertura','Sin teléfono':'telefono','Sin mail':'email','Sin fecha de nacimiento':'nacimiento','Sin sexo':'sexo','Sin localidad':'localidad'};
     el.innerHTML=items.map(([t,n,c])=>{
       const kind=kindByTitle[t];
       if(kind){
@@ -6615,6 +6639,10 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     if(k==='cobertura')return badCoverage384(p.coberturaHabitual||p.obraSocial||p.cobertura);
     if(k==='contacto')return !String(p.telefono||'').trim()&&!String(p.email||'').trim()&&!String(p.contactoResponsableTelefono||p.telefonoContacto||'').trim()&&!String(p.contactoResponsableEmail||p.emailContacto||'').trim();
     if(k==='nacimiento')return !String(p.fechaNacimiento||'').trim();
+    if(k==='telefono')return !String(p.telefono||'').trim();
+    if(k==='email')return !String(p.email||'').trim();
+    if(k==='sexo')return !String(p.sexo||'').trim();
+    if(k==='localidad')return !String(p.localidad||'').trim();
     return false;
   }
   function patientName384(p){return p.apellidoNombre||p.nombreCompleto||p.paciente||p.nombre||'Paciente';}
@@ -6633,13 +6661,17 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     if(qualityKind384==='dni')return `<input id="q384_${id}_dni" inputmode="numeric" placeholder="DNI" value="${esc(p.dni||'')}">`;
     if(qualityKind384==='cobertura')return `<select id="q384_${id}_cob">${osOptions384(badCoverage384(p.coberturaHabitual||p.obraSocial||p.cobertura)?'':(p.coberturaHabitual||p.obraSocial||p.cobertura))}</select>`;
     if(qualityKind384==='nacimiento')return `<input id="q384_${id}_nac" type="date" value="${esc(p.fechaNacimiento||'')}">`;
+    if(qualityKind384==='telefono')return `<input id="q384_${id}_tel" inputmode="tel" placeholder="Teléfono" value="${esc(p.telefono||'')}">`;
+    if(qualityKind384==='email')return `<input id="q384_${id}_mail" type="email" placeholder="Email" value="${esc(p.email||'')}">`;
+    if(qualityKind384==='sexo')return `<select id="q384_${id}_sexo"><option value="">Seleccionar</option><option value="Masculino">Masculino</option><option value="Femenino">Femenino</option><option value="No definido">No definido</option></select>`;
+    if(qualityKind384==='localidad')return `<input id="q384_${id}_loc" placeholder="Localidad" value="${esc(p.localidad||'')}">`;
     return `<div class="quality-contact384"><input id="q384_${id}_tel" inputmode="tel" placeholder="Teléfono paciente" value="${esc(p.telefono||'')}"><input id="q384_${id}_mail" type="email" placeholder="Email paciente" value="${esc(p.email||'')}"><input id="q384_${id}_rtel" inputmode="tel" placeholder="Teléfono responsable" value="${esc(p.contactoResponsableTelefono||p.telefonoContacto||'')}"><input id="q384_${id}_rmail" type="email" placeholder="Email responsable" value="${esc(p.contactoResponsableEmail||p.emailContacto||'')}"></div>`;
   }
   function renderQuality384(){
     const modal=document.getElementById('qualityModal383');if(!modal)return;
     const ps=rows384();
-    const labels={dni:'Sin DNI',cobertura:'Cobertura incompleta',contacto:'Sin contacto',nacimiento:'Sin fecha de nacimiento'};
-    modal.innerHTML=`<div class="quality-card383 quality-card384"><button class="modal-close-360" onclick="document.getElementById('qualityModal383').classList.add('hidden')">×</button><h2>Completar fichas de pacientes</h2><div class="quality-toolbar384"><label>Dato faltante<select id="qualityKind384"><option value="dni" ${qualityKind384==='dni'?'selected':''}>Sin DNI</option><option value="cobertura" ${qualityKind384==='cobertura'?'selected':''}>Cobertura incompleta</option><option value="contacto" ${qualityKind384==='contacto'?'selected':''}>Sin contacto</option><option value="nacimiento" ${qualityKind384==='nacimiento'?'selected':''}>Sin fecha de nacimiento</option></select></label><label>Buscar<input id="qualitySearch384" type="search" placeholder="Apellido, nombre o DNI" value="${esc(qualityQuery384)}"></label></div><p><strong>${ps.length}</strong> paciente(s) en “${labels[qualityKind384]}”. Completá el dato y guardá: el paciente sale automáticamente de la lista.</p><div class="quality-list384">${ps.map(p=>{const id=esc(p.id||patientKey384(p));return `<article class="quality-row384"><div class="quality-patient384"><strong>${esc(patientName384(p))}</strong><span>DNI ${esc(p.dni||'s/d')} · ${esc(p.telefono||'sin teléfono')} · ${esc(p.coberturaHabitual||p.obraSocial||'sin cobertura')}</span></div><div class="quality-edit384">${input384(p)}</div><div class="quality-actions384"><button class="primary" onclick="guardarCalidad384('${id}')">Guardar</button><button class="secondary" type="button" onclick="abrirFichaCompletaCalidad387('${esc(patientKey384(p))}')">Abrir ficha completa</button></div></article>`}).join('')||'<div class="empty383">No hay pacientes pendientes en esta categoría.</div>'}</div></div>`;
+    const labels={dni:'Sin DNI',cobertura:'Cobertura incompleta',contacto:'Sin contacto',nacimiento:'Sin fecha de nacimiento',telefono:'Sin teléfono',email:'Sin mail',sexo:'Sin sexo',localidad:'Sin localidad'};
+    modal.innerHTML=`<div class="quality-card383 quality-card384"><button class="modal-close-360" onclick="document.getElementById('qualityModal383').classList.add('hidden')">×</button><h2>Completar fichas de pacientes</h2><div class="quality-toolbar384"><label>Dato faltante<select id="qualityKind384"><option value="dni" ${qualityKind384==='dni'?'selected':''}>Sin DNI</option><option value="cobertura" ${qualityKind384==='cobertura'?'selected':''}>Cobertura incompleta</option><option value="contacto" ${qualityKind384==='contacto'?'selected':''}>Sin contacto</option><option value="nacimiento" ${qualityKind384==='nacimiento'?'selected':''}>Sin fecha de nacimiento</option><option value="telefono" ${qualityKind384==='telefono'?'selected':''}>Sin teléfono</option><option value="email" ${qualityKind384==='email'?'selected':''}>Sin mail</option><option value="sexo" ${qualityKind384==='sexo'?'selected':''}>Sin sexo</option><option value="localidad" ${qualityKind384==='localidad'?'selected':''}>Sin localidad</option></select></label><label>Buscar<input id="qualitySearch384" type="search" placeholder="Apellido, nombre o DNI" value="${esc(qualityQuery384)}"></label></div><p><strong>${ps.length}</strong> paciente(s) en “${labels[qualityKind384]}”. Completá el dato y guardá: el paciente sale automáticamente de la lista.</p><div class="quality-list384">${ps.map(p=>{const id=esc(p.id||patientKey384(p));return `<article class="quality-row384"><div class="quality-patient384"><strong>${esc(patientName384(p))}</strong><span>DNI ${esc(p.dni||'s/d')} · ${esc(p.telefono||'sin teléfono')} · ${esc(p.coberturaHabitual||p.obraSocial||'sin cobertura')}</span></div><div class="quality-edit384">${input384(p)}</div><div class="quality-actions384"><button class="primary" onclick="guardarCalidad384('${id}')">Guardar</button><button class="secondary" type="button" onclick="abrirFichaCompletaCalidad387('${esc(patientKey384(p))}')">Abrir ficha completa</button></div></article>`}).join('')||'<div class="empty383">No hay pacientes pendientes en esta categoría.</div>'}</div></div>`;
     document.getElementById('qualityKind384')?.addEventListener('change',e=>{qualityKind384=e.target.value;qualityQuery384='';renderQuality384()});
     document.getElementById('qualitySearch384')?.addEventListener('input',e=>{qualityQuery384=e.target.value;renderQuality384()});
   }
@@ -6649,6 +6681,10 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     if(qualityKind384==='dni')p.dni=(document.getElementById(`q384_${id}_dni`)?.value||'').trim();
     if(qualityKind384==='cobertura'){const v=document.getElementById(`q384_${id}_cob`)?.value||'';p.coberturaHabitual=v;p.obraSocial=v;}
     if(qualityKind384==='nacimiento')p.fechaNacimiento=document.getElementById(`q384_${id}_nac`)?.value||'';
+    if(qualityKind384==='telefono')p.telefono=(document.getElementById(`q384_${id}_tel`)?.value||'').trim();
+    if(qualityKind384==='email')p.email=(document.getElementById(`q384_${id}_mail`)?.value||'').trim();
+    if(qualityKind384==='sexo')p.sexo=document.getElementById(`q384_${id}_sexo`)?.value||'';
+    if(qualityKind384==='localidad')p.localidad=(document.getElementById(`q384_${id}_loc`)?.value||'').trim();
     if(qualityKind384==='contacto'){
       p.telefono=(document.getElementById(`q384_${id}_tel`)?.value||'').trim();p.email=(document.getElementById(`q384_${id}_mail`)?.value||'').trim();
       p.contactoResponsableTelefono=(document.getElementById(`q384_${id}_rtel`)?.value||'').trim();p.contactoResponsableEmail=(document.getElementById(`q384_${id}_rmail`)?.value||'').trim();
@@ -6813,4 +6849,55 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>setTimeout(version387,300));
   else setTimeout(version387,300);
+})();
+
+
+/* ===== CardioLink Admin v3.9 LTS: convenios, aranceles y permisos económicos ===== */
+(function(){
+  function ensure39(){
+    if(!data.facturacion39)data.facturacion39={destinos:['Matías Anchorena','Rogelio Anchorena','Círculo Médico','Directo'],convenios:{},aranceles:[]};
+    if(!Array.isArray(data.facturacion39.destinos))data.facturacion39.destinos=[];
+    if(!data.facturacion39.convenios)data.facturacion39.convenios={};
+    if(!Array.isArray(data.facturacion39.aranceles))data.facturacion39.aranceles=[];
+  }
+  function esc39(x){return typeof escapeHtml==='function'?escapeHtml(x):String(x??'').replace(/[&<>\"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m]));}
+  function money39(n){return new Intl.NumberFormat('es-AR',{style:'currency',currency:'ARS',maximumFractionDigits:0}).format(Number(n)||0)}
+  function can39(){return typeof puedeVerFacturacionEconomica==='function'&&puedeVerFacturacionEconomica()}
+  function render39(){
+    ensure39(); const root=document.getElementById('facturacion39Root'); if(!root)return;
+    root.classList.toggle('hidden-permission',!can39()); if(!can39())return;
+    const os=data.obrasSociales||[], ps=[...new Set((data.profesionales||[]).flatMap(p=>p.prestaciones||[]))].sort();
+    root.innerHTML=`<h3>Convenios, aranceles y proyección</h3><p class="muted">Los importes son privados. No se calculan ni se muestran hasta presionar Calcular.</p>
+    <div class="fact39-grid"><label>Cobertura<select id="f39os"><option value="">Todas</option>${os.map(x=>`<option>${esc39(x)}</option>`).join('')}</select></label><label>Prestación<select id="f39prest"><option value="">Todas</option>${ps.map(x=>`<option>${esc39(x)}</option>`).join('')}</select></label><label>Desde<input type="date" id="f39desde"></label><label>Hasta<input type="date" id="f39hasta"></label></div>
+    <div class="inline-actions-382"><button class="primary" id="f39calc">Calcular estimación</button><button class="secondary" id="f39new">Cargar arancel</button></div><div id="f39result" class="fact39-result"><span class="muted">Sin cálculo solicitado.</span></div>
+    <h4>Aranceles configurados</h4><div class="fact39-table">${data.facturacion39.aranceles.length?data.facturacion39.aranceles.slice().sort((a,b)=>String(b.desde).localeCompare(String(a.desde))).map(a=>`<div><span>${esc39(a.cobertura)} · ${esc39(a.prestacion)}</span><b>${money39(a.valor)}</b><small>desde ${esc39(a.desde||'sin fecha')}</small><button class="danger mini39" data-del39="${esc39(a.id)}">×</button></div>`).join(''):'<p class="muted">Todavía no hay aranceles cargados.</p>'}</div>`;
+    document.getElementById('f39calc').onclick=calc39; document.getElementById('f39new').onclick=new39;
+    root.querySelectorAll('[data-del39]').forEach(b=>b.onclick=()=>{if(confirm('¿Eliminar este arancel?')){data.facturacion39.aranceles=data.facturacion39.aranceles.filter(x=>x.id!==b.dataset.del39);saveConfig();render39();}});
+  }
+  function new39(){
+    if(!can39())return; ensure39();
+    const cobertura=prompt('Cobertura / prepaga:','OSDE');if(!cobertura)return;
+    const prestacion=prompt('Prestación:','Consulta');if(!prestacion)return;
+    const valor=Number(String(prompt('Valor esperado en pesos:','0')||'0').replace(/[^0-9.,-]/g,'').replace(',','.'));if(!Number.isFinite(valor)||valor<0){alert('Valor inválido');return;}
+    const desde=prompt('Vigente desde (AAAA-MM-DD):',new Date().toISOString().slice(0,10))||'';
+    data.facturacion39.aranceles.push({id:'ar39_'+Date.now(),cobertura,prestacion,valor,desde,creadoEn:new Date().toISOString(),creadoPor:typeof nombreUsuarioAuditoria==='function'?nombreUsuarioAuditoria():''});
+    if(!data.obrasSociales.some(x=>String(x).toLowerCase()===cobertura.toLowerCase()))data.obrasSociales.push(cobertura);
+    saveConfig();render39();
+  }
+  function rate39(a){
+    const d=a.fecha||''; const candidates=data.facturacion39.aranceles.filter(r=>(!r.cobertura||String(r.cobertura).toLowerCase()===String(a.obraSocial||'').toLowerCase())&&(!r.prestacion||String(r.prestacion).toLowerCase()===String(a.prestacion||'').toLowerCase())&&(!r.desde||r.desde<=d)).sort((x,y)=>String(y.desde).localeCompare(String(x.desde)));
+    return candidates[0]||null;
+  }
+  function calc39(){
+    if(!can39())return; ensure39(); const os=document.getElementById('f39os').value, pr=document.getElementById('f39prest').value, de=document.getElementById('f39desde').value, ha=document.getElementById('f39hasta').value;
+    const rows=(window.atenciones||atenciones||[]).filter(a=>(!os||a.obraSocial===os)&&(!pr||a.prestacion===pr)&&(!de||a.fecha>=de)&&(!ha||a.fecha<=ha)&&!['cancelado','ausente'].includes(a.estadoAgenda));
+    let total=0,missing=[]; const by={}; rows.forEach(a=>{const r=rate39(a);if(!r){missing.push(a);return;}total+=Number(r.valor)||0;by[a.obraSocial||'Sin cobertura']=(by[a.obraSocial||'Sin cobertura']||0)+(Number(r.valor)||0)});
+    document.getElementById('f39result').innerHTML=`<div class="fact39-total"><span>Total estimado</span><strong>${money39(total)}</strong></div><p>${rows.length} prestación(es) consideradas · ${missing.length} sin arancel configurado.</p>${Object.entries(by).map(([k,v])=>`<div class="fact39-line"><span>${esc39(k)}</span><b>${money39(v)}</b></div>`).join('')}${missing.length?`<details><summary>Ver prestaciones sin arancel</summary>${missing.slice(0,50).map(a=>`<div>${esc39(a.fecha)} · ${esc39(a.obraSocial)} · ${esc39(a.prestacion)} · ${esc39(a.paciente)}</div>`).join('')}</details>`:''}`;
+  }
+  window.renderFacturacion39=render39;
+  document.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{ensure39();render39();document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(x=>x.textContent='v3.9 LTS');document.title='CardioLink Admin v3.9 LTS';try{aplicarPermisosUI()}catch(e){}},900));
+  const oldRenderConfig=window.renderConfig;
+  if(typeof renderConfig==='function'){
+    const orig=renderConfig; window.renderConfig=renderConfig=function(){const r=orig.apply(this,arguments);setTimeout(render39,0);return r;};
+  }
 })();
