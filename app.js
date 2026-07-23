@@ -6960,3 +6960,77 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function boot390(){version390();window.renderQuality382();setTimeout(version390,800);setTimeout(version390,2200)}
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot390);else boot390();
 })();
+
+/* ===== CardioLink Admin v3.9.0 LTS HOTFIX 2: calidad persistente y version estable ===== */
+(function qualityHotfix3902(){
+  const VERSION='3.9.0 LTS';
+  const labels={dni:'Sin DNI',cobertura:'Cobertura incompleta',contacto:'Sin teléfono / contacto',nacimiento:'Sin fecha de nacimiento',sexo:'Sin sexo',localidad:'Sin localidad',direccion:'Sin dirección',provincia:'Sin provincia'};
+  const norm=v=>String(v??'').trim().toLowerCase();
+  const digits=v=>String(v??'').replace(/\D/g,'');
+  let rendering=false;
+
+  function patients(){
+    try{return Array.isArray(data?.pacientes)?data.pacientes.filter(p=>!p?.fusionadoEn&&!p?.inactivo):[];}catch(e){return [];}
+  }
+  function badCoverage(v){
+    const s=norm(v);
+    return !s||['undefined','null','no ingresado','sin cobertura','s/d'].includes(s)||s.includes('matias anchorena')||s.includes('matías anchorena')||s.includes('rogelio anchorena')||s.includes('fernandez drago')||s.includes('fernández drago');
+  }
+  function missing(p,k){
+    if(k==='dni') return !digits(p?.dni);
+    if(k==='cobertura') return badCoverage(p?.coberturaHabitual||p?.obraSocial||p?.cobertura);
+    if(k==='contacto') return !String(p?.telefono||p?.tel||'').trim()&&!String(p?.email||'').trim()&&!String(p?.contactoResponsableTelefono||p?.telefonoContacto||'').trim()&&!String(p?.contactoResponsableEmail||p?.emailContacto||'').trim();
+    if(k==='nacimiento') return !String(p?.fechaNacimiento||'').trim();
+    if(k==='sexo') return !String(p?.sexo||'').trim();
+    if(k==='localidad') return !String(p?.localidad||'').trim();
+    if(k==='direccion') return !String(p?.direccion||'').trim();
+    if(k==='provincia') return !String(p?.provincia||'').trim();
+    return false;
+  }
+  function enforceVersion(){
+    try{document.title=`CardioLink Admin v${VERSION}`;}catch(e){}
+    document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(el=>el.textContent=`v${VERSION}`);
+    document.querySelectorAll('.login-meta').forEach(el=>el.textContent=`Versión ${VERSION} · 2026`);
+    document.querySelectorAll('h2').forEach(el=>{
+      const t=String(el.textContent||'');
+      if(t.includes('Instructivo CardioLink Admin v')) el.textContent=`Instructivo CardioLink Admin v${VERSION}`;
+      else if(t.includes('CardioLink Admin v')) el.textContent=`CardioLink Admin v${VERSION}`;
+    });
+  }
+  function renderCards(){
+    const root=document.getElementById('dataQuality382');
+    if(!root||rendering)return;
+    rendering=true;
+    const ps=patients();
+    const entries=Object.keys(labels).map(k=>[k,ps.filter(p=>missing(p,k)).length]);
+    const dniMap=new Map();ps.forEach(p=>{const d=digits(p.dni);if(d)dniMap.set(d,(dniMap.get(d)||0)+1)});
+    const dup=[...dniMap.values()].filter(n=>n>1).reduce((a,n)=>a+n,0);
+    root.innerHTML=`<div class="quality-item-382 ok"><span>Pacientes activos</span><b>${ps.length}</b></div>`+
+      entries.map(([k,n])=>`<button type="button" class="quality-item-382 quality-action-385 ${n?'warn':'ok'}" data-quality-hotfix="${k}"><span>${labels[k]}</span><b>${n}</b></button>`).join('')+
+      `<div class="quality-item-382 ${dup?'danger':'ok'}"><span>DNI duplicados</span><b>${dup}</b></div>`;
+    rendering=false;
+  }
+  function openKind(k){
+    if(typeof window.qualityPatients383==='function'){
+      window.qualityPatients383(k);
+    }else{
+      alert('No se pudo abrir la bandeja de calidad de datos.');
+    }
+  }
+  document.addEventListener('click',function(e){
+    const b=e.target?.closest?.('[data-quality-hotfix]');
+    if(!b)return;
+    e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();
+    openKind(b.dataset.qualityHotfix);
+  },true);
+  function boot(){
+    enforceVersion();renderCards();
+    const root=document.getElementById('dataQuality382');
+    if(root){
+      const obs=new MutationObserver(()=>{if(!rendering)setTimeout(renderCards,0)});
+      obs.observe(root,{childList:true,subtree:true,characterData:true});
+    }
+    setInterval(()=>{enforceVersion();renderCards();},1500);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+})();
