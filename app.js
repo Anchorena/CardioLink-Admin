@@ -7039,3 +7039,90 @@ return false});let m=document.getElementById('qualityModal383');if(!m){m=documen
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
+
+
+/* ===== CardioLink Admin v3.9.1 CALIDAD FINAL ===== */
+(function cardioQuality391Final(){
+  'use strict';
+  const labels={
+    dni:'Sin DNI', cobertura:'Cobertura incompleta', contacto:'Sin teléfono / contacto',
+    nacimiento:'Sin fecha de nacimiento', sexo:'Sin sexo', localidad:'Sin localidad',
+    direccion:'Sin dirección', provincia:'Sin provincia'
+  };
+  const norm=v=>String(v??'').trim().toLowerCase();
+  const digits=v=>String(v??'').replace(/\D/g,'');
+  const esc=v=>String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const active=()=>Array.isArray(window.data?.pacientes)?window.data.pacientes.filter(p=>!p?.fusionadoEn&&!p?.inactivo):[];
+  const name=p=>p?.apellidoNombre||p?.nombreCompleto||p?.paciente||p?.nombre||'Paciente';
+  const key=p=>{try{return typeof window.pacienteClave==='function'?window.pacienteClave(p):(p?.id||p?.dni||name(p));}catch{return p?.id||p?.dni||name(p)}};
+  const badCoverage=v=>{const s=norm(v);return !s||['undefined','null','no ingresado','sin cobertura','s/d'].includes(s)||s.includes('matias anchorena')||s.includes('matías anchorena')||s.includes('rogelio anchorena')||s.includes('fernandez drago')||s.includes('fernández drago');};
+  function missing(p,k){
+    if(k==='dni')return !digits(p?.dni);
+    if(k==='cobertura')return badCoverage(p?.coberturaHabitual||p?.obraSocial||p?.cobertura);
+    if(k==='contacto')return !String(p?.telefono||p?.tel||'').trim()&&!String(p?.email||'').trim()&&!String(p?.contactoResponsableTelefono||p?.telefonoContacto||'').trim()&&!String(p?.contactoResponsableEmail||p?.emailContacto||'').trim();
+    if(k==='nacimiento')return !String(p?.fechaNacimiento||'').trim();
+    if(k==='sexo')return !String(p?.sexo||'').trim();
+    if(k==='localidad')return !String(p?.localidad||'').trim();
+    if(k==='direccion')return !String(p?.direccion||'').trim();
+    if(k==='provincia')return !String(p?.provincia||'').trim();
+    return false;
+  }
+  let rendering=false, currentKind='dni', query='';
+  function renderCards(){
+    const root=document.getElementById('dataQuality382'); if(!root||rendering)return;
+    rendering=true;
+    const ps=active();
+    const cards=Object.keys(labels).map(k=>{const n=ps.filter(p=>missing(p,k)).length;return `<button type="button" class="quality-item-382 quality-action-385 ${n?'warn':'ok'}" data-quality-final="${k}"><span>${labels[k]}</span><b>${n}</b></button>`}).join('');
+    const m=new Map();ps.forEach(p=>{const d=digits(p.dni);if(d)m.set(d,(m.get(d)||0)+1)});const dup=[...m.values()].filter(n=>n>1).reduce((a,n)=>a+n,0);
+    root.innerHTML=`<div class="quality-item-382 ok"><span>Pacientes activos</span><b>${ps.length}</b></div>${cards}<div class="quality-item-382 ${dup?'danger':'ok'}"><span>DNI duplicados</span><b>${dup}</b></div>`;
+    rendering=false;
+  }
+  function coverageOptions(current){
+    const names=['',...(window.data?.obrasSociales||[]).map(x=>typeof x==='string'?x:(x?.nombre||x?.label||'')),...(window.data?.reglasOS||[]).map(x=>x?.nombre||x?.obraSocial||'')];
+    return [...new Set(names)].map(n=>`<option value="${esc(n)}" ${String(n)===String(current||'')?'selected':''}>${esc(n||'Seleccionar cobertura')}</option>`).join('');
+  }
+  function rows(){let ps=active().filter(p=>missing(p,currentKind));if(query){const q=norm(query);ps=ps.filter(p=>norm([name(p),p.dni,p.telefono,p.email,p.localidad,p.sexo,p.coberturaHabitual,p.obraSocial].join(' ')).includes(q));}return ps.sort((a,b)=>name(a).localeCompare(name(b),'es'));}
+  function field(p,id){
+    if(currentKind==='dni')return `<input id="q391_${id}_dni" inputmode="numeric" placeholder="DNI" value="${esc(p.dni||'')}">`;
+    if(currentKind==='cobertura')return `<select id="q391_${id}_cob">${coverageOptions(badCoverage(p.coberturaHabitual||p.obraSocial||p.cobertura)?'':(p.coberturaHabitual||p.obraSocial||p.cobertura))}</select>`;
+    if(currentKind==='nacimiento')return `<input id="q391_${id}_nac" type="date" value="${esc(p.fechaNacimiento||'')}">`;
+    if(currentKind==='sexo')return `<select id="q391_${id}_sexo"><option value="">No definido</option><option value="Masculino" ${p.sexo==='Masculino'?'selected':''}>Masculino</option><option value="Femenino" ${p.sexo==='Femenino'?'selected':''}>Femenino</option><option value="Otro" ${p.sexo==='Otro'?'selected':''}>Otro</option></select>`;
+    if(currentKind==='localidad')return `<input id="q391_${id}_localidad" placeholder="Localidad" value="${esc(p.localidad||'')}">`;
+    if(currentKind==='direccion')return `<input id="q391_${id}_direccion" placeholder="Dirección" value="${esc(p.direccion||'')}">`;
+    if(currentKind==='provincia')return `<input id="q391_${id}_provincia" placeholder="Provincia" value="${esc(p.provincia||'Buenos Aires')}">`;
+    return `<div class="quality-contact384"><input id="q391_${id}_tel" inputmode="tel" placeholder="Teléfono paciente" value="${esc(p.telefono||'')}"><input id="q391_${id}_mail" type="email" placeholder="Email paciente" value="${esc(p.email||'')}"><input id="q391_${id}_rtel" inputmode="tel" placeholder="Teléfono responsable" value="${esc(p.contactoResponsableTelefono||p.telefonoContacto||'')}"><input id="q391_${id}_rmail" type="email" placeholder="Email responsable" value="${esc(p.contactoResponsableEmail||p.emailContacto||'')}"></div>`;
+  }
+  function ensureModal(){let m=document.getElementById('qualityModal391');if(!m){m=document.createElement('div');m.id='qualityModal391';m.className='modal-overlay-360 hidden';m.style.zIndex='10080';document.body.appendChild(m);}return m;}
+  function renderModal(){
+    const modal=ensureModal(), ps=rows();
+    modal.innerHTML=`<div class="quality-card383 quality-card384"><button class="modal-close-360" type="button" data-q391-close>×</button><h2>Completar fichas de pacientes</h2><div class="quality-toolbar384"><label>Dato faltante<select data-q391-kind>${Object.entries(labels).map(([k,l])=>`<option value="${k}" ${currentKind===k?'selected':''}>${l}</option>`).join('')}</select></label><label>Buscar<input data-q391-search type="search" placeholder="Apellido, nombre o DNI" value="${esc(query)}"></label></div><p><strong>${ps.length}</strong> paciente(s) en “${labels[currentKind]}”.</p><div class="quality-list384">${ps.map(p=>{const raw=String(p.id||key(p));const id=raw.replace(/[^a-zA-Z0-9_-]/g,'_');return `<article class="quality-row384"><div class="quality-patient384"><strong>${esc(name(p))}</strong><span>DNI ${esc(p.dni||'s/d')} · ${esc(p.telefono||'sin teléfono')} · ${esc(p.coberturaHabitual||p.obraSocial||p.cobertura||'sin cobertura')}</span></div><div class="quality-edit384">${field(p,id)}</div><div class="quality-actions384"><button class="primary" type="button" data-q391-save="${esc(raw)}" data-q391-dom="${id}">Guardar</button><button class="secondary" type="button" data-q391-open="${esc(key(p))}">Abrir ficha completa</button></div></article>`}).join('')||'<div class="empty383">No hay pacientes pendientes en esta categoría.</div>'}</div></div>`;
+    modal.classList.remove('hidden');
+  }
+  function save(raw,dom){
+    const p=active().find(x=>String(x.id||key(x))===String(raw));if(!p)return;
+    const val=s=>document.getElementById(s)?.value||'';
+    if(currentKind==='dni')p.dni=val(`q391_${dom}_dni`).trim();
+    if(currentKind==='cobertura'){const v=val(`q391_${dom}_cob`);p.coberturaHabitual=v;p.obraSocial=v;p.cobertura=v;}
+    if(currentKind==='nacimiento')p.fechaNacimiento=val(`q391_${dom}_nac`);
+    if(currentKind==='sexo')p.sexo=val(`q391_${dom}_sexo`);
+    if(currentKind==='localidad')p.localidad=val(`q391_${dom}_localidad`).trim();
+    if(currentKind==='direccion')p.direccion=val(`q391_${dom}_direccion`).trim();
+    if(currentKind==='provincia')p.provincia=val(`q391_${dom}_provincia`).trim()||'Buenos Aires';
+    if(currentKind==='contacto'){p.telefono=val(`q391_${dom}_tel`).trim();p.email=val(`q391_${dom}_mail`).trim();p.contactoResponsableTelefono=val(`q391_${dom}_rtel`).trim();p.contactoResponsableEmail=val(`q391_${dom}_rmail`).trim();}
+    p.actualizadoEn=new Date().toISOString();
+    try{window.saveConfig?.();window.saveAtenciones?.();window.renderPacientesPanel?.('',true);}catch(err){console.error(err);}
+    renderCards();renderModal();
+  }
+  window.renderQuality382=renderCards;
+  window.qualityPatients383=function(k='dni'){currentKind=labels[k]?k:'dni';query='';renderModal();};
+  window.addEventListener('click',e=>{
+    const card=e.target?.closest?.('[data-quality-final]');if(card){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();window.qualityPatients383(card.dataset.qualityFinal);return;}
+    const close=e.target?.closest?.('[data-q391-close]');if(close){e.preventDefault();ensureModal().classList.add('hidden');return;}
+    const saveBtn=e.target?.closest?.('[data-q391-save]');if(saveBtn){e.preventDefault();save(saveBtn.dataset.q391Save,saveBtn.dataset.q391Dom);return;}
+    const open=e.target?.closest?.('[data-q391-open]');if(open){e.preventDefault();ensureModal().classList.add('hidden');window.abrirFichaCompletaCalidad387?.(open.dataset.q391Open);return;}
+  },true);
+  window.addEventListener('change',e=>{if(e.target?.matches?.('[data-q391-kind]')){currentKind=e.target.value;query='';renderModal();}},true);
+  window.addEventListener('input',e=>{if(e.target?.matches?.('[data-q391-search]')){query=e.target.value;renderModal();}},true);
+  function boot(){renderCards();const root=document.getElementById('dataQuality382');if(root){new MutationObserver(()=>{if(!rendering&&!root.querySelector('[data-quality-final]'))renderCards();}).observe(root,{childList:true});}}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot,{once:true});else boot();
+})();
