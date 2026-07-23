@@ -1424,7 +1424,3 @@ body.patient-modal-open-371{overflow:hidden!important}
 button.danger.delete-patient386{background:#fee2e2!important;color:#991b1b!important;border:1px solid #fecaca!important}
 button.danger.delete-patient386:hover{background:#fecaca!important}
 @media(max-width:700px){.quality-actions384 button{width:100%}.paciente-ficha-actions .delete-patient386,.paciente-global-actions-top .delete-patient386{width:100%}}
-
-
-/* CardioLink Admin 3.9 LTS */
-.fact39-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;margin:12px 0}.fact39-result{margin-top:14px;padding:14px;border:1px solid var(--line,#ddd);border-radius:12px;background:var(--card,#fff)}.fact39-total,.fact39-line{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--line,#eee)}.fact39-total strong{font-size:1.35rem}.fact39-table>div{display:grid;grid-template-columns:1fr auto auto auto;gap:10px;align-items:center;padding:8px;border-bottom:1px solid var(--line,#eee)}.mini39{padding:3px 8px!important;min-width:0}.hidden-permission{display:none!important}.quality-item-382 button{cursor:pointer}
