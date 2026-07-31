@@ -1,15 +1,11 @@
-# CardioLink Admin v3.10.1
+# CardioLink Admin v3.10.2 FINAL
 
-- Contador de pendientes visible desde el ingreso, sin abrir la solapa.
-- Botón Cerrar sesión estable desde el primer render.
-- Usuarios existentes clickeables para cargar y modificar su perfil.
-- Versionado unificado.
-
-# CardioLink Admin v3.10.1
-
-- Calidad de datos usa la misma fuente unificada que la pantalla Pacientes.
-- Detecta pacientes persistentes y pacientes reconstruidos desde atenciones.
-- Corrige todos los filtros y la apertura de sus listados.
-- Al guardar una ficha legacy, crea o actualiza su registro persistente.
-- Elimina el refresco intermitente que sobrescribía tarjetas y eventos.
-- Renueva el caché PWA.
+- Convenios y destinos de facturación editables.
+- Mantiene la lógica actual de Factura Rogelio, ahora configurable por cobertura.
+- Aranceles por convenio, prestación y fecha de vigencia.
+- Cada nueva atención fija automáticamente el arancel vigente como valor histórico estimado.
+- Si se edita cobertura, prestación o fecha, el arancel estimado se recalcula.
+- Producción estimada bajo demanda: no muestra importes hasta presionar “Calcular estimación”.
+- Informe por período, cobertura, profesional y prestación.
+- Lista de prestaciones sin arancel configurado.
+- Información económica visible solo para Matías y perfiles Administrador.

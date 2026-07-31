@@ -1,7 +1,6 @@
-CardioLink Admin v3.10.1
+# CardioLink Admin v3.10.2 FINAL
 
-- Versionado visible unificado en Login, Inicio, Instrucciones, título y diagnóstico.
-- Corrección definitiva de Cobertura incompleta como botón.
-- Calidad de datos ampliada: DNI, cobertura, contacto, fecha de nacimiento, sexo, localidad, dirección y provincia.
-- Cada filtro abre una bandeja editable y actualiza el conteo después de guardar.
-- Mantiene la ficha ampliada con sexo, localidad, dirección y provincia.
+Sistema de gestión de consultorio médico con agenda, pacientes, pendientes, caja diaria, reportes, perfiles, convenios y aranceles configurables.
+
+## Producción estimada
+Los aranceles se fijan automáticamente en las nuevas atenciones según cobertura, prestación y vigencia. Los totales económicos permanecen ocultos hasta que Matías o un Administrador solicitan el cálculo desde Configuración → Coberturas y valores.
