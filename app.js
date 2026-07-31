@@ -264,7 +264,7 @@ function mostrarPantallaLogin() {
 
       <h1>CardioLink Admin</h1>
       <p class="login-subtitle">by Matías Anchorena</p>
-      <p class="login-meta">Versión 3.9.0 LTS · 2026</p>
+      <p class="login-meta">Versión 3.10.0 · 2026</p>
     </div>
 
     <div class="login-fields">
@@ -2236,8 +2236,8 @@ function verDineroPeriodo(){
 }
 function ocultarDineroPeriodo(){$('dineroPeriodoResultado').textContent='';$('claveDinero').value=''}
 function setPrintMeta(){$('printMeta').textContent=`Perfil: ${perfilObj().nombre} | Registros: ${filtrar().length} | ${formatFecha(todayISO())}`}
-function exportarCSV(){const datos=filtrar();if(!datos.length){alert('No hay datos');return}const r=resumen(datos);const incluirValoresExport=!!$('incluirValoresImpresion')?.checked;const filas=[['CardioLink Admin v3.9.0 LTS'],['Perfil',perfilObj().nombre],['Consultas',r.consultas],['Estudios',r.estudios],[],['Fecha','Paciente','OS','Profesional','Prestación','Consulta a','Estudio a','Tipo','Forma','Particular visible','Copago visible','Total visible','Estado']];datos.forEach(a=>{const m=dineroVisible(a),e=evaluarEstado(a);filas.push([formatFecha(a.fecha),a.paciente,a.obraSocial,a.profesional,prestacionListado(a),a.consultaA,a.prestacionA,a.tipoCobro,a.formaPago,incluirValoresExport?m.particular:'',incluirValoresExport?m.copago:'',incluirValoresExport?m.total:'',e.txt])});const csv=filas.map(r=>r.map(c=>`"${String(c??'').replaceAll('"','""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_listado.csv';a.click()}
-function exportarBackup(){const b={app:'CardioLink Admin',version:'2.9.8',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
+function exportarCSV(){const datos=filtrar();if(!datos.length){alert('No hay datos');return}const r=resumen(datos);const incluirValoresExport=!!$('incluirValoresImpresion')?.checked;const filas=[['CardioLink Admin v3.10.0'],['Perfil',perfilObj().nombre],['Consultas',r.consultas],['Estudios',r.estudios],[],['Fecha','Paciente','OS','Profesional','Prestación','Consulta a','Estudio a','Tipo','Forma','Particular visible','Copago visible','Total visible','Estado']];datos.forEach(a=>{const m=dineroVisible(a),e=evaluarEstado(a);filas.push([formatFecha(a.fecha),a.paciente,a.obraSocial,a.profesional,prestacionListado(a),a.consultaA,a.prestacionA,a.tipoCobro,a.formaPago,incluirValoresExport?m.particular:'',incluirValoresExport?m.copago:'',incluirValoresExport?m.total:'',e.txt])});const csv=filas.map(r=>r.map(c=>`"${String(c??'').replaceAll('"','""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_listado.csv';a.click()}
+function exportarBackup(){const b={app:'CardioLink Admin',version:'3.10.0',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
 function importarBackup(){const inp=$('inputImportBackup');if(!inp.files[0]){alert('Elegí archivo');return}if(!confirm('Reemplaza la base actual. ¿Continuar?'))return;const rd=new FileReader();rd.onload=e=>{try{const b=JSON.parse(e.target.result);if(!b.config||!b.atenciones)throw new Error();data=b.config;atenciones=b.atenciones;saveConfig();saveAtenciones();refreshSelects();renderConfig();cambiarPerfil('general');alert('Backup importado')}catch{alert('Backup inválido')}};rd.readAsText(inp.files[0])}
 
 function dniLimpio(v){return String(v||'').replace(/\D/g,'');}
@@ -4484,9 +4484,9 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const dark=$id('btnDark'); if(dark){dark.style.marginTop='18px'; dark.style.marginBottom='8px';}
   }
   function version296(){
-    try{document.title='CardioLink Admin v3.9.0 LTS';}catch(e){}
+    try{document.title='CardioLink Admin v3.10.0';}catch(e){}
     document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v3.9.0');
-    document.querySelectorAll('h2').forEach(el=>{ if((el.textContent||'').includes('CardioLink Admin v')) el.textContent='CardioLink Admin v3.9.0 LTS'; });
+    document.querySelectorAll('h2').forEach(el=>{ if((el.textContent||'').includes('CardioLink Admin v')) el.textContent='CardioLink Admin v3.10.0'; });
   }
   document.addEventListener('DOMContentLoaded',()=>{asegurarBloques296(); version296(); moverLogout296(); try{actualizarPrestaciones(); aplicarPermisosUI(); renderAgenda?.(); renderMensajes?.();}catch(e){} });
   setTimeout(()=>{asegurarBloques296(); version296(); moverLogout296(); try{actualizarPrestaciones(); aplicarPermisosUI(); renderAgenda?.(); renderMensajes?.();}catch(e){}},900);
@@ -4761,7 +4761,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
 /* ===== v2.9.8 - Carga pura e importación de pacientes desde Excel Medicloud ===== */
 (function(){
-  const VERSION_298='3.9.0';
+  const VERSION_298='3.10.0';
   const CONFIG_ROW_ID='__cardiolink_config_v1';
   let previewImportPacientes298=[];
 
@@ -5092,7 +5092,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const inp=d('inputPacientesExcel'); if(inp && !inp.dataset.bound298){ inp.dataset.bound298='1'; inp.addEventListener('change',()=>procesarExcelPacientes298(inp.files?.[0])); }
   }
   function version298(){
-    try{document.title='CardioLink Admin v3.9.0 LTS';}catch(e){}
+    try{document.title='CardioLink Admin v3.10.0';}catch(e){}
     document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v3.9.0');
   }
   document.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{bind298();version298();},450));
@@ -5215,9 +5215,9 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   }
 
   function version300(){
-    try{document.title='CardioLink Admin v3.9.0 LTS';}catch(e){}
+    try{document.title='CardioLink Admin v3.10.0';}catch(e){}
     document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v3.9.0');
-    const pt=document.querySelector('.print-title h2'); if(pt) pt.textContent='CardioLink Admin v3.9.0 LTS';
+    const pt=document.querySelector('.print-title h2'); if(pt) pt.textContent='CardioLink Admin v3.10.0';
   }
   function init300(){bindPendienteSelect300();bindImportTexto300();version300();}
   document.addEventListener('DOMContentLoaded',()=>setTimeout(init300,700));
@@ -5265,9 +5265,9 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     window.renderTabla = renderTabla = wrapped;
   }
   function version310(){
-    try{document.title='CardioLink Admin v3.9.0 LTS';}catch(e){}
+    try{document.title='CardioLink Admin v3.10.0';}catch(e){}
     document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v3.9.0');
-    const pt=document.querySelector('.print-title h2'); if(pt) pt.textContent='CardioLink Admin v3.9.0 LTS';
+    const pt=document.querySelector('.print-title h2'); if(pt) pt.textContent='CardioLink Admin v3.10.0';
   }
   function init310(){ajustarBotonesPacientes310();limpiarCopiasDeFilas310();version310();}
   document.addEventListener('DOMContentLoaded',()=>setTimeout(init310,800));
@@ -5298,9 +5298,9 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function mesNombre(d){return d.toLocaleDateString('es-AR',{month:'long',year:'numeric'});}
 
   function setVersion320(){
-    try{document.title='CardioLink Admin v3.9.0 LTS';}catch(e){}
+    try{document.title='CardioLink Admin v3.10.0';}catch(e){}
     document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v3.9.0');
-    const pt=document.querySelector('.print-title h2'); if(pt) pt.textContent='CardioLink Admin v3.9.0 LTS';
+    const pt=document.querySelector('.print-title h2'); if(pt) pt.textContent='CardioLink Admin v3.10.0';
   }
 
   // ---------- Buscador global de pacientes ----------
@@ -5555,7 +5555,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function atencionById(id){return (atenciones||[]).find(a=>String(a.id)===String(id));}
   function operativas(){try{return atencionesOperativas()}catch(e){return (atenciones||[]).filter(a=>a && a.id && a.tipoRegistro!=='mensaje' && !a.__config);} }
   function profFiltro(){let prof=$id('agendaProfesional')?.value||'';try{if(esMedico())prof=profesionalIdUsuarioActual(); if(esMatiasDuenio()&&!prof)prof='matias';}catch(e){} return prof;}
-  function setVersion321(){try{document.title='CardioLink Admin v3.9.0 LTS'}catch(e){};document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v3.9.0');const pt=document.querySelector('.print-title h2');if(pt)pt.textContent='CardioLink Admin v3.9.0 LTS';}
+  function setVersion321(){try{document.title='CardioLink Admin v3.10.0'}catch(e){};document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v3.9.0');const pt=document.querySelector('.print-title h2');if(pt)pt.textContent='CardioLink Admin v3.10.0';}
 
   // No fusionar pacientes por teléfono/email: esos datos pueden pertenecer a familiar responsable.
   window.pacienteExistenteSinTelefonoMail321=function(p){
@@ -5705,9 +5705,9 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function dniClean(v){try{return dniLimpio(v)}catch(e){return String(v||'').replace(/\D/g,'')}}
   function fechaHoy(){try{return todayISO()}catch(e){return new Date().toISOString().slice(0,10)}}
   function version350(){
-    try{document.title='CardioLink Admin v3.9.0 LTS'}catch(e){}
+    try{document.title='CardioLink Admin v3.10.0'}catch(e){}
     document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v3.9.0');
-    const pt=document.querySelector('.print-title h2'); if(pt)pt.textContent='CardioLink Admin v3.9.0 LTS';
+    const pt=document.querySelector('.print-title h2'); if(pt)pt.textContent='CardioLink Admin v3.10.0';
   }
   function pacientesBase(){return Array.isArray(data?.pacientes)?data.pacientes:[];}
   function pacienteClave(p){try{return clavePacientePanel(p)}catch(e){return p?.id||dniClean(p?.dni)||norm(p?.nombreCompleto||p?.paciente)}}
@@ -5977,7 +5977,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
 /* ===== v3.6.0 - Inicio inteligente y pulido administrativo ===== */
 (()=>{
-  const APP_VERSION='3.9.0';
+  const APP_VERSION='3.10.0';
   const $360=id=>document.getElementById(id);
   const esc360=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const norm360=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
@@ -6330,7 +6330,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       }
       if(!a.hcMeta)a.hcMeta={schemaVersion:1,evoluciones:0,informes:0,adjuntos:0};
     });
-    data.hcPreparacion={schemaVersion:1,preparadoEn:new Date().toISOString(),versionApp:'3.9.0'};
+    data.hcPreparacion={schemaVersion:1,preparadoEn:new Date().toISOString(),versionApp:'3.10.0'};
     try{saveConfig();saveAtenciones();}catch(e){console.warn(e);}
     try{await sincronizarAtencionesSupabase(true);}catch(e){console.warn('Sincronización HC pendiente:',e);}
     renderHC380();
@@ -6441,7 +6441,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
   function exportAudit382(){
     const r=auditData382();
-    const payload={app:'CardioLink Admin',version:'3.9.0',exportadoEn:new Date().toISOString(),resumen:{altas:r.created,ediciones:r.edited,fusiones:r.fusions,usuarios:r.users},atenciones:attentions382().map(a=>({id:a.id,pacienteId:a.pacienteId,paciente:a.paciente,creadoPor:a.creadoPor,creadoEn:a.creadoEn,editadoPor:a.editadoPor,editadoEn:a.editadoEn})),auditoriaPacientes:r.patientAudit};
+    const payload={app:'CardioLink Admin',version:'3.10.0',exportadoEn:new Date().toISOString(),resumen:{altas:r.created,ediciones:r.edited,fusiones:r.fusions,usuarios:r.users},atenciones:attentions382().map(a=>({id:a.id,pacienteId:a.pacienteId,paciente:a.paciente,creadoPor:a.creadoPor,creadoEn:a.creadoEn,editadoPor:a.editadoPor,editadoEn:a.editadoEn})),auditoriaPacientes:r.patientAudit};
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
     const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Auditoria_'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
   }
@@ -6464,7 +6464,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       ['Sesión Supabase',r.session,r.session==='No iniciada'?'warn':'ok'],
       ['Última sincronización',fmtDate(r.lastSync),r.lastSync?'ok':'warn'],
       ['Último backup',fmtDate(r.lastBackup),r.lastBackup?'ok':'warn'],
-      ['Versión','3.9.0','ok'],
+      ['Versión','3.10.0','ok'],
       ['Preparación HC',hcReady?'Lista':'Revisar vínculos',hcReady?'ok':'warn']
     ];
     el.innerHTML=items.map(([t,v,c])=>`<div class="health-item-382 ${c}"><span>${t}</span><b>${v}</b></div>`).join('');
@@ -6531,7 +6531,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 })();
 
 
-/* ===== CardioLink Admin v3.9.0 LTS: Pendientes y calidad de datos ===== */
+/* ===== CardioLink Admin v3.10.0: Pendientes y calidad de datos ===== */
 (function(){
   const V='383';
   let currentTab='todos';
@@ -6626,7 +6626,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 })();
 
 
-/* ===== CardioLink Admin v3.9.0 LTS: completar fichas incompletas ===== */
+/* ===== CardioLink Admin v3.10.0: completar fichas incompletas ===== */
 (function init384(){
   const norm=v=>String(v??'').trim().toLowerCase();
   const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -6689,7 +6689,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   },true);
 })();
 
-/* ===== CardioLink Admin v3.9.0 LTS: calidad robusta + eliminación completa de paciente ===== */
+/* ===== CardioLink Admin v3.10.0: calidad robusta + eliminación completa de paciente ===== */
 (function init386(){
   const norm386=v=>String(v??'').trim().toLowerCase();
   const esc386=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -6795,13 +6795,13 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
   function refrescarVersion386(){
     document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(x=>x.textContent='v3.9.0');
-    document.title='CardioLink Admin v3.9.0 LTS';
+    document.title='CardioLink Admin v3.10.0';
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(refrescarVersion386,300));else setTimeout(refrescarVersion386,300);
 })();
 
 
-/* ===== CardioLink Admin v3.9.0 LTS: abrir ficha completa desde calidad de datos ===== */
+/* ===== CardioLink Admin v3.10.0: abrir ficha completa desde calidad de datos ===== */
 (function init387(){
   window.abrirFichaCompletaCalidad387=function(key){
     try{
@@ -6833,19 +6833,19 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
   function version387(){
     document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(x=>x.textContent='v3.9.0');
-    document.title='CardioLink Admin v3.9.0 LTS';
+    document.title='CardioLink Admin v3.10.0';
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>setTimeout(version387,300));
   else setTimeout(version387,300);
 })();
 
 
-/* ===== CardioLink Admin v3.9.0 LTS: ficha administrativa ampliada ===== */
+/* ===== CardioLink Admin v3.10.0: ficha administrativa ampliada ===== */
 (function init390(){
   function version390(){
     document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(x=>x.textContent='v3.9.0');
-    document.querySelectorAll('h2').forEach(x=>{if(/^CardioLink Admin v3\.8\.7$/.test(x.textContent.trim()))x.textContent='CardioLink Admin v3.9.0 LTS';});
-    document.title='CardioLink Admin v3.9.0 LTS';
+    document.querySelectorAll('h2').forEach(x=>{if(/^CardioLink Admin v3\.8\.7$/.test(x.textContent.trim()))x.textContent='CardioLink Admin v3.10.0';});
+    document.title='CardioLink Admin v3.10.0';
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(version390,500));else setTimeout(version390,500);
 })();
@@ -6984,5 +6984,121 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     document.querySelectorAll('.login-meta').forEach(el=>el.textContent=`Versión ${VERSION} · 2026`);
   }
   function boot(){setVersion();window.renderQuality382();setTimeout(window.renderQuality382,1200);setTimeout(window.renderQuality382,3500)}
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
+})();
+
+/* ===== CardioLink Admin v3.10.0 — Administración Inteligente ===== */
+(function(){
+  'use strict';
+  const VERSION='3.10.0';
+  const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const slug=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'')||('item_'+Date.now());
+
+  function ensureSmartConfig(){
+    data.roles=Array.isArray(data.roles)?data.roles:[];
+    const roleDefaults=[
+      {id:'admin',nombre:'Administrador',baseRole:'admin',activo:true},
+      {id:'director_medico',nombre:'Director Médico',baseRole:'admin',activo:true},
+      {id:'medico',nombre:'Médico',baseRole:'medico',activo:true},
+      {id:'secretaria',nombre:'Secretaría',baseRole:'secretaria',activo:true}
+    ];
+    roleDefaults.forEach(r=>{if(!data.roles.some(x=>x.id===r.id))data.roles.push(r)});
+
+    data.especialidades=Array.isArray(data.especialidades)?data.especialidades:[];
+    ['Cardiología','Medicina Intensiva','Diagnóstico por Imágenes'].forEach(nombre=>{
+      const id=slug(nombre); if(!data.especialidades.some(x=>x.id===id||String(x.nombre).toLowerCase()===nombre.toLowerCase()))data.especialidades.push({id,nombre,activo:true});
+    });
+
+    (data.profesionales||[]).forEach(p=>{
+      if(!Array.isArray(p.especialidadIds))p.especialidadIds=[];
+      const area=String(p.area||'').toLowerCase();
+      if(p.id==='matias'){
+        ['cardiologia','medicina_intensiva'].forEach(id=>{if(!p.especialidadIds.includes(id))p.especialidadIds.push(id)});
+        p.area='Cardiología / Medicina Intensiva';
+      } else {
+        data.especialidades.forEach(e=>{if(area.includes(String(e.nombre).toLowerCase())&&!p.especialidadIds.includes(e.id))p.especialidadIds.push(e.id)});
+      }
+      if(p.activo===undefined)p.activo=true;
+    });
+    (data.usuarios||[]).forEach(u=>{
+      if(!u.rolId)u.rolId=u.rol||'medico';
+      if(!Array.isArray(u.especialidadIds)){
+        u.especialidadIds=[];
+        const txt=String(u.especialidad||'').toLowerCase();
+        data.especialidades.forEach(e=>{if(txt.includes(String(e.nombre).toLowerCase()))u.especialidadIds.push(e.id)});
+      }
+    });
+  }
+
+  function selectedSpecialties(){return [...document.querySelectorAll('#cfgEspecialidadesProfesional310 input:checked')].map(x=>x.value)}
+  function roleOptions(value){return (data.roles||[]).filter(r=>r.activo!==false||r.id===value).map(r=>`<option value="${esc(r.id)}" ${r.id===value?'selected':''}>${esc(r.nombre)}</option>`).join('')}
+
+  function injectCards(){
+    const grid=document.querySelector('#config .config-grid'); if(!grid||document.getElementById('cfgRoles310'))return;
+    const wrap=document.createElement('div'); wrap.id='cfgRoles310'; wrap.className='config-smart-card-310'; wrap.dataset.configGroupCard='usuarios';
+    wrap.innerHTML=`<h3>Roles editables</h3><p class="muted">El rol define permisos. Podés crear nuevos roles tomando como base Administrador, Médico o Secretaría.</p><div class="inline-form"><input id="nuevoRol310" placeholder="Nombre del rol"><select id="baseRol310"><option value="medico">Base Médico</option><option value="secretaria">Base Secretaría</option><option value="admin">Base Administrador</option></select><button class="primary" id="addRol310" type="button">Agregar</button></div><ul id="listaRoles310"></ul>`;
+    grid.insertBefore(wrap,grid.firstChild);
+
+    const esp=document.createElement('div'); esp.id='cfgEspecialidades310'; esp.className='config-smart-card-310'; esp.dataset.configGroupCard='profesionales';
+    esp.innerHTML=`<h3>Especialidades editables</h3><p class="muted">Cada profesional puede tener una o varias especialidades.</p><div class="inline-form"><input id="nuevaEspecialidad310" placeholder="Nueva especialidad"><button class="primary" id="addEspecialidad310" type="button">Agregar</button></div><ul id="listaEspecialidades310"></ul>`;
+    grid.insertBefore(esp,wrap.nextSibling);
+
+    const perfil=document.createElement('div'); perfil.id='cfgPerfilProfesional310'; perfil.className='config-smart-card-310 full-config-card'; perfil.dataset.configGroupCard='profesionales';
+    perfil.innerHTML=`<h3>Perfil profesional</h3><p class="muted">Editá nombre, área visible, estado y especialidades sin tocar el código.</p><div class="profile-editor-310"><label>Profesional<select id="cfgProfEditar310"></select></label><label>Nombre<input id="cfgProfNombre310"></label><label>Área visible<input id="cfgProfArea310"></label><label class="check-row-310"><input type="checkbox" id="cfgProfActivo310"> Profesional activo</label><div><strong>Especialidades</strong><div id="cfgEspecialidadesProfesional310" class="checks-grid-310"></div></div><button class="primary" id="guardarPerfil310" type="button">Guardar perfil profesional</button></div>`;
+    grid.insertBefore(perfil,esp.nextSibling);
+  }
+
+  function renderSmartConfig(){
+    ensureSmartConfig(); injectCards();
+    const lr=document.getElementById('listaRoles310');
+    if(lr)lr.innerHTML=data.roles.map(r=>`<li><strong>${esc(r.nombre)}</strong> <span class="muted">Base: ${esc(r.baseRole)}</span> ${['admin','director_medico','medico','secretaria'].includes(r.id)?'':`<button class="small-btn" data-del-role310="${esc(r.id)}">Borrar</button>`}</li>`).join('');
+    const le=document.getElementById('listaEspecialidades310');
+    if(le)le.innerHTML=data.especialidades.map(e=>`<li>${esc(e.nombre)} <button class="small-btn" data-del-esp310="${esc(e.id)}">Borrar</button></li>`).join('');
+    const ps=document.getElementById('cfgProfEditar310');
+    if(ps){const old=ps.value;ps.innerHTML=(data.profesionales||[]).filter(p=>p.id!=='general').map(p=>`<option value="${esc(p.id)}">${esc(p.nombre)}</option>`).join('');if([...ps.options].some(o=>o.value===old))ps.value=old;loadProfessional();}
+    const usrRole=document.getElementById('usrRol'); if(usrRole){const current=usrRole.value;usrRole.innerHTML=roleOptions(current);}
+  }
+
+  function loadProfessional(){
+    const id=document.getElementById('cfgProfEditar310')?.value; const p=(data.profesionales||[]).find(x=>x.id===id); if(!p)return;
+    document.getElementById('cfgProfNombre310').value=p.nombre||'';
+    document.getElementById('cfgProfArea310').value=p.area||'';
+    document.getElementById('cfgProfActivo310').checked=p.activo!==false;
+    const box=document.getElementById('cfgEspecialidadesProfesional310');
+    if(box)box.innerHTML=(data.especialidades||[]).filter(e=>e.activo!==false).map(e=>`<label><input type="checkbox" value="${esc(e.id)}" ${(p.especialidadIds||[]).includes(e.id)?'checked':''}> ${esc(e.nombre)}</label>`).join('');
+  }
+  function saveProfessional(){
+    const p=(data.profesionales||[]).find(x=>x.id===document.getElementById('cfgProfEditar310')?.value);if(!p)return;
+    p.nombre=document.getElementById('cfgProfNombre310').value.trim()||p.nombre;
+    p.area=document.getElementById('cfgProfArea310').value.trim();p.activo=document.getElementById('cfgProfActivo310').checked;p.especialidadIds=selectedSpecialties();
+    saveConfig();refreshSelects();renderConfig();alert('Perfil profesional guardado.');
+  }
+  function addRole(){const input=document.getElementById('nuevoRol310');const nombre=input.value.trim();if(!nombre)return;let id=slug(nombre);if(data.roles.some(r=>r.id===id))id+='_'+Date.now();data.roles.push({id,nombre,baseRole:document.getElementById('baseRol310').value,activo:true});input.value='';saveConfig();renderSmartConfig();}
+  function addSpecialty(){const input=document.getElementById('nuevaEspecialidad310');const nombre=input.value.trim();if(!nombre)return;const id=slug(nombre);if(!data.especialidades.some(e=>e.id===id))data.especialidades.push({id,nombre,activo:true});input.value='';saveConfig();renderSmartConfig();}
+
+  const oldRender=window.renderConfig;
+  window.renderConfig=function(){if(typeof oldRender==='function')oldRender();renderSmartConfig();};
+
+  document.addEventListener('click',e=>{
+    if(e.target.id==='addRol310')addRole();
+    if(e.target.id==='addEspecialidad310')addSpecialty();
+    if(e.target.id==='guardarPerfil310')saveProfessional();
+    const dr=e.target.closest('[data-del-role310]');if(dr){const id=dr.dataset.delRole310;if(confirm('¿Borrar este rol?')){data.roles=data.roles.filter(r=>r.id!==id);saveConfig();renderSmartConfig();}}
+    const de=e.target.closest('[data-del-esp310]');if(de){const id=de.dataset.delEsp310;if(confirm('¿Borrar esta especialidad?')){data.especialidades=data.especialidades.filter(x=>x.id!==id);(data.profesionales||[]).forEach(p=>p.especialidadIds=(p.especialidadIds||[]).filter(x=>x!==id));saveConfig();renderSmartConfig();}}
+  });
+  document.addEventListener('change',e=>{if(e.target.id==='cfgProfEditar310')loadProfessional();});
+
+  function setVersion(){
+    document.title=`CardioLink Admin v${VERSION}`;
+    document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(el=>el.textContent=`v${VERSION}`);
+    document.querySelectorAll('.login-meta').forEach(el=>el.textContent=`Versión ${VERSION} · 2026`);
+    document.querySelectorAll('h2').forEach(el=>{if(/^CardioLink Admin v/.test((el.textContent||'').trim()))el.textContent=`CardioLink Admin v${VERSION}`});
+  }
+  function boot(){ensureSmartConfig();saveConfig();injectCards();renderSmartConfig();setVersion();document.body.classList.add('app-ready-310');
+    // El contador se calcula al iniciar y vuelve a calcularse luego de sincronizar.
+    try{window.renderPendientes383?.()}catch(e){}
+    setTimeout(()=>{try{window.renderPendientes383?.();renderStats?.()}catch(e){}},500);
+    setTimeout(()=>{try{window.renderPendientes383?.();renderStats?.()}catch(e){}},1800);
+  }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();

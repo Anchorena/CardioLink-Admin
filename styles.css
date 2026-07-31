@@ -1430,3 +1430,12 @@ button.danger.delete-patient386:hover{background:#fecaca!important}
 .paciente-ficha-grid.global-paciente-grid{grid-template-columns:repeat(auto-fit,minmax(180px,1fr));}
 @media(max-width:760px){.paciente-edit-form{grid-template-columns:1fr!important}.paciente-ficha-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:480px){.paciente-ficha-grid{grid-template-columns:1fr}}
+
+/* ===== CardioLink Admin v3.10.0 ===== */
+#btnCerrarSesion{box-sizing:border-box!important;width:auto!important;max-width:220px!important;min-width:140px!important;align-self:flex-start!important;flex:0 0 auto!important;white-space:nowrap!important;}
+body:not(.app-ready-310) #btnCerrarSesion{visibility:hidden!important;opacity:0!important;}
+body.app-ready-310 #btnCerrarSesion{visibility:visible!important;opacity:1!important;display:inline-flex!important;justify-content:center!important;transition:opacity .15s ease!important;}
+.config-smart-card-310{border:1px solid var(--border,#dbe3ee);border-radius:18px;padding:18px;background:var(--card,#fff)}
+.profile-editor-310{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:14px;align-items:end}
+.profile-editor-310>div,.profile-editor-310>button{grid-column:1/-1}.checks-grid-310{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;margin-top:8px}.checks-grid-310 label,.check-row-310{display:flex!important;align-items:center;gap:8px}.checks-grid-310 input,.check-row-310 input{width:auto!important;margin:0!important}
+@media(max-width:700px){.profile-editor-310{grid-template-columns:1fr}#btnCerrarSesion{max-width:100%!important;width:100%!important}}
