@@ -1,4 +1,11 @@
-# CardioLink Admin v3.10.0
+# CardioLink Admin v3.10.1
+
+- Contador de pendientes visible desde el ingreso, sin abrir la solapa.
+- Botón Cerrar sesión estable desde el primer render.
+- Usuarios existentes clickeables para cargar y modificar su perfil.
+- Versionado unificado.
+
+# CardioLink Admin v3.10.1
 
 - Calidad de datos usa la misma fuente unificada que la pantalla Pacientes.
 - Detecta pacientes persistentes y pacientes reconstruidos desde atenciones.

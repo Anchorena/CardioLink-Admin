@@ -1431,7 +1431,7 @@ button.danger.delete-patient386:hover{background:#fecaca!important}
 @media(max-width:760px){.paciente-edit-form{grid-template-columns:1fr!important}.paciente-ficha-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:480px){.paciente-ficha-grid{grid-template-columns:1fr}}
 
-/* ===== CardioLink Admin v3.10.0 ===== */
+/* ===== CardioLink Admin v3.10.1 ===== */
 #btnCerrarSesion{box-sizing:border-box!important;width:auto!important;max-width:220px!important;min-width:140px!important;align-self:flex-start!important;flex:0 0 auto!important;white-space:nowrap!important;}
 body:not(.app-ready-310) #btnCerrarSesion{visibility:hidden!important;opacity:0!important;}
 body.app-ready-310 #btnCerrarSesion{visibility:visible!important;opacity:1!important;display:inline-flex!important;justify-content:center!important;transition:opacity .15s ease!important;}
@@ -1439,3 +1439,15 @@ body.app-ready-310 #btnCerrarSesion{visibility:visible!important;opacity:1!impor
 .profile-editor-310{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:14px;align-items:end}
 .profile-editor-310>div,.profile-editor-310>button{grid-column:1/-1}.checks-grid-310{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:8px;margin-top:8px}.checks-grid-310 label,.check-row-310{display:flex!important;align-items:center;gap:8px}.checks-grid-310 input,.check-row-310 input{width:auto!important;margin:0!important}
 @media(max-width:700px){.profile-editor-310{grid-template-columns:1fr}#btnCerrarSesion{max-width:100%!important;width:100%!important}}
+
+
+/* ===== CardioLink Admin v3.10.1 — hotfix operativo ===== */
+html body:not(.app-ready-310):not(.app-ready-360) #btnCerrarSesion{display:none!important;visibility:hidden!important;opacity:0!important;width:auto!important;}
+html body.app-ready-310 .sidebar #btnCerrarSesion,
+html body.app-ready-360 .sidebar #btnCerrarSesion{display:inline-flex!important;visibility:visible!important;opacity:1!important;width:auto!important;max-width:220px!important;min-width:140px!important;align-self:flex-start!important;flex:0 0 auto!important;margin:10px 0 0!important;padding:13px 18px!important;justify-content:center!important;box-sizing:border-box!important;}
+.users-list-3101{list-style:none!important;padding:0!important;margin:14px 0 0!important;display:grid!important;gap:8px!important;}
+.users-list-3101 li{margin:0!important;}
+.user-edit-row-3101{width:100%!important;display:flex!important;justify-content:space-between!important;align-items:center!important;gap:12px!important;text-align:left!important;padding:11px 13px!important;border:1px solid var(--border,#dbe3ee)!important;border-radius:11px!important;background:var(--card,#fff)!important;color:inherit!important;}
+.user-edit-row-3101 span{display:flex;flex-direction:column;min-width:0;}.user-edit-row-3101 small{font-weight:500;color:#64748b;margin-top:3px;white-space:normal;}.user-edit-row-3101 b{color:#0f4c63;white-space:nowrap;}
+.user-edit-row-3101:hover,.user-edit-row-3101.selected-user-3101{border-color:#2563eb!important;background:rgba(37,99,235,.08)!important;}
+@media(max-width:700px){html body.app-ready-310 .sidebar #btnCerrarSesion,html body.app-ready-360 .sidebar #btnCerrarSesion{width:auto!important;max-width:100%!important;min-width:140px!important}.user-edit-row-3101{align-items:flex-start!important}.user-edit-row-3101 b{font-size:13px}}

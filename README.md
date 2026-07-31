@@ -1,4 +1,4 @@
-CardioLink Admin v3.9.0 LTS
+CardioLink Admin v3.10.1
 
 - Versionado visible unificado en Login, Inicio, Instrucciones, título y diagnóstico.
 - Corrección definitiva de Cobertura incompleta como botón.
