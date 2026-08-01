@@ -1518,7 +1518,7 @@ html body.app-ready-360 .sidebar #btnCerrarSesion{display:inline-flex!important;
 body.dark .agenda-patient-evolve-403{color:#9db1ff}
 body.dark .agenda-patient-evolve-403:hover{background:rgba(157,177,255,.12);color:#c4d0ff}
 
-/* ===== CardioLink 4.0.4 · convenios y aranceles por profesional ===== */
+/* ===== CardioLink 4.0.6 · convenios y aranceles por profesional ===== */
 .billing-profile-notice-404{
   margin:12px 0 16px;padding:12px 14px;border:1px solid #bfdbfe;
   border-radius:12px;background:#eff6ff;color:#1e3a5f;
@@ -1534,3 +1534,54 @@ body.dark .agenda-patient-evolve-403:hover{background:rgba(157,177,255,.12);colo
 .arancel-table-head-404{display:grid;grid-template-columns:minmax(280px,1.5fr) minmax(120px,.6fr) minmax(150px,.7fr) 90px;gap:12px;padding:10px 16px 6px;font-size:.78rem;text-transform:uppercase;letter-spacing:.04em;font-weight:800;color:#64748b}
 @media(max-width:900px){.arancel-editor-prof-404{grid-template-columns:repeat(2,minmax(180px,1fr))}.arancel-table-head-404{display:none}}
 @media(max-width:600px){.arancel-editor-prof-404{grid-template-columns:1fr}.billing-profile-notice-404{font-size:.92rem}}
+
+
+/* ===== CardioLink 4.0.6 · Importador de evoluciones Medicloud ===== */
+.hc-title-actions405{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
+.hc-import-status405{margin:2px 0 14px;padding:9px 12px;border:1px solid var(--border,#dbe3ea);border-radius:10px;background:var(--panel-soft,#f8fafc)}
+.hc-import-modal405{z-index:10050}
+.hc-import-card405{width:min(1180px,96vw);max-height:92vh;overflow:auto}
+.hc-import-summary405{display:grid;grid-template-columns:repeat(5,minmax(110px,1fr));gap:10px;margin:14px 0}
+.hc-import-summary405>div{border:1px solid var(--border,#dbe3ea);border-radius:12px;padding:12px;background:var(--panel-soft,#f8fafc)}
+.hc-import-summary405 span{display:block;color:var(--muted,#64748b);font-size:12px}.hc-import-summary405 strong{display:block;font-size:22px;margin-top:3px}
+.hc-import-options405{display:grid;grid-template-columns:minmax(260px,1fr) minmax(280px,1fr);gap:14px;align-items:end;margin-bottom:12px}
+.hc-import-options405 select{width:100%}.check-line405{display:flex;align-items:center;gap:9px;min-height:44px}
+.hc-import-table-wrap405{max-height:50vh;overflow:auto;border:1px solid var(--border,#dbe3ea);border-radius:12px}
+.hc-import-table-wrap405 table{margin:0}.hc-import-table-wrap405 th{position:sticky;top:0;background:var(--panel,#fff);z-index:2}
+.import-badge405{display:inline-block;border-radius:999px;padding:4px 8px;font-weight:800;font-size:11px;margin-right:6px}
+.import-badge405.matched{background:#dcfce7;color:#166534}.import-badge405.missing{background:#dbeafe;color:#1d4ed8}.import-badge405.duplicate{background:#e2e8f0;color:#475569}.import-badge405.ambiguous,.import-badge405.invalid{background:#fee2e2;color:#991b1b}
+.hc-import-table-wrap405 small{display:block;color:var(--muted,#64748b);margin-top:3px}.hc-origin405{display:inline-block;background:#ede9fe;color:#6d28d9;border-radius:999px;padding:2px 7px;font-size:10px;font-weight:800}
+@media(max-width:760px){.hc-title-actions405{justify-content:flex-start}.hc-title-actions405 button{width:100%}.hc-import-summary405{grid-template-columns:repeat(2,1fr)}.hc-import-options405{grid-template-columns:1fr}.hc-import-card405{width:98vw}.hc-import-table-wrap405{max-height:45vh}}
+
+/* ===== CardioLink Admin v4.0.6 — identidad profesional y documentos clínicos ===== */
+.identity-uploads406{grid-column:1/-1;margin-top:12px;padding-top:16px;border-top:1px solid var(--border,#dbe3ec)}
+.identity-upload-grid406{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:14px;margin:14px 0}
+.identity-upload-grid406>label{align-self:end}
+.identity-actions406{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.identity-preview406{display:grid;grid-template-columns:84px minmax(220px,1fr) 220px;gap:16px;align-items:center;border:1px solid var(--border,#dbe3ec);border-radius:16px;padding:14px;background:var(--card,#fff);margin:12px 0}
+.identity-logo406{width:78px;height:78px;border-radius:14px;border:1px dashed var(--border,#cbd5e1);display:flex;align-items:center;justify-content:center;overflow:hidden;background:#fff;color:#64748b;font-size:12px;text-align:center}
+.identity-logo406 img{width:100%;height:100%;object-fit:contain}
+.identity-copy406{display:flex;flex-direction:column;gap:4px;min-width:0}
+.identity-copy406 strong{font-size:18px;color:var(--navy,#174b5c)}
+.identity-copy406 span{font-weight:700}
+.identity-copy406 small{color:var(--muted,#64748b)}
+.identity-signature406{height:86px;border-bottom:1px solid #94a3b8;display:flex;align-items:end;justify-content:center;color:#64748b;font-size:12px;text-align:center;padding-bottom:4px}
+.identity-signature406 img{max-width:210px;max-height:78px;object-fit:contain}
+.my-identity406{margin:8px 0 14px}
+.identity-modal-card406,.clinical-doc-card406{max-width:920px}
+.clinical-doc-header406{margin-bottom:14px}
+.clinical-docs406{border:1px solid var(--border,#dbe3ec);border-radius:18px;padding:18px;margin:18px 0;background:var(--card,#fff)}
+.clinical-docs-head406{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:12px}
+.clinical-docs-head406 h3{margin:0 0 3px}
+.clinical-doc-list406{display:flex;flex-direction:column;gap:9px}
+.clinical-doc-row406{display:flex;justify-content:space-between;gap:12px;align-items:center;border:1px solid var(--border,#e2e8f0);border-radius:13px;padding:12px 14px;background:var(--soft,#f8fafc)}
+.clinical-doc-row406>div:first-child{display:flex;flex-direction:column;gap:3px}
+.clinical-doc-row406 span{color:var(--muted,#64748b);font-size:13px}
+.clinical-doc-actions406{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+@media(max-width:760px){
+  .identity-upload-grid406{grid-template-columns:1fr}
+  .identity-preview406{grid-template-columns:70px 1fr}
+  .identity-signature406{grid-column:1/-1}
+  .clinical-docs-head406,.clinical-doc-row406{align-items:stretch;flex-direction:column}
+  .clinical-doc-actions406{justify-content:flex-start}
+}
