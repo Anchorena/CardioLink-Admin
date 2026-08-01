@@ -1517,3 +1517,20 @@ html body.app-ready-360 .sidebar #btnCerrarSesion{display:inline-flex!important;
 }
 body.dark .agenda-patient-evolve-403{color:#9db1ff}
 body.dark .agenda-patient-evolve-403:hover{background:rgba(157,177,255,.12);color:#c4d0ff}
+
+/* ===== CardioLink 4.0.4 · convenios y aranceles por profesional ===== */
+.billing-profile-notice-404{
+  margin:12px 0 16px;padding:12px 14px;border:1px solid #bfdbfe;
+  border-radius:12px;background:#eff6ff;color:#1e3a5f;
+}
+.billing-group-title-404{font-weight:800;margin:10px 0 8px;color:var(--text,#172033)}
+.billing-status-404{display:inline-flex;align-items:center;justify-content:center;padding:5px 10px;border-radius:999px;font-weight:800;font-size:.82rem}
+.billing-status-404.on{background:#dcfce7;color:#166534}
+.billing-status-404.off{background:#f1f5f9;color:#64748b}
+.billing-inactive-404{margin-top:12px;border:1px dashed var(--border,#cbd5e1);border-radius:12px;padding:10px}
+.billing-inactive-404 summary{cursor:pointer;font-weight:800;color:#64748b;margin:2px 4px 8px}
+.billing-empty-404{padding:12px;border:1px dashed var(--border,#cbd5e1);border-radius:12px}
+.arancel-editor-prof-404{grid-template-columns:repeat(4,minmax(180px,1fr));align-items:end}
+.arancel-table-head-404{display:grid;grid-template-columns:minmax(280px,1.5fr) minmax(120px,.6fr) minmax(150px,.7fr) 90px;gap:12px;padding:10px 16px 6px;font-size:.78rem;text-transform:uppercase;letter-spacing:.04em;font-weight:800;color:#64748b}
+@media(max-width:900px){.arancel-editor-prof-404{grid-template-columns:repeat(2,minmax(180px,1fr))}.arancel-table-head-404{display:none}}
+@media(max-width:600px){.arancel-editor-prof-404{grid-template-columns:1fr}.billing-profile-notice-404{font-size:.92rem}}

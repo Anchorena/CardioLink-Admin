@@ -1,4 +1,4 @@
-# CardioLink 4.0.3 HC — Evolución directa desde Agenda
+# CardioLink 4.0.4 HC — Evolución directa desde Agenda
 
 - El nombre del paciente en la Agenda abre la evolución clínica vinculada al turno.
 - Si la atención ya tiene una evolución, se abre esa misma evolución y no se crea un duplicado.
@@ -6,7 +6,7 @@
 - El guardado es explícito mediante “Guardar evolución”.
 - Si hay texto sin guardar, el sistema pide confirmación antes de cerrar.
 - Se mantiene el límite de edición de 24 horas; Administrador puede editar sin límite.
-- Versión y caché PWA actualizadas a 4.0.3.
+- Versión y caché PWA actualizadas a 4.0.4.
 
 # CardioLink 4.0.2 HC — Identidad profesional y flujo clínico
 

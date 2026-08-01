@@ -264,7 +264,7 @@ function mostrarPantallaLogin() {
 
       <h1>CardioLink Admin</h1>
       <p class="login-subtitle">by Matías Anchorena</p>
-      <p class="login-meta">Versión 4.0.3 · 2026</p>
+      <p class="login-meta">Versión 4.0.4 · 2026</p>
     </div>
 
     <div class="login-fields">
@@ -2241,8 +2241,8 @@ function verDineroPeriodo(){
 }
 function ocultarDineroPeriodo(){$('dineroPeriodoResultado').textContent='';$('claveDinero').value=''}
 function setPrintMeta(){$('printMeta').textContent=`Perfil: ${perfilObj().nombre} | Registros: ${filtrar().length} | ${formatFecha(todayISO())}`}
-function exportarCSV(){const datos=filtrar();if(!datos.length){alert('No hay datos');return}const r=resumen(datos);const incluirValoresExport=!!$('incluirValoresImpresion')?.checked;const filas=[['CardioLink Admin v4.0.3'],['Perfil',perfilObj().nombre],['Consultas',r.consultas],['Estudios',r.estudios],[],['Fecha','Paciente','OS','Profesional','Prestación','Consulta a','Estudio a','Tipo','Forma','Particular visible','Copago visible','Total visible','Estado']];datos.forEach(a=>{const m=dineroVisible(a),e=evaluarEstado(a);filas.push([formatFecha(a.fecha),a.paciente,a.obraSocial,a.profesional,prestacionListado(a),a.consultaA,a.prestacionA,a.tipoCobro,a.formaPago,incluirValoresExport?m.particular:'',incluirValoresExport?m.copago:'',incluirValoresExport?m.total:'',e.txt])});const csv=filas.map(r=>r.map(c=>`"${String(c??'').replaceAll('"','""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_listado.csv';a.click()}
-function exportarBackup(){const b={app:'CardioLink Admin',version:'4.0.3',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
+function exportarCSV(){const datos=filtrar();if(!datos.length){alert('No hay datos');return}const r=resumen(datos);const incluirValoresExport=!!$('incluirValoresImpresion')?.checked;const filas=[['CardioLink Admin v4.0.4'],['Perfil',perfilObj().nombre],['Consultas',r.consultas],['Estudios',r.estudios],[],['Fecha','Paciente','OS','Profesional','Prestación','Consulta a','Estudio a','Tipo','Forma','Particular visible','Copago visible','Total visible','Estado']];datos.forEach(a=>{const m=dineroVisible(a),e=evaluarEstado(a);filas.push([formatFecha(a.fecha),a.paciente,a.obraSocial,a.profesional,prestacionListado(a),a.consultaA,a.prestacionA,a.tipoCobro,a.formaPago,incluirValoresExport?m.particular:'',incluirValoresExport?m.copago:'',incluirValoresExport?m.total:'',e.txt])});const csv=filas.map(r=>r.map(c=>`"${String(c??'').replaceAll('"','""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_listado.csv';a.click()}
+function exportarBackup(){const b={app:'CardioLink Admin',version:'4.0.4',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
 function importarBackup(){const inp=$('inputImportBackup');if(!inp.files[0]){alert('Elegí archivo');return}if(!confirm('Reemplaza la base actual. ¿Continuar?'))return;const rd=new FileReader();rd.onload=e=>{try{const b=JSON.parse(e.target.result);if(!b.config||!b.atenciones)throw new Error();data=b.config;atenciones=b.atenciones;saveConfig();saveAtenciones();refreshSelects();renderConfig();cambiarPerfil('general');alert('Backup importado')}catch{alert('Backup inválido')}};rd.readAsText(inp.files[0])}
 
 function dniLimpio(v){return String(v||'').replace(/\D/g,'');}
@@ -4489,9 +4489,9 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const dark=$id('btnDark'); if(dark){dark.style.marginTop='18px'; dark.style.marginBottom='8px';}
   }
   function version296(){
-    try{document.title='CardioLink Admin v4.0.3';}catch(e){}
-    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v4.0.3');
-    document.querySelectorAll('h2').forEach(el=>{ if((el.textContent||'').includes('CardioLink Admin v')) el.textContent='CardioLink Admin v4.0.3'; });
+    try{document.title='CardioLink Admin v4.0.4';}catch(e){}
+    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v4.0.4');
+    document.querySelectorAll('h2').forEach(el=>{ if((el.textContent||'').includes('CardioLink Admin v')) el.textContent='CardioLink Admin v4.0.4'; });
   }
   document.addEventListener('DOMContentLoaded',()=>{asegurarBloques296(); version296(); moverLogout296(); try{actualizarPrestaciones(); aplicarPermisosUI(); renderAgenda?.(); renderMensajes?.();}catch(e){} });
   setTimeout(()=>{asegurarBloques296(); version296(); moverLogout296(); try{actualizarPrestaciones(); aplicarPermisosUI(); renderAgenda?.(); renderMensajes?.();}catch(e){}},900);
@@ -4766,7 +4766,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
 /* ===== v2.9.8 - Carga pura e importación de pacientes desde Excel Medicloud ===== */
 (function(){
-  const VERSION_298='4.0.3';
+  const VERSION_298='4.0.4';
   const CONFIG_ROW_ID='__cardiolink_config_v1';
   let previewImportPacientes298=[];
 
@@ -5097,8 +5097,8 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const inp=d('inputPacientesExcel'); if(inp && !inp.dataset.bound298){ inp.dataset.bound298='1'; inp.addEventListener('change',()=>procesarExcelPacientes298(inp.files?.[0])); }
   }
   function version298(){
-    try{document.title='CardioLink Admin v4.0.3';}catch(e){}
-    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v4.0.3');
+    try{document.title='CardioLink Admin v4.0.4';}catch(e){}
+    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v4.0.4');
   }
   document.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{bind298();version298();},450));
   setTimeout(()=>{bind298();version298();},1300);
@@ -5220,9 +5220,9 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   }
 
   function version300(){
-    try{document.title='CardioLink Admin v4.0.3';}catch(e){}
-    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v4.0.3');
-    const pt=document.querySelector('.print-title h2'); if(pt) pt.textContent='CardioLink Admin v4.0.3';
+    try{document.title='CardioLink Admin v4.0.4';}catch(e){}
+    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v4.0.4');
+    const pt=document.querySelector('.print-title h2'); if(pt) pt.textContent='CardioLink Admin v4.0.4';
   }
   function init300(){bindPendienteSelect300();bindImportTexto300();version300();}
   document.addEventListener('DOMContentLoaded',()=>setTimeout(init300,700));
@@ -5270,9 +5270,9 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     window.renderTabla = renderTabla = wrapped;
   }
   function version310(){
-    try{document.title='CardioLink Admin v4.0.3';}catch(e){}
-    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v4.0.3');
-    const pt=document.querySelector('.print-title h2'); if(pt) pt.textContent='CardioLink Admin v4.0.3';
+    try{document.title='CardioLink Admin v4.0.4';}catch(e){}
+    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v4.0.4');
+    const pt=document.querySelector('.print-title h2'); if(pt) pt.textContent='CardioLink Admin v4.0.4';
   }
   function init310(){ajustarBotonesPacientes310();limpiarCopiasDeFilas310();version310();}
   document.addEventListener('DOMContentLoaded',()=>setTimeout(init310,800));
@@ -5303,9 +5303,9 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function mesNombre(d){return d.toLocaleDateString('es-AR',{month:'long',year:'numeric'});}
 
   function setVersion320(){
-    try{document.title='CardioLink Admin v4.0.3';}catch(e){}
-    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v4.0.3');
-    const pt=document.querySelector('.print-title h2'); if(pt) pt.textContent='CardioLink Admin v4.0.3';
+    try{document.title='CardioLink Admin v4.0.4';}catch(e){}
+    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v4.0.4');
+    const pt=document.querySelector('.print-title h2'); if(pt) pt.textContent='CardioLink Admin v4.0.4';
   }
 
   // ---------- Buscador global de pacientes ----------
@@ -5560,7 +5560,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function atencionById(id){return (atenciones||[]).find(a=>String(a.id)===String(id));}
   function operativas(){try{return atencionesOperativas()}catch(e){return (atenciones||[]).filter(a=>a && a.id && a.tipoRegistro!=='mensaje' && !a.__config);} }
   function profFiltro(){let prof=$id('agendaProfesional')?.value||'';try{if(esMedico())prof=profesionalIdUsuarioActual(); if(esMatiasDuenio()&&!prof)prof='matias';}catch(e){} return prof;}
-  function setVersion321(){try{document.title='CardioLink Admin v4.0.3'}catch(e){};document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v4.0.3');const pt=document.querySelector('.print-title h2');if(pt)pt.textContent='CardioLink Admin v4.0.3';}
+  function setVersion321(){try{document.title='CardioLink Admin v4.0.4'}catch(e){};document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v4.0.4');const pt=document.querySelector('.print-title h2');if(pt)pt.textContent='CardioLink Admin v4.0.4';}
 
   // No fusionar pacientes por teléfono/email: esos datos pueden pertenecer a familiar responsable.
   window.pacienteExistenteSinTelefonoMail321=function(p){
@@ -5710,9 +5710,9 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function dniClean(v){try{return dniLimpio(v)}catch(e){return String(v||'').replace(/\D/g,'')}}
   function fechaHoy(){try{return todayISO()}catch(e){return new Date().toISOString().slice(0,10)}}
   function version350(){
-    try{document.title='CardioLink Admin v4.0.3'}catch(e){}
-    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v4.0.3');
-    const pt=document.querySelector('.print-title h2'); if(pt)pt.textContent='CardioLink Admin v4.0.3';
+    try{document.title='CardioLink Admin v4.0.4'}catch(e){}
+    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v4.0.4');
+    const pt=document.querySelector('.print-title h2'); if(pt)pt.textContent='CardioLink Admin v4.0.4';
   }
   function pacientesBase(){return Array.isArray(data?.pacientes)?data.pacientes:[];}
   function pacienteClave(p){try{return clavePacientePanel(p)}catch(e){return p?.id||dniClean(p?.dni)||norm(p?.nombreCompleto||p?.paciente)}}
@@ -5982,7 +5982,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
 /* ===== v3.6.0 - Inicio inteligente y pulido administrativo ===== */
 (()=>{
-  const APP_VERSION='4.0.3';
+  const APP_VERSION='4.0.4';
   const $360=id=>document.getElementById(id);
   const esc360=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const norm360=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
@@ -6335,7 +6335,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       }
       if(!a.hcMeta)a.hcMeta={schemaVersion:1,evoluciones:0,informes:0,adjuntos:0};
     });
-    data.hcPreparacion={schemaVersion:1,preparadoEn:new Date().toISOString(),versionApp:'4.0.3'};
+    data.hcPreparacion={schemaVersion:1,preparadoEn:new Date().toISOString(),versionApp:'4.0.4'};
     try{saveConfig();saveAtenciones();}catch(e){console.warn(e);}
     try{await sincronizarAtencionesSupabase(true);}catch(e){console.warn('Sincronización HC pendiente:',e);}
     renderHC380();
@@ -6446,7 +6446,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
   function exportAudit382(){
     const r=auditData382();
-    const payload={app:'CardioLink Admin',version:'4.0.3',exportadoEn:new Date().toISOString(),resumen:{altas:r.created,ediciones:r.edited,fusiones:r.fusions,usuarios:r.users},atenciones:attentions382().map(a=>({id:a.id,pacienteId:a.pacienteId,paciente:a.paciente,creadoPor:a.creadoPor,creadoEn:a.creadoEn,editadoPor:a.editadoPor,editadoEn:a.editadoEn})),auditoriaPacientes:r.patientAudit};
+    const payload={app:'CardioLink Admin',version:'4.0.4',exportadoEn:new Date().toISOString(),resumen:{altas:r.created,ediciones:r.edited,fusiones:r.fusions,usuarios:r.users},atenciones:attentions382().map(a=>({id:a.id,pacienteId:a.pacienteId,paciente:a.paciente,creadoPor:a.creadoPor,creadoEn:a.creadoEn,editadoPor:a.editadoPor,editadoEn:a.editadoEn})),auditoriaPacientes:r.patientAudit};
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
     const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Auditoria_'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
   }
@@ -6469,7 +6469,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       ['Sesión Supabase',r.session,r.session==='No iniciada'?'warn':'ok'],
       ['Última sincronización',fmtDate(r.lastSync),r.lastSync?'ok':'warn'],
       ['Último backup',fmtDate(r.lastBackup),r.lastBackup?'ok':'warn'],
-      ['Versión','4.0.3','ok'],
+      ['Versión','4.0.4','ok'],
       ['Preparación HC',hcReady?'Lista':'Revisar vínculos',hcReady?'ok':'warn']
     ];
     el.innerHTML=items.map(([t,v,c])=>`<div class="health-item-382 ${c}"><span>${t}</span><b>${v}</b></div>`).join('');
@@ -6536,7 +6536,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 })();
 
 
-/* ===== CardioLink Admin v4.0.3: Pendientes y calidad de datos ===== */
+/* ===== CardioLink Admin v4.0.4: Pendientes y calidad de datos ===== */
 (function(){
   const V='383';
   let currentTab='todos';
@@ -6631,7 +6631,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 })();
 
 
-/* ===== CardioLink Admin v4.0.3: completar fichas incompletas ===== */
+/* ===== CardioLink Admin v4.0.4: completar fichas incompletas ===== */
 (function init384(){
   const norm=v=>String(v??'').trim().toLowerCase();
   const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -6694,7 +6694,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   },true);
 })();
 
-/* ===== CardioLink Admin v4.0.3: calidad robusta + eliminación completa de paciente ===== */
+/* ===== CardioLink Admin v4.0.4: calidad robusta + eliminación completa de paciente ===== */
 (function init386(){
   const norm386=v=>String(v??'').trim().toLowerCase();
   const esc386=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -6799,14 +6799,14 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   if(openOld386){window.abrirPacienteGlobalDetalle350=abrirPacienteGlobalDetalle350=function(k){const r=openOld386.apply(this,arguments);setTimeout(()=>{const actions=document.querySelector('#pacienteGlobalBody .paciente-global-actions-top');if(actions&&!actions.querySelector('.delete-patient386')){const b=document.createElement('button');b.type='button';b.className='danger delete-patient386';b.textContent='Eliminar paciente';b.onclick=()=>eliminarPacienteCompleto386(k);actions.appendChild(b);}},0);return r;};}
 
   function refrescarVersion386(){
-    document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(x=>x.textContent='v4.0.3');
-    document.title='CardioLink Admin v4.0.3';
+    document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(x=>x.textContent='v4.0.4');
+    document.title='CardioLink Admin v4.0.4';
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(refrescarVersion386,300));else setTimeout(refrescarVersion386,300);
 })();
 
 
-/* ===== CardioLink Admin v4.0.3: abrir ficha completa desde calidad de datos ===== */
+/* ===== CardioLink Admin v4.0.4: abrir ficha completa desde calidad de datos ===== */
 (function init387(){
   window.abrirFichaCompletaCalidad387=function(key){
     try{
@@ -6837,29 +6837,29 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   };
 
   function version387(){
-    document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(x=>x.textContent='v4.0.3');
-    document.title='CardioLink Admin v4.0.3';
+    document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(x=>x.textContent='v4.0.4');
+    document.title='CardioLink Admin v4.0.4';
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>setTimeout(version387,300));
   else setTimeout(version387,300);
 })();
 
 
-/* ===== CardioLink Admin v4.0.3: ficha administrativa ampliada ===== */
+/* ===== CardioLink Admin v4.0.4: ficha administrativa ampliada ===== */
 (function init390(){
   function version390(){
-    document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(x=>x.textContent='v4.0.3');
-    document.querySelectorAll('h2').forEach(x=>{if(/^CardioLink Admin v3\.8\.7$/.test(x.textContent.trim()))x.textContent='CardioLink Admin v4.0.3';});
-    document.title='CardioLink Admin v4.0.3';
+    document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(x=>x.textContent='v4.0.4');
+    document.querySelectorAll('h2').forEach(x=>{if(/^CardioLink Admin v3\.8\.7$/.test(x.textContent.trim()))x.textContent='CardioLink Admin v4.0.4';});
+    document.title='CardioLink Admin v4.0.4';
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(version390,500));else setTimeout(version390,500);
 })();
 
 
-/* ===== CardioLink Admin v4.0.3: calidad de datos con fuente unificada ===== */
+/* ===== CardioLink Admin v4.0.4: calidad de datos con fuente unificada ===== */
 (function initQuality310(){
   'use strict';
-  const VERSION='4.0.3';
+  const VERSION='4.0.4';
   const labels={
     dni:'Sin DNI', cobertura:'Cobertura incompleta', contacto:'Sin teléfono / contacto',
     nacimiento:'Sin fecha de nacimiento', sexo:'Sin sexo', localidad:'Sin localidad',
@@ -6992,10 +6992,10 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
 
-/* ===== CardioLink Admin v4.0.3 — Administración Inteligente ===== */
+/* ===== CardioLink Admin v4.0.4 — Administración Inteligente ===== */
 (function(){
   'use strict';
-  const VERSION='4.0.3';
+  const VERSION='4.0.4';
   const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   const slug=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'')||('item_'+Date.now());
 
@@ -7109,9 +7109,9 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 })();
 
 
-/* ===== CardioLink Admin v4.0.3 — usuarios editables + badge inmediato + logout estable ===== */
+/* ===== CardioLink Admin v4.0.4 — usuarios editables + badge inmediato + logout estable ===== */
 (function(){
-  const VERSION_3101='4.0.3';
+  const VERSION_3101='4.0.4';
   const byId=id=>document.getElementById(id);
   const esc3101=v=>typeof escapeHtml==='function'?escapeHtml(v):String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   let editingUserId3101='';
@@ -7217,7 +7217,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
   function boot3101(){
     normalizeVersion3101();
-    try{window.renderUsuariosConfig?.();}catch(e){console.warn('Usuarios 4.0.3',e)}
+    try{window.renderUsuariosConfig?.();}catch(e){console.warn('Usuarios 4.0.4',e)}
     refreshPendingBadge3101();stableLogout3101();
     [250,800,1600,3000].forEach(ms=>setTimeout(()=>{normalizeVersion3101();refreshPendingBadge3101();stableLogout3101();},ms));
     // Refresco liviano: evita que el contador dependa de haber visitado la solapa.
@@ -7227,10 +7227,10 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 })();
 
 
-/* ===== CardioLink Admin v4.0.3 — Convenios, destinos y aranceles configurables ===== */
+/* ===== CardioLink Admin v4.0.4 — Convenios, destinos y aranceles configurables ===== */
 (function(){
   'use strict';
-  const VERSION_3102='4.0.3';
+  const VERSION_3102='4.0.4';
   const $3102=id=>document.getElementById(id);
   const esc3102=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   const norm3102=s=>String(s??'').trim();
@@ -7353,18 +7353,21 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     try{return !!(esMatiasDuenio?.()||esAdminComun?.());}catch(e){return false;}
   }
   function normalizarPrest3102Final(v){return norm3102(v).toLowerCase().replace(/\s+/g,' ');}
-  function buscarArancel3102Final(obraSocial,prestacion,fecha){
+  function buscarArancel3102Final(obraSocial,prestacion,fecha,profesionalId='matias'){
     ensureConvenios3102();
     const os=norm3102(obraSocial).toLowerCase(),pr=normalizarPrest3102Final(prestacion),f=fecha||new Date().toISOString().slice(0,10);
-    const candidatos=(data.arancelesConvenios||[]).filter(a=>a.activo!==false&&norm3102(a.obraSocial).toLowerCase()===os&&normalizarPrest3102Final(a.prestacion)===pr&&(!a.vigenteDesde||a.vigenteDesde<=f));
+    const porProfesional=data.arancelesPorProfesional?.[profesionalId];
+    const fuente=Array.isArray(porProfesional)?porProfesional:(profesionalId==='matias'?(data.arancelesConvenios||[]):[]);
+    const candidatos=fuente.filter(a=>a.activo!==false&&norm3102(a.obraSocial).toLowerCase()===os&&normalizarPrest3102Final(a.prestacion)===pr&&(!a.vigenteDesde||a.vigenteDesde<=f));
     candidatos.sort((a,b)=>(b.vigenteDesde||'').localeCompare(a.vigenteDesde||''));
     return candidatos[0]||null;
   }
   window.aplicarArancelSnapshot3102Final=function(a,forzar){
     if(!a)return a;
     if(!forzar&&Number.isFinite(Number(a.valorArancelEstimado))&&a.arancelId)return a;
-    const ar=buscarArancel3102Final(a.obraSocial,a.prestacion,a.fecha);
-    const conv=convenio3102(a.obraSocial);
+    const pid=a.profesionalId||'matias';
+    const ar=buscarArancel3102Final(a.obraSocial,a.prestacion,a.fecha,pid);
+    const conv=(data.conveniosPorProfesional?.[pid]||[]).find(c=>norm3102(c.obraSocial).toLowerCase()===norm3102(a.obraSocial).toLowerCase())||(pid==='matias'?convenio3102(a.obraSocial):null);
     const esCons=typeof tipoPrest==='function'?tipoPrest(a.prestacion)==='CONSULTA':/consulta/i.test(a.prestacion||'');
     a.destinoFacturacionEstimado=esCons?(conv?.facturadorConsulta||conv?.destinoConsulta||''):(conv?.facturadorEstudio||conv?.destinoEstudio||'');
     if(ar){
@@ -7376,7 +7379,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   };
   function valorEstimadoAtencion3102Final(a){
     if(Number.isFinite(Number(a?.valorArancelEstimado))&&a?.arancelId)return {valor:Number(a.valorArancelEstimado),arancelId:a.arancelId,origen:'fijado'};
-    const ar=buscarArancel3102Final(a?.obraSocial,a?.prestacion,a?.fecha);
+    const ar=buscarArancel3102Final(a?.obraSocial,a?.prestacion,a?.fecha,a?.profesionalId||'matias');
     return ar?{valor:Number(ar.valor||0),arancelId:ar.id||'',origen:'vigente'}:{valor:null,arancelId:'',origen:'sin_arancel'};
   }
   function fechaMes3102Final(){
@@ -7484,7 +7487,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
 /* ===== CardioLink HC 4.0 · Fase 1 ===== */
 (function(){
-  const VERSION_HC='4.0.3';
+  const VERSION_HC='4.0.4';
   let hcPacienteSeleccionado='';
   const $hc=id=>document.getElementById(id);
   const escHC=s=>typeof escapeHtml==='function'?escapeHtml(String(s??'')):String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
@@ -7574,17 +7577,17 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     $hc('hcBtnBuscar')?.addEventListener('click',renderSearchHC);$hc('hcBuscarPaciente')?.addEventListener('input',()=>{if(($hc('hcBuscarPaciente').value||'').trim().length>=2)renderSearchHC();});$hc('hcBuscarPaciente')?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();renderSearchHC();}});$hc('hcLimpiarBusqueda')?.addEventListener('click',()=>{$hc('hcBuscarPaciente').value='';renderSearchHC();});
     document.addEventListener('click',e=>{const t=e.target.closest('[data-hc-patient],[data-hc-new],[data-hc-edit],[data-hc-edit-summary],[data-hc-print],[data-hc-close],[data-hc-close-summary],[data-open-hc]');if(!t)return;if(t.dataset.hcPatient)renderDetailHC(t.dataset.hcPatient);else if(t.dataset.hcNew)openEvolutionModalHC(t.dataset.hcNew,'',t.dataset.atencionId||'');else if(t.dataset.hcEdit){const ev=data.evolucionesClinicas.find(x=>x.id===t.dataset.hcEdit);if(ev)openEvolutionModalHC(ev.pacienteId,ev.id,ev.atencionId||'');}else if(t.dataset.hcEditSummary)editSummaryHC(t.dataset.hcEditSummary);else if(t.dataset.hcPrint)printHC(t.dataset.hcPrint);else if(t.hasAttribute('data-hc-close'))$hc('hcEvolutionModal')?.remove();else if(t.hasAttribute('data-hc-close-summary'))$hc('hcSummaryModal')?.remove();else if(t.dataset.openHc){showSection('hc');setTimeout(()=>renderDetailHC(t.dataset.openHc),40);}});
     // Versionado unificado visible para esta entrega.
-    document.title='CardioLink 4.0.3 HC';document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(x=>x.textContent='v4.0.3');
+    document.title='CardioLink 4.0.4 HC';document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(x=>x.textContent='v4.0.4');
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bootHC);else bootHC();
   window.abrirNuevaEvolucionHC=(id,atencionId='')=>openEvolutionModalHC(id,'',atencionId);
 })();
 
 
-/* ===== CardioLink 4.0.3 · HC profesional, pendientes y convenios por profesional ===== */
+/* ===== CardioLink 4.0.4 · HC profesional, pendientes y convenios por profesional ===== */
 (function(){
   'use strict';
-  const VERSION_402='4.0.3';
+  const VERSION_402='4.0.4';
   const $402=id=>document.getElementById(id);
   const esc402=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   const norm402=s=>String(s??'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
@@ -7628,6 +7631,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     if(!Array.isArray(data.arancelesPorProfesional.matias))data.arancelesPorProfesional.matias=copy402(Array.isArray(data.arancelesConvenios)?data.arancelesConvenios:[]);
     (data.profesionales||[]).filter(p=>p.id!=='general').forEach(p=>{
       if(!Array.isArray(data.conveniosPorProfesional[p.id]))data.conveniosPorProfesional[p.id]=[];
+      if(!data.conveniosPorProfesional[p.id].some(c=>norm402(c?.obraSocial)==='particular'))data.conveniosPorProfesional[p.id].push(defaultConv402(p.id,'Particular'));
       if(!Array.isArray(data.arancelesPorProfesional[p.id]))data.arancelesPorProfesional[p.id]=[];
       if(p.marcaDocumento===undefined)p.marcaDocumento=p.id==='matias'?'Consultorio Médico RM':p.nombre;
       if(p.logoDocumento===undefined)p.logoDocumento='icons/icon-192.png';
@@ -7779,7 +7783,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const grid=document.querySelector('#config .config-grid');if(!grid)return;
     [$402('cfgConvenios3102'),$402('cfgAranceles3102')].forEach(x=>{if(x)x.style.display='none';});
     let card=$402('cfgConveniosProfesional402');
-    if(!card){card=document.createElement('div');card.id='cfgConveniosProfesional402';card.className='config-smart-card-310 full-config-card';card.dataset.configGroupCard='coberturas';card.innerHTML=`<h3>Convenios y aranceles por profesional</h3><p class="muted">El catálogo de coberturas es global, pero las reglas, destinos y valores pertenecen al profesional seleccionado.</p><div class="professional-billing-head-402"><label>Profesional<select id="billProf402"></select></label><label>Convenio<select id="billOS402"></select></label></div><div class="convenio-editor-3102"><label>Regla automática<select id="billRegla402"></select></label><label>Destino de consulta<select id="billDestConsulta402"></select></label><label>Destino del estudio<select id="billDestEstudio402"></select></label><label>Facturador de consulta<select id="billFactConsulta402"></select></label><label>Facturador del estudio<select id="billFactEstudio402"></select></label><label class="check-row-310"><input type="checkbox" id="billActivo402"> Convenio activo para este profesional</label><label class="check-row-310"><input type="checkbox" id="billBonoConsulta402"> Requiere bono de consulta</label><label class="check-row-310"><input type="checkbox" id="billBonoEstudio402"> Requiere bono de estudio</label><label class="check-row-310"><input type="checkbox" id="billFirma402"> Requiere firma</label><label class="check-row-310"><input type="checkbox" id="billCopia402"> Requiere copia para facturación</label><label class="check-row-310"><input type="checkbox" id="billRogelio402"> Incluir en Factura Rogelio</label><div class="config-actions-3102"><button class="primary" id="saveBillConv402" type="button">Guardar convenio del profesional</button><button class="secondary" id="newBillConv402" type="button">Nuevo convenio global</button></div></div><div id="billList402" class="convenios-list-3102"></div><hr><h4>Arancel del profesional</h4><div class="arancel-editor-3102"><label>Prestación<select id="billPrest402"></select></label><label>Valor esperado<input id="billValor402" type="number" min="0" step="1"></label><label>Vigente desde<input id="billVigencia402" type="date"></label><button class="primary" id="saveBillArancel402" type="button">Agregar arancel</button></div><div id="billArancelList402" class="aranceles-list-3102"></div>`;const ref=$402('cfgProduccionEstimada3102');if(ref)grid.insertBefore(card,ref);else grid.appendChild(card);}
+    if(!card){card=document.createElement('div');card.id='cfgConveniosProfesional402';card.className='config-smart-card-310 full-config-card';card.dataset.configGroupCard='coberturas';card.innerHTML=`<h3>Convenios y aranceles por profesional</h3><p class="muted">Cada profesional tiene su propia configuración. El catálogo global solo ofrece nombres de coberturas: no copia reglas ni destinos de otro médico.</p><div class="professional-billing-head-402"><label>Profesional que estás configurando<select id="billProf402"></select></label><label>Convenio a configurar<select id="billOS402"></select></label></div><div id="billProfileNotice404" class="billing-profile-notice-404"></div><div class="convenio-editor-3102"><label>Regla automática<select id="billRegla402"></select></label><label>Destino de consulta<select id="billDestConsulta402"></select></label><label>Destino del estudio<select id="billDestEstudio402"></select></label><label>Facturador de consulta<select id="billFactConsulta402"></select></label><label>Facturador del estudio<select id="billFactEstudio402"></select></label><label class="check-row-310"><input type="checkbox" id="billActivo402"> Habilitado: este profesional atiende este convenio</label><label class="check-row-310"><input type="checkbox" id="billBonoConsulta402"> Requiere bono de consulta</label><label class="check-row-310"><input type="checkbox" id="billBonoEstudio402"> Requiere bono de estudio</label><label class="check-row-310"><input type="checkbox" id="billFirma402"> Requiere firma</label><label class="check-row-310"><input type="checkbox" id="billCopia402"> Requiere copia para facturación</label><label class="check-row-310"><input type="checkbox" id="billRogelio402"> Incluir en Factura Rogelio</label><div class="config-actions-3102"><button class="primary" id="saveBillConv402" type="button">Guardar para este profesional</button><button class="secondary" id="newBillConv402" type="button">Nuevo convenio global</button></div></div><h4 id="billConfiguredTitle404">Convenios configurados</h4><p class="muted">Activo significa que el profesional lo atiende y sus reglas se aplican. Los deshabilitados quedan guardados, pero no intervienen en nuevas atenciones.</p><div id="billList402" class="convenios-list-3102"></div><hr><h4>Arancel del profesional seleccionado</h4><p class="muted" id="billArancelHelp404">Cada valor corresponde a una combinación exacta de profesional + convenio + prestación + fecha de vigencia.</p><div class="arancel-editor-3102 arancel-editor-prof-404"><label>Convenio al que aplica<select id="billArancelOS404"></select></label><label>Prestación<select id="billPrest402"></select></label><label>Valor esperado<input id="billValor402" type="number" min="0" step="1" placeholder="0"></label><label>Vigente desde<input id="billVigencia402" type="date"></label><button class="primary" id="saveBillArancel402" type="button">Agregar arancel</button></div><div class="arancel-table-head-404"><span>Convenio y prestación</span><span>Valor</span><span>Vigencia</span><span></span></div><div id="billArancelList402" class="aranceles-list-3102"></div>`;const ref=$402('cfgProduccionEstimada3102');if(ref)grid.insertBefore(card,ref);else grid.appendChild(card);}
     renderBilling402();
   }
   function selectedBillProf402(){return $402('billProf402')?.value||$402('cfgProfEditar310')?.value||currentProfessionalId402()||'matias';}
@@ -7790,19 +7794,31 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     if($402('billActivo402'))$402('billActivo402').checked=c.activo!==false;if($402('billBonoConsulta402'))$402('billBonoConsulta402').checked=!!c.bonoConsulta;if($402('billBonoEstudio402'))$402('billBonoEstudio402').checked=!!c.bonoEstudio;if($402('billFirma402'))$402('billFirma402').checked=!!c.firmaRequerida;if($402('billCopia402'))$402('billCopia402').checked=!!c.copiaRequerida;if($402('billRogelio402'))$402('billRogelio402').checked=!!c.incluirFacturaRogelio;
   }
   function renderBilling402(){
-    ensure402();const ps=$402('billProf402');if(!ps)return;const oldP=ps.value||$402('cfgProfEditar310')?.value||currentProfessionalId402()||'matias';ps.innerHTML=(data.profesionales||[]).filter(p=>p.id!=='general'&&p.activo!==false).map(p=>`<option value="${esc402(p.id)}">${esc402(p.nombre)}</option>`).join('');if([...ps.options].some(o=>o.value===oldP))ps.value=oldP;
-    const osSel=$402('billOS402'),oldOS=osSel?.value||'Particular';if(osSel){osSel.innerHTML=opts402(catalogOS402(),oldOS);if([...osSel.options].some(o=>o.value===oldOS))osSel.value=oldOS;}
-    loadBillConv402();const pid=selectedBillProf402(),arr=data.conveniosPorProfesional[pid]||[];
-    if($402('billList402'))$402('billList402').innerHTML=catalogOS402().map(os=>{const c=conv402(pid,os,false)||defaultConv402(pid,os);return `<button type="button" class="convenio-row-3102 bill-row-402" data-load-bill-os402="${esc402(os)}"><strong>${esc402(os)}</strong><span>${esc402(c.destinoConsulta||'')} / ${esc402(c.destinoEstudio||'')}</span><span>${c.incluirFacturaRogelio?'Factura Rogelio':'Circuito propio'}</span><span>${c.activo===false?'Inactivo':'Activo'}</span></button>`;}).join('');
+    ensure402();const ps=$402('billProf402');if(!ps)return;
+    const activePid=$402('perfilActivo')?.value||'';const contextPid=(activePid&&activePid!=='general'?activePid:'')||$402('cfgProfEditar310')?.value||currentProfessionalId402()||'matias';
+    const oldP=ps.value||contextPid;
+    ps.innerHTML=(data.profesionales||[]).filter(p=>p.id!=='general'&&p.activo!==false).map(p=>`<option value="${esc402(p.id)}">${esc402(p.nombre)}</option>`).join('');
+    if([...ps.options].some(o=>o.value===oldP))ps.value=oldP;else if([...ps.options].some(o=>o.value===contextPid))ps.value=contextPid;
+    const pid=selectedBillProf402();
+    const osSel=$402('billOS402'),oldOS=osSel?.value||'Particular';if(osSel){osSel.innerHTML=opts402(catalogOS402(),oldOS);if([...osSel.options].some(o=>o.value===oldOS))osSel.value=oldOS;else if([...osSel.options].some(o=>o.value==='Particular'))osSel.value='Particular';}
+    const arOS=$402('billArancelOS404'),oldArOS=arOS?.value||osSel?.value||'Particular';if(arOS){arOS.innerHTML=opts402(catalogOS402(),oldArOS);if([...arOS.options].some(o=>o.value===oldArOS))arOS.value=oldArOS;}
+    loadBillConv402();
+    const arr=(data.conveniosPorProfesional[pid]||[]).slice();
+    const active=arr.filter(c=>c.activo!==false).sort((a,b)=>String(a.obraSocial).localeCompare(String(b.obraSocial),'es'));
+    const inactive=arr.filter(c=>c.activo===false).sort((a,b)=>String(a.obraSocial).localeCompare(String(b.obraSocial),'es'));
+    if($402('billProfileNotice404'))$402('billProfileNotice404').innerHTML=`Configurando exclusivamente a <strong>${esc402(profName402(pid))}</strong>. Ningún cambio de esta pantalla modifica los convenios de otro profesional.`;
+    if($402('billConfiguredTitle404'))$402('billConfiguredTitle404').textContent=`Convenios de ${profName402(pid)}`;
+    const row=c=>`<button type="button" class="convenio-row-3102 bill-row-402" data-load-bill-os402="${esc402(c.obraSocial)}"><strong>${esc402(c.obraSocial)}</strong><span>${esc402(c.destinoConsulta||profName402(pid))} / ${esc402(c.destinoEstudio||profName402(pid))}</span><span>${c.incluirFacturaRogelio?'Factura Rogelio':'Circuito propio'}</span><span class="billing-status-404 ${c.activo===false?'off':'on'}">${c.activo===false?'Deshabilitado':'Habilitado'}</span></button>`;
+    if($402('billList402'))$402('billList402').innerHTML=`<div class="billing-group-title-404">Habilitados (${active.length})</div>${active.map(row).join('')||'<p class="muted billing-empty-404">Este profesional todavía no tiene convenios habilitados.</p>'}${inactive.length?`<details class="billing-inactive-404"><summary>Ver ${inactive.length} convenio(s) deshabilitado(s)</summary>${inactive.map(row).join('')}</details>`:''}`;
     const prest=[...new Set((prof402(pid)?.prestaciones||[]).concat(typeof allPrestaciones==='function'?allPrestaciones():[]))].filter(Boolean).sort((a,b)=>a.localeCompare(b,'es'));if($402('billPrest402'))$402('billPrest402').innerHTML=opts402(prest,$402('billPrest402').value||prest[0]);if($402('billVigencia402')&&!$402('billVigencia402').value)$402('billVigencia402').value=new Date().toISOString().slice(0,10);
-    const ars=data.arancelesPorProfesional[pid]||[];if($402('billArancelList402'))$402('billArancelList402').innerHTML=ars.slice().sort((a,b)=>String(b.vigenteDesde||'').localeCompare(String(a.vigenteDesde||''))).map(a=>`<div class="arancel-row-3102"><span><strong>${esc402(a.obraSocial)}</strong> · ${esc402(a.prestacion)}</span><span>${typeof money==='function'?money(a.valor):Number(a.valor||0).toLocaleString('es-AR')}</span><span>desde ${esc402(a.vigenteDesde||'s/f')}</span><button type="button" class="small-btn" data-del-bill-arancel402="${esc402(a.id)}">Borrar</button></div>`).join('')||'<p class="muted">Sin aranceles cargados para este profesional.</p>';
+    const ars=data.arancelesPorProfesional[pid]||[];if($402('billArancelList402'))$402('billArancelList402').innerHTML=ars.slice().sort((a,b)=>String(b.vigenteDesde||'').localeCompare(String(a.vigenteDesde||''))||String(a.obraSocial||'').localeCompare(String(b.obraSocial||''),'es')).map(a=>`<div class="arancel-row-3102"><span><strong>${esc402(a.obraSocial)}</strong> · ${esc402(a.prestacion)}</span><span>${typeof money==='function'?money(a.valor):'$ '+Number(a.valor||0).toLocaleString('es-AR')}</span><span>desde ${esc402(a.vigenteDesde||'s/f')}</span><button type="button" class="small-btn" data-del-bill-arancel402="${esc402(a.id)}">Borrar</button></div>`).join('')||'<p class="muted">Sin aranceles cargados para este profesional.</p>';
   }
   function saveBillConv402(){
     const pid=selectedBillProf402(),os=$402('billOS402')?.value;if(!pid||!os)return;const c=conv402(pid,os,true);c.activo=$402('billActivo402').checked;c.regla=$402('billRegla402').value;c.destinoConsulta=$402('billDestConsulta402').value;c.destinoEstudio=$402('billDestEstudio402').value;c.facturadorConsulta=$402('billFactConsulta402').value;c.facturadorEstudio=$402('billFactEstudio402').value;c.bonoConsulta=$402('billBonoConsulta402').checked;c.bonoEstudio=$402('billBonoEstudio402').checked;c.firmaRequerida=$402('billFirma402').checked;c.copiaRequerida=$402('billCopia402').checked;c.incluirFacturaRogelio=$402('billRogelio402').checked;
     if(pid==='matias')data.conveniosFacturacion=copy402(data.conveniosPorProfesional.matias);persist402();renderBilling402();alert(`Convenio guardado para ${profName402(pid)}.`);
   }
   function newGlobalConv402(){const name=prompt('Nombre de la nueva obra social, prepaga o convenio:');if(!name)return;if(!(data.obrasSociales||[]).includes(name))data.obrasSociales.push(name);persist402();renderBilling402();$402('billOS402').value=name;loadBillConv402();}
-  function saveBillArancel402(){const pid=selectedBillProf402(),obraSocial=$402('billOS402')?.value,prestacion=$402('billPrest402')?.value,valor=Number($402('billValor402')?.value||0),vigenteDesde=$402('billVigencia402')?.value;if(!obraSocial||!prestacion||!vigenteDesde){alert('Completá convenio, prestación y fecha de vigencia.');return;}data.arancelesPorProfesional[pid].push({id:'arp_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),profesionalId:pid,obraSocial,prestacion,valor,vigenteDesde,activo:true});if(pid==='matias')data.arancelesConvenios=copy402(data.arancelesPorProfesional.matias);persist402();$402('billValor402').value='';renderBilling402();}
+  function saveBillArancel402(){const pid=selectedBillProf402(),obraSocial=$402('billArancelOS404')?.value||$402('billOS402')?.value,prestacion=$402('billPrest402')?.value,valor=Number($402('billValor402')?.value||0),vigenteDesde=$402('billVigencia402')?.value;if(!obraSocial||!prestacion||!vigenteDesde){alert('Completá convenio, prestación y fecha de vigencia.');return;}if(!Number.isFinite(valor)||valor<0){alert('Ingresá un valor válido.');return;}data.arancelesPorProfesional[pid].push({id:'arp_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),profesionalId:pid,obraSocial,prestacion,valor,vigenteDesde,activo:true});if(pid==='matias')data.arancelesConvenios=copy402(data.arancelesPorProfesional.matias);persist402();$402('billValor402').value='';renderBilling402();}
 
   const oldApply402=window.aplicarRegla;
   window.aplicarRegla=function(){
@@ -7824,12 +7840,14 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     if(e.target.id==='saveBillConv402'){saveBillConv402();return;}
     if(e.target.id==='newBillConv402'){newGlobalConv402();return;}
     if(e.target.id==='saveBillArancel402'){saveBillArancel402();return;}
-    const row=e.target.closest?.('[data-load-bill-os402]');if(row){$402('billOS402').value=row.dataset.loadBillOs402;loadBillConv402();row.scrollIntoView({behavior:'smooth',block:'nearest'});return;}
+    const row=e.target.closest?.('[data-load-bill-os402]');if(row){$402('billOS402').value=row.dataset.loadBillOs402;if($402('billArancelOS404'))$402('billArancelOS404').value=row.dataset.loadBillOs402;loadBillConv402();row.scrollIntoView({behavior:'smooth',block:'nearest'});return;}
     const del=e.target.closest?.('[data-del-bill-arancel402]');if(del&&confirm('¿Borrar este arancel?')){const pid=selectedBillProf402();data.arancelesPorProfesional[pid]=data.arancelesPorProfesional[pid].filter(a=>a.id!==del.dataset.delBillArancel402);if(pid==='matias')data.arancelesConvenios=copy402(data.arancelesPorProfesional.matias);persist402();renderBilling402();}
   },true);
   document.addEventListener('change',e=>{
-    if(e.target.id==='cfgProfEditar310')setTimeout(loadDocumentFields402,0);
+    if(e.target.id==='cfgProfEditar310'){setTimeout(loadDocumentFields402,0);const b=$402('billProf402');if(b&&[...b.options].some(o=>o.value===e.target.value)){b.value=e.target.value;renderBilling402();}}
+    if(e.target.id==='perfilActivo'){const b=$402('billProf402');if(b&&[...b.options].some(o=>o.value===e.target.value)){b.value=e.target.value;renderBilling402();}}
     if(e.target.id==='billProf402'||e.target.id==='billOS402')renderBilling402();
+    if(e.target.id==='billOS402'&&$402('billArancelOS404'))$402('billArancelOS404').value=e.target.value;
   });
 
   function boot402(){ensure402();wrapRenderConfig402();wrapPatient402();injectDocumentFields402();injectBilling402();setVersion402();
@@ -7840,10 +7858,10 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 })();
 
 
-/* ===== CardioLink 4.0.3 · evolución directa desde Agenda ===== */
+/* ===== CardioLink 4.0.4 · evolución directa desde Agenda ===== */
 (function(){
   'use strict';
-  const VERSION_403='4.0.3';
+  const VERSION_403='4.0.4';
   const $403=id=>document.getElementById(id);
   const norm403=s=>String(s??'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 
@@ -7979,3 +7997,5 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot403);else boot403();
   window.abrirEvolucionAtencion403=openEvolutionFromAgenda403;
 })();
+
+/* v4.0.4: convenios/aranceles aislados por profesional, selector explícito de cobertura y sincronización de perfil. */

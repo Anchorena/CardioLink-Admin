@@ -1,6 +1,6 @@
-const CACHE='cardiolink-v4.0.3-hc2';
-const SHELL=['./','./index.html?v=4003','./styles.css?v=4003','./app.js?v=4003','./manifest.webmanifest?v=4003','./icons/icon-192.png?v=4003','./icons/icon-512.png?v=4003'];
+const CACHE='cardiolink-v4.0.4-hc3';
+const SHELL=['./','./index.html?v=4004','./styles.css?v=4004','./app.js?v=4004','./manifest.webmanifest?v=4004','./icons/icon-192.png?v=4004','./icons/icon-512.png?v=4004'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting()))});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()))});
-self.addEventListener('fetch',e=>{const r=e.request;if(r.method!=='GET')return;const u=new URL(r.url);if(u.origin!==location.origin)return;e.respondWith(fetch(r,{cache:'no-store'}).then(resp=>{const copy=resp.clone();caches.open(CACHE).then(c=>c.put(r,copy));return resp}).catch(()=>caches.match(r).then(x=>x||caches.match('./index.html?v=4003')||caches.match('./index.html'))));});
+self.addEventListener('fetch',e=>{const r=e.request;if(r.method!=='GET')return;const u=new URL(r.url);if(u.origin!==location.origin)return;e.respondWith(fetch(r,{cache:'no-store'}).then(resp=>{const copy=resp.clone();caches.open(CACHE).then(c=>c.put(r,copy));return resp}).catch(()=>caches.match(r).then(x=>x||caches.match('./index.html?v=4004')||caches.match('./index.html'))));});
 self.addEventListener('message',e=>{if(e.data&&e.data.type==='SKIP_WAITING')self.skipWaiting()});
