@@ -1,11 +1,10 @@
-# CardioLink Admin v3.10.2 FINAL
+# CardioLink 4.0.0 HC · Fase 1
 
-- Convenios y destinos de facturación editables.
-- Mantiene la lógica actual de Factura Rogelio, ahora configurable por cobertura.
-- Aranceles por convenio, prestación y fecha de vigencia.
-- Cada nueva atención fija automáticamente el arancel vigente como valor histórico estimado.
-- Si se edita cobertura, prestación o fecha, el arancel estimado se recalcula.
-- Producción estimada bajo demanda: no muestra importes hasta presionar “Calcular estimación”.
-- Informe por período, cobertura, profesional y prestación.
-- Lista de prestaciones sin arancel configurado.
-- Información económica visible solo para Matías y perfiles Administrador.
+- Nueva solapa Historia clínica.
+- Evoluciones con fecha/hora y profesional automáticos.
+- Evolución desde ficha o vinculada a una atención.
+- Bloqueo de edición luego de 24 horas salvo Matías/Administrador.
+- Resumen clínico: antecedentes, alergias, medicación y alertas.
+- Línea de tiempo conjunta de evoluciones y atenciones.
+- Impresión de historia clínica.
+- Persistencia en backup/configuración y sincronización.

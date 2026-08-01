@@ -1,4 +1,4 @@
-# CardioLink Admin v3.10.2 FINAL
+# CardioLink Admin v4.0.0 FINAL
 
 Sistema de gestión de consultorio médico con agenda, pacientes, pendientes, caja diaria, reportes, perfiles, convenios y aranceles configurables.
 

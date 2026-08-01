@@ -7,7 +7,7 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<title>CardioLink Admin v3.10.2</title>
+<title>CardioLink Admin v4.0.0</title>
 <link rel="manifest" href="manifest.webmanifest?v=385">
 <link rel="apple-touch-icon" href="icons/icon-192.png?v=385">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png?v=385">
@@ -16,14 +16,14 @@
 <body>
 <div class="mobile-appbar-370" aria-label="Barra móvil">
   <button type="button" id="btnMobileMenu370" class="mobile-menu-btn-370" aria-label="Abrir menú" aria-expanded="false">☰</button>
-  <div class="mobile-app-title-370">CardioLink Admin <span>v3.10.2</span></div>
+  <div class="mobile-app-title-370">CardioLink Admin <span>v4.0.0</span></div>
   <button type="button" id="btnMobileSearch370" class="mobile-search-btn-370" aria-label="Buscar paciente">⌕</button>
 </div>
 <div id="mobileSidebarOverlay370" class="mobile-sidebar-overlay-370 hidden" aria-hidden="true"></div>
 <div id="appStatus380" class="app-status-380 online" role="status" aria-live="polite"><span class="status-dot-380"></span><span id="appStatusText380">Conectado</span></div>
 <aside class="sidebar">
   <div class="brand">
-    <div class="brand-main">CardioLink Admin <span>v3.10.2</span></div>
+    <div class="brand-main">CardioLink Admin <span>v4.0.0</span></div>
     <div class="brand-by">by Matías Anchorena</div>
   </div>
   <button class="nav active" data-section="dashboard">Dashboard</button>
@@ -31,6 +31,7 @@
   <button class="nav" data-section="agenda">Agenda / sala</button>
   <button class="nav" data-section="mensajes">Mensajes</button>
   <button class="nav" data-section="pacientes">Pacientes</button>
+  <button class="nav" data-section="hc">Historia clínica</button>
   <button class="nav" data-section="pendientes383">Pendientes <span id="badgePendientesNav383" class="nav-count383">0</span></button>
   <button class="nav" data-section="listado">Listado / filtros</button>
   <button class="nav solo-matias" data-section="caja">Caja / reportes</button>
@@ -404,6 +405,35 @@
     </div>
   </section>
 
+
+  <section id="hc" class="section">
+    <div class="card hc-shell">
+      <div class="hc-title-row">
+        <div>
+          <h2>Historia clínica</h2>
+          <p class="muted">Evoluciones cronológicas vinculadas al paciente. Se pueden crear desde un turno o directamente desde la ficha.</p>
+        </div>
+        <span class="hc-beta-badge">HC 4.0 · Fase 1</span>
+      </div>
+      <div class="hc-search-row">
+        <div class="field-with-clear hc-search-field">
+          <input id="hcBuscarPaciente" placeholder="Buscar por apellido, DNI, teléfono o email">
+          <button class="clear-search" type="button" id="hcLimpiarBusqueda" title="Limpiar">×</button>
+        </div>
+        <button class="primary" type="button" id="hcBtnBuscar">Buscar</button>
+      </div>
+      <div class="hc-layout">
+        <aside class="hc-patient-list">
+          <div id="hcResultadosResumen" class="muted">Buscá y seleccioná un paciente.</div>
+          <div id="hcResultadosPacientes"></div>
+        </aside>
+        <main id="hcPacienteDetalle" class="hc-detail">
+          <div class="hc-empty"><strong>Seleccioná un paciente</strong><span>Acá aparecerán su resumen clínico, evoluciones y atenciones.</span></div>
+        </main>
+      </div>
+    </div>
+  </section>
+
   <section id="pendientes383" class="section">
     <div class="card pendientes-shell383">
       <div class="pendientes-head383">
@@ -461,7 +491,7 @@
 
       <div id="printArea">
         <div class="print-title">
-          <h2>CardioLink Admin v3.10.2</h2>
+          <h2>CardioLink Admin v4.0.0</h2>
           <p>by Matías Anchorena — Listado filtrado</p>
           <p id="printMeta"></p>
         </div>
@@ -632,7 +662,7 @@
 
   <section id="instructivos" class="section">
     <div class="card">
-      <h2>Instructivo CardioLink Admin v3.10.2</h2>
+      <h2>Instructivo CardioLink Admin v4.0.0</h2>
       <p class="muted">Guía breve actualizada por tareas. La disponibilidad de cada opción depende del rol.</p>
       <div class="guide-grid383">
         <details open><summary>Inicio, perfiles y búsqueda</summary><ol><li>Al ingresar, confirmá el perfil profesional de trabajo.</li><li>Usá el buscador superior desde cualquier solapa para abrir la ficha del paciente.</li><li>El usuario conectado queda registrado aunque trabajes sobre otro profesional.</li></ol></details>
