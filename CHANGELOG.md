@@ -1,10 +1,7 @@
-# CardioLink 4.0.0 HC · Fase 1
+# CardioLink 4.0.1 HC — Hotfix de publicación
 
-- Nueva solapa Historia clínica.
-- Evoluciones con fecha/hora y profesional automáticos.
-- Evolución desde ficha o vinculada a una atención.
-- Bloqueo de edición luego de 24 horas salvo Matías/Administrador.
-- Resumen clínico: antecedentes, alergias, medicación y alertas.
-- Línea de tiempo conjunta de evoluciones y atenciones.
-- Impresión de historia clínica.
-- Persistencia en backup/configuración y sincronización.
+- Corrige la mezcla de `index.html` 4.0 con `app.js`/`styles.css` 3.10.2 servidos desde caché.
+- Renueva todos los identificadores de caché y consultas de archivos.
+- Unifica la versión visible como 4.0.1.
+- Restaura el buscador y la selección de pacientes de Historia Clínica en GitHub Pages/PWA.
+- Actualiza manifest y acceso instalado.
