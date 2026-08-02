@@ -7,27 +7,27 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
-<title>CardioLink Admin v4.0.7</title>
-<link rel="manifest" href="manifest.webmanifest?v=4007">
-<link rel="apple-touch-icon" href="icons/icon-192.png?v=4007">
-<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png?v=4007">
-<link rel="stylesheet" href="styles.css?v=4007">
+<title>CardioLink Admin v4.0.8</title>
+<link rel="manifest" href="manifest.webmanifest?v=4008">
+<link rel="apple-touch-icon" href="icons/icon-192.png?v=4008">
+<link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png?v=4008">
+<link rel="stylesheet" href="styles.css?v=4008">
 <script>
-window.CARDIOLINK_BUILD="4.0.7";
+window.CARDIOLINK_BUILD="4.0.8";
 if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.update())).catch(()=>{});});}
 </script>
 </head>
 <body>
 <div class="mobile-appbar-370" aria-label="Barra móvil">
   <button type="button" id="btnMobileMenu370" class="mobile-menu-btn-370" aria-label="Abrir menú" aria-expanded="false">☰</button>
-  <div class="mobile-app-title-370">CardioLink Admin <span>v4.0.7</span></div>
+  <div class="mobile-app-title-370">CardioLink Admin <span>v4.0.8</span></div>
   <button type="button" id="btnMobileSearch370" class="mobile-search-btn-370" aria-label="Buscar paciente">⌕</button>
 </div>
 <div id="mobileSidebarOverlay370" class="mobile-sidebar-overlay-370 hidden" aria-hidden="true"></div>
 <div id="appStatus380" class="app-status-380 online" role="status" aria-live="polite"><span class="status-dot-380"></span><span id="appStatusText380">Conectado</span></div>
 <aside class="sidebar">
   <div class="brand">
-    <div class="brand-main">CardioLink Admin <span>v4.0.7</span></div>
+    <div class="brand-main">CardioLink Admin <span>v4.0.8</span></div>
     <div class="brand-by">by Matías Anchorena</div>
   </div>
   <button class="nav active" data-section="dashboard">Dashboard</button>
@@ -441,14 +441,14 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
       </div>
       <div class="hc-search-row">
         <div class="field-with-clear hc-search-field">
-          <input id="hcBuscarPaciente" placeholder="Buscar por apellido, DNI, teléfono o email">
+          <input id="hcBuscarPaciente" placeholder="Buscar por apellido, nombre, DNI, teléfono o email" autocomplete="off">
           <button class="clear-search" type="button" id="hcLimpiarBusqueda" title="Limpiar">×</button>
         </div>
         <button class="primary" type="button" id="hcBtnBuscar">Buscar</button>
       </div>
       <div class="hc-layout">
         <aside class="hc-patient-list">
-          <div id="hcResultadosResumen" class="muted">Buscá y seleccioná un paciente.</div>
+          <div id="hcResultadosResumen" class="muted">Cargando pacientes…</div>
           <div id="hcResultadosPacientes"></div>
         </aside>
         <main id="hcPacienteDetalle" class="hc-detail">
@@ -515,7 +515,7 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
 
       <div id="printArea">
         <div class="print-title">
-          <h2>CardioLink Admin v4.0.7</h2>
+          <h2>CardioLink Admin v4.0.8</h2>
           <p>by Matías Anchorena — Listado filtrado</p>
           <p id="printMeta"></p>
         </div>
@@ -686,7 +686,7 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
 
   <section id="instructivos" class="section">
     <div class="card">
-      <h2>Instructivo CardioLink Admin v4.0.7</h2>
+      <h2>Instructivo CardioLink Admin v4.0.8</h2>
       <p class="muted">Guía breve actualizada por tareas. La disponibilidad de cada opción depende del rol.</p>
       <div class="guide-grid383">
         <details open><summary>Inicio, perfiles y búsqueda</summary><ol><li>Al ingresar, confirmá el perfil profesional de trabajo.</li><li>Usá el buscador superior desde cualquier solapa para abrir la ficha del paciente.</li><li>El usuario conectado queda registrado aunque trabajes sobre otro profesional.</li></ol></details>
@@ -896,6 +896,6 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="app.js?v=4007"></script>
+<script src="app.js?v=4008"></script>
 </body>
 </html>

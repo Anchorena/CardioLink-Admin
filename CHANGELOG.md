@@ -1,4 +1,14 @@
-# CardioLink 4.0.7
+# CardioLink 4.0.8
+
+- Búsqueda completa de pacientes en HC, sin límite arbitrario de 80.
+- Listado inicial alfabético con paginación.
+- Coincidencia exacta y apertura puntual por DNI.
+- Rediseño del panel de evolución con datos demográficos, cobertura y contacto.
+- Botones de copiado rápido, WhatsApp y email.
+- Motivo de consulta compacto y área principal de evolución ampliada.
+- Se mantienen guardado manual, prevención de evoluciones vacías y bloqueo de edición a las 24 horas salvo Administrador.
+
+# CardioLink 4.0.8
 
 - Historia Clínica visible para todos los perfiles médicos.
 - Notas internas privadas por profesional; las notas anteriores se migran al perfil Matías.
