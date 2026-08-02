@@ -1,3 +1,11 @@
+# CardioLink 4.0.7
+
+- Historia Clínica visible para todos los perfiles médicos.
+- Notas internas privadas por profesional; las notas anteriores se migran al perfil Matías.
+- Importador de evoluciones Medicloud accesible también desde Pacientes y con instrucciones visibles.
+- Un médico común importa solo como su propio perfil; Administrador puede elegir autor.
+- Preparación conceptual de integración por paciente con CardioLink Informes y EcoApp.
+
 # CardioLink Admin v4.0.6
 
 - Importador de evoluciones históricas exportadas desde Medicloud en `.xls`, `.xlsx` o `.csv`.
