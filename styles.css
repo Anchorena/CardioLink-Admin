@@ -1518,7 +1518,7 @@ html body.app-ready-360 .sidebar #btnCerrarSesion{display:inline-flex!important;
 body.dark .agenda-patient-evolve-403{color:#9db1ff}
 body.dark .agenda-patient-evolve-403:hover{background:rgba(157,177,255,.12);color:#c4d0ff}
 
-/* ===== CardioLink 4.0.8 · convenios y aranceles por profesional ===== */
+/* ===== CardioLink 4.0.9 · convenios y aranceles por profesional ===== */
 .billing-profile-notice-404{
   margin:12px 0 16px;padding:12px 14px;border:1px solid #bfdbfe;
   border-radius:12px;background:#eff6ff;color:#1e3a5f;
@@ -1536,7 +1536,7 @@ body.dark .agenda-patient-evolve-403:hover{background:rgba(157,177,255,.12);colo
 @media(max-width:600px){.arancel-editor-prof-404{grid-template-columns:1fr}.billing-profile-notice-404{font-size:.92rem}}
 
 
-/* ===== CardioLink 4.0.8 · Importador de evoluciones Medicloud ===== */
+/* ===== CardioLink 4.0.9 · Importador de evoluciones Medicloud ===== */
 .hc-title-actions405{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
 .hc-import-status405{margin:2px 0 14px;padding:9px 12px;border:1px solid var(--border,#dbe3ea);border-radius:10px;background:var(--panel-soft,#f8fafc)}
 .hc-import-modal405{z-index:10050}
@@ -1553,7 +1553,7 @@ body.dark .agenda-patient-evolve-403:hover{background:rgba(157,177,255,.12);colo
 .hc-import-table-wrap405 small{display:block;color:var(--muted,#64748b);margin-top:3px}.hc-origin405{display:inline-block;background:#ede9fe;color:#6d28d9;border-radius:999px;padding:2px 7px;font-size:10px;font-weight:800}
 @media(max-width:760px){.hc-title-actions405{justify-content:flex-start}.hc-title-actions405 button{width:100%}.hc-import-summary405{grid-template-columns:repeat(2,1fr)}.hc-import-options405{grid-template-columns:1fr}.hc-import-card405{width:98vw}.hc-import-table-wrap405{max-height:45vh}}
 
-/* ===== CardioLink Admin v4.0.8 — identidad profesional y documentos clínicos ===== */
+/* ===== CardioLink Admin v4.0.9 — identidad profesional y documentos clínicos ===== */
 .identity-uploads406{grid-column:1/-1;margin-top:12px;padding-top:16px;border-top:1px solid var(--border,#dbe3ec)}
 .identity-upload-grid406{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:14px;margin:14px 0}
 .identity-upload-grid406>label{align-self:end}
@@ -1587,7 +1587,7 @@ body.dark .agenda-patient-evolve-403:hover{background:rgba(157,177,255,.12);colo
 }
 
 
-/* ===== CardioLink 4.0.8 · HC para todos los médicos, notas privadas e importación visible ===== */
+/* ===== CardioLink 4.0.9 · HC para todos los médicos, notas privadas e importación visible ===== */
 .hc-import-help407{
   margin:10px 0 14px;
   border:1px solid var(--border,#dbe3ea);
@@ -1617,7 +1617,7 @@ body.dark .agenda-patient-evolve-403:hover{background:rgba(157,177,255,.12);colo
 }
 
 
-/* ===== CardioLink 4.0.8 · búsqueda completa y evolución clínica compacta ===== */
+/* ===== CardioLink 4.0.9 · búsqueda completa y evolución clínica compacta ===== */
 .hc-pagination-408{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border,#dbe3ee)}
 .hc-pagination-408 span{font-size:13px;font-weight:800;color:var(--muted,#64748b)}
 .hc-pagination-408 button{padding:8px 12px}
@@ -1640,3 +1640,47 @@ body.dark .agenda-patient-evolve-403:hover{background:rgba(157,177,255,.12);colo
 .hc-evolution-grid-408>div:not(.hc-main-evolution-408) textarea{min-height:115px}
 @media(max-width:900px){.hc-patient-data-408{grid-template-columns:repeat(2,minmax(0,1fr))}.hc-evolution-card-408{padding:18px}}
 @media(max-width:600px){.hc-patient-title-408{align-items:flex-start;flex-direction:column}.hc-patient-data-408{grid-template-columns:1fr}.hc-copy-actions-408>*{flex:1 1 calc(50% - 8px)}.hc-pagination-408{flex-wrap:wrap}.hc-pagination-408 span{order:-1;width:100%;text-align:center}}
+
+
+/* ===== CardioLink 4.0.9 · padrón de pacientes y evolución clínica ===== */
+.pacientes-directory-layout409{display:block!important}
+.pacientes-directory-layout409 .pacientes-list-card{width:100%;max-width:none}
+.pacientes-directory-layout409 .pacientes-detail-card{margin-top:18px;width:100%;max-width:none}
+.pacientes-directory-layout409 .pacientes-lista{display:block;max-height:none;overflow:visible;padding:0;margin-top:14px}
+.patients-directory409{border:1px solid var(--border,#dbe3ee);border-radius:16px;overflow:hidden;background:var(--card,#fff)}
+.patients-directory-head409,.patients-directory-row409{display:grid;grid-template-columns:minmax(220px,1.45fr) minmax(100px,.72fr) 90px minmax(145px,1fr) minmax(150px,1fr) minmax(210px,1.35fr);gap:12px;align-items:center;padding:12px 16px}
+.patients-directory-head409{background:var(--soft,#f3f6fa);font-size:12px;font-weight:800;text-transform:uppercase;color:var(--muted,#64748b);letter-spacing:.035em}
+.patients-directory-row409{border-top:1px solid var(--border,#e2e8f0);font-size:14px;min-height:56px}
+.patients-directory-row409:hover,.patients-directory-row409.active{background:#eff6ff}
+.patients-name409 button{appearance:none;border:0;background:transparent;color:#1d4ed8;font:inherit;font-weight:800;text-align:left;padding:0;cursor:pointer}
+.patients-name409 button:hover{text-decoration:underline}
+.patients-email409{overflow-wrap:anywhere}
+.patients-empty409{padding:24px}
+.hc-clinical-summary-title409{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:12px}
+.hc-clinical-summary-title409 h3{margin:0}
+.hc-evolution-card-409{width:min(1180px,calc(100vw - 28px));max-height:calc(100vh - 28px);overflow:auto}
+.hc-patient-title-actions409{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.hc-invalid-date409{margin-top:5px;color:#b45309;font-size:12px;font-weight:800}
+.hc-context-cards409{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:14px 0}
+.hc-context-cards409>div{border:1px solid var(--border,#dbe3ee);border-radius:14px;padding:12px 14px;background:var(--soft,#f8fafc);min-width:0}
+.hc-context-cards409 span{display:block;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.035em;color:var(--muted,#64748b);margin-bottom:5px}
+.hc-context-cards409 strong{display:block;line-height:1.3;overflow-wrap:anywhere}
+.hc-permanent-data409{border:1px solid #bfd8e3;background:#f5fbfd;border-radius:16px;padding:15px;margin:12px 0 16px}
+.hc-permanent-title409 h3{margin:0 0 3px;font-size:17px}.hc-permanent-title409 p{margin:0 0 12px}
+.hc-permanent-grid409{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+.hc-permanent-grid409 label{display:block;font-weight:800;margin-bottom:6px}
+.hc-permanent-grid409 textarea{width:100%;min-height:88px;resize:vertical}
+.hc-patient-edit-card409{width:min(900px,calc(100vw - 28px));max-height:calc(100vh - 28px);overflow:auto}
+.hc-patient-edit-grid409 small{display:block;color:var(--muted,#64748b);margin-top:5px;font-weight:700}
+.hc-patient-banner-408 .hc-patient-title-408{gap:16px}
+.hc-evolution-grid-408 .hc-motive-field-408 input{min-height:48px}
+.hc-evolution-grid-408 .hc-main-evolution-408 textarea{min-height:210px}
+@media(max-width:1100px){.patients-directory-head409,.patients-directory-row409{grid-template-columns:minmax(200px,1.4fr) 110px 80px minmax(135px,1fr) minmax(140px,1fr)}.patients-directory-head409>div:last-child,.patients-directory-row409>div:last-child{display:none}}
+@media(max-width:800px){
+  .patients-directory-head409{display:none}
+  .patients-directory-row409{display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;padding:14px}
+  .patients-directory-row409>div{min-width:0}.patients-directory-row409>div:not(.patients-name409)::before{content:attr(data-label);display:block;font-size:10px;font-weight:800;text-transform:uppercase;color:var(--muted,#64748b);margin-bottom:2px}
+  .patients-name409{grid-column:1/-1;font-size:16px}.patients-email409{display:block!important}
+  .hc-context-cards409,.hc-permanent-grid409{grid-template-columns:1fr}
+}
+@media(max-width:520px){.patients-directory-row409{grid-template-columns:1fr}.patients-name409{grid-column:auto}.hc-patient-title-actions409{align-items:flex-start;flex-direction:column}.hc-evolution-card-409{padding:14px}}

@@ -1,4 +1,15 @@
-# CardioLink 4.0.8
+# CardioLink 4.0.9
+
+- Pacientes pasa a ser un padrón administrativo en tabla: nombre, DNI, edad, cobertura, teléfono y email.
+- El nombre abre la ficha administrativa completa.
+- Historia Clínica conserva el listado lateral y el espacio clínico a la derecha.
+- Evolución con contexto visual separado para fecha, profesional y vinculación.
+- Edad calculada automáticamente desde una fecha de nacimiento válida.
+- Antecedentes, alergias y medicación visibles y editables dentro de la evolución.
+- Edición de la ficha del paciente desde Historia Clínica o desde la evolución, sin crear duplicados.
+- No se crean evoluciones vacías; los cambios exclusivos del resumen clínico se guardan sin generar una evolución.
+
+# CardioLink 4.0.9
 
 - Búsqueda completa de pacientes en HC, sin límite arbitrario de 80.
 - Listado inicial alfabético con paginación.
@@ -8,7 +19,7 @@
 - Motivo de consulta compacto y área principal de evolución ampliada.
 - Se mantienen guardado manual, prevención de evoluciones vacías y bloqueo de edición a las 24 horas salvo Administrador.
 
-# CardioLink 4.0.8
+# CardioLink 4.0.9
 
 - Historia Clínica visible para todos los perfiles médicos.
 - Notas internas privadas por profesional; las notas anteriores se migran al perfil Matías.

@@ -1,11 +1,11 @@
-# CardioLink Admin v4.0.8 — Estabilización de Historia Clínica
+# CardioLink Admin v4.0.9 — Estabilización de Historia Clínica
 
 Sistema de gestión de consultorio médico con agenda, pacientes, pendientes, caja diaria, reportes, perfiles, convenios y aranceles configurables.
 
 ## Producción estimada
 Los aranceles se fijan automáticamente en las nuevas atenciones según cobertura, prestación y vigencia. Los totales económicos permanecen ocultos hasta que Matías o un Administrador solicitan el cálculo desde Configuración → Coberturas y valores.
 
-## Importar evoluciones históricas desde Medicloud (v4.0.8)
+## Importar evoluciones históricas desde Medicloud (v4.0.9)
 
 1. Ingresar con perfil Matías/Administrador.
 2. Abrir **Historia clínica**.
@@ -16,7 +16,7 @@ Los aranceles se fijan automáticamente en las nuevas atenciones según cobertur
 
 La vinculación se realiza principalmente por DNI. La fecha y hora originales se conservan. No se crean turnos, caja ni agenda. El sistema evita duplicados y permite deshacer el último lote importado.
 
-## Documentos profesionales (v4.0.8)
+## Documentos profesionales (v4.0.9)
 Cada profesional puede configurar su identidad desde **Historia clínica → Mi membrete y firma**. El Administrador también puede hacerlo desde **Configuración → Profesionales**.
 
 Las recetas, órdenes y certificados se crean desde la Historia Clínica o la ficha del paciente. Se guardan solo cuando contienen texto y se imprimen con los datos, logo, matrículas y firma del profesional emisor.
@@ -24,11 +24,11 @@ Las recetas, órdenes y certificados se crean desde la Historia Clínica o la fi
 La firma subida es una imagen gráfica para documentos impresos; no constituye una firma digital certificada.
 
 
-## v4.0.8
+## v4.0.9
 La HC está habilitada para todos los médicos. Las notas internas son privadas por profesional. El importador Medicloud se encuentra en Historia clínica y Pacientes.
 
 
-## v4.0.8 — búsqueda y panel de evolución
+## v4.0.9 — búsqueda y panel de evolución
 
 - La Historia Clínica muestra todos los pacientes desde el ingreso, ordenados alfabéticamente y paginados de 50 en 50.
 - La búsqueda recorre toda la base sin el límite anterior de 80 resultados y prioriza coincidencias exactas de DNI.
