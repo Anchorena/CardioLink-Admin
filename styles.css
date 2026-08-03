@@ -1518,7 +1518,7 @@ html body.app-ready-360 .sidebar #btnCerrarSesion{display:inline-flex!important;
 body.dark .agenda-patient-evolve-403{color:#9db1ff}
 body.dark .agenda-patient-evolve-403:hover{background:rgba(157,177,255,.12);color:#c4d0ff}
 
-/* ===== CardioLink 4.0.9 · convenios y aranceles por profesional ===== */
+/* ===== CardioLink 4.0.9.1 · convenios y aranceles por profesional ===== */
 .billing-profile-notice-404{
   margin:12px 0 16px;padding:12px 14px;border:1px solid #bfdbfe;
   border-radius:12px;background:#eff6ff;color:#1e3a5f;
@@ -1536,7 +1536,7 @@ body.dark .agenda-patient-evolve-403:hover{background:rgba(157,177,255,.12);colo
 @media(max-width:600px){.arancel-editor-prof-404{grid-template-columns:1fr}.billing-profile-notice-404{font-size:.92rem}}
 
 
-/* ===== CardioLink 4.0.9 · Importador de evoluciones Medicloud ===== */
+/* ===== CardioLink 4.0.9.1 · Importador de evoluciones Medicloud ===== */
 .hc-title-actions405{display:flex;align-items:center;justify-content:flex-end;gap:10px;flex-wrap:wrap}
 .hc-import-status405{margin:2px 0 14px;padding:9px 12px;border:1px solid var(--border,#dbe3ea);border-radius:10px;background:var(--panel-soft,#f8fafc)}
 .hc-import-modal405{z-index:10050}
@@ -1553,7 +1553,7 @@ body.dark .agenda-patient-evolve-403:hover{background:rgba(157,177,255,.12);colo
 .hc-import-table-wrap405 small{display:block;color:var(--muted,#64748b);margin-top:3px}.hc-origin405{display:inline-block;background:#ede9fe;color:#6d28d9;border-radius:999px;padding:2px 7px;font-size:10px;font-weight:800}
 @media(max-width:760px){.hc-title-actions405{justify-content:flex-start}.hc-title-actions405 button{width:100%}.hc-import-summary405{grid-template-columns:repeat(2,1fr)}.hc-import-options405{grid-template-columns:1fr}.hc-import-card405{width:98vw}.hc-import-table-wrap405{max-height:45vh}}
 
-/* ===== CardioLink Admin v4.0.9 — identidad profesional y documentos clínicos ===== */
+/* ===== CardioLink Admin v4.0.9.1 — identidad profesional y documentos clínicos ===== */
 .identity-uploads406{grid-column:1/-1;margin-top:12px;padding-top:16px;border-top:1px solid var(--border,#dbe3ec)}
 .identity-upload-grid406{display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:14px;margin:14px 0}
 .identity-upload-grid406>label{align-self:end}
@@ -1587,7 +1587,7 @@ body.dark .agenda-patient-evolve-403:hover{background:rgba(157,177,255,.12);colo
 }
 
 
-/* ===== CardioLink 4.0.9 · HC para todos los médicos, notas privadas e importación visible ===== */
+/* ===== CardioLink 4.0.9.1 · HC para todos los médicos, notas privadas e importación visible ===== */
 .hc-import-help407{
   margin:10px 0 14px;
   border:1px solid var(--border,#dbe3ea);
@@ -1617,7 +1617,7 @@ body.dark .agenda-patient-evolve-403:hover{background:rgba(157,177,255,.12);colo
 }
 
 
-/* ===== CardioLink 4.0.9 · búsqueda completa y evolución clínica compacta ===== */
+/* ===== CardioLink 4.0.9.1 · búsqueda completa y evolución clínica compacta ===== */
 .hc-pagination-408{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border,#dbe3ee)}
 .hc-pagination-408 span{font-size:13px;font-weight:800;color:var(--muted,#64748b)}
 .hc-pagination-408 button{padding:8px 12px}
@@ -1642,7 +1642,7 @@ body.dark .agenda-patient-evolve-403:hover{background:rgba(157,177,255,.12);colo
 @media(max-width:600px){.hc-patient-title-408{align-items:flex-start;flex-direction:column}.hc-patient-data-408{grid-template-columns:1fr}.hc-copy-actions-408>*{flex:1 1 calc(50% - 8px)}.hc-pagination-408{flex-wrap:wrap}.hc-pagination-408 span{order:-1;width:100%;text-align:center}}
 
 
-/* ===== CardioLink 4.0.9 · padrón de pacientes y evolución clínica ===== */
+/* ===== CardioLink 4.0.9.1 · padrón de pacientes y evolución clínica ===== */
 .pacientes-directory-layout409{display:block!important}
 .pacientes-directory-layout409 .pacientes-list-card{width:100%;max-width:none}
 .pacientes-directory-layout409 .pacientes-detail-card{margin-top:18px;width:100%;max-width:none}
@@ -1684,3 +1684,8 @@ body.dark .agenda-patient-evolve-403:hover{background:rgba(157,177,255,.12);colo
   .hc-context-cards409,.hc-permanent-grid409{grid-template-columns:1fr}
 }
 @media(max-width:520px){.patients-directory-row409{grid-template-columns:1fr}.patients-name409{grid-column:auto}.hc-patient-title-actions409{align-items:flex-start;flex-direction:column}.hc-evolution-card-409{padding:14px}}
+
+/* ===== CardioLink 4.0.9.1.1 · hotfix apertura de ficha desde padrón ===== */
+.patients-directory-row409[data-patient-open4091]{cursor:pointer}
+.patients-directory-row409[data-patient-open4091]:focus-visible{outline:3px solid rgba(37,99,235,.32);outline-offset:-3px;background:#eff6ff}
+.patients-directory-row409[data-patient-open4091] .patients-name409 button{position:relative;z-index:1}
