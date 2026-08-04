@@ -1,25 +1,32 @@
-# CardioLink 4.0.9.4
+# CardioLink Admin v4.0.9.5
+
+- Asistente para abrir RCTA con los datos del paciente preparados y copiados.
+- Acceso desde Historia Clínica, ficha administrativa y evolución.
+- Scroll independiente en el listado lateral de HC y en el padrón de Pacientes.
+- Conserva paginación de 50 registros y encabezado fijo.
+
+# CardioLink 4.0.9.5
 
 - Abrir una evolución desde Agenda cambia el turno a **En consulta**, visible para Secretaría.
 - Guardar una evolución vinculada cambia automáticamente el turno a **Atendido**.
 - Documentos rápidos: ECG, ECG y riesgo quirúrgico, apto físico, ecografía, Holter, MAPA, radiografía, mensaje a colega e indicaciones al paciente.
 - Las recetas comienzan con **R/P** y cada documento incluye un borrador editable, sin emitir conclusiones automáticas.
 
-# CardioLink 4.0.9.4
+# CardioLink 4.0.9.5
 
 - El nombre del paciente en Agenda abre directamente la evolución vinculada al turno.
 - Padrón de Pacientes paginado de a 50 registros, con encabezado fijo en escritorio.
 - Etiquetas de importación generalizadas como “otra app”.
 - Caché y versión unificadas.
 
-# CardioLink 4.0.9.4
+# CardioLink 4.0.9.5
 
 - Corrige la apertura de la ficha al tocar el nombre en el padrón de Pacientes.
 - La ficha se abre en una ventana modal y también actualiza la selección administrativa.
 - Se eliminó la dependencia de `onclick` inline para nombres o claves con caracteres especiales.
 - Permite abrir con clic, Enter o barra espaciadora.
 
-# CardioLink 4.0.9.4
+# CardioLink 4.0.9.5
 
 - Pacientes pasa a ser un padrón administrativo en tabla: nombre, DNI, edad, cobertura, teléfono y email.
 - El nombre abre la ficha administrativa completa.
@@ -30,7 +37,7 @@
 - Edición de la ficha del paciente desde Historia Clínica o desde la evolución, sin crear duplicados.
 - No se crean evoluciones vacías; los cambios exclusivos del resumen clínico se guardan sin generar una evolución.
 
-# CardioLink 4.0.9.4
+# CardioLink 4.0.9.5
 
 - Búsqueda completa de pacientes en HC, sin límite arbitrario de 80.
 - Listado inicial alfabético con paginación.
@@ -40,7 +47,7 @@
 - Motivo de consulta compacto y área principal de evolución ampliada.
 - Se mantienen guardado manual, prevención de evoluciones vacías y bloqueo de edición a las 24 horas salvo Administrador.
 
-# CardioLink 4.0.9.4
+# CardioLink 4.0.9.5
 
 - Historia Clínica visible para todos los perfiles médicos.
 - Notas internas privadas por profesional; las notas anteriores se migran al perfil Matías.

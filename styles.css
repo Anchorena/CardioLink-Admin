@@ -1717,3 +1717,20 @@ body.dark .agenda-patient-evolve-403:hover{background:rgba(157,177,255,.12);colo
 .cl-voice-dot4094{width:9px;height:9px;border-radius:50%;background:#dc2626;flex:0 0 auto}.cl-voice-status4094[data-mode="listening"] .cl-voice-dot4094{animation:clVoiceDot4094 1s ease-in-out infinite}
 @keyframes clVoiceDot4094{0%,100%{opacity:.35;transform:scale(.8)}50%{opacity:1;transform:scale(1.15)}}
 @media(max-width:600px){.cl-voice-label4094{align-items:flex-start}.cl-voice-btn4094{padding:8px 10px}.cl-voice-status4094{bottom:10px;border-radius:16px;align-items:flex-start}.cl-voice-status4094 [data-cl-voice-status-text4094]{white-space:normal;max-height:42px}.cl-voice-status4094 strong{display:none}}
+
+
+/* ===== CardioLink Admin v4.0.9.5 · scroll independiente + RCTA asistido ===== */
+@media(min-width:901px){
+  .hc-patient-list{max-height:calc(100vh - 235px);min-height:520px;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:12px;position:sticky;top:18px}
+  .pacientes-directory-layout409 .pacientes-lista{max-height:68vh!important;overflow-y:auto!important;overflow-x:auto!important;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:8px}
+  .pacientes-directory-layout409 .patients-directory-head409{top:0}
+}
+.rcta-button4095{border-color:#7c3aed!important;color:#5b21b6!important;background:#f5f3ff!important}
+.rcta-button4095:hover{background:#ede9fe!important;border-color:#6d28d9!important}
+.rcta-assist-card4095{width:min(760px,calc(100vw - 28px));max-height:calc(100vh - 28px);overflow:auto}
+.rcta-patient-title4095{display:flex;flex-direction:column;gap:4px;border:1px solid var(--border,#dbe3ee);border-radius:14px;padding:14px 16px;margin:16px 0;background:var(--soft,#f8fafc)}
+.rcta-patient-title4095 strong{font-size:18px}.rcta-patient-title4095 span{color:var(--muted,#64748b)}
+.rcta-copy-label4095{display:block;font-weight:800;margin-bottom:7px}.rcta-assist-card4095 textarea{width:100%;min-height:245px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.55}
+.rcta-assist-note4095{display:flex;flex-direction:column;gap:4px;margin-top:14px;padding:12px 14px;border-left:4px solid #7c3aed;background:#f5f3ff;border-radius:10px;color:#4c1d95}
+.rcta-actions4095{flex-wrap:wrap}.rcta-actions4095>*{min-width:130px}
+@media(max-width:900px){.rcta-actions4095>*{flex:1 1 190px}.hc-patient-list{max-height:none;overflow:visible}.pacientes-directory-layout409 .pacientes-lista{max-height:none!important;overflow:visible!important}}
