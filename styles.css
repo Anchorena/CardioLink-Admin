@@ -1719,10 +1719,10 @@ body.dark .agenda-patient-evolve-403:hover{background:rgba(157,177,255,.12);colo
 @media(max-width:600px){.cl-voice-label4094{align-items:flex-start}.cl-voice-btn4094{padding:8px 10px}.cl-voice-status4094{bottom:10px;border-radius:16px;align-items:flex-start}.cl-voice-status4094 [data-cl-voice-status-text4094]{white-space:normal;max-height:42px}.cl-voice-status4094 strong{display:none}}
 
 
-/* ===== CardioLink Admin v4.0.9.5 · scroll independiente + RCTA asistido ===== */
+/* ===== CardioLink Admin v4.0.9.6 · scroll independiente + RCTA asistido ===== */
 @media(min-width:901px){
-  .hc-patient-list{max-height:calc(100vh - 235px);min-height:520px;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:12px;position:sticky;top:18px}
-  .pacientes-directory-layout409 .pacientes-lista{max-height:68vh!important;overflow-y:auto!important;overflow-x:auto!important;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:8px}
+  .hc-patient-list{max-height:calc(100vh - 235px);min-height:520px;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:12px;contain:layout paint}
+  .pacientes-directory-layout409 .pacientes-lista{max-height:68vh!important;overflow-y:auto!important;overflow-x:auto!important;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:8px;contain:layout paint}
   .pacientes-directory-layout409 .patients-directory-head409{top:0}
 }
 .rcta-button4095{border-color:#7c3aed!important;color:#5b21b6!important;background:#f5f3ff!important}
@@ -1734,3 +1734,6 @@ body.dark .agenda-patient-evolve-403:hover{background:rgba(157,177,255,.12);colo
 .rcta-assist-note4095{display:flex;flex-direction:column;gap:4px;margin-top:14px;padding:12px 14px;border-left:4px solid #7c3aed;background:#f5f3ff;border-radius:10px;color:#4c1d95}
 .rcta-actions4095{flex-wrap:wrap}.rcta-actions4095>*{min-width:130px}
 @media(max-width:900px){.rcta-actions4095>*{flex:1 1 190px}.hc-patient-list{max-height:none;overflow:visible}.pacientes-directory-layout409 .pacientes-lista{max-height:none!important;overflow:visible!important}}
+
+/* ===== CardioLink Admin v4.0.9.6 · hotfix de rendimiento ===== */
+.hc-patient-list .hc-patient-item,.patients-directory-row409{content-visibility:auto;contain-intrinsic-size:72px}

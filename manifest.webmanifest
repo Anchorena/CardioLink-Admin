@@ -1,8 +1,8 @@
 {
-  "name": "CardioLink 4.0.9.5 HC",
+  "name": "CardioLink 4.0.9.6 HC",
   "short_name": "CardioLink HC",
   "description": "Agenda, pacientes, administración e historia clínica del consultorio.",
-  "start_url": "./?source=pwa&v=40094",
+  "start_url": "./?source=pwa&v=40096",
   "scope": "./",
   "display": "standalone",
   "background_color": "#f4f7f9",
