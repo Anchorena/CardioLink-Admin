@@ -7903,6 +7903,9 @@ function patientInfoTextHC(p,coverage){
       data.evolucionesClinicas.push({id:'evo_'+Date.now()+'_'+Math.floor(Math.random()*10000),pacienteId:key,dni:p.dni||'',pacienteNombre:nombrePacientePanel?.(p)||p.nombreCompleto||'',atencionId:atencionId||'',fechaHora:now,profesionalId:prof.id,profesionalNombre:prof.nombre,motivo,evolucion,diagnostico,conducta,creadoEn:now});
     }
     saveConfig();try{programarSyncSupabase?.();}catch(e){}
+    // v4.1.0-hc: copia clínica relacional adicional en Supabase.
+    // La HC local/config sigue siendo compatible durante esta fase de transición.
+    try{window.cardiolinkClinica410?.sincronizarPacienteCompleto?.(p);}catch(e){console.warn('No se pudo sincronizar la capa clínica relacional:',e);}
     // Al guardar una evolución vinculada, el turno se considera finalizado y pasa a "Atendido".
     if(hasEvolution&&atencionId){
       try{
@@ -7920,7 +7923,7 @@ function patientInfoTextHC(p,coverage){
     if(!hasEvolution&&summaryChanged)setTimeout(()=>alert('Resumen clínico actualizado. No se creó una evolución en blanco.'),30);
   }
   function editSummaryHC(key){
-    const p=patientByKeyHC(key);if(!p)return;const s=resumenHC(p),o=document.createElement('div');o.id='hcSummaryModal';o.className='hc-modal-overlay';o.innerHTML=`<div class="hc-modal-card"><div class="hc-modal-head"><div><h2>Resumen clínico</h2><p class="muted">${escHC(nombrePacientePanel?.(p)||p.nombreCompleto||'')}</p></div><button class="modal-close" data-hc-close-summary>×</button></div><div class="hc-modal-grid"><div><div class="cl-voice-label4094"><label for="hcSumAntecedentes">Antecedentes</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAntecedentes" aria-label="Dictar antecedentes">🎤 Dictar</button></div><textarea id="hcSumAntecedentes">${escHC(s.antecedentes||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcSumAlergias">Alergias</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAlergias" aria-label="Dictar alergias">🎤 Dictar</button></div><textarea id="hcSumAlergias">${escHC(s.alergias||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcSumMedicacion">Medicación habitual</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumMedicacion" aria-label="Dictar medicación habitual">🎤 Dictar</button></div><textarea id="hcSumMedicacion">${escHC(s.medicacion||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcSumAlertas">Alertas clínicas</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAlertas" aria-label="Dictar alertas clínicas">🎤 Dictar</button></div><textarea id="hcSumAlertas">${escHC(s.alertas||'')}</textarea></div></div><div class="hc-modal-actions"><button class="secondary" data-hc-close-summary>Cancelar</button><button class="primary" id="hcSaveSummary">Guardar resumen</button></div></div>`;document.body.appendChild(o);$hc('hcSaveSummary').onclick=()=>{ensureHC();data.resumenesClinicos[patientKeyHC(p)]={antecedentes:$hc('hcSumAntecedentes').value.trim(),alergias:$hc('hcSumAlergias').value.trim(),medicacion:$hc('hcSumMedicacion').value.trim(),alertas:$hc('hcSumAlertas').value.trim(),actualizadoEn:new Date().toISOString()};saveConfig();try{programarSyncSupabase?.();}catch(e){}o.remove();renderDetailHC(patientKeyHC(p));};
+    const p=patientByKeyHC(key);if(!p)return;const s=resumenHC(p),o=document.createElement('div');o.id='hcSummaryModal';o.className='hc-modal-overlay';o.innerHTML=`<div class="hc-modal-card"><div class="hc-modal-head"><div><h2>Resumen clínico</h2><p class="muted">${escHC(nombrePacientePanel?.(p)||p.nombreCompleto||'')}</p></div><button class="modal-close" data-hc-close-summary>×</button></div><div class="hc-modal-grid"><div><div class="cl-voice-label4094"><label for="hcSumAntecedentes">Antecedentes</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAntecedentes" aria-label="Dictar antecedentes">🎤 Dictar</button></div><textarea id="hcSumAntecedentes">${escHC(s.antecedentes||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcSumAlergias">Alergias</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAlergias" aria-label="Dictar alergias">🎤 Dictar</button></div><textarea id="hcSumAlergias">${escHC(s.alergias||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcSumMedicacion">Medicación habitual</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumMedicacion" aria-label="Dictar medicación habitual">🎤 Dictar</button></div><textarea id="hcSumMedicacion">${escHC(s.medicacion||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcSumAlertas">Alertas clínicas</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAlertas" aria-label="Dictar alertas clínicas">🎤 Dictar</button></div><textarea id="hcSumAlertas">${escHC(s.alertas||'')}</textarea></div></div><div class="hc-modal-actions"><button class="secondary" data-hc-close-summary>Cancelar</button><button class="primary" id="hcSaveSummary">Guardar resumen</button></div></div>`;document.body.appendChild(o);$hc('hcSaveSummary').onclick=()=>{ensureHC();data.resumenesClinicos[patientKeyHC(p)]={antecedentes:$hc('hcSumAntecedentes').value.trim(),alergias:$hc('hcSumAlergias').value.trim(),medicacion:$hc('hcSumMedicacion').value.trim(),alertas:$hc('hcSumAlertas').value.trim(),actualizadoEn:new Date().toISOString()};saveConfig();try{programarSyncSupabase?.();}catch(e){}try{window.cardiolinkClinica410?.sincronizarPacienteCompleto?.(p);}catch(e){console.warn('No se pudo sincronizar el resumen clínico relacional:',e);}o.remove();renderDetailHC(patientKeyHC(p));};
   }
   function printHC(key){const p=patientByKeyHC(key);if(!p)return;const s=resumenHC(p),tl=timelineHC(p);const w=window.open('','_blank');if(!w)return;w.document.write(`<html><head><title>Historia clínica - ${escHC(nombrePacientePanel?.(p)||p.nombreCompleto||'')}</title><style>body{font-family:Arial,sans-serif;margin:32px;color:#111}h1{margin-bottom:4px}.muted{color:#555}.box{border:1px solid #bbb;border-radius:10px;padding:12px;margin:12px 0}.event{border-left:4px solid #174b5c;padding:8px 14px;margin:14px 0;page-break-inside:avoid}label{font-size:11px;text-transform:uppercase;color:#555;font-weight:bold}p{white-space:pre-wrap}</style></head><body><h1>${escHC(nombrePacientePanel?.(p)||p.nombreCompleto||'')}</h1><div class="muted">DNI ${escHC(p.dni||'s/d')} · Fecha de emisión ${escHC(fmtDateTimeHC(new Date().toISOString()))}</div><div class="box"><strong>Antecedentes:</strong> ${escHC(s.antecedentes||'s/d')}<br><strong>Alergias:</strong> ${escHC(s.alergias||'s/d')}<br><strong>Medicación:</strong> ${escHC(s.medicacion||'s/d')}</div>${tl.map(x=>x.type==='evolution'?`<div class="event"><h3>Evolución clínica · ${escHC(fmtDateTimeHC(x.obj.fechaHora))}</h3><div>${escHC(x.obj.profesionalNombre||'')}</div>${x.obj.motivo?`<p><label>Motivo</label><br>${escHC(x.obj.motivo)}</p>`:''}${x.obj.evolucion?`<p><label>Evolución</label><br>${escHC(x.obj.evolucion)}</p>`:''}${x.obj.diagnostico?`<p><label>Diagnóstico</label><br>${escHC(x.obj.diagnostico)}</p>`:''}${x.obj.conducta?`<p><label>Conducta</label><br>${escHC(x.obj.conducta)}</p>`:''}</div>`:`<div class="event"><h3>${escHC(x.obj.prestacion||'Atención')} · ${escHC(formatFecha?.(x.obj.fecha)||x.obj.fecha||'')}</h3><div>${escHC(x.obj.profesional||'')} · ${escHC(x.obj.obraSocial||'')}</div></div>`).join('')}</body></html>`);w.document.close();setTimeout(()=>w.print(),300);}
   function addPatientButtonHC(){
@@ -9194,4 +9197,210 @@ function patientInfoTextHC(p,coverage){
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot4095);else boot4095();
   window.CardioLinkRCTA4095={open:openRctaModal4095,prepare:preparedText4095};
+})();
+
+
+/* ===== CardioLink v4.1.0-hc · Capa clínica relacional Fase 1 =====
+   Objetivo:
+   - Mantener compatibilidad con la HC actual en data/localStorage/config.
+   - Copiar y recuperar pacientes clínicos, resumen y evoluciones desde tablas propias.
+   - NO borrar automáticamente registros clínicos remotos.
+   - NO convertir todavía estas tablas en única fuente de verdad.
+*/
+(function(){
+  const VERSION_CLINICA_410='4.1.0-hc-fase1';
+
+  function listo410(){
+    try{return !!(supabaseClient && usuarioSupabase && data);}catch(e){return false;}
+  }
+  function digits410(v){return String(v||'').replace(/\D/g,'');}
+  function isoDate410(v){
+    const s=String(v||'').trim();
+    if(!s)return null;
+    if(/^\d{4}-\d{2}-\d{2}/.test(s))return s.slice(0,10);
+    const m=s.match(/^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})/);
+    if(!m)return null;
+    let y=m[3]; if(y.length===2)y=(Number(y)>40?'19':'20')+y;
+    return `${y.padStart(4,'0')}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;
+  }
+  function nombre410(p){
+    try{return nombrePacientePanel?.(p)||p?.nombreCompleto||p?.paciente||'';}catch(e){return p?.nombreCompleto||p?.paciente||'';}
+  }
+  function key410(p){
+    if(p?.id && !String(p.id).startsWith('legacy_'))return String(p.id);
+    const dni=digits410(p?.dni);
+    if(dni){
+      const real=(data?.pacientes||[]).find(x=>digits410(x.dni)===dni && x.id && !String(x.id).startsWith('legacy_'));
+      if(real)return String(real.id);
+    }
+    return String(p?.id||('pac_'+Date.now()+'_'+Math.floor(Math.random()*10000)));
+  }
+  function resumenLocal410(p){
+    const k=key410(p);
+    const direct=data?.resumenesClinicos?.[k];
+    if(direct)return direct;
+    const dni=digits410(p?.dni);
+    if(dni && data?.resumenesClinicos){
+      const match=(data?.pacientes||[]).find(x=>digits410(x.dni)===dni);
+      if(match?.id && data.resumenesClinicos[match.id])return data.resumenesClinicos[match.id];
+    }
+    return null;
+  }
+  function evolucionesLocal410(p){
+    const k=key410(p),dni=digits410(p?.dni);
+    return (data?.evolucionesClinicas||[]).filter(e=>String(e.pacienteId||'')===k || (dni && digits410(e.dni)===dni));
+  }
+  function pacienteRow410(p){
+    const id=key410(p);
+    return {
+      id,
+      nombre_completo:nombre410(p)||null,
+      dni:String(p?.dni||'').trim()||null,
+      telefono:String(p?.telefono||'').trim()||null,
+      email:String(p?.email||'').trim()||null,
+      fecha_nacimiento:isoDate410(p?.fechaNacimiento),
+      sexo:String(p?.sexo||'').trim()||null,
+      localidad:String(p?.localidad||'').trim()||null,
+      direccion:String(p?.direccion||'').trim()||null,
+      provincia:String(p?.provincia||'').trim()||null,
+      cobertura_habitual:String(p?.coberturaHabitual||'').trim()||null,
+      numero_afiliado_habitual:String(p?.numeroAfiliadoHabitual||'').trim()||null,
+      contacto_responsable_nombre:String(p?.contactoResponsableNombre||'').trim()||null,
+      contacto_responsable_relacion:String(p?.contactoResponsableRelacion||'').trim()||null,
+      contacto_responsable_telefono:String(p?.contactoResponsableTelefono||'').trim()||null,
+      contacto_responsable_email:String(p?.contactoResponsableEmail||'').trim()||null,
+      activo:p?.estado==='fusionado'?false:true,
+      actualizado_en:new Date().toISOString()
+    };
+  }
+  function resumenRow410(p,s){
+    if(!s)return null;
+    return {
+      paciente_id:key410(p),
+      antecedentes:String(s.antecedentes||''),
+      alergias:String(s.alergias||''),
+      medicacion_habitual:String(s.medicacion||s.medicacion_habitual||''),
+      alertas:String(s.alertas||''),
+      actualizado_en:s.actualizadoEn||new Date().toISOString(),
+      actualizado_por:s.actualizadoPor||(()=>{try{return nombreUsuarioAuditoria?.()||usuarioSupabase?.email||'';}catch(e){return usuarioSupabase?.email||'';}})()
+    };
+  }
+  function evolucionRow410(e,p){
+    return {
+      id:String(e.id),
+      paciente_id:key410(p),
+      atencion_id:e.atencionId?String(e.atencionId):null,
+      fecha_hora:e.fechaHora||e.creadoEn||new Date().toISOString(),
+      profesional_id:e.profesionalId?String(e.profesionalId):null,
+      profesional_nombre:e.profesionalNombre||null,
+      motivo:e.motivo||null,
+      evolucion:e.evolucion||null,
+      diagnostico:e.diagnostico||null,
+      conducta:e.conducta||null,
+      peso_kg:e.pesoKg??e.peso_kg??null,
+      talla_cm:e.tallaCm??e.talla_cm??null,
+      imc:e.imc??null,
+      ta_sistolica:e.taSistolica??e.ta_sistolica??null,
+      ta_diastolica:e.taDiastolica??e.ta_diastolica??null,
+      frecuencia_cardiaca:e.frecuenciaCardiaca??e.frecuencia_cardiaca??null,
+      sato2:e.sato2??null,
+      temperatura:e.temperatura??null,
+      creado_en:e.creadoEn||e.fechaHora||new Date().toISOString(),
+      creado_por:e.creadoPor||e.profesionalNombre||null,
+      editado_en:e.actualizadoEn||e.editadoEn||null,
+      editado_por:e.actualizadoPor||e.editadoPor||null,
+      origen:'CardioLink'
+    };
+  }
+
+  async function sincronizarPacienteCompleto410(p){
+    if(!listo410()||!p)return false;
+    try{
+      const prow=pacienteRow410(p);
+      const {error:pe}=await supabaseClient.from('cardiolink_pacientes').upsert([prow],{onConflict:'id'});
+      if(pe)throw pe;
+
+      const s=resumenLocal410(p);
+      if(s){
+        const {error:se}=await supabaseClient.from('cardiolink_hc_resumen').upsert([resumenRow410(p,s)],{onConflict:'paciente_id'});
+        if(se)throw se;
+      }
+
+      const ev=evolucionesLocal410(p).filter(x=>x?.id);
+      if(ev.length){
+        const rows=ev.map(x=>evolucionRow410(x,p));
+        const {error:ee}=await supabaseClient.from('cardiolink_hc_evoluciones').upsert(rows,{onConflict:'id'});
+        if(ee)throw ee;
+      }
+      console.log('HC relacional sincronizada:',prow.id,ev.length,'evolución(es)');
+      return true;
+    }catch(e){
+      console.warn('HC relacional: no se pudo sincronizar paciente completo:',e?.message||e);
+      return false;
+    }
+  }
+
+  function mergePaciente410(row){
+    if(!row?.id)return;
+    if(!Array.isArray(data.pacientes))data.pacientes=[];
+    let p=data.pacientes.find(x=>String(x.id||'')===String(row.id));
+    if(!p && row.dni){p=data.pacientes.find(x=>digits410(x.dni)===digits410(row.dni));}
+    if(!p){p={id:String(row.id),historialCoberturas:[]};data.pacientes.push(p);}
+    // En Fase 1 la ficha administrativa vigente sigue teniendo prioridad.
+    const fill=(k,v)=>{if((p[k]===undefined||p[k]===null||p[k]==='') && v!==undefined&&v!==null&&v!=='')p[k]=v;};
+    fill('nombreCompleto',row.nombre_completo);fill('dni',row.dni);fill('telefono',row.telefono);fill('email',row.email);
+    fill('fechaNacimiento',row.fecha_nacimiento);fill('sexo',row.sexo);fill('localidad',row.localidad);fill('direccion',row.direccion);fill('provincia',row.provincia);
+    fill('coberturaHabitual',row.cobertura_habitual);fill('numeroAfiliadoHabitual',row.numero_afiliado_habitual);
+    fill('contactoResponsableNombre',row.contacto_responsable_nombre);fill('contactoResponsableRelacion',row.contacto_responsable_relacion);
+    fill('contactoResponsableTelefono',row.contacto_responsable_telefono);fill('contactoResponsableEmail',row.contacto_responsable_email);
+  }
+  function mergeResumen410(row){
+    if(!row?.paciente_id)return;
+    if(!data.resumenesClinicos||typeof data.resumenesClinicos!=='object')data.resumenesClinicos={};
+    const local=data.resumenesClinicos[row.paciente_id];
+    const rt=Date.parse(row.actualizado_en||0)||0,lt=Date.parse(local?.actualizadoEn||0)||0;
+    if(!local || rt>=lt){
+      data.resumenesClinicos[row.paciente_id]={antecedentes:row.antecedentes||'',alergias:row.alergias||'',medicacion:row.medicacion_habitual||'',alertas:row.alertas||'',actualizadoEn:row.actualizado_en||'',actualizadoPor:row.actualizado_por||''};
+    }
+  }
+  function mergeEvolucion410(row){
+    if(!row?.id)return;
+    if(!Array.isArray(data.evolucionesClinicas))data.evolucionesClinicas=[];
+    const incoming={id:String(row.id),pacienteId:String(row.paciente_id||''),atencionId:row.atencion_id?String(row.atencion_id):'',fechaHora:row.fecha_hora||row.creado_en||'',profesionalId:row.profesional_id||'',profesionalNombre:row.profesional_nombre||'',motivo:row.motivo||'',evolucion:row.evolucion||'',diagnostico:row.diagnostico||'',conducta:row.conducta||'',pesoKg:row.peso_kg??null,tallaCm:row.talla_cm??null,imc:row.imc??null,taSistolica:row.ta_sistolica??null,taDiastolica:row.ta_diastolica??null,frecuenciaCardiaca:row.frecuencia_cardiaca??null,sato2:row.sato2??null,temperatura:row.temperatura??null,creadoEn:row.creado_en||'',creadoPor:row.creado_por||'',actualizadoEn:row.editado_en||'',actualizadoPor:row.editado_por||''};
+    const i=data.evolucionesClinicas.findIndex(x=>String(x.id||'')===String(row.id));
+    if(i<0){data.evolucionesClinicas.push(incoming);return;}
+    const local=data.evolucionesClinicas[i],rt=Date.parse(row.editado_en||row.creado_en||row.fecha_hora||0)||0,lt=Date.parse(local.actualizadoEn||local.creadoEn||local.fechaHora||0)||0;
+    if(rt>=lt)data.evolucionesClinicas[i]={...local,...incoming};
+  }
+
+  let cargando410=false;
+  async function cargar410(){
+    if(!listo410()||cargando410)return false;
+    cargando410=true;
+    try{
+      const [pa,re,ev]=await Promise.all([
+        supabaseClient.from('cardiolink_pacientes').select('*'),
+        supabaseClient.from('cardiolink_hc_resumen').select('*'),
+        supabaseClient.from('cardiolink_hc_evoluciones').select('*').order('fecha_hora',{ascending:false})
+      ]);
+      if(pa.error)throw pa.error;if(re.error)throw re.error;if(ev.error)throw ev.error;
+      (pa.data||[]).forEach(mergePaciente410);(re.data||[]).forEach(mergeResumen410);(ev.data||[]).forEach(mergeEvolucion410);
+      try{localStorage.setItem(storageConfig,JSON.stringify(data));}catch(e){}
+      console.log(`Capa clínica relacional ${VERSION_CLINICA_410} cargada:`,(pa.data||[]).length,'pacientes,',(re.data||[]).length,'resúmenes,',(ev.data||[]).length,'evoluciones');
+      return true;
+    }catch(e){console.warn('No se pudo cargar la capa clínica relacional:',e?.message||e);return false;}
+    finally{cargando410=false;}
+  }
+
+  window.cardiolinkClinica410={version:VERSION_CLINICA_410,cargar:cargar410,sincronizarPacienteCompleto:sincronizarPacienteCompleto410};
+
+  // Carga inicial: espera a que Supabase Auth haya terminado el login.
+  let intentos=0;
+  const timer=setInterval(async()=>{
+    intentos++;
+    if(listo410()){
+      clearInterval(timer);
+      await cargar410();
+    }else if(intentos>60){clearInterval(timer);}
+  },500);
 })();
