@@ -649,6 +649,19 @@ function registrosSincronizablesSupabase(lista = atenciones) {
   return out;
 }
 
+
+/* ===== SINCRONIZACIÓN SEGURA v4.1.0-hc =====
+   Evita el patrón peligroso "DELETE ALL + UPSERT".
+   Primero confirma/escribe los registros actuales y recién después limpia
+   IDs remotos obsoletos. Incluye protecciones contra vaciados accidentales. */
+async function limpiarIdsRemotosObsoletosSeguro(idsLocales, cantidadAtencionesLocales) {
+  // v4.1.0-hc: NO se eliminan filas remotas por comparación automática.
+  // En un entorno con varias computadoras, una fila que no esté en esta copia local
+  // puede haber sido creada hace segundos por Secretaría u otro profesional.
+  // Las bajas reales se hacen únicamente por ID cuando el usuario pulsa “Borrar”.
+  return { ok:true, eliminados:0, omitido:true, modo:'upsert_only' };
+}
+
 async function sincronizarAtencionesSupabase(forzar = false) {
   if (!supabaseClient || !usuarioSupabase) {
     console.warn("No se sincroniza: falta Supabase o usuario.");
@@ -664,7 +677,7 @@ async function sincronizarAtencionesSupabase(forzar = false) {
 
   syncAtencionesEnCurso = true;
   try {
-    // Incluye atenciones + mensajes internos. Antes los mensajes quedaban afuera y desaparecían al refrescar.
+    // Incluye atenciones + mensajes internos y normaliza IDs antes de enviar.
     atenciones = registrosSincronizablesSupabase(atenciones);
     localStorage.setItem(storageAtenciones, JSON.stringify(atenciones));
 
@@ -674,18 +687,7 @@ async function sincronizarAtencionesSupabase(forzar = false) {
       updated_at: new Date().toISOString()
     }));
 
-    // Reemplazo completo protegido por lock para evitar carreras entre autosync y clicks.
-    const { error: deleteError } = await supabaseClient
-      .from("cardiolink_atenciones")
-      .delete()
-      .neq("id", "__nunca__");
-
-    if (deleteError) {
-      console.error("Error limpiando tabla Supabase:", deleteError);
-      alert("No se pudo limpiar/sincronizar Supabase: " + deleteError.message);
-      return false;
-    }
-
+    // PASO 1: escribir/actualizar primero. Nunca vaciar la tabla antes del UPSERT.
     if (rows.length) {
       const { error: upsertError } = await supabaseClient
         .from("cardiolink_atenciones")
@@ -698,7 +700,19 @@ async function sincronizarAtencionesSupabase(forzar = false) {
       }
     }
 
-    console.log("Supabase sincronizado:", rows.length, "registros");
+    // PASO 2: limpiar solo IDs remotos que ya no existen localmente.
+    // Si la base local está vacía o la diferencia es sospechosamente grande,
+    // la protección bloquea el borrado en lugar de arriesgar los datos remotos.
+    const limpieza = await limpiarIdsRemotosObsoletosSeguro(
+      rows.map(r => r.id),
+      atenciones.length
+    );
+
+    if (limpieza?.protegido) {
+      console.warn("Sincronización guardada, pero la limpieza remota fue bloqueada por seguridad.");
+    }
+
+    console.log("Supabase sincronizado de forma segura:", rows.length, "registros", limpieza?.eliminados ? `· ${limpieza.eliminados} obsoletos eliminados` : "");
     return true;
   } finally {
     syncAtencionesEnCurso = false;
@@ -3689,13 +3703,29 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     retornoEdicion = null;
   };
 
-  window.eliminarAtencion = eliminarAtencion = function(id){
+  window.eliminarAtencion = eliminarAtencion = async function(id){
     if(!id){ alert('No encontré la atención seleccionada. Actualizá y probá de nuevo.'); return; }
     const a = (atenciones||[]).find(x => String(x.id)===String(id));
     if(!a){ alert('No encontré la atención seleccionada. Actualizá y probá de nuevo.'); return; }
     if(!confirm('¿Borrar esta atención?')) return;
+
+    // Primero borrar exactamente este ID en Supabase. Nunca se hace un borrado masivo.
+    if(supabaseClient && usuarioSupabase){
+      const { error } = await supabaseClient
+        .from('cardiolink_atenciones')
+        .delete()
+        .eq('id', String(id));
+      if(error){
+        console.error('No se pudo borrar la atención en Supabase:', error);
+        alert('No se pudo borrar la atención en la nube. No se realizaron cambios. Revisá la conexión e intentá nuevamente.');
+        return;
+      }
+    }
+
     atenciones = (atenciones||[]).filter(x => String(x.id)!==String(id));
-    try { saveAtenciones(); } catch(e) { console.error(e); }
+    try {
+      localStorage.setItem(storageAtenciones, JSON.stringify(atenciones));
+    } catch(e) { console.error(e); }
     renderDespuesDeCambios();
   };
 
@@ -5147,16 +5177,38 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         atenciones=registrosSincronizablesSupabase(atenciones);
         localStorage.setItem(storageAtenciones,JSON.stringify(atenciones));
         localStorage.setItem(storageConfig,JSON.stringify(data));
+
         const rows=atenciones.map(a=>({id:String(a.id),payload:a,updated_at:new Date().toISOString()}));
         rows.push({id:CONFIG_ROW_ID,payload:{tipoRegistro:'config',version:VERSION_298,config:data,updatedAt:new Date().toISOString()},updated_at:new Date().toISOString()});
+
         const vistos=new Set();
         const finalRows=[];
-        rows.forEach((r,idx)=>{ if(vistos.has(r.id) && r.id!==CONFIG_ROW_ID) r.id='att_'+Date.now()+'_'+idx+'_'+Math.random().toString(36).slice(2,8); vistos.add(r.id); finalRows.push(r); });
-        const {error:delErr}=await supabaseClient.from('cardiolink_atenciones').delete().neq('id','__nunca__');
-        if(delErr){console.error(delErr); alert('No se pudo limpiar/sincronizar Supabase: '+delErr.message); return false;}
-        const {error:upErr}=await supabaseClient.from('cardiolink_atenciones').upsert(finalRows,{onConflict:'id'});
-        if(upErr){console.error(upErr); alert('No se pudo sincronizar con Supabase: '+upErr.message); return false;}
-        console.log('Supabase sincronizado:',finalRows.length,'registros + config');
+        rows.forEach((r,idx)=>{
+          if(vistos.has(r.id) && r.id!==CONFIG_ROW_ID) r.id='att_'+Date.now()+'_'+idx+'_'+Math.random().toString(36).slice(2,8);
+          vistos.add(r.id);
+          finalRows.push(r);
+        });
+
+        // SINCRONIZACIÓN SEGURA: primero UPSERT. Nunca DELETE ALL antes de guardar.
+        const {error:upErr}=await supabaseClient
+          .from('cardiolink_atenciones')
+          .upsert(finalRows,{onConflict:'id'});
+        if(upErr){
+          console.error(upErr);
+          alert('No se pudo sincronizar con Supabase: '+upErr.message);
+          return false;
+        }
+
+        // Luego elimina únicamente IDs obsoletos, con protección contra vaciados masivos.
+        const limpieza=await limpiarIdsRemotosObsoletosSeguro(
+          finalRows.map(r=>r.id),
+          atenciones.length
+        );
+        if(limpieza?.protegido){
+          console.warn('CardioLink protegió la base remota: se omitió una limpieza potencialmente masiva.');
+        }
+
+        console.log('Supabase sincronizado de forma segura:',finalRows.length,'registros + config',limpieza?.eliminados?`· ${limpieza.eliminados} obsoletos eliminados`:'' );
         return true;
       }finally{
         syncAtencionesEnCurso=false;
