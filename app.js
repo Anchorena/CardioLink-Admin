@@ -6177,7 +6177,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   }
   function openWelcome360(force=false){
     const modal=$360('welcomeModal360');if(!modal)return;
-    if(isLocalPreview360() && !force) return;
+    // v4.1.0-hc 3B.1: la bienvenida también se muestra en la prueba local.
     const u=currentUser360();
     const key=`cl_welcome_${hasAuthenticatedSession360()?(usuarioActualNombreCorto?.()||'usuario'):'preview'}_${today360()}`;if(!force&&window.__welcomeShown371)return;
     $360('welcomeFecha360').textContent=new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
@@ -7897,10 +7897,35 @@ function patientInfoTextHC(p,coverage){
       <div class="hc-clinical-summary"><div class="hc-clinical-summary-title409"><h3>Resumen clínico</h3><button class="secondary small-btn" type="button" data-hc-edit-summary="${escHC(patientKeyHC(p))}">Editar</button></div><div class="hc-clinical-summary-grid"><div><strong>Antecedentes</strong><p>${escHC(sum.antecedentes||'Sin registrar')}</p></div><div><strong>Alergias</strong><p>${escHC(sum.alergias||'Sin registrar')}</p></div><div><strong>Medicación habitual</strong><p>${escHC(sum.medicacion||'Sin registrar')}</p></div></div>${sum.alertas?`<div class="hc-event-section"><label>Alertas</label><p>${escHC(sum.alertas)}</p></div>`:''}</div>
       <h3>Línea de tiempo clínica</h3><div class="hc-timeline">${timeline.length?timeline.map(x=>x.type==='evolution'?renderEvolutionEventHC(x.obj):renderAttentionEventHC(x.obj)).join(''):'<div class="hc-empty"><strong>Sin eventos</strong><span>Creá la primera evolución clínica.</span></div>'}</div>`;
   }
+  function puedeEliminarEvolucionHC(){
+    try{return (typeof esMatiasDuenio==='function'&&esMatiasDuenio())||(typeof esAdminComun==='function'&&esAdminComun());}catch(e){return false;}
+  }
   function renderEvolutionEventHC(e){
-    const editable=canEditHC(e);
+    const editable=canEditHC(e),canDelete=puedeEliminarEvolucionHC();
     const cabecera=[e.motivo||'',vitalesHC(e)||''].filter(Boolean).join(' · ');
-    return `<article class="hc-event hc-event-compact411" data-hc-evolution-id="${escHC(e.id)}" data-hc-attention-id="${escHC(e.atencionId||'')}"><div class="hc-event-head"><div><strong>${escHC(e.motivo||'Evolución clínica')}</strong><div class="hc-event-meta">${escHC(fmtDateTimeHC(e.fechaHora))} · ${escHC(e.profesionalNombre||'')}</div>${cabecera?`<div class="hc-event-compact-line411">${escHC(cabecera)}</div>`:''}</div><div>${editable?`<button class="secondary small-btn" data-hc-edit="${escHC(e.id)}">Editar</button>`:'<span class="hc-lock">Bloqueada +24 h</span>'}</div></div>${e.evolucion?`<div class="hc-event-section"><label>Evolución / examen</label><p>${escHC(e.evolucion)}</p></div>`:''}${e.diagnostico?`<div class="hc-event-section"><label>Impresión diagnóstica</label><p>${escHC(e.diagnostico)}</p></div>`:''}${e.conducta?`<div class="hc-event-section"><label>Conducta / plan</label><p>${escHC(e.conducta)}</p></div>`:''}</article>`;
+    return `<article class="hc-event hc-event-compact411" data-hc-evolution-id="${escHC(e.id)}" data-hc-attention-id="${escHC(e.atencionId||'')}"><div class="hc-event-head"><div><strong>${escHC(e.motivo||'Evolución clínica')}</strong><div class="hc-event-meta">${escHC(fmtDateTimeHC(e.fechaHora))} · ${escHC(e.profesionalNombre||'')}</div>${cabecera?`<div class="hc-event-compact-line411">${escHC(cabecera)}</div>`:''}</div><div class="hc-event-actions411b1">${editable?`<button class="secondary small-btn" data-hc-edit="${escHC(e.id)}">Editar</button>`:'<span class="hc-lock">Bloqueada +24 h</span>'}${canDelete?`<button class="secondary small-btn hc-delete411b1" data-hc-delete411b1="${escHC(e.id)}">Eliminar</button>`:''}</div></div>${e.evolucion?`<div class="hc-event-section"><label>Evolución / examen</label><p>${escHC(e.evolucion)}</p></div>`:''}${e.diagnostico?`<div class="hc-event-section"><label>Impresión diagnóstica</label><p>${escHC(e.diagnostico)}</p></div>`:''}${e.conducta?`<div class="hc-event-section"><label>Conducta / plan</label><p>${escHC(e.conducta)}</p></div>`:''}</article>`;
+  }
+  async function eliminarEvolucionHCProtegida411B1(id){
+    if(!puedeEliminarEvolucionHC()){alert('Solo Administración puede eliminar una evolución.');return;}
+    const ev=(data.evolucionesClinicas||[]).find(x=>String(x.id)===String(id));if(!ev)return;
+    const clave=prompt('Eliminar evolución clínica. Ingresá la clave de administrador:');
+    if(clave===null)return;
+    const claveAdmin=(typeof CLAVE_DINERO_PERIODO!=='undefined'?CLAVE_DINERO_PERIODO:'matias2026');
+    if(String(clave)!==String(claveAdmin)){alert('Clave incorrecta. No se eliminó nada.');return;}
+    if(!confirm('¿Eliminar definitivamente esta evolución? Esta acción no se puede deshacer.'))return;
+    const patientKey=ev.pacienteId||'';
+    data.evolucionesClinicas=(data.evolucionesClinicas||[]).filter(x=>String(x.id)!==String(id));
+    saveConfig();
+    try{
+      if(typeof supabaseClient!=='undefined'&&supabaseClient){
+        const {error}=await supabaseClient.from('cardiolink_hc_evoluciones').delete().eq('id',String(id));
+        if(error)throw error;
+      }
+    }catch(err){
+      console.error('No se pudo eliminar la evolución relacional:',err);
+      alert('Se quitó de la HC local, pero Supabase informó un error. No continúes borrando y revisemos la sincronización.');
+    }
+    try{renderDetailHC(patientKey);}catch(e){}
   }
   function renderAttentionEventHC(a){return `<article class="hc-event attention" data-hc-attention-id="${escHC(a.id)}"><div class="hc-event-head"><div><strong>${escHC(a.prestacion||'Atención')}</strong><div class="hc-event-meta">${escHC(formatFecha?.(a.fecha)||a.fecha||'')} ${escHC(a.horaInicio||'')} · ${escHC(a.profesional||'')}</div></div><span class="hc-lock">Atención administrativa</span></div><div class="hc-event-section"><label>Cobertura</label><p>${escHC(a.obraSocial||'s/d')}</p></div>${a.observaciones?`<div class="hc-event-section"><label>Observaciones</label><p>${escHC(a.observaciones)}</p></div>`:''}<div class="hc-event-section"><button class="secondary small-btn" data-hc-new="${escHC(hcPacienteSeleccionado)}" data-atencion-id="${escHC(a.id)}">Evolucionar esta atención</button></div></article>`;}
   function openEvolutionModalHC(key,evolutionId='',atencionId=''){
@@ -8019,8 +8044,8 @@ function patientInfoTextHC(p,coverage){
       if(page&&!page.disabled){e.preventDefault();hcPaginaResultados=Number(page.dataset.hcPage)||1;renderSearchHC(false);$hc('hcResultadosResumen')?.scrollIntoView({behavior:'smooth',block:'nearest'});return;}
       const nav=e.target.closest?.('[data-section="hc"]');
       if(nav){setTimeout(()=>renderSearchHC(false),80);return;}
-      const t=e.target.closest('[data-hc-patient],[data-hc-new],[data-hc-edit],[data-hc-edit-summary],[data-hc-edit-patient409],[data-hc-print],[data-hc-close],[data-hc-close-summary],[data-hc-close-patient409],[data-open-hc]');if(!t)return;
-      if(t.dataset.hcPatient)renderDetailHC(t.dataset.hcPatient);else if(t.dataset.hcNew)openEvolutionModalHC(t.dataset.hcNew,'',t.dataset.atencionId||'');else if(t.dataset.hcEdit){const ev=data.evolucionesClinicas.find(x=>x.id===t.dataset.hcEdit);if(ev)openEvolutionModalHC(ev.pacienteId,ev.id,ev.atencionId||'');}else if(t.dataset.hcEditSummary)editSummaryHC(t.dataset.hcEditSummary);else if(t.dataset.hcEditPatient409)openPatientEditHC(t.dataset.hcEditPatient409,t.dataset.hcEditContext409||'detail');else if(t.dataset.hcPrint)printHC(t.dataset.hcPrint);else if(t.hasAttribute('data-hc-close'))$hc('hcEvolutionModal')?.remove();else if(t.hasAttribute('data-hc-close-summary'))$hc('hcSummaryModal')?.remove();else if(t.hasAttribute('data-hc-close-patient409'))$hc('hcPatientEditModal409')?.remove();else if(t.dataset.openHc){showSection('hc');setTimeout(()=>renderDetailHC(t.dataset.openHc),40);}
+      const t=e.target.closest('[data-hc-patient],[data-hc-new],[data-hc-edit],[data-hc-delete411b1],[data-hc-edit-summary],[data-hc-edit-patient409],[data-hc-print],[data-hc-close],[data-hc-close-summary],[data-hc-close-patient409],[data-open-hc]');if(!t)return;
+      if(t.dataset.hcPatient)renderDetailHC(t.dataset.hcPatient);else if(t.dataset.hcNew)openEvolutionModalHC(t.dataset.hcNew,'',t.dataset.atencionId||'');else if(t.dataset.hcEdit){const ev=data.evolucionesClinicas.find(x=>x.id===t.dataset.hcEdit);if(ev)openEvolutionModalHC(ev.pacienteId,ev.id,ev.atencionId||'');}else if(t.dataset.hcDelete411b1){eliminarEvolucionHCProtegida411B1(t.dataset.hcDelete411b1);}else if(t.dataset.hcEditSummary)editSummaryHC(t.dataset.hcEditSummary);else if(t.dataset.hcEditPatient409)openPatientEditHC(t.dataset.hcEditPatient409,t.dataset.hcEditContext409||'detail');else if(t.dataset.hcPrint)printHC(t.dataset.hcPrint);else if(t.hasAttribute('data-hc-close'))$hc('hcEvolutionModal')?.remove();else if(t.hasAttribute('data-hc-close-summary'))$hc('hcSummaryModal')?.remove();else if(t.hasAttribute('data-hc-close-patient409'))$hc('hcPatientEditModal409')?.remove();else if(t.dataset.openHc){showSection('hc');setTimeout(()=>renderDetailHC(t.dataset.openHc),40);}
     });
     // Mostrar pacientes desde el ingreso y volver a calcular tras la sincronización inicial.
     setTimeout(()=>renderSearchHC(false),50);setTimeout(()=>renderSearchHC(false),900);setTimeout(()=>renderSearchHC(false),2200);
@@ -8885,6 +8910,7 @@ function patientInfoTextHC(p,coverage){
     ['receta','Receta'],
     ['orden','Orden médica'],
     ['certificado','Certificado'],
+    ['constancia_atencion','Constancia de atención'],
     ['ecg','ECG'],
     ['ecg_riesgo_quirurgico','ECG y riesgo quirúrgico'],
     ['apto_fisico','Apto físico'],
@@ -8906,6 +8932,7 @@ function patientInfoTextHC(p,coverage){
     if(type==='receta')return {title:'Receta médica',body:'R/P\n\n',extra:'Indicaciones:\n'};
     if(type==='orden')return {title:'Orden médica',body:'Solicito:\n\n',extra:'Diagnóstico presuntivo / indicación:\n'};
     if(type==='certificado')return {title:'Certificado médico',body:`Se deja constancia de que ${name}, DNI ${dni}, `,extra:''};
+    if(type==='constancia_atencion')return {title:'Constancia de atención',body:`Se deja constancia de que ${name}, DNI ${dni}, fue atendido/a en este consultorio en la fecha indicada.\n\nSe extiende la presente constancia a solicitud del interesado/a.`,extra:''};
     if(type==='ecg')return {title:'Informe de electrocardiograma',body:'Ritmo: ___\nFrecuencia cardíaca: ___ lpm\nEje eléctrico: ___\nIntervalos PR / QRS / QTc: ___ / ___ / ___ ms\nRepolarización: ___\n\nConclusión: ___',extra:''};
     if(type==='ecg_riesgo_quirurgico')return {title:'ECG y evaluación de riesgo quirúrgico',body:'ECG: ___\nAntecedentes cardiovasculares relevantes: ___\nCapacidad funcional estimada: ___ METS\nRiesgo cardiovascular perioperatorio: ___\n\nConclusión y recomendaciones: ___',extra:''};
     if(type==='apto_fisico')return {title:'Evaluación para apto físico',body:`Se deja constancia de que ${name}, DNI ${dni}, fue evaluado/a para la realización de actividad física.\n\nConclusión: [APTO / APTO CONDICIONAL / NO APTO TRANSITORIO]\nObservaciones: ___`,extra:''};
@@ -8917,13 +8944,13 @@ function patientInfoTextHC(p,coverage){
     if(type==='indicacion_paciente')return {title:'Indicaciones al paciente',body:'Indicaciones:\n1. ___\n2. ___\n3. ___\n\nSignos de alarma: ___\nPróximo control: ___',extra:''};
     return {title:'Documento clínico',body:'',extra:''};
   }
-  function openDocumentModal406(key,docId=''){
+  function openDocumentModal406(key,docId='',forcedType=''){
     if(!isMedical406()){alert('Solo los perfiles médicos o administradores pueden emitir documentos clínicos.');return;}
     const p=patient406(key);if(!p)return;ensure406();
     const existing=docId?data.documentosClinicos.find(d=>d.id===docId):null;
     if(existing&&!canEditDoc406(existing)){alert('Este documento superó las 24 horas y solo puede modificarse con perfil Administrador.');return;}
     const profId=existing?.profesionalId||currentProfId406()||selectedProfId406(),pr=prof406(profId);if(!pr){alert('El usuario no tiene un profesional asociado.');return;}
-    const type=existing?.tipo||'receta',defs=defaultDoc406(type,p);
+    const type=existing?.tipo||forcedType||'receta',defs=defaultDoc406(type,p);
     const modal=document.createElement('div');modal.id='clinicalDocModal406';modal.className='hc-modal-overlay';
     modal.innerHTML=`<div class="hc-modal-card clinical-doc-card406"><div class="hc-modal-head"><div><h2>${existing?'Editar documento':'Nuevo documento clínico'}</h2><p class="muted">${esc406(patientName406(p))} · ${esc406(pr.nombre||'')}</p></div><button type="button" class="modal-close" data-close-doc406>×</button></div><div class="clinical-doc-header406">${identityPreviewHtml406(pr)}</div><div class="hc-modal-grid"><div><label>Tipo de documento</label><select id="docType406">${docTypeOptions406(type)}</select></div><div><label>Fecha</label><input id="docDate406" type="datetime-local" value="${esc406((existing?.fechaHora||new Date().toISOString()).slice(0,16))}"></div><div class="full"><div class="cl-voice-label4094"><label for="docTitle406">Título</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="docTitle406" aria-label="Dictar título del documento">🎤 Dictar</button></div><input id="docTitle406" value="${esc406(existing?.titulo||defs.title)}"></div><div class="full"><div class="cl-voice-label4094"><label id="docBodyLabel406" for="docBody406">Contenido</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="docBody406" aria-label="Dictar contenido del documento">🎤 Dictar</button></div><textarea id="docBody406" rows="8" placeholder="Escribí el contenido del documento">${esc406(existing?.contenido||defs.body)}</textarea></div><div class="full"><div class="cl-voice-label4094"><label for="docExtra406">Indicaciones / aclaraciones adicionales</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="docExtra406" aria-label="Dictar indicaciones adicionales">🎤 Dictar</button></div><textarea id="docExtra406" rows="4">${esc406(existing?.adicional||defs.extra)}</textarea></div><label class="check-row-310 full"><input type="checkbox" id="docIncludeSignature406" ${existing?.incluirFirma===false?'':'checked'}> Incluir firma cargada del profesional</label></div><p class="muted">El documento no se guarda si está vacío. El guardado es manual. Puede editarse durante 24 horas; el Administrador conserva edición sin límite.</p><div class="hc-modal-actions"><button class="secondary" type="button" data-close-doc406>Cancelar</button><button class="secondary" type="button" id="saveDoc406">Guardar</button><button class="primary" type="button" id="savePrintDoc406">Guardar e imprimir</button></div></div>`;
     document.body.appendChild(modal);
@@ -9010,6 +9037,7 @@ function patientInfoTextHC(p,coverage){
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot406);else boot406();
   window.printClinicalDocument406=printDocument406;
   window.openClinicalDocument406=openDocumentModal406;
+  window.openClinicalDocumentTyped406=(key,type)=>openDocumentModal406(key,'',type||'receta');
 })();
 
 
@@ -9529,6 +9557,271 @@ function patientInfoTextHC(p,coverage){
       .hc-prev-actions411{justify-content:flex-start;margin-top:8px}
       .hc-continue-actions411{justify-content:stretch}.hc-continue-actions411 button{flex:1}
     }
+  `;
+  document.head.appendChild(s);
+})();
+
+
+/* ===== CardioLink v4.1.0-hc · Fase 3B: Paciente actual + comandos rápidos ===== */
+(function(){
+  'use strict';
+  if(window.__cardiolinkPhase3B411B)return;
+  window.__cardiolinkPhase3B411B=true;
+
+  const STORAGE='cardiolink_paciente_actual_411b';
+  let currentKey411B='';
+  const $b=id=>document.getElementById(id);
+  const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  function norm(s){return String(s||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');}
+  function patients(){
+    try{return typeof todosPacientes==='function'?todosPacientes():(window.data?.pacientes||[]);}catch(_){return window.data?.pacientes||[];}
+  }
+  function patientByKey(key){
+    key=String(key||'');if(!key)return null;
+    return patients().find(p=>{
+      const ids=[p?.id,p?.dni,typeof clavePac320==='function'?clavePac320(p):'',typeof clavePacientePanel==='function'?clavePacientePanel(p):''].map(x=>String(x||''));
+      return ids.includes(key);
+    })||null;
+  }
+  function patientKey(p){
+    if(!p)return '';
+    try{if(typeof clavePac320==='function')return String(clavePac320(p)||'');}catch(_){}
+    try{if(typeof clavePacientePanel==='function')return String(clavePacientePanel(p)||'');}catch(_){}
+    return String(p.id||p.dni||'');
+  }
+  function patientName(p){return p?.nombreCompleto||p?.paciente||p?.nombre||'Paciente';}
+  function role(){
+    try{return norm(perfilUsuarioActual()?.rol||'');}catch(_){return '';}
+  }
+  function isSecretary(){return role().includes('secretaria');}
+  function isMedical(){
+    try{return (typeof esMedico==='function'&&esMedico())||(typeof esMatiasDuenio==='function'&&esMatiasDuenio())||(typeof esAdminComun==='function'&&esAdminComun());}catch(_){return false;}
+  }
+
+  function saveCurrent411B(key){
+    currentKey411B=String(key||'');
+    try{if(currentKey411B)sessionStorage.setItem(STORAGE,currentKey411B);else sessionStorage.removeItem(STORAGE);}catch(_){}
+    renderCurrent411B();
+  }
+  function restoreCurrent411B(){
+    try{const k=sessionStorage.getItem(STORAGE)||'';if(k&&patientByKey(k))currentKey411B=k;}catch(_){}
+  }
+  function getCurrent411B(){return patientByKey(currentKey411B);}
+
+  function ensureUI411B(){
+    const top=document.querySelector('.topbar');
+    if(!top)return;
+    if(!$b('currentPatient411B')){
+      const bar=document.createElement('div');
+      bar.id='currentPatient411B';
+      bar.className='current-patient411b hidden';
+      bar.innerHTML=`<button class="current-patient-main411b" type="button" data-cp-action411b="open"><span class="cp-label411b">Paciente actual</span><strong data-cp-name411b></strong><small data-cp-meta411b></small></button>
+        <button class="cp-quick411b" type="button" data-cp-action411b="hc" title="Historia clínica">HC</button>
+        <button class="cp-quick411b" type="button" data-cp-action411b="evolve" title="Nueva evolución">Evolucionar</button>
+        <button class="cp-more411b" type="button" data-cp-toggle411b>Acciones ▾</button>
+        <button class="cp-clear411b" type="button" data-cp-action411b="clear" title="Quitar paciente actual" aria-label="Quitar paciente actual">×</button>
+        <div class="cp-menu411b hidden" id="cpMenu411B"></div>`;
+      top.appendChild(bar);
+    }
+    if(!$b('globalQuick411B')){
+      const q=document.createElement('button');
+      q.id='globalQuick411B';q.className='global-quick411b';q.type='button';q.textContent='+';q.title='Comandos rápidos';q.setAttribute('aria-label','Comandos rápidos');
+      document.body.appendChild(q);
+      const menu=document.createElement('div');menu.id='globalQuickMenu411B';menu.className='global-quick-menu411b hidden';document.body.appendChild(menu);
+    }
+  }
+
+  function patientActionsHtml411B(p){
+    if(!p)return '';
+    const medical=isMedical();
+    const common=[
+      ['attention','Nueva atención'],
+      ['rcta','RCTA'],
+      ['constancia','Constancia']
+    ];
+    if(medical){
+      common.splice(1,0,['evolve','Nueva evolución']);
+      common.splice(3,0,['order','Orden médica'],['certificate','Certificado']);
+      common.push(['whatsapp','WhatsApp']);
+    }else{
+      common.push(['whatsapp','WhatsApp']);
+    }
+    return common.map(([a,l])=>`<button type="button" data-cp-action411b="${a}">${l}</button>`).join('');
+  }
+  function globalActionsHtml411B(){
+    const p=getCurrent411B(),secretary=isSecretary();
+    let arr=[];
+    if(secretary){
+      arr=[['newpatient','Nuevo paciente'],['attention','Nuevo turno / atención'],['rcta','RCTA'],['constancia','Constancia de atención'],['search','Buscar paciente']];
+    }else{
+      arr=[['newpatient','Nuevo paciente'],['attention','Nueva atención'],['evolve','Nueva evolución'],['rcta','RCTA'],['order','Orden médica'],['certificate','Certificado'],['constancia','Constancia'],['search','Buscar paciente']];
+    }
+    return `<div class="gq-title411b">${p?`Paciente: ${esc(patientName(p))}`:'Comandos rápidos'}</div>`+
+      arr.map(([a,l])=>`<button type="button" data-cp-action411b="${a}" ${(a!=='newpatient'&&a!=='search'&&!p)?'disabled':''}>${l}</button>`).join('');
+  }
+  function renderCurrent411B(){
+    ensureUI411B();
+    const p=getCurrent411B(),bar=$b('currentPatient411B');
+    if(!bar)return;
+    if(!p){bar.classList.add('hidden');}
+    else{
+      bar.classList.remove('hidden');
+      bar.querySelector('[data-cp-name411b]').textContent=patientName(p);
+      bar.querySelector('[data-cp-meta411b]').textContent=`DNI ${p.dni||'s/d'}`;
+      const ev=bar.querySelector('[data-cp-action411b="evolve"]');if(ev)ev.classList.toggle('hidden',!isMedical());
+      const menu=$b('cpMenu411B');if(menu)menu.innerHTML=patientActionsHtml411B(p);
+    }
+    const gm=$b('globalQuickMenu411B');if(gm)gm.innerHTML=globalActionsHtml411B();
+  }
+
+  function focusGlobalSearch411B(){
+    const candidates=['buscadorGlobal360','globalPatientSearch','pacientesBuscar','hcBuscarPaciente'];
+    for(const id of candidates){
+      const el=$b(id);if(el){try{el.focus();el.select?.();}catch(_){}return true;}
+    }
+    try{showSection('pacientes');setTimeout(()=>$b('pacientesBuscar')?.focus(),80);return true;}catch(_){return false;}
+  }
+  function newPatient411B(){
+    try{showSection('carga');if(typeof nuevoPacienteManual==='function')nuevoPacienteManual();setTimeout(()=>{$b('paciente')?.focus();},80);}catch(e){console.error(e);}
+  }
+  function openPatient411B(p){
+    if(!p)return;
+    const k=patientKey(p);saveCurrent411B(k);
+    if(typeof window.abrirPacienteGlobal320==='function'){window.abrirPacienteGlobal320(k);return;}
+    try{showSection('pacientes');setTimeout(()=>window.seleccionarPacientePanel?.(k),60);}catch(_){}
+  }
+  function openHC411B(p){
+    if(!p)return;const k=patientKey(p);saveCurrent411B(k);
+    try{
+      showSection('hc');
+      const fake=document.createElement('button');fake.dataset.openHc=k;fake.style.display='none';document.body.appendChild(fake);fake.click();fake.remove();
+    }catch(e){console.error('No se pudo abrir HC',e);}
+  }
+  function evolve411B(p){
+    if(!p)return;if(!isMedical()){alert('La evolución clínica requiere perfil médico.');return;}
+    const k=patientKey(p);saveCurrent411B(k);
+    if(typeof window.abrirNuevaEvolucionHC==='function')window.abrirNuevaEvolucionHC(k);
+  }
+  function attention411B(p){
+    if(p){const k=patientKey(p);saveCurrent411B(k);try{nuevaAtencionDesdePaciente(k);return;}catch(_){}}
+    try{showSection('carga');}catch(_){}
+  }
+  function rcta411B(p){
+    if(!p)return;const k=patientKey(p);saveCurrent411B(k);
+    if(window.CardioLinkRCTA4095?.open)window.CardioLinkRCTA4095.open(k);else alert('RCTA todavía no está disponible en esta pantalla.');
+  }
+  function doc411B(p,type){
+    if(!p)return;const k=patientKey(p);saveCurrent411B(k);
+    if(!isMedical()){
+      if(type==='constancia_atencion'){printConstancia411B(p);return;}
+      alert('Este documento requiere un perfil médico.');
+      return;
+    }
+    if(typeof window.openClinicalDocumentTyped406==='function')window.openClinicalDocumentTyped406(k,type);
+    else if(typeof window.openClinicalDocument406==='function')window.openClinicalDocument406(k);
+  }
+  function printConstancia411B(p){
+    const ats=(typeof atencionesPacienteGlobal==='function'?atencionesPacienteGlobal(p):[]).filter(a=>a&&!String(a.tipoRegistro||'').includes('mensaje'));
+    const a=ats[0]||null,fecha=a?.fecha?(typeof formatFecha==='function'?formatFecha(a.fecha):a.fecha):new Date().toLocaleDateString('es-AR');
+    const prof=a?.profesional||'Consultorio médico',prest=a?.prestacion||'atención';
+    const w=window.open('','_blank');if(!w){alert('El navegador bloqueó la constancia.');return;}
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Constancia de atención</title><style>@page{size:A4;margin:25mm}body{font-family:Arial,sans-serif;color:#111827;margin:0;line-height:1.6}.head{border-bottom:2px solid #174b5c;padding-bottom:12px;margin-bottom:40px}.head h1{color:#174b5c;margin:0}.body{font-size:17px;min-height:430px}.sig{margin-top:80px;width:300px;margin-left:auto;text-align:center;border-top:1px solid #334155;padding-top:8px}.muted{color:#64748b}</style></head><body><div class="head"><h1>CardioLink</h1><div class="muted">Constancia administrativa de atención</div></div><div class="body">Se deja constancia de que <strong>${esc(patientName(p))}</strong>, DNI <strong>${esc(p.dni||'s/d')}</strong>, fue atendido/a en este consultorio el día <strong>${esc(fecha)}</strong>${a?` por <strong>${esc(prof)}</strong>, por ${esc(prest)}`:''}.<br><br>Se extiende la presente a solicitud del interesado/a.</div><div class="sig">Firma / sello del profesional</div><script>window.onload=()=>setTimeout(()=>window.print(),250)<\/script></body></html>`);
+    w.document.close();
+  }
+  function whatsapp411B(p){
+    if(!p)return;let digits=String(p.telefono||'').replace(/\D/g,'');if(!digits){alert('El paciente no tiene teléfono cargado.');return;}
+    if(digits.startsWith('0'))digits=digits.replace(/^0+/,'');
+    if(!digits.startsWith('54')&&digits.length>=10)digits='54'+digits;
+    window.open(`https://wa.me/${digits}`,'_blank','noopener');
+  }
+
+  function runAction411B(action){
+    const p=getCurrent411B();
+    if(action==='clear')return saveCurrent411B('');
+    if(action==='newpatient')return newPatient411B();
+    if(action==='search')return focusGlobalSearch411B();
+    if(action==='open')return openPatient411B(p);
+    if(action==='hc')return openHC411B(p);
+    if(action==='evolve')return evolve411B(p);
+    if(action==='attention')return attention411B(p);
+    if(action==='rcta')return rcta411B(p);
+    if(action==='order')return doc411B(p,'orden');
+    if(action==='certificate')return doc411B(p,'certificado');
+    if(action==='constancia')return doc411B(p,'constancia_atencion');
+    if(action==='whatsapp')return whatsapp411B(p);
+  }
+
+  function wrapPatientFunctions411B(){
+    const wrap=(name)=>{
+      const old=window[name];if(typeof old!=='function'||old.__cp411b)return;
+      const fn=function(key){if(key)saveCurrent411B(String(key));return old.apply(this,arguments);};
+      fn.__cp411b=true;window[name]=fn;
+      try{if(name==='abrirPacienteGlobalDetalle350')abrirPacienteGlobalDetalle350=fn;}catch(_){}
+    };
+    wrap('abrirPacienteGlobal320');wrap('abrirPacienteGlobalDetalle350');
+
+    const oldEv=window.abrirNuevaEvolucionHC;
+    if(typeof oldEv==='function'&&!oldEv.__cp411b){
+      const fn=function(key){if(key)saveCurrent411B(String(key));return oldEv.apply(this,arguments);};fn.__cp411b=true;window.abrirNuevaEvolucionHC=fn;
+    }
+    const oldSel=window.seleccionarPacientePanel;
+    if(typeof oldSel==='function'&&!oldSel.__cp411b){
+      const fn=function(key){if(key)saveCurrent411B(String(key));return oldSel.apply(this,arguments);};fn.__cp411b=true;window.seleccionarPacientePanel=fn;try{seleccionarPacientePanel=fn;}catch(_){}
+    }
+  }
+
+  document.addEventListener('click',e=>{
+    const a=e.target.closest?.('[data-cp-action411b]');
+    if(a){e.preventDefault();runAction411B(a.dataset.cpAction411b);$b('cpMenu411B')?.classList.add('hidden');$b('globalQuickMenu411B')?.classList.add('hidden');return;}
+    const toggle=e.target.closest?.('[data-cp-toggle411b]');
+    if(toggle){e.preventDefault();$b('cpMenu411B')?.classList.toggle('hidden');return;}
+    if(e.target.closest?.('#globalQuick411B')){e.preventDefault();renderCurrent411B();$b('globalQuickMenu411B')?.classList.toggle('hidden');return;}
+    if(!e.target.closest?.('#currentPatient411B')&&!e.target.closest?.('#globalQuickMenu411B')){$b('cpMenu411B')?.classList.add('hidden');$b('globalQuickMenu411B')?.classList.add('hidden');}
+    const patientTarget=e.target.closest?.('[data-hc-patient],[data-hc-new],[data-open-hc],[data-patient-open4091],[data-rcta-patient4095]');
+    if(patientTarget){
+      const raw=patientTarget.dataset.hcPatient||patientTarget.dataset.hcNew||patientTarget.dataset.openHc||patientTarget.dataset.rctaPatient4095||'';
+      if(raw)saveCurrent411B(raw);
+    }
+  },true);
+
+  function boot411B(){
+    ensureUI411B();restoreCurrent411B();wrapPatientFunctions411B();renderCurrent411B();
+    setTimeout(()=>{wrapPatientFunctions411B();renderCurrent411B();},700);
+    setTimeout(()=>{wrapPatientFunctions411B();renderCurrent411B();},1800);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot411B);else boot411B();
+
+  window.CardioLinkPacienteActual411B={set:saveCurrent411B,get:()=>getCurrent411B(),clear:()=>saveCurrent411B(''),render:renderCurrent411B};
+})();
+
+/* ===== Estilos Fase 3B ===== */
+(function(){
+  if(document.getElementById('cardiolink-phase3b-style411b'))return;
+  const s=document.createElement('style');s.id='cardiolink-phase3b-style411b';
+  s.textContent=`
+    .current-patient411b{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:7px;min-width:0;z-index:40;padding:6px;border:1px solid #9fb8c2;border-radius:16px;background:#f3f9fa;box-shadow:0 8px 22px rgba(23,75,92,.12)}
+    .current-patient411b.hidden{display:none}
+
+    .topbar{position:relative}
+    .hc-event-actions411b1{display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end}
+    .hc-delete411b1{color:#991b1b!important;border-color:#fecaca!important;background:#fff7f7!important}
+    .hc-delete411b1:hover{background:#fee2e2!important}
+    .current-patient-main411b{display:flex;flex-direction:column;align-items:flex-start;min-width:230px;max-width:330px;padding:8px 12px;border:0;border-radius:11px;background:transparent;color:#0f172a;cursor:pointer}
+    .cp-label411b{font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:#64748b;font-weight:800}
+    .current-patient-main411b strong{font-size:15px;max-width:300px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:#174b5c}
+    .current-patient-main411b small{font-size:10px;color:#64748b}
+    .cp-quick411b,.cp-more411b,.cp-clear411b{border:1px solid #cbd5e1;background:#fff;color:#174b5c;border-radius:10px;padding:9px 10px;font-weight:800;cursor:pointer}.cp-clear411b{width:36px;height:36px;padding:0;font-size:21px;color:#64748b}.cp-clear411b:hover{background:#fee2e2;color:#991b1b;border-color:#fecaca}
+    .cp-quick411b.hidden{display:none}
+    .cp-more411b{background:#174b5c;color:white;border-color:#174b5c}
+    .cp-menu411b{position:absolute;right:0;top:calc(100% + 8px);min-width:210px;padding:8px;background:#fff;border:1px solid #cbd5e1;border-radius:14px;box-shadow:0 18px 45px rgba(15,23,42,.18);z-index:10050;display:grid;gap:4px}
+    .cp-menu411b.hidden,.global-quick-menu411b.hidden{display:none}
+    .cp-menu411b button,.global-quick-menu411b button{width:100%;text-align:left;border:0;background:transparent;border-radius:9px;padding:10px 12px;font-weight:750;color:#0f172a;cursor:pointer}
+    .cp-menu411b button:hover,.global-quick-menu411b button:hover{background:#eef6f8;color:#174b5c}
+    .global-quick411b{position:fixed;right:22px;bottom:92px;width:54px;height:54px;border:0;border-radius:50%;background:#174b5c;color:white;font-size:32px;line-height:1;box-shadow:0 14px 30px rgba(15,23,42,.28);z-index:10020;cursor:pointer}
+    .global-quick-menu411b{position:fixed;right:22px;bottom:156px;width:240px;padding:9px;background:#fff;border:1px solid #cbd5e1;border-radius:15px;box-shadow:0 18px 45px rgba(15,23,42,.22);z-index:10021;display:grid;gap:3px}
+    .global-quick-menu411b button:disabled{opacity:.42;cursor:not-allowed}
+    .gq-title411b{padding:8px 10px 6px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;font-weight:800;border-bottom:1px solid #e2e8f0;margin-bottom:3px}
+    @media(max-width:1180px){.current-patient411b{position:fixed;left:50%;top:auto;bottom:18px;transform:translateX(-50%);max-width:calc(100vw - 150px)}.current-patient-main411b{min-width:180px}.global-quick411b{right:16px;bottom:92px}.global-quick-menu411b{right:16px;bottom:154px}}
   `;
   document.head.appendChild(s);
 })();
