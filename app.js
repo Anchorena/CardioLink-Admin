@@ -7852,17 +7852,44 @@ function patientInfoTextHC(p,coverage){
     const copyAttr=v=>escHC(encodeURIComponent(String(v||''))),phone=String(p.telefono||'').trim(),email=String(p.email||'').trim();
     return `<button class="secondary" type="button" data-hc-copy408="${copyAttr(p.dni||'')}" data-hc-copy-label408="DNI">Copiar DNI</button><button class="secondary" type="button" data-hc-copy408="${copyAttr(phone)}" data-hc-copy-label408="teléfono" ${phone?'':'disabled'}>Copiar teléfono</button><button class="secondary" type="button" data-hc-copy408="${copyAttr(email)}" data-hc-copy-label408="email" ${email?'':'disabled'}>Copiar email</button><button class="secondary" type="button" data-hc-copy408="${copyAttr(infoText)}" data-hc-copy-label408="datos">Copiar datos</button>${phoneDigits?`<a class="secondary hc-link-button-408" href="https://wa.me/${escHC(phoneDigits)}" target="_blank" rel="noopener">WhatsApp</a>`:''}${email?`<a class="secondary hc-link-button-408" href="mailto:${escHC(email)}">Enviar email</a>`:''}`;
   }
+  function numHC(v){
+    if(v===null||v===undefined||v==='')return null;
+    const n=Number(String(v).replace(',','.'));
+    return Number.isFinite(n)?n:null;
+  }
+  function imcHC(peso,tallaCm){
+    const p=numHC(peso),t=numHC(tallaCm);
+    if(!(p>0)||!(t>0))return null;
+    return Math.round((p/Math.pow(t/100,2))*10)/10;
+  }
+  function vitalesHC(e){
+    if(!e)return '';
+    const items=[];
+    if(numHC(e.pesoKg)!=null)items.push(`Peso ${escHC(e.pesoKg)} kg`);
+    if(numHC(e.tallaCm)!=null)items.push(`Talla ${escHC(e.tallaCm)} cm`);
+    if(numHC(e.imc)!=null)items.push(`IMC ${escHC(e.imc)}`);
+    if(numHC(e.taSistolica)!=null||numHC(e.taDiastolica)!=null)items.push(`TA ${escHC(e.taSistolica??'—')}/${escHC(e.taDiastolica??'—')} mmHg`);
+    if(numHC(e.frecuenciaCardiaca)!=null)items.push(`FC ${escHC(e.frecuenciaCardiaca)} lpm`);
+    if(numHC(e.sato2)!=null)items.push(`SatO₂ ${escHC(e.sato2)}%`);
+    return items.join(' · ');
+  }
+  function ultimaEvolucionConVitalesHC(p){
+    return evolucionesHC(p).filter(e=>vitalesHC(e)).sort((a,b)=>new Date(b.fechaHora||0)-new Date(a.fechaHora||0))[0]||null;
+  }
+  function cronologiaBreveHC(p,excludeId=''){
+    return evolucionesHC(p).filter(e=>String(e.id)!==String(excludeId||'')).sort((a,b)=>new Date(b.fechaHora||0)-new Date(a.fechaHora||0)).slice(0,3);
+  }
   function renderDetailHC(key){
     const p=patientByKeyHC(key),box=$hc('hcPacienteDetalle');if(!p||!box)return;
     hcPacienteSeleccionado=patientKeyHC(p); renderSearchHC();
     const sum=resumenHC(p),evs=evolucionesHC(p),ats=atencionesHC(p),timeline=timelineHC(p),age=ageHC(p);
     box.innerHTML=`<div class="hc-patient-header"><div><h2>${escHC(nombrePacientePanel?.(p)||p.nombreCompleto||'Paciente')}</h2><p class="muted">DNI ${escHC(p.dni||'s/d')} · Nacimiento ${escHC(birthDisplayHC(p))} · ${escHC(age?age+' años':'Edad s/d')} · ${escHC(p.coberturaHabitual||'Cobertura s/d')}</p></div><div class="hc-patient-actions"><button class="primary" type="button" data-hc-new="${escHC(patientKeyHC(p))}">+ Nueva evolución</button><button class="secondary" type="button" data-hc-edit-patient409="${escHC(patientKeyHC(p))}" data-hc-edit-context409="detail">Editar ficha</button><button class="secondary" type="button" data-hc-edit-summary="${escHC(patientKeyHC(p))}">Resumen clínico</button><button class="secondary" type="button" data-hc-print="${escHC(patientKeyHC(p))}">Imprimir HC</button></div></div>
-      <div class="hc-summary-grid"><div class="hc-summary-card"><span>Evoluciones</span><strong>${evs.length}</strong></div><div class="hc-summary-card"><span>Atenciones</span><strong>${ats.length}</strong></div><div class="hc-summary-card"><span>Último evento</span><strong>${timeline[0]?fmtDateTimeHC(timeline[0].date):'Sin registros'}</strong></div></div>
+      <div class="hc-summary-grid"><div class="hc-summary-card"><span>Evoluciones</span><strong>${evs.length}</strong></div><div class="hc-summary-card"><span>Atenciones</span><strong>${ats.length}</strong></div><div class="hc-summary-card"><span>Último evento</span><strong>${timeline[0]?fmtDateTimeHC(timeline[0].date):'Sin registros'}</strong></div></div>${(()=>{const uv=ultimaEvolucionConVitalesHC(p);return uv?`<div class="hc-last-vitals410"><span>Últimos signos vitales registrados · ${escHC(fmtDateTimeHC(uv.fechaHora))}</span><strong>${vitalesHC(uv)}</strong></div>`:'';})()}
       <div class="hc-clinical-summary"><div class="hc-clinical-summary-title409"><h3>Resumen clínico</h3><button class="secondary small-btn" type="button" data-hc-edit-summary="${escHC(patientKeyHC(p))}">Editar</button></div><div class="hc-clinical-summary-grid"><div><strong>Antecedentes</strong><p>${escHC(sum.antecedentes||'Sin registrar')}</p></div><div><strong>Alergias</strong><p>${escHC(sum.alergias||'Sin registrar')}</p></div><div><strong>Medicación habitual</strong><p>${escHC(sum.medicacion||'Sin registrar')}</p></div></div>${sum.alertas?`<div class="hc-event-section"><label>Alertas</label><p>${escHC(sum.alertas)}</p></div>`:''}</div>
       <h3>Línea de tiempo clínica</h3><div class="hc-timeline">${timeline.length?timeline.map(x=>x.type==='evolution'?renderEvolutionEventHC(x.obj):renderAttentionEventHC(x.obj)).join(''):'<div class="hc-empty"><strong>Sin eventos</strong><span>Creá la primera evolución clínica.</span></div>'}</div>`;
   }
   function renderEvolutionEventHC(e){
-    const editable=canEditHC(e);return `<article class="hc-event" data-hc-evolution-id="${escHC(e.id)}" data-hc-attention-id="${escHC(e.atencionId||'')}"><div class="hc-event-head"><div><strong>Evolución clínica</strong><div class="hc-event-meta">${escHC(fmtDateTimeHC(e.fechaHora))} · ${escHC(e.profesionalNombre||'')}</div></div><div>${editable?`<button class="secondary small-btn" data-hc-edit="${escHC(e.id)}">Editar</button>`:'<span class="hc-lock">Bloqueada +24 h</span>'}</div></div>${e.motivo?`<div class="hc-event-section"><label>Motivo</label><p>${escHC(e.motivo)}</p></div>`:''}${e.evolucion?`<div class="hc-event-section"><label>Evolución / examen</label><p>${escHC(e.evolucion)}</p></div>`:''}${e.diagnostico?`<div class="hc-event-section"><label>Impresión diagnóstica</label><p>${escHC(e.diagnostico)}</p></div>`:''}${e.conducta?`<div class="hc-event-section"><label>Conducta / plan</label><p>${escHC(e.conducta)}</p></div>`:''}</article>`;
+    const editable=canEditHC(e);return `<article class="hc-event" data-hc-evolution-id="${escHC(e.id)}" data-hc-attention-id="${escHC(e.atencionId||'')}"><div class="hc-event-head"><div><strong>Evolución clínica</strong><div class="hc-event-meta">${escHC(fmtDateTimeHC(e.fechaHora))} · ${escHC(e.profesionalNombre||'')}</div></div><div>${editable?`<button class="secondary small-btn" data-hc-edit="${escHC(e.id)}">Editar</button>`:'<span class="hc-lock">Bloqueada +24 h</span>'}</div></div>${vitalesHC(e)?`<div class="hc-vitals-inline410">${vitalesHC(e)}</div>`:''}${e.motivo?`<div class="hc-event-section"><label>Motivo</label><p>${escHC(e.motivo)}</p></div>`:''}${e.evolucion?`<div class="hc-event-section"><label>Evolución / examen</label><p>${escHC(e.evolucion)}</p></div>`:''}${e.diagnostico?`<div class="hc-event-section"><label>Impresión diagnóstica</label><p>${escHC(e.diagnostico)}</p></div>`:''}${e.conducta?`<div class="hc-event-section"><label>Conducta / plan</label><p>${escHC(e.conducta)}</p></div>`:''}</article>`;
   }
   function renderAttentionEventHC(a){return `<article class="hc-event attention" data-hc-attention-id="${escHC(a.id)}"><div class="hc-event-head"><div><strong>${escHC(a.prestacion||'Atención')}</strong><div class="hc-event-meta">${escHC(formatFecha?.(a.fecha)||a.fecha||'')} ${escHC(a.horaInicio||'')} · ${escHC(a.profesional||'')}</div></div><span class="hc-lock">Atención administrativa</span></div><div class="hc-event-section"><label>Cobertura</label><p>${escHC(a.obraSocial||'s/d')}</p></div>${a.observaciones?`<div class="hc-event-section"><label>Observaciones</label><p>${escHC(a.observaciones)}</p></div>`:''}<div class="hc-event-section"><button class="secondary small-btn" data-hc-new="${escHC(hcPacienteSeleccionado)}" data-atencion-id="${escHC(a.id)}">Evolucionar esta atención</button></div></article>`;}
   function openEvolutionModalHC(key,evolutionId='',atencionId=''){
@@ -7882,25 +7909,39 @@ function patientInfoTextHC(p,coverage){
         <div class="hc-copy-actions-408" id="hcCopyActions409">${copyActionsHtmlHC409(p,coverage,infoText,phoneDigits)}</div>
       </section>
       <div class="hc-context-cards409"><div><span>Fecha y hora</span><strong>${escHC(fmtDateTimeHC(existing?.fechaHora||now.toISOString()))}</strong></div><div><span>Profesional</span><strong>${escHC(existing?.profesionalNombre||prof.nombre)}</strong></div><div><span>Vinculación</span><strong>${linked?(attention?`${escHC(attention.prestacion||'Atención')} · ${escHC(formatFecha?.(attention.fecha)||attention.fecha||'')}`:'Atención vinculada'):'Sin turno'}</strong></div></div>
+      ${(()=>{const prev=cronologiaBreveHC(p,existing?.id||'');return `<section class="hc-prev-evolutions410"><div class="hc-prev-head410"><h3>Últimas evoluciones</h3><span>${prev.length?'Contexto clínico previo':'Sin evoluciones previas'}</span></div>${prev.length?prev.map(e=>`<article><strong>${escHC(fmtDateTimeHC(e.fechaHora))}</strong><span>${escHC(e.motivo||e.diagnostico||e.evolucion||'Evolución clínica')}</span>${vitalesHC(e)?`<small>${vitalesHC(e)}</small>`:''}</article>`).join(''):`<div class="muted">Esta será la primera evolución clínica registrada.</div>`}</section>`;})()}
+      <section class="hc-vitals-section410"><div class="hc-permanent-title409"><div><h3>Signos vitales y antropometría</h3><p class="muted">Opcionales. En una evolución nueva comienzan siempre en blanco; no se copian valores anteriores.</p></div></div><div class="hc-vitals-grid410">
+        <label>Peso (kg)<input id="hcPeso410" type="number" inputmode="decimal" min="0" step="0.1" value="${existing?.pesoKg??''}" placeholder="Ej. 88"></label>
+        <label>Talla (cm)<input id="hcTalla410" type="number" inputmode="decimal" min="0" step="0.1" value="${existing?.tallaCm??''}" placeholder="Ej. 185"></label>
+        <label>IMC<input id="hcImc410" type="text" value="${existing?.imc??''}" placeholder="Automático" readonly></label>
+        <label>TA sistólica<input id="hcTas410" type="number" inputmode="numeric" min="0" step="1" value="${existing?.taSistolica??''}" placeholder="120"></label>
+        <label>TA diastólica<input id="hcTad410" type="number" inputmode="numeric" min="0" step="1" value="${existing?.taDiastolica??''}" placeholder="80"></label>
+        <label>FC (lpm)<input id="hcFc410" type="number" inputmode="numeric" min="0" step="1" value="${existing?.frecuenciaCardiaca??''}" placeholder="70"></label>
+        <label>SatO₂ (%)<input id="hcSat410" type="number" inputmode="decimal" min="0" max="100" step="0.1" value="${existing?.sato2??''}" placeholder="98"></label>
+      </div></section>
       <section class="hc-permanent-data409"><div class="hc-permanent-title409"><div><h3>Datos clínicos permanentes</h3><p class="muted">Se actualizan en el resumen del paciente y quedan visibles en futuras consultas.</p></div></div><div class="hc-permanent-grid409"><div><div class="cl-voice-label4094"><label for="hcSumAntecedentes409">Antecedentes</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAntecedentes409" aria-label="Dictar antecedentes">🎤 Dictar</button></div><textarea id="hcSumAntecedentes409" rows="3" placeholder="HTA, DBT, cirugías, antecedentes relevantes...">${escHC(sum.antecedentes||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcSumAlergias409">Alergias</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAlergias409" aria-label="Dictar alergias">🎤 Dictar</button></div><textarea id="hcSumAlergias409" rows="3" placeholder="Fármacos, alimentos u otras alergias...">${escHC(sum.alergias||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcSumMedicacion409">Medicación habitual</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumMedicacion409" aria-label="Dictar medicación habitual">🎤 Dictar</button></div><textarea id="hcSumMedicacion409" rows="3" placeholder="Medicamento, dosis y esquema...">${escHC(sum.medicacion||'')}</textarea></div></div></section>
       <div class="hc-modal-grid hc-evolution-grid-408"><div class="full hc-motive-field-408"><div class="cl-voice-label4094"><label for="hcMotivo">Motivo de consulta</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcMotivo" aria-label="Dictar motivo de consulta">🎤 Dictar</button></div><input id="hcMotivo" type="text" placeholder="Ej.: control de HTA, dolor precordial, apto físico" value="${escHC(existing?.motivo||'')}"></div><div class="full hc-main-evolution-408"><div class="cl-voice-label4094"><label for="hcEvolucion">Evolución / examen físico</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcEvolucion" aria-label="Dictar evolución y examen físico">🎤 Dictar</button></div><textarea id="hcEvolucion" placeholder="Narrativa clínica, hallazgos, signos vitales...">${escHC(existing?.evolucion||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcDiagnostico">Impresión diagnóstica</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcDiagnostico" aria-label="Dictar impresión diagnóstica">🎤 Dictar</button></div><textarea id="hcDiagnostico" placeholder="Diagnósticos o problemas activos">${escHC(existing?.diagnostico||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcConducta">Conducta / plan</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcConducta" aria-label="Dictar conducta y plan">🎤 Dictar</button></div><textarea id="hcConducta" placeholder="Tratamiento, indicaciones, estudios, control">${escHC(existing?.conducta||'')}</textarea></div></div><div class="hc-modal-actions"><button class="secondary" type="button" data-hc-close>Cancelar</button><button class="primary" type="button" id="hcGuardarEvolucion">${existing?'Guardar cambios':'Guardar evolución'}</button></div></div>`;
     document.body.appendChild(overlay);
+    const recalcularImc410=()=>{const v=imcHC($hc('hcPeso410')?.value,$hc('hcTalla410')?.value);if($hc('hcImc410'))$hc('hcImc410').value=v??'';};
+    $hc('hcPeso410')?.addEventListener('input',recalcularImc410);$hc('hcTalla410')?.addEventListener('input',recalcularImc410);recalcularImc410();
     $hc('hcGuardarEvolucion').onclick=()=>saveEvolutionHC(p,existing,linked);
   }
   function saveEvolutionHC(p,existing,atencionId){
     const motivo=$hc('hcMotivo')?.value.trim()||'',evolucion=$hc('hcEvolucion')?.value.trim()||'',diagnostico=$hc('hcDiagnostico')?.value.trim()||'',conducta=$hc('hcConducta')?.value.trim()||'';
+    const pesoKg=numHC($hc('hcPeso410')?.value),tallaCm=numHC($hc('hcTalla410')?.value),imc=imcHC(pesoKg,tallaCm),taSistolica=numHC($hc('hcTas410')?.value),taDiastolica=numHC($hc('hcTad410')?.value),frecuenciaCardiaca=numHC($hc('hcFc410')?.value),sato2=numHC($hc('hcSat410')?.value);
+    const hasVitales=[pesoKg,tallaCm,taSistolica,taDiastolica,frecuenciaCardiaca,sato2].some(v=>v!==null);
     const summaryNow={antecedentes:$hc('hcSumAntecedentes409')?.value.trim()||'',alergias:$hc('hcSumAlergias409')?.value.trim()||'',medicacion:$hc('hcSumMedicacion409')?.value.trim()||'',alertas:resumenHC(p).alertas||''};
     let summaryBefore={};try{summaryBefore=JSON.parse($hc('hcEvolutionModal')?.dataset.summaryBaseline409||'{}');}catch(e){}
     const summaryChanged=['antecedentes','alergias','medicacion'].some(k=>(summaryNow[k]||'')!==(summaryBefore[k]||''));
-    const hasEvolution=!!(motivo||evolucion||diagnostico||conducta);
+    const hasEvolution=!!(motivo||evolucion||diagnostico||conducta||hasVitales);
     if(!hasEvolution&&!summaryChanged){alert('No hay datos nuevos para guardar.');return;}
     ensureHC();const prof=profesionalHC(),now=new Date().toISOString(),key=patientKeyHC(p);
     if(summaryChanged)data.resumenesClinicos[key]={...resumenHC(p),...summaryNow,actualizadoEn:now,actualizadoPor:prof.nombre};
     if(existing){
       if(!hasEvolution){alert('Una evolución existente no puede quedar completamente vacía.');return;}
-      Object.assign(existing,{motivo,evolucion,diagnostico,conducta,actualizadoEn:now,actualizadoPor:prof.nombre});
+      Object.assign(existing,{motivo,evolucion,diagnostico,conducta,pesoKg,tallaCm,imc,taSistolica,taDiastolica,frecuenciaCardiaca,sato2,actualizadoEn:now,actualizadoPor:prof.nombre});
     }else if(hasEvolution){
-      data.evolucionesClinicas.push({id:'evo_'+Date.now()+'_'+Math.floor(Math.random()*10000),pacienteId:key,dni:p.dni||'',pacienteNombre:nombrePacientePanel?.(p)||p.nombreCompleto||'',atencionId:atencionId||'',fechaHora:now,profesionalId:prof.id,profesionalNombre:prof.nombre,motivo,evolucion,diagnostico,conducta,creadoEn:now});
+      data.evolucionesClinicas.push({id:'evo_'+Date.now()+'_'+Math.floor(Math.random()*10000),pacienteId:key,dni:p.dni||'',pacienteNombre:nombrePacientePanel?.(p)||p.nombreCompleto||'',atencionId:atencionId||'',fechaHora:now,profesionalId:prof.id,profesionalNombre:prof.nombre,motivo,evolucion,diagnostico,conducta,pesoKg,tallaCm,imc,taSistolica,taDiastolica,frecuenciaCardiaca,sato2,creadoEn:now});
     }
     saveConfig();try{programarSyncSupabase?.();}catch(e){}
     // v4.1.0-hc: copia clínica relacional adicional en Supabase.
@@ -9403,4 +9444,28 @@ function patientInfoTextHC(p,coverage){
       await cargar410();
     }else if(intentos>60){clearInterval(timer);}
   },500);
+})();
+
+
+/* ===== CardioLink v4.1.0-hc · Fase 2: signos vitales + continuidad clínica ===== */
+(function(){
+  const s=document.createElement('style');
+  s.id='cardiolink-hc-fase2-410';
+  s.textContent=`
+    .hc-vitals-section410,.hc-prev-evolutions410,.hc-last-vitals410{border:1px solid #d9e4e8;background:#f8fbfc;border-radius:14px;padding:14px;margin:14px 0}
+    .hc-vitals-grid410{display:grid;grid-template-columns:repeat(4,minmax(120px,1fr));gap:10px}
+    .hc-vitals-grid410 label{font-size:12px;font-weight:700;color:#334155}
+    .hc-vitals-grid410 input{width:100%;margin-top:5px;box-sizing:border-box}
+    .hc-vitals-grid410 input[readonly]{background:#eef4f6;font-weight:700}
+    .hc-prev-head410{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:8px}
+    .hc-prev-head410 h3{margin:0}.hc-prev-head410 span{font-size:12px;color:#64748b}
+    .hc-prev-evolutions410 article{display:grid;grid-template-columns:170px 1fr;gap:4px 12px;padding:9px 0;border-top:1px solid #e2e8f0}
+    .hc-prev-evolutions410 article:first-of-type{border-top:0}
+    .hc-prev-evolutions410 article span{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .hc-prev-evolutions410 article small{grid-column:2;color:#475569}
+    .hc-vitals-inline410{display:inline-block;margin:8px 0;padding:6px 9px;border-radius:9px;background:#eef6f8;color:#174b5c;font-size:12px;font-weight:700}
+    .hc-last-vitals410{display:flex;flex-direction:column;gap:4px}.hc-last-vitals410 span{font-size:12px;color:#64748b}.hc-last-vitals410 strong{color:#174b5c}
+    @media(max-width:900px){.hc-vitals-grid410{grid-template-columns:repeat(2,minmax(120px,1fr))}.hc-prev-evolutions410 article{grid-template-columns:1fr}.hc-prev-evolutions410 article small{grid-column:1}}
+  `;
+  document.head.appendChild(s);
 })();
