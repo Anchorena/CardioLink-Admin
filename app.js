@@ -7879,6 +7879,15 @@ function patientInfoTextHC(p,coverage){
   function cronologiaBreveHC(p,excludeId=''){
     return evolucionesHC(p).filter(e=>String(e.id)!==String(excludeId||'')).sort((a,b)=>new Date(b.fechaHora||0)-new Date(a.fechaHora||0)).slice(0,3);
   }
+  function cronologiaCompletaHC(p,excludeId=''){
+    return evolucionesHC(p).filter(e=>String(e.id)!==String(excludeId||'')).sort((a,b)=>new Date(b.fechaHora||0)-new Date(a.fechaHora||0));
+  }
+  function resumenEvolucionPrevHC(e){
+    const partes=[];
+    if(e?.motivo)partes.push(e.motivo);
+    if(vitalesHC(e))partes.push(vitalesHC(e));
+    return partes.join(' · ') || e?.diagnostico || e?.evolucion || 'Evolución clínica';
+  }
   function renderDetailHC(key){
     const p=patientByKeyHC(key),box=$hc('hcPacienteDetalle');if(!p||!box)return;
     hcPacienteSeleccionado=patientKeyHC(p); renderSearchHC();
@@ -7889,7 +7898,9 @@ function patientInfoTextHC(p,coverage){
       <h3>Línea de tiempo clínica</h3><div class="hc-timeline">${timeline.length?timeline.map(x=>x.type==='evolution'?renderEvolutionEventHC(x.obj):renderAttentionEventHC(x.obj)).join(''):'<div class="hc-empty"><strong>Sin eventos</strong><span>Creá la primera evolución clínica.</span></div>'}</div>`;
   }
   function renderEvolutionEventHC(e){
-    const editable=canEditHC(e);return `<article class="hc-event" data-hc-evolution-id="${escHC(e.id)}" data-hc-attention-id="${escHC(e.atencionId||'')}"><div class="hc-event-head"><div><strong>Evolución clínica</strong><div class="hc-event-meta">${escHC(fmtDateTimeHC(e.fechaHora))} · ${escHC(e.profesionalNombre||'')}</div></div><div>${editable?`<button class="secondary small-btn" data-hc-edit="${escHC(e.id)}">Editar</button>`:'<span class="hc-lock">Bloqueada +24 h</span>'}</div></div>${vitalesHC(e)?`<div class="hc-vitals-inline410">${vitalesHC(e)}</div>`:''}${e.motivo?`<div class="hc-event-section"><label>Motivo</label><p>${escHC(e.motivo)}</p></div>`:''}${e.evolucion?`<div class="hc-event-section"><label>Evolución / examen</label><p>${escHC(e.evolucion)}</p></div>`:''}${e.diagnostico?`<div class="hc-event-section"><label>Impresión diagnóstica</label><p>${escHC(e.diagnostico)}</p></div>`:''}${e.conducta?`<div class="hc-event-section"><label>Conducta / plan</label><p>${escHC(e.conducta)}</p></div>`:''}</article>`;
+    const editable=canEditHC(e);
+    const cabecera=[e.motivo||'',vitalesHC(e)||''].filter(Boolean).join(' · ');
+    return `<article class="hc-event hc-event-compact411" data-hc-evolution-id="${escHC(e.id)}" data-hc-attention-id="${escHC(e.atencionId||'')}"><div class="hc-event-head"><div><strong>${escHC(e.motivo||'Evolución clínica')}</strong><div class="hc-event-meta">${escHC(fmtDateTimeHC(e.fechaHora))} · ${escHC(e.profesionalNombre||'')}</div>${cabecera?`<div class="hc-event-compact-line411">${escHC(cabecera)}</div>`:''}</div><div>${editable?`<button class="secondary small-btn" data-hc-edit="${escHC(e.id)}">Editar</button>`:'<span class="hc-lock">Bloqueada +24 h</span>'}</div></div>${e.evolucion?`<div class="hc-event-section"><label>Evolución / examen</label><p>${escHC(e.evolucion)}</p></div>`:''}${e.diagnostico?`<div class="hc-event-section"><label>Impresión diagnóstica</label><p>${escHC(e.diagnostico)}</p></div>`:''}${e.conducta?`<div class="hc-event-section"><label>Conducta / plan</label><p>${escHC(e.conducta)}</p></div>`:''}</article>`;
   }
   function renderAttentionEventHC(a){return `<article class="hc-event attention" data-hc-attention-id="${escHC(a.id)}"><div class="hc-event-head"><div><strong>${escHC(a.prestacion||'Atención')}</strong><div class="hc-event-meta">${escHC(formatFecha?.(a.fecha)||a.fecha||'')} ${escHC(a.horaInicio||'')} · ${escHC(a.profesional||'')}</div></div><span class="hc-lock">Atención administrativa</span></div><div class="hc-event-section"><label>Cobertura</label><p>${escHC(a.obraSocial||'s/d')}</p></div>${a.observaciones?`<div class="hc-event-section"><label>Observaciones</label><p>${escHC(a.observaciones)}</p></div>`:''}<div class="hc-event-section"><button class="secondary small-btn" data-hc-new="${escHC(hcPacienteSeleccionado)}" data-atencion-id="${escHC(a.id)}">Evolucionar esta atención</button></div></article>`;}
   function openEvolutionModalHC(key,evolutionId='',atencionId=''){
@@ -7909,7 +7920,7 @@ function patientInfoTextHC(p,coverage){
         <div class="hc-copy-actions-408" id="hcCopyActions409">${copyActionsHtmlHC409(p,coverage,infoText,phoneDigits)}</div>
       </section>
       <div class="hc-context-cards409"><div><span>Fecha y hora</span><strong>${escHC(fmtDateTimeHC(existing?.fechaHora||now.toISOString()))}</strong></div><div><span>Profesional</span><strong>${escHC(existing?.profesionalNombre||prof.nombre)}</strong></div><div><span>Vinculación</span><strong>${linked?(attention?`${escHC(attention.prestacion||'Atención')} · ${escHC(formatFecha?.(attention.fecha)||attention.fecha||'')}`:'Atención vinculada'):'Sin turno'}</strong></div></div>
-      ${(()=>{const prev=cronologiaBreveHC(p,existing?.id||'');return `<section class="hc-prev-evolutions410"><div class="hc-prev-head410"><h3>Últimas evoluciones</h3><span>${prev.length?'Contexto clínico previo':'Sin evoluciones previas'}</span></div>${prev.length?prev.map(e=>`<article><strong>${escHC(fmtDateTimeHC(e.fechaHora))}</strong><span>${escHC(e.motivo||e.diagnostico||e.evolucion||'Evolución clínica')}</span>${vitalesHC(e)?`<small>${vitalesHC(e)}</small>`:''}</article>`).join(''):`<div class="muted">Esta será la primera evolución clínica registrada.</div>`}</section>`;})()}
+      ${(()=>{const prev=cronologiaBreveHC(p,existing?.id||''),allPrev=cronologiaCompletaHC(p,existing?.id||'');return `<section class="hc-prev-evolutions410" id="hcPrevSection411" data-hc-prev-all411="${escHC(encodeURIComponent(JSON.stringify(allPrev.map(e=>({id:e.id,fechaHora:e.fechaHora,motivo:e.motivo||'',evolucion:e.evolucion||'',diagnostico:e.diagnostico||'',conducta:e.conducta||'',vitales:vitalesHC(e)})))))}"><div class="hc-prev-head410"><div><h3>Últimas evoluciones</h3><span>${prev.length?'Contexto clínico previo':'Sin evoluciones previas'}</span></div>${allPrev.length?`<div class="hc-prev-actions411"><button class="secondary small-btn" type="button" id="hcVerTodas411">${allPrev.length>3?'Ver todas':'Ver detalle'}</button>${!existing?`<button class="secondary small-btn" type="button" id="hcContinuarUltima411">Continuar última</button>`:''}</div>`:''}</div><div id="hcPrevList411">${prev.length?prev.map(e=>`<article><strong>${escHC(fmtDateTimeHC(e.fechaHora))}</strong><span>${escHC(e.motivo||e.diagnostico||e.evolucion||'Evolución clínica')}</span>${vitalesHC(e)?`<small>${vitalesHC(e)}</small>`:''}</article>`).join(''):`<div class="muted">Esta será la primera evolución clínica registrada.</div>`}</div>${allPrev.length&&!existing?`<div class="hc-continue-panel411 hidden" id="hcContinuePanel411"><div><strong>Traer de la última evolución</strong><p class="muted">Elegí qué campos querés reutilizar. No se copian signos vitales, fecha ni datos permanentes.</p></div><div class="hc-continue-options411"><label><input type="checkbox" data-hc-copyfield411="motivo"> Motivo</label><label><input type="checkbox" data-hc-copyfield411="evolucion"> Evolución / examen</label><label><input type="checkbox" data-hc-copyfield411="diagnostico"> Diagnóstico</label><label><input type="checkbox" data-hc-copyfield411="conducta"> Conducta / plan</label></div><div class="hc-continue-actions411"><button type="button" class="secondary small-btn" id="hcCancelarContinuar411">Cancelar</button><button type="button" class="primary small-btn" id="hcAplicarContinuar411">Traer seleccionados</button></div></div>`:''}</section>`;})()}
       <section class="hc-vitals-section410"><div class="hc-permanent-title409"><div><h3>Signos vitales y antropometría</h3><p class="muted">Opcionales. En una evolución nueva comienzan siempre en blanco; no se copian valores anteriores.</p></div></div><div class="hc-vitals-grid410">
         <label>Peso (kg)<input id="hcPeso410" type="number" inputmode="decimal" min="0" step="0.1" value="${existing?.pesoKg??''}" placeholder="Ej. 88"></label>
         <label>Talla (cm)<input id="hcTalla410" type="number" inputmode="decimal" min="0" step="0.1" value="${existing?.tallaCm??''}" placeholder="Ej. 185"></label>
@@ -7924,6 +7935,30 @@ function patientInfoTextHC(p,coverage){
     document.body.appendChild(overlay);
     const recalcularImc410=()=>{const v=imcHC($hc('hcPeso410')?.value,$hc('hcTalla410')?.value);if($hc('hcImc410'))$hc('hcImc410').value=v??'';};
     $hc('hcPeso410')?.addEventListener('input',recalcularImc410);$hc('hcTalla410')?.addEventListener('input',recalcularImc410);recalcularImc410();
+
+    const prevSection411=$hc('hcPrevSection411');
+    let prevAll411=[];
+    try{prevAll411=JSON.parse(decodeURIComponent(prevSection411?.dataset.hcPrevAll411||''));}catch(e){prevAll411=[];}
+    let mostrandoTodas411=false;
+    const pintarPrev411=()=>{
+      const list=$hc('hcPrevList411');if(!list)return;
+      const arr=mostrandoTodas411?prevAll411:prevAll411.slice(0,3);
+      list.innerHTML=arr.length?arr.map(e=>`<article><strong>${escHC(fmtDateTimeHC(e.fechaHora))}</strong><span>${escHC(e.motivo||e.diagnostico||e.evolucion||'Evolución clínica')}</span>${e.vitales?`<small>${escHC(e.vitales)}</small>`:''}${mostrandoTodas411?`${e.evolucion?`<p><b>Evolución:</b> ${escHC(e.evolucion)}</p>`:''}${e.diagnostico?`<p><b>Diagnóstico:</b> ${escHC(e.diagnostico)}</p>`:''}${e.conducta?`<p><b>Conducta:</b> ${escHC(e.conducta)}</p>`:''}`:''}</article>`).join(''):'<div class="muted">Esta será la primera evolución clínica registrada.</div>';
+      if($hc('hcVerTodas411'))$hc('hcVerTodas411').textContent=mostrandoTodas411?'Ver últimas 3':(prevAll411.length>3?'Ver todas':'Ver detalle');
+    };
+    $hc('hcVerTodas411')?.addEventListener('click',()=>{mostrandoTodas411=!mostrandoTodas411;pintarPrev411();});
+    $hc('hcContinuarUltima411')?.addEventListener('click',()=>{$hc('hcContinuePanel411')?.classList.remove('hidden');});
+    $hc('hcCancelarContinuar411')?.addEventListener('click',()=>{$hc('hcContinuePanel411')?.classList.add('hidden');});
+    $hc('hcAplicarContinuar411')?.addEventListener('click',()=>{
+      const last=prevAll411[0];if(!last)return;
+      const map={motivo:'hcMotivo',evolucion:'hcEvolucion',diagnostico:'hcDiagnostico',conducta:'hcConducta'};
+      const selected=[...overlay.querySelectorAll('[data-hc-copyfield411]:checked')].map(x=>x.dataset.hcCopyfield411);
+      if(!selected.length){alert('Elegí al menos un campo para traer.');return;}
+      selected.forEach(k=>{const el=$hc(map[k]);if(el)el.value=last[k]||'';});
+      $hc('hcContinuePanel411')?.classList.add('hidden');
+      overlay.querySelectorAll('[data-hc-copyfield411]').forEach(x=>x.checked=false);
+    });
+
     $hc('hcGuardarEvolucion').onclick=()=>saveEvolutionHC(p,existing,linked);
   }
   function saveEvolutionHC(p,existing,atencionId){
@@ -9466,6 +9501,34 @@ function patientInfoTextHC(p,coverage){
     .hc-vitals-inline410{display:inline-block;margin:8px 0;padding:6px 9px;border-radius:9px;background:#eef6f8;color:#174b5c;font-size:12px;font-weight:700}
     .hc-last-vitals410{display:flex;flex-direction:column;gap:4px}.hc-last-vitals410 span{font-size:12px;color:#64748b}.hc-last-vitals410 strong{color:#174b5c}
     @media(max-width:900px){.hc-vitals-grid410{grid-template-columns:repeat(2,minmax(120px,1fr))}.hc-prev-evolutions410 article{grid-template-columns:1fr}.hc-prev-evolutions410 article small{grid-column:1}}
+  `;
+  document.head.appendChild(s);
+})();
+
+
+/* ===== CardioLink v4.1.0-hc · Fase 3A: continuidad clínica ===== */
+(function(){
+  if(document.getElementById('cardiolink-hc-fase3a-411'))return;
+  const s=document.createElement('style');
+  s.id='cardiolink-hc-fase3a-411';
+  s.textContent=`
+    .hc-prev-head410{align-items:flex-start}
+    .hc-prev-head410>div:first-child{min-width:0}
+    .hc-prev-actions411{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+    .hc-prev-evolutions410 article p{grid-column:1/-1;margin:4px 0 0;color:#475569;line-height:1.45}
+    .hc-continue-panel411{margin-top:12px;padding:12px;border:1px solid #cbd5e1;border-radius:12px;background:#fff}
+    .hc-continue-panel411.hidden{display:none}
+    .hc-continue-options411{display:flex;gap:14px;flex-wrap:wrap;margin:10px 0}
+    .hc-continue-options411 label{display:flex;gap:6px;align-items:center;font-size:13px;font-weight:700;color:#334155}
+    .hc-continue-actions411{display:flex;gap:8px;justify-content:flex-end}
+    .hc-event-compact411 .hc-event-head{align-items:flex-start}
+    .hc-event-compact-line411{margin-top:6px;color:#174b5c;font-size:12px;font-weight:700;line-height:1.45}
+    .hc-event-compact411 .hc-event-section{margin-top:8px}
+    @media(max-width:760px){
+      .hc-prev-head410{display:block}
+      .hc-prev-actions411{justify-content:flex-start;margin-top:8px}
+      .hc-continue-actions411{justify-content:stretch}.hc-continue-actions411 button{flex:1}
+    }
   `;
   document.head.appendChild(s);
 })();
