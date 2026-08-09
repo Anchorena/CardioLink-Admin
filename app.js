@@ -264,7 +264,7 @@ function mostrarPantallaLogin() {
 
       <h1>CardioLink Admin</h1>
       <p class="login-subtitle">by Matías Anchorena</p>
-      <p class="login-meta">Versión 4.0.9.6 · 2026</p>
+      <p class="login-meta">Versión 4.1.0-hc · 2026</p>
     </div>
 
     <div class="login-fields">
@@ -1952,7 +1952,17 @@ function badgesInforme(a){
  if(!entregado)badges.push('<span class="badge bad informe-badge">Pend. envío/entrega</span>');
  return `<div class="estado-informe">${badges.join(' ')}</div>`;
 }
-function estadoHTML(a,e){const nc=a.noCobrar?'<span class="badge neutral informe-badge">No cobrado</span>':'';return `<span class="badge ${e.cls}">${e.txt}</span>${nc}${badgesInforme(a)}`;}
+function diasAntiguedadPendiente411C(a){
+  if(!a || !a.fecha)return null;
+  try{const f=new Date(String(a.fecha)+'T12:00:00');const h=new Date();h.setHours(12,0,0,0);if(Number.isNaN(f.getTime()))return null;return Math.max(0,Math.floor((h-f)/86400000));}catch(e){return null;}
+}
+function nivelPendiente411C(a){
+  try{if(typeof esPendienteAdministrativo==='function'&&!esPendienteAdministrativo(a))return null;}catch(e){return null;}
+  const d=diasAntiguedadPendiente411C(a);if(d==null)return null;
+  if(d>14)return {dias:d,cls:'critical',label:'Crítico'};if(d>7)return {dias:d,cls:'overdue',label:'Vencido'};if(d>=4)return {dias:d,cls:'delayed',label:'Demorado'};return {dias:d,cls:'normal',label:'En término'};
+}
+function badgeAntiguedadPendiente411C(a){const n=nivelPendiente411C(a);if(!n||n.cls==='normal')return '';const icon=n.cls==='critical'?'⚠️ ':'';return `<span class="badge pending-age-411c ${n.cls}" title="Pendiente desde hace ${n.dias} días">${icon}${n.label} · ${n.dias} d</span>`;}
+function estadoHTML(a,e){const nc=a.noCobrar?'<span class="badge neutral informe-badge">No cobrado</span>':'';return `<span class="badge ${e.cls}">${e.txt}</span>${nc}${badgesInforme(a)}${badgeAntiguedadPendiente411C(a)}`;}
 
 function prestacionContable(a){
   const r=a.reglaOS||getRegla(a.obraSocial);
@@ -2071,7 +2081,7 @@ function renderLiquidacionColocacionesSolapa(){
   });
 }
 function idJS(id){return JSON.stringify(String(id));}
-function renderTabla(){const tbody=$('tablaAtenciones');tbody.innerHTML='';const datos=filtrar();renderResumenCaja(datos);actualizarResumenFacturaRogelio(datos);if(resumenFiltrosVisible)calcularLiquidacionColocaciones();const totalPaginas=Math.max(1,Math.ceil(datos.length/TAMANIO_PAGINA_LISTADO));if(paginaListado>totalPaginas)paginaListado=totalPaginas;if(paginaListado<1)paginaListado=1;actualizarPaginacionListado(datos.length,totalPaginas);const inicio=(paginaListado-1)*TAMANIO_PAGINA_LISTADO;const datosPagina=datos.slice(inicio,inicio+TAMANIO_PAGINA_LISTADO);if(!datos.length){tbody.innerHTML='<tr><td colspan="14">No hay registros para mostrar.</td></tr>';return}datosPagina.forEach(a=>{const e=evaluarEstado(a),m=dineroVisible(a),part=m.particular;const tr=document.createElement('tr');if(editandoId===a.id){tr.className='edit-row';tr.innerHTML=`<td><input type="date" id="e_fecha_${a.id}" value="${a.fecha||''}"></td><td><input id="e_paciente_${a.id}" value="${escapeHtml(a.paciente)}"><input id="e_obs_${a.id}" value="${escapeHtml(a.observaciones||'')}" placeholder="Obs."></td><td>${selectHTML('e_os_'+a.id,data.obrasSociales,a.obraSocial)}</td><td>${selectProfesionalesHTML('e_prof_'+a.id,a.profesionalId)}</td><td>${selectPrestacionesHTML('e_prest_'+a.id,a.profesionalId,a.prestacion)}</td><td>${selectHTML('e_consultaA_'+a.id,opcionesDestinos(a.consultaA),a.consultaA)}</td><td>${selectHTML('e_prestacionA_'+a.id,opcionesDestinos(a.prestacionA),a.prestacionA)}</td><td>${selectHTML('e_tipoCobro_'+a.id,['Sin cobro en caja','No cobrar','Copago','Particular','Particular + copago'],a.tipoCobro)}<div class="inline-checks-edit"><label><input type="checkbox" id="e_bonoConsulta_${a.id}" ${a.bonoConsulta?'checked':''}> Bono consulta</label><label><input type="checkbox" id="e_bonoEstudio_${a.id}" ${a.bonoEstudio?'checked':''}> Bono estudio</label><label><input type="checkbox" id="e_bonoFirmado_${a.id}" ${a.bonoFirmado?'checked':''}> Bono firmado</label><label><input type="checkbox" id="e_copiaImpresa_${a.id}" ${a.copiaImpresa?'checked':''}> Copia</label><label><input type="checkbox" id="e_fold2_${a.id}" ${a.fold2?'checked':''}> Fold2</label><label><input type="checkbox" id="e_planilla_${a.id}" ${a.planilla?'checked':''}> Planilla</label><label><input type="checkbox" id="e_colocacionLiquidable_${a.id}" ${a.colocacionLiquidable?'checked':''}> Colocación liquidable</label><label>Colocador/a ${selectHTML('e_colocador_'+a.id,['Geraldine','Secretaría','Otro'],a.colocador||'Geraldine')}</label></div></td><td>${selectHTML('e_formaPago_'+a.id,['No aplica','Efectivo','Transferencia','Mixto'],a.formaPago||'No aplica')}</td><td><input type="number" id="e_particular_${a.id}" value="${Number(a.montoConsulta||0)+Number(a.montoEstudio||0)}"></td><td><input type="number" id="e_copago_${a.id}" value="${Number(a.montoCopago||0)}"></td><td>${money(a.montoTotal)}</td><td class="estado-cell">${estadoHTML(a,e)}</td><td class="no-print actions-cell"><div class="edit-actions"><button class="small-btn" onclick="guardarEdicion(${idJS(a.id)})">Guardar</button><button class="small-btn" onclick="cancelarEdicion()">Cancelar</button></div></td>`}else{tr.innerHTML=`<td>${formatFecha(a.fecha)}</td><td><strong>${escapeHtml(a.paciente)}</strong>${a.observaciones?'<br><small>'+escapeHtml(a.observaciones)+'</small>':''}</td><td>${a.obraSocial}</td><td>${a.profesional}</td><td>${prestacionListado(a)}${badgeColocacion(a)}</td><td>${a.consultaA}</td><td>${a.prestacionA}</td><td>${a.tipoCobro||''}</td><td>${a.formaPago||'No aplica'}</td><td class="money-col">${money(part)}</td><td class="money-col">${money(m.copago)}</td><td class="money-col">${money(m.total)}</td><td class="estado-cell">${estadoHTML(a,e)}</td><td class="no-print actions-cell"><div class="edit-actions"><button type="button" data-action="listado-editar" data-id="${escapeHtml(a.id)}" onclick="editarAtencion(${idJS(a.id)})">Editar</button><button type="button" data-action="listado-borrar" data-id="${escapeHtml(a.id)}" onclick="eliminarAtencion(${idJS(a.id)})">Borrar</button></div></td>`}tbody.appendChild(tr)})}
+function renderTabla(){const tbody=$('tablaAtenciones');tbody.innerHTML='';const datos=filtrar();renderResumenCaja(datos);actualizarResumenFacturaRogelio(datos);if(resumenFiltrosVisible)calcularLiquidacionColocaciones();const totalPaginas=Math.max(1,Math.ceil(datos.length/TAMANIO_PAGINA_LISTADO));if(paginaListado>totalPaginas)paginaListado=totalPaginas;if(paginaListado<1)paginaListado=1;actualizarPaginacionListado(datos.length,totalPaginas);const inicio=(paginaListado-1)*TAMANIO_PAGINA_LISTADO;const datosPagina=datos.slice(inicio,inicio+TAMANIO_PAGINA_LISTADO);if(!datos.length){tbody.innerHTML='<tr><td colspan="14">No hay registros para mostrar.</td></tr>';return}datosPagina.forEach(a=>{const e=evaluarEstado(a),m=dineroVisible(a),part=m.particular;const tr=document.createElement('tr');if(editandoId===a.id){tr.className='edit-row';tr.innerHTML=`<td><input type="date" id="e_fecha_${a.id}" value="${a.fecha||''}"></td><td><input id="e_paciente_${a.id}" value="${escapeHtml(a.paciente)}"><input id="e_obs_${a.id}" value="${escapeHtml(a.observaciones||'')}" placeholder="Obs."></td><td>${selectHTML('e_os_'+a.id,data.obrasSociales,a.obraSocial)}</td><td>${selectProfesionalesHTML('e_prof_'+a.id,a.profesionalId)}</td><td>${selectPrestacionesHTML('e_prest_'+a.id,a.profesionalId,a.prestacion)}</td><td>${selectHTML('e_consultaA_'+a.id,opcionesDestinos(a.consultaA),a.consultaA)}</td><td>${selectHTML('e_prestacionA_'+a.id,opcionesDestinos(a.prestacionA),a.prestacionA)}</td><td>${selectHTML('e_tipoCobro_'+a.id,['Sin cobro en caja','No cobrar','Copago','Particular','Particular + copago'],a.tipoCobro)}<div class="inline-checks-edit"><label><input type="checkbox" id="e_bonoConsulta_${a.id}" ${a.bonoConsulta?'checked':''}> Bono consulta</label><label><input type="checkbox" id="e_bonoEstudio_${a.id}" ${a.bonoEstudio?'checked':''}> Bono estudio</label><label><input type="checkbox" id="e_bonoFirmado_${a.id}" ${a.bonoFirmado?'checked':''}> Bono firmado</label><label><input type="checkbox" id="e_copiaImpresa_${a.id}" ${a.copiaImpresa?'checked':''}> Copia</label><label><input type="checkbox" id="e_fold2_${a.id}" ${a.fold2?'checked':''}> Fold2</label><label><input type="checkbox" id="e_planilla_${a.id}" ${a.planilla?'checked':''}> Planilla</label><label><input type="checkbox" id="e_colocacionLiquidable_${a.id}" ${a.colocacionLiquidable?'checked':''}> Colocación liquidable</label><label>Colocador/a ${selectHTML('e_colocador_'+a.id,['Geraldine','Secretaría','Otro'],a.colocador||'Geraldine')}</label></div></td><td>${selectHTML('e_formaPago_'+a.id,['No aplica','Efectivo','Transferencia','Débito','Mixto'],a.formaPago||'No aplica')}</td><td><input type="number" id="e_particular_${a.id}" value="${Number(a.montoConsulta||0)+Number(a.montoEstudio||0)}"></td><td><input type="number" id="e_copago_${a.id}" value="${Number(a.montoCopago||0)}"></td><td>${money(a.montoTotal)}</td><td class="estado-cell">${estadoHTML(a,e)}</td><td class="no-print actions-cell"><div class="edit-actions"><button class="small-btn" onclick="guardarEdicion(${idJS(a.id)})">Guardar</button><button class="small-btn" onclick="cancelarEdicion()">Cancelar</button></div></td>`}else{tr.innerHTML=`<td>${formatFecha(a.fecha)}</td><td><strong>${escapeHtml(a.paciente)}</strong>${a.observaciones?'<br><small>'+escapeHtml(a.observaciones)+'</small>':''}</td><td>${a.obraSocial}</td><td>${a.profesional}</td><td>${prestacionListado(a)}${badgeColocacion(a)}</td><td>${a.consultaA}</td><td>${a.prestacionA}</td><td>${a.tipoCobro||''}</td><td>${a.formaPago||'No aplica'}</td><td class="money-col">${money(part)}</td><td class="money-col">${money(m.copago)}</td><td class="money-col">${money(m.total)}</td><td class="estado-cell">${estadoHTML(a,e)}</td><td class="no-print actions-cell"><div class="edit-actions"><button type="button" data-action="listado-editar" data-id="${escapeHtml(a.id)}" onclick="editarAtencion(${idJS(a.id)})">Editar</button><button type="button" data-action="listado-borrar" data-id="${escapeHtml(a.id)}" onclick="eliminarAtencion(${idJS(a.id)})">Borrar</button></div></td>`}tbody.appendChild(tr)})}
 function actualizarPaginacionListado(totalRegistros,totalPaginas){
  const box=$('paginacionListado'),info=$('paginaInfo'),prev=$('btnPaginaAnterior'),next=$('btnPaginaSiguiente');
  if(!box||!info||!prev||!next)return;
@@ -2119,7 +2129,7 @@ function abrirModalEdicion(id){
         <div><label>Consulta a</label>${selectHTML('m_consultaA',opcionesDestinos(a.consultaA),a.consultaA)}</div>
         <div><label>Estudio/prestación a</label>${selectHTML('m_prestacionA',opcionesDestinos(a.prestacionA),a.prestacionA)}</div>
         <div><label>Tipo de cobro</label>${selectHTML('m_tipoCobro',['Sin cobro en caja','No cobrar','Copago','Particular','Particular + copago'],a.tipoCobro||'Sin cobro en caja')}</div>
-        <div><label>Forma de pago</label>${selectHTML('m_formaPago',['No aplica','Efectivo','Transferencia','Mixto'],a.formaPago||'No aplica')}</div>
+        <div><label>Forma de pago</label>${selectHTML('m_formaPago',['No aplica','Efectivo','Transferencia','Débito','Mixto'],a.formaPago||'No aplica')}</div>
         <div><label>Particular</label><input type="number" id="m_particular" value="${particular}"></div>
         <div><label>Copago</label><input type="number" id="m_copago" value="${copago}"></div>
         <div class="checks modal-checks">
@@ -2255,8 +2265,8 @@ function verDineroPeriodo(){
 }
 function ocultarDineroPeriodo(){$('dineroPeriodoResultado').textContent='';$('claveDinero').value=''}
 function setPrintMeta(){$('printMeta').textContent=`Perfil: ${perfilObj().nombre} | Registros: ${filtrar().length} | ${formatFecha(todayISO())}`}
-function exportarCSV(){const datos=filtrar();if(!datos.length){alert('No hay datos');return}const r=resumen(datos);const incluirValoresExport=!!$('incluirValoresImpresion')?.checked;const filas=[['CardioLink Admin v4.0.9.6'],['Perfil',perfilObj().nombre],['Consultas',r.consultas],['Estudios',r.estudios],[],['Fecha','Paciente','OS','Profesional','Prestación','Consulta a','Estudio a','Tipo','Forma','Particular visible','Copago visible','Total visible','Estado']];datos.forEach(a=>{const m=dineroVisible(a),e=evaluarEstado(a);filas.push([formatFecha(a.fecha),a.paciente,a.obraSocial,a.profesional,prestacionListado(a),a.consultaA,a.prestacionA,a.tipoCobro,a.formaPago,incluirValoresExport?m.particular:'',incluirValoresExport?m.copago:'',incluirValoresExport?m.total:'',e.txt])});const csv=filas.map(r=>r.map(c=>`"${String(c??'').replaceAll('"','""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_listado.csv';a.click()}
-function exportarBackup(){const b={app:'CardioLink Admin',version:'4.0.9.6',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
+function exportarCSV(){const datos=filtrar();if(!datos.length){alert('No hay datos');return}const r=resumen(datos);const incluirValoresExport=!!$('incluirValoresImpresion')?.checked;const filas=[['CardioLink Admin v4.1.0-hc'],['Perfil',perfilObj().nombre],['Consultas',r.consultas],['Estudios',r.estudios],[],['Fecha','Paciente','OS','Profesional','Prestación','Consulta a','Estudio a','Tipo','Forma','Particular visible','Copago visible','Total visible','Estado']];datos.forEach(a=>{const m=dineroVisible(a),e=evaluarEstado(a);filas.push([formatFecha(a.fecha),a.paciente,a.obraSocial,a.profesional,prestacionListado(a),a.consultaA,a.prestacionA,a.tipoCobro,a.formaPago,incluirValoresExport?m.particular:'',incluirValoresExport?m.copago:'',incluirValoresExport?m.total:'',e.txt])});const csv=filas.map(r=>r.map(c=>`"${String(c??'').replaceAll('"','""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_listado.csv';a.click()}
+function exportarBackup(){const b={app:'CardioLink Admin',version:'4.1.0-hc',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
 function importarBackup(){const inp=$('inputImportBackup');if(!inp.files[0]){alert('Elegí archivo');return}if(!confirm('Reemplaza la base actual. ¿Continuar?'))return;const rd=new FileReader();rd.onload=e=>{try{const b=JSON.parse(e.target.result);if(!b.config||!b.atenciones)throw new Error();data=b.config;atenciones=b.atenciones;saveConfig();saveAtenciones();refreshSelects();renderConfig();cambiarPerfil('general');alert('Backup importado')}catch{alert('Backup inválido')}};rd.readAsText(inp.files[0])}
 
 function dniLimpio(v){return String(v||'').replace(/\D/g,'');}
@@ -2799,6 +2809,7 @@ function datosEstadisticas(){
     if(os && a.obraSocial!==os)return false;
     if(prest && a.prestacion!==prest)return false;
     if(estado && estadoTurno(a)!==estado)return false;
+    if(!estado && ['ausente','cancelado'].includes(estadoTurno(a)))return false;
     if(esMedico()){
       const pid=profesionalIdUsuarioActual();
       if(a.profesionalId!==pid && a.cajaPerfil!==pid)return false;
@@ -3145,7 +3156,7 @@ function buscarPacientePanelPorId(id){
   return todosPacientes().find(p=>clavePacientePanel(p)===id || p.id===id) || null;
 }
 
-/* v4.0.9.6.1: apertura robusta de ficha desde el padrón de Pacientes.
+/* v4.1.0-hc.1: apertura robusta de ficha desde el padrón de Pacientes.
    Se usa delegación de eventos en vez de onclick inline para evitar fallos
    con claves que contienen espacios, tildes o apóstrofes. */
 function abrirFichaDesdePadron4091(id){
@@ -3289,6 +3300,13 @@ function editarPacientePanel(id){
       <div><label>Relación</label><input id="pacEditContactoRelacion" value="${escapeHtml(p.contactoResponsableRelacion||'')}" placeholder="Madre / hijo / familiar"></div>
       <div><label>Teléfono contacto</label><input id="pacEditContactoTelefono" value="${escapeHtml(p.contactoResponsableTelefono||'')}"></div>
       <div><label>Email contacto</label><input id="pacEditContactoEmail" value="${escapeHtml(p.contactoResponsableEmail||'')}"></div>
+    </div>
+    <div class="patient-copy-edit411c">
+      <span>Copiar datos:</span>
+      <button class="secondary small-btn" type="button" onclick="copiarDatoPacienteEdit411C('dni')">DNI</button>
+      <button class="secondary small-btn" type="button" onclick="copiarDatoPacienteEdit411C('telefono')">Teléfono</button>
+      <button class="secondary small-btn" type="button" onclick="copiarDatoPacienteEdit411C('email')">Email</button>
+      <button class="secondary small-btn" type="button" onclick="copiarDatoPacienteEdit411C('todo')">Todos</button>
     </div>
     <div class="modal-actions paciente-edit-actions">
       <button class="secondary" type="button" onclick="seleccionarPacientePanel('${escapeHtml(clavePacientePanel(p))}')">Cancelar</button>
@@ -4608,9 +4626,9 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const dark=$id('btnDark'); if(dark){dark.style.marginTop='18px'; dark.style.marginBottom='8px';}
   }
   function version296(){
-    try{document.title='CardioLink Admin v4.0.9.6';}catch(e){}
-    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v4.0.9.6');
-    document.querySelectorAll('h2').forEach(el=>{ if((el.textContent||'').includes('CardioLink Admin v')) el.textContent='CardioLink Admin v4.0.9.6'; });
+    try{document.title='CardioLink Admin v4.1.0-hc';}catch(e){}
+    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v4.1.0-hc');
+    document.querySelectorAll('h2').forEach(el=>{ if((el.textContent||'').includes('CardioLink Admin v')) el.textContent='CardioLink Admin v4.1.0-hc'; });
   }
   document.addEventListener('DOMContentLoaded',()=>{asegurarBloques296(); version296(); moverLogout296(); try{actualizarPrestaciones(); aplicarPermisosUI(); renderAgenda?.(); renderMensajes?.();}catch(e){} });
   setTimeout(()=>{asegurarBloques296(); version296(); moverLogout296(); try{actualizarPrestaciones(); aplicarPermisosUI(); renderAgenda?.(); renderMensajes?.();}catch(e){}},900);
@@ -4885,7 +4903,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
 /* ===== v2.9.8 - Carga pura e importación de pacientes desde Excel Medicloud ===== */
 (function(){
-  const VERSION_298='4.0.9.6';
+  const VERSION_298='4.1.0-hc';
   const CONFIG_ROW_ID='__cardiolink_config_v1';
   let previewImportPacientes298=[];
 
@@ -5238,8 +5256,8 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const inp=d('inputPacientesExcel'); if(inp && !inp.dataset.bound298){ inp.dataset.bound298='1'; inp.addEventListener('change',()=>procesarExcelPacientes298(inp.files?.[0])); }
   }
   function version298(){
-    try{document.title='CardioLink Admin v4.0.9.6';}catch(e){}
-    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v4.0.9.6');
+    try{document.title='CardioLink Admin v4.1.0-hc';}catch(e){}
+    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v4.1.0-hc');
   }
   document.addEventListener('DOMContentLoaded',()=>setTimeout(()=>{bind298();version298();},450));
   setTimeout(()=>{bind298();version298();},1300);
@@ -5361,9 +5379,9 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   }
 
   function version300(){
-    try{document.title='CardioLink Admin v4.0.9.6';}catch(e){}
-    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v4.0.9.6');
-    const pt=document.querySelector('.print-title h2'); if(pt) pt.textContent='CardioLink Admin v4.0.9.6';
+    try{document.title='CardioLink Admin v4.1.0-hc';}catch(e){}
+    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v4.1.0-hc');
+    const pt=document.querySelector('.print-title h2'); if(pt) pt.textContent='CardioLink Admin v4.1.0-hc';
   }
   function init300(){bindPendienteSelect300();bindImportTexto300();version300();}
   document.addEventListener('DOMContentLoaded',()=>setTimeout(init300,700));
@@ -5411,9 +5429,9 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     window.renderTabla = renderTabla = wrapped;
   }
   function version310(){
-    try{document.title='CardioLink Admin v4.0.9.6';}catch(e){}
-    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v4.0.9.6');
-    const pt=document.querySelector('.print-title h2'); if(pt) pt.textContent='CardioLink Admin v4.0.9.6';
+    try{document.title='CardioLink Admin v4.1.0-hc';}catch(e){}
+    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v4.1.0-hc');
+    const pt=document.querySelector('.print-title h2'); if(pt) pt.textContent='CardioLink Admin v4.1.0-hc';
   }
   function init310(){ajustarBotonesPacientes310();limpiarCopiasDeFilas310();version310();}
   document.addEventListener('DOMContentLoaded',()=>setTimeout(init310,800));
@@ -5444,9 +5462,9 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function mesNombre(d){return d.toLocaleDateString('es-AR',{month:'long',year:'numeric'});}
 
   function setVersion320(){
-    try{document.title='CardioLink Admin v4.0.9.6';}catch(e){}
-    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v4.0.9.6');
-    const pt=document.querySelector('.print-title h2'); if(pt) pt.textContent='CardioLink Admin v4.0.9.6';
+    try{document.title='CardioLink Admin v4.1.0-hc';}catch(e){}
+    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v4.1.0-hc');
+    const pt=document.querySelector('.print-title h2'); if(pt) pt.textContent='CardioLink Admin v4.1.0-hc';
   }
 
   // ---------- Buscador global de pacientes ----------
@@ -5701,7 +5719,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function atencionById(id){return (atenciones||[]).find(a=>String(a.id)===String(id));}
   function operativas(){try{return atencionesOperativas()}catch(e){return (atenciones||[]).filter(a=>a && a.id && a.tipoRegistro!=='mensaje' && !a.__config);} }
   function profFiltro(){let prof=$id('agendaProfesional')?.value||'';try{if(esMedico())prof=profesionalIdUsuarioActual(); if(esMatiasDuenio()&&!prof)prof='matias';}catch(e){} return prof;}
-  function setVersion321(){try{document.title='CardioLink Admin v4.0.9.6'}catch(e){};document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v4.0.9.6');const pt=document.querySelector('.print-title h2');if(pt)pt.textContent='CardioLink Admin v4.0.9.6';}
+  function setVersion321(){try{document.title='CardioLink Admin v4.1.0-hc'}catch(e){};document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v4.1.0-hc');const pt=document.querySelector('.print-title h2');if(pt)pt.textContent='CardioLink Admin v4.1.0-hc';}
 
   // No fusionar pacientes por teléfono/email: esos datos pueden pertenecer a familiar responsable.
   window.pacienteExistenteSinTelefonoMail321=function(p){
@@ -5851,9 +5869,9 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function dniClean(v){try{return dniLimpio(v)}catch(e){return String(v||'').replace(/\D/g,'')}}
   function fechaHoy(){try{return todayISO()}catch(e){return new Date().toISOString().slice(0,10)}}
   function version350(){
-    try{document.title='CardioLink Admin v4.0.9.6'}catch(e){}
-    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v4.0.9.6');
-    const pt=document.querySelector('.print-title h2'); if(pt)pt.textContent='CardioLink Admin v4.0.9.6';
+    try{document.title='CardioLink Admin v4.1.0-hc'}catch(e){}
+    document.querySelectorAll('.brand-main span').forEach(el=>el.textContent='v4.1.0-hc');
+    const pt=document.querySelector('.print-title h2'); if(pt)pt.textContent='CardioLink Admin v4.1.0-hc';
   }
   function pacientesBase(){return Array.isArray(data?.pacientes)?data.pacientes:[];}
   function pacienteClave(p){try{return clavePacientePanel(p)}catch(e){return p?.id||dniClean(p?.dni)||norm(p?.nombreCompleto||p?.paciente)}}
@@ -6123,7 +6141,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
 /* ===== v3.6.0 - Inicio inteligente y pulido administrativo ===== */
 (()=>{
-  const APP_VERSION='4.0.9.6';
+  const APP_VERSION='4.1.0-hc';
   const $360=id=>document.getElementById(id);
   const esc360=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
   const norm360=s=>String(s||'').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'').trim();
@@ -6167,13 +6185,16 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const isDoc=['medico','duenio'].includes(u.rol);return `Bienvenido${isDoc?' Dr.':''} ${firstName360(u.nombre)}`;
   }
   function renderWelcomeSummary360(){
-    const pid=$360('welcomePerfil360')?.value||currentProfileId360();const list=profileAtt360(today360(),pid);const pending=list.filter(isPending360);
+    const pid=$360('welcomePerfil360')?.value||currentProfileId360();
+    const list=profileAtt360(today360(),pid);const pending=list.filter(isPending360);
     const counts=prestationCounts360(list);const room=list.filter(a=>['sala_espera','en_sala','llego'].includes(a.estadoTurno||a.estado)).length;
-    const html=[`<div class="welcome-kpi-360"><span>Turnos de hoy</span><strong>${list.length}</strong></div>`,
-      ...counts.slice(0,8).map(([k,v])=>`<div class="welcome-kpi-360"><span>${esc360(k)}</span><strong>${v}</strong></div>`),
-      `<div class="welcome-kpi-360 warning"><span>Pendientes</span><strong>${pending.length}</strong></div>`,
-      `<div class="welcome-kpi-360"><span>En sala</span><strong>${room}</strong></div>`].join('');
-    if($360('welcomeResumen360'))$360('welcomeResumen360').innerHTML=html||'<p class="muted">No hay turnos asignados para hoy.</p>';
+    const profName=profName360(pid);const globalProfile=allAtt360().filter(a=>a&&(pid==='general'||!pid||a.profesionalId===pid||a.profesional===profName));
+    const globalPending=globalProfile.filter(a=>{try{return typeof esPendienteAdministrativo==='function'?esPendienteAdministrativo(a):isPending360(a);}catch(e){return isPending360(a);}});
+    const overdue=globalPending.filter(a=>{const d=typeof diasAntiguedadPendiente411C==='function'?diasAntiguedadPendiente411C(a):null;return d!=null&&d>7;});
+    const critical=globalPending.filter(a=>{const d=typeof diasAntiguedadPendiente411C==='function'?diasAntiguedadPendiente411C(a):null;return d!=null&&d>14;});
+    const html=[`<div class="welcome-kpi-360"><span>Turnos de hoy</span><strong>${list.length}</strong></div>`,...counts.slice(0,8).map(([k,v])=>`<div class="welcome-kpi-360"><span>${esc360(k)}</span><strong>${v}</strong></div>`),`<div class="welcome-kpi-360 warning"><span>Pendientes hoy</span><strong>${pending.length}</strong></div>`,`<div class="welcome-kpi-360"><span>En sala</span><strong>${room}</strong></div>`,`<div class="welcome-kpi-360 pending-overdue-411c"><span>Vencidos +7 días</span><strong>${overdue.length}</strong></div>`,`<div class="welcome-kpi-360 pending-critical-411c"><span>Críticos +14 días</span><strong>${critical.length}</strong></div>`].join('');
+    const actions=(overdue.length||critical.length)?`<div class="welcome-pending-action411c"><div><strong>⚠️ Hay ${overdue.length} pendiente(s) de más de 7 días.</strong>${critical.length?` <span>${critical.length} superan 14 días.</span>`:''}</div><button type="button" onclick="verPendientesVencidos411C()">Ver vencidos</button></div>`:'';
+    if($360('welcomeResumen360'))$360('welcomeResumen360').innerHTML=(html+actions)||'<p class="muted">No hay turnos asignados para hoy.</p>';
   }
   function openWelcome360(force=false){
     const modal=$360('welcomeModal360');if(!modal)return;
@@ -6476,7 +6497,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       }
       if(!a.hcMeta)a.hcMeta={schemaVersion:1,evoluciones:0,informes:0,adjuntos:0};
     });
-    data.hcPreparacion={schemaVersion:1,preparadoEn:new Date().toISOString(),versionApp:'4.0.9.6'};
+    data.hcPreparacion={schemaVersion:1,preparadoEn:new Date().toISOString(),versionApp:'4.1.0-hc'};
     try{saveConfig();saveAtenciones();}catch(e){console.warn(e);}
     try{await sincronizarAtencionesSupabase(true);}catch(e){console.warn('Sincronización HC pendiente:',e);}
     renderHC380();
@@ -6587,7 +6608,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
   function exportAudit382(){
     const r=auditData382();
-    const payload={app:'CardioLink Admin',version:'4.0.9.6',exportadoEn:new Date().toISOString(),resumen:{altas:r.created,ediciones:r.edited,fusiones:r.fusions,usuarios:r.users},atenciones:attentions382().map(a=>({id:a.id,pacienteId:a.pacienteId,paciente:a.paciente,creadoPor:a.creadoPor,creadoEn:a.creadoEn,editadoPor:a.editadoPor,editadoEn:a.editadoEn})),auditoriaPacientes:r.patientAudit};
+    const payload={app:'CardioLink Admin',version:'4.1.0-hc',exportadoEn:new Date().toISOString(),resumen:{altas:r.created,ediciones:r.edited,fusiones:r.fusions,usuarios:r.users},atenciones:attentions382().map(a=>({id:a.id,pacienteId:a.pacienteId,paciente:a.paciente,creadoPor:a.creadoPor,creadoEn:a.creadoEn,editadoPor:a.editadoPor,editadoEn:a.editadoEn})),auditoriaPacientes:r.patientAudit};
     const blob=new Blob([JSON.stringify(payload,null,2)],{type:'application/json'});
     const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Auditoria_'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
   }
@@ -6610,7 +6631,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       ['Sesión Supabase',r.session,r.session==='No iniciada'?'warn':'ok'],
       ['Última sincronización',fmtDate(r.lastSync),r.lastSync?'ok':'warn'],
       ['Último backup',fmtDate(r.lastBackup),r.lastBackup?'ok':'warn'],
-      ['Versión','4.0.9.6','ok'],
+      ['Versión','4.1.0-hc','ok'],
       ['Preparación HC',hcReady?'Lista':'Revisar vínculos',hcReady?'ok':'warn']
     ];
     el.innerHTML=items.map(([t,v,c])=>`<div class="health-item-382 ${c}"><span>${t}</span><b>${v}</b></div>`).join('');
@@ -6677,7 +6698,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 })();
 
 
-/* ===== CardioLink Admin v4.0.9.6: Pendientes y calidad de datos ===== */
+/* ===== CardioLink Admin v4.1.0-hc: Pendientes y calidad de datos ===== */
 (function(){
   const V='383';
   let currentTab='todos';
@@ -6694,6 +6715,8 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   }
   function pendientes383(a){
     if(!a||typeof a!=='object'||(typeof esMensajeInterno==='function'&&esMensajeInterno(a)))return [];
+    const estadoTurno383=String(a.estadoTurno||a.estado||'').toLowerCase();
+    if(estadoTurno383==='ausente'||estadoTurno383==='cancelado')return [];
     applyNA383(a);
     const out=[];
     const requiereFirma=!!(a.bonoConsulta||a.bonoEstudio);
@@ -6721,7 +6744,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const q=norm(document.getElementById('pendBuscar383')?.value);if(q)list=list.filter(a=>norm([a.paciente,a.dni,a.prestacion,a.obraSocial,a.profesional].join(' ')).includes(q));
     const desc=document.getElementById('pendOrden383')?.value==='desc';list.sort((a,b)=>(String(a.fecha||'').localeCompare(String(b.fecha||'')))*(desc?-1:1));
     if(!list.length){box.innerHTML='<div class="empty383">No hay pendientes en esta categoría.</div>';return}
-    box.innerHTML=list.map(a=>{const ps=pendientes383(a);return `<article class="pend-card383"><div class="pend-main383"><div class="pend-date383">${esc383(typeof formatFecha==='function'?formatFecha(a.fecha):a.fecha)}${a.horaInicio?' · '+esc383(a.horaInicio):''}</div><h3>${esc383(a.paciente||'Paciente')}</h3><p>${esc383(a.prestacion||'')} · ${esc383(a.profesional||'')}</p><p class="muted">${esc383(a.obraSocial||'Sin cobertura')} · DNI ${esc383(a.dni||'s/d')}</p></div><div class="pend-tags383">${ps.map(k=>`<button type="button" class="pend-tag383 p-${k}" onclick="resolverPendiente383('${esc383(a.id)}','${k}')">${esc383(labels383(k))}</button>`).join('')}<button type="button" class="secondary open383" onclick="editarAtencion('${esc383(a.id)}')">Abrir</button></div></article>`}).join('');
+    box.innerHTML=list.map(a=>{const ps=pendientes383(a);return `<article class="pend-card383"><div class="pend-main383"><div class="pend-date383">${esc383(typeof formatFecha==='function'?formatFecha(a.fecha):a.fecha)}${a.horaInicio?' · '+esc383(a.horaInicio):''}</div><h3>${esc383(a.paciente||'Paciente')}</h3><p>${esc383(a.prestacion||'')} · ${esc383(a.profesional||'')}</p><p class="muted">${esc383(a.obraSocial||'Sin cobertura')} · DNI ${esc383(a.dni||'s/d')}</p></div><div class="pend-tags383">${ps.map(k=>`<button type="button" class="pend-tag383 p-${k}" onclick="resolverPendiente383('${esc383(a.id)}','${k}')">${esc383(labels383(k))}</button>`).join('')}<button type="button" class="secondary open383" onclick="abrirFichaPacienteDesdePendiente411C('${esc383(a.id)}')">Ficha paciente</button></div></article>`}).join('');
   }
   window.renderPendientes383=renderPendientes383;
   function audit383(a,k){a.auditoriaPendientes=Array.isArray(a.auditoriaPendientes)?a.auditoriaPendientes:[];let u={};try{u=perfilUsuarioActual()||{}}catch{}a.auditoriaPendientes.push({tipo:k,accion:'resuelto',fecha:new Date().toISOString(),usuario:u.nombre||u.usuario||'usuario'});}
@@ -6772,7 +6795,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 })();
 
 
-/* ===== CardioLink Admin v4.0.9.6: completar fichas incompletas ===== */
+/* ===== CardioLink Admin v4.1.0-hc: completar fichas incompletas ===== */
 (function init384(){
   const norm=v=>String(v??'').trim().toLowerCase();
   const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -6835,7 +6858,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   },true);
 })();
 
-/* ===== CardioLink Admin v4.0.9.6: calidad robusta + eliminación completa de paciente ===== */
+/* ===== CardioLink Admin v4.1.0-hc: calidad robusta + eliminación completa de paciente ===== */
 (function init386(){
   const norm386=v=>String(v??'').trim().toLowerCase();
   const esc386=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
@@ -6940,14 +6963,14 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   if(openOld386){window.abrirPacienteGlobalDetalle350=abrirPacienteGlobalDetalle350=function(k){const r=openOld386.apply(this,arguments);setTimeout(()=>{const actions=document.querySelector('#pacienteGlobalBody .paciente-global-actions-top');if(actions&&!actions.querySelector('.delete-patient386')){const b=document.createElement('button');b.type='button';b.className='danger delete-patient386';b.textContent='Eliminar paciente';b.onclick=()=>eliminarPacienteCompleto386(k);actions.appendChild(b);}},0);return r;};}
 
   function refrescarVersion386(){
-    document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(x=>x.textContent='v4.0.9.6');
-    document.title='CardioLink Admin v4.0.9.6';
+    document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(x=>x.textContent='v4.1.0-hc');
+    document.title='CardioLink Admin v4.1.0-hc';
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(refrescarVersion386,300));else setTimeout(refrescarVersion386,300);
 })();
 
 
-/* ===== CardioLink Admin v4.0.9.6: abrir ficha completa desde calidad de datos ===== */
+/* ===== CardioLink Admin v4.1.0-hc: abrir ficha completa desde calidad de datos ===== */
 (function init387(){
   window.abrirFichaCompletaCalidad387=function(key){
     try{
@@ -6978,29 +7001,29 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   };
 
   function version387(){
-    document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(x=>x.textContent='v4.0.9.6');
-    document.title='CardioLink Admin v4.0.9.6';
+    document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(x=>x.textContent='v4.1.0-hc');
+    document.title='CardioLink Admin v4.1.0-hc';
   }
   if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',()=>setTimeout(version387,300));
   else setTimeout(version387,300);
 })();
 
 
-/* ===== CardioLink Admin v4.0.9.6: ficha administrativa ampliada ===== */
+/* ===== CardioLink Admin v4.1.0-hc: ficha administrativa ampliada ===== */
 (function init390(){
   function version390(){
-    document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(x=>x.textContent='v4.0.9.6');
-    document.querySelectorAll('h2').forEach(x=>{if(/^CardioLink Admin v3\.8\.7$/.test(x.textContent.trim()))x.textContent='CardioLink Admin v4.0.9.6';});
-    document.title='CardioLink Admin v4.0.9.6';
+    document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(x=>x.textContent='v4.1.0-hc');
+    document.querySelectorAll('h2').forEach(x=>{if(/^CardioLink Admin v3\.8\.7$/.test(x.textContent.trim()))x.textContent='CardioLink Admin v4.1.0-hc';});
+    document.title='CardioLink Admin v4.1.0-hc';
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>setTimeout(version390,500));else setTimeout(version390,500);
 })();
 
 
-/* ===== CardioLink Admin v4.0.9.6: calidad de datos con fuente unificada ===== */
+/* ===== CardioLink Admin v4.1.0-hc: calidad de datos con fuente unificada ===== */
 (function initQuality310(){
   'use strict';
-  const VERSION='4.0.9.6';
+  const VERSION='4.1.0-hc';
   const labels={
     dni:'Sin DNI', cobertura:'Cobertura incompleta', contacto:'Sin teléfono / contacto',
     nacimiento:'Sin fecha de nacimiento', sexo:'Sin sexo', localidad:'Sin localidad',
@@ -7133,10 +7156,10 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot);else boot();
 })();
 
-/* ===== CardioLink Admin v4.0.9.6 — Administración Inteligente ===== */
+/* ===== CardioLink Admin v4.1.0-hc — Administración Inteligente ===== */
 (function(){
   'use strict';
-  const VERSION='4.0.9.6';
+  const VERSION='4.1.0-hc';
   const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   const slug=s=>String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[^a-z0-9]+/g,'_').replace(/^_|_$/g,'')||('item_'+Date.now());
 
@@ -7250,9 +7273,9 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 })();
 
 
-/* ===== CardioLink Admin v4.0.9.6 — usuarios editables + badge inmediato + logout estable ===== */
+/* ===== CardioLink Admin v4.1.0-hc — usuarios editables + badge inmediato + logout estable ===== */
 (function(){
-  const VERSION_3101='4.0.9.6';
+  const VERSION_3101='4.1.0-hc';
   const byId=id=>document.getElementById(id);
   const esc3101=v=>typeof escapeHtml==='function'?escapeHtml(v):String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   let editingUserId3101='';
@@ -7358,7 +7381,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
   function boot3101(){
     normalizeVersion3101();
-    try{window.renderUsuariosConfig?.();}catch(e){console.warn('Usuarios 4.0.9.6',e)}
+    try{window.renderUsuariosConfig?.();}catch(e){console.warn('Usuarios 4.1.0-hc',e)}
     refreshPendingBadge3101();stableLogout3101();
     [250,800,1600,3000].forEach(ms=>setTimeout(()=>{normalizeVersion3101();refreshPendingBadge3101();stableLogout3101();},ms));
     // Refresco liviano: evita que el contador dependa de haber visitado la solapa.
@@ -7368,10 +7391,10 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 })();
 
 
-/* ===== CardioLink Admin v4.0.9.6 — Convenios, destinos y aranceles configurables ===== */
+/* ===== CardioLink Admin v4.1.0-hc — Convenios, destinos y aranceles configurables ===== */
 (function(){
   'use strict';
-  const VERSION_3102='4.0.9.6';
+  const VERSION_3102='4.1.0-hc';
   const $3102=id=>document.getElementById(id);
   const esc3102=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   const norm3102=s=>String(s??'').trim();
@@ -7628,7 +7651,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
 /* ===== CardioLink HC 4.0 · Fase 1 ===== */
 (function(){
-  const VERSION_HC='4.0.9.6';
+  const VERSION_HC='4.1.0-hc';
   let hcPacienteSeleccionado='';
   let hcPaginaResultados=1;
   const HC_RESULTADOS_POR_PAGINA=50;
@@ -8049,17 +8072,17 @@ function patientInfoTextHC(p,coverage){
     });
     // Mostrar pacientes desde el ingreso y volver a calcular tras la sincronización inicial.
     setTimeout(()=>renderSearchHC(false),50);setTimeout(()=>renderSearchHC(false),900);setTimeout(()=>renderSearchHC(false),2200);
-    document.title='CardioLink 4.0.9.6 HC';document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(x=>x.textContent='v4.0.9.6');
+    document.title='CardioLink 4.1.0-hc HC';document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(x=>x.textContent='v4.1.0-hc');
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bootHC);else bootHC();
   window.abrirNuevaEvolucionHC=(id,atencionId='')=>openEvolutionModalHC(id,'',atencionId);
 })();
 
 
-/* ===== CardioLink 4.0.9.6 · HC profesional, pendientes y convenios por profesional ===== */
+/* ===== CardioLink 4.1.0-hc · HC profesional, pendientes y convenios por profesional ===== */
 (function(){
   'use strict';
-  const VERSION_402='4.0.9.6';
+  const VERSION_402='4.1.0-hc';
   const $402=id=>document.getElementById(id);
   const esc402=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   const norm402=s=>String(s??'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
@@ -8361,10 +8384,10 @@ function patientInfoTextHC(p,coverage){
 })();
 
 
-/* ===== CardioLink 4.0.9.6 · evolución directa desde Agenda ===== */
+/* ===== CardioLink 4.1.0-hc · evolución directa desde Agenda ===== */
 (function(){
   'use strict';
-  const VERSION_403='4.0.9.6';
+  const VERSION_403='4.1.0-hc';
   const $403=id=>document.getElementById(id);
   const norm403=s=>String(s??'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 
@@ -8511,13 +8534,13 @@ function patientInfoTextHC(p,coverage){
   window.abrirEvolucionAtencion403=openEvolutionFromAgenda403;
 })();
 
-/* v4.0.9.6: convenios/aranceles aislados por profesional, selector explícito de cobertura y sincronización de perfil. */
+/* v4.1.0-hc: convenios/aranceles aislados por profesional, selector explícito de cobertura y sincronización de perfil. */
 
 
-/* ===== CardioLink 4.0.9.6 · importación histórica de evoluciones Medicloud ===== */
+/* ===== CardioLink 4.1.0-hc · importación histórica de evoluciones Medicloud ===== */
 (function(){
   'use strict';
-  const VERSION_405='4.0.9.6';
+  const VERSION_405='4.1.0-hc';
   const $405=id=>document.getElementById(id);
   const esc405=v=>String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;').replaceAll("'",'&#039;');
   const clean405=v=>String(v??'').replace(/<[^>]*>/g,' ').replace(/&nbsp;/gi,' ').replace(/\s+/g,' ').trim();
@@ -8744,10 +8767,10 @@ function patientInfoTextHC(p,coverage){
   window.importarEvolucionesMedicloud405=chooseFile405;
 })();
 
-/* ===== CardioLink Admin v4.0.9.6 — identidad profesional y documentos clínicos ===== */
+/* ===== CardioLink Admin v4.1.0-hc — identidad profesional y documentos clínicos ===== */
 (function(){
   'use strict';
-  const VERSION_406='4.0.9.6';
+  const VERSION_406='4.1.0-hc';
   const $406=id=>document.getElementById(id);
   const esc406=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   const norm406=s=>String(s??'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
@@ -9041,7 +9064,7 @@ function patientInfoTextHC(p,coverage){
 })();
 
 
-/* ===== CardioLink Admin v4.0.9.6 — dictado clínico por campo ===== */
+/* ===== CardioLink Admin v4.1.0-hc — dictado clínico por campo ===== */
 (function(){
   'use strict';
   const Recognition=window.SpeechRecognition||window.webkitSpeechRecognition;
@@ -9161,10 +9184,10 @@ function patientInfoTextHC(p,coverage){
 })();
 
 
-/* ===== CardioLink Admin v4.0.9.6 — RCTA asistido + paneles con scroll propio ===== */
+/* ===== CardioLink Admin v4.1.0-hc — RCTA asistido + paneles con scroll propio ===== */
 (function(){
   'use strict';
-  const VERSION_RCTA_4095='4.0.9.6';
+  const VERSION_RCTA_4095='4.1.0-hc';
   const DEFAULT_RCTA_URL='https://app.rcta.me/';
 
   const esc4095=(value)=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
@@ -9799,7 +9822,7 @@ function patientInfoTextHC(p,coverage){
   if(document.getElementById('cardiolink-phase3b-style411b'))return;
   const s=document.createElement('style');s.id='cardiolink-phase3b-style411b';
   s.textContent=`
-    .current-patient411b{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);display:flex;align-items:center;gap:7px;min-width:0;z-index:40;padding:6px;border:1px solid #9fb8c2;border-radius:16px;background:#f3f9fa;box-shadow:0 8px 22px rgba(23,75,92,.12)}
+    .current-patient411b{position:fixed;left:50%;top:16px;transform:translateX(-50%);display:flex;align-items:center;gap:7px;min-width:0;z-index:12050;padding:6px;border:1px solid #9fb8c2;border-radius:16px;background:rgba(243,249,250,.97);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);box-shadow:0 10px 28px rgba(23,75,92,.18)}
     .current-patient411b.hidden{display:none}
 
     .topbar{position:relative}
@@ -9821,7 +9844,296 @@ function patientInfoTextHC(p,coverage){
     .global-quick-menu411b{position:fixed;right:22px;bottom:156px;width:240px;padding:9px;background:#fff;border:1px solid #cbd5e1;border-radius:15px;box-shadow:0 18px 45px rgba(15,23,42,.22);z-index:10021;display:grid;gap:3px}
     .global-quick-menu411b button:disabled{opacity:.42;cursor:not-allowed}
     .gq-title411b{padding:8px 10px 6px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;font-weight:800;border-bottom:1px solid #e2e8f0;margin-bottom:3px}
-    @media(max-width:1180px){.current-patient411b{position:fixed;left:50%;top:auto;bottom:18px;transform:translateX(-50%);max-width:calc(100vw - 150px)}.current-patient-main411b{min-width:180px}.global-quick411b{right:16px;bottom:92px}.global-quick-menu411b{right:16px;bottom:154px}}
+    @media(max-width:1180px){.current-patient411b{left:50%;top:12px;bottom:auto;transform:translateX(-50%);max-width:calc(100vw - 24px)}.current-patient-main411b{min-width:180px}.global-quick411b{right:16px;bottom:92px}.global-quick-menu411b{right:16px;bottom:154px}}
+  `;
+  document.head.appendChild(s);
+})();
+
+
+/* ===== CardioLink v4.1.0-hc · Fase 3C: cierre operativo ===== */
+(function(){
+  'use strict';if(window.__cardiolinkPhase3C411C)return;window.__cardiolinkPhase3C411C=true;
+  function fechaHaceDias411C(dias){const d=new Date();d.setDate(d.getDate()-dias);const off=d.getTimezoneOffset()*60000;return new Date(d-off).toISOString().slice(0,10);}
+  window.verPendientesVencidos411C=function(){try{const welcome=document.getElementById('welcomeModal360');if(welcome)welcome.classList.add('hidden');if(typeof showSection==='function'){const navPend=document.querySelector('.nav[data-section="pendientes"]');showSection(navPend?'pendientes':'listado');}if(typeof activarFiltroPendientesGlobal==='function')activarFiltroPendientesGlobal();const hasta=document.getElementById('fHasta');if(hasta)hasta.value=fechaHaceDias411C(8);if(typeof renderTabla==='function')renderTabla();}catch(e){console.error(e);alert('No se pudo abrir el filtro de vencidos.');}};
+  function pendientesPerfil411C(){let base=[];try{base=typeof atencionesPerfil==='function'?atencionesPerfil():(window.atenciones||[]);}catch(e){base=window.atenciones||[];}return (base||[]).filter(a=>{try{return typeof esPendienteAdministrativo==='function'&&esPendienteAdministrativo(a);}catch(e){return false;}});}
+  function actualizarBadgePendientes411C(){const list=pendientesPerfil411C();const overdue=list.filter(a=>{const d=diasAntiguedadPendiente411C(a);return d!=null&&d>7;});const critical=list.filter(a=>{const d=diasAntiguedadPendiente411C(a);return d!=null&&d>14;});const btn=document.querySelector('.nav[data-section="pendientes"]')||document.querySelector('[data-section="pendientes"]');if(btn){btn.title=`${list.length} pendientes · ${overdue.length} vencidos >7 días · ${critical.length} críticos >14 días`;btn.classList.toggle('has-critical-411c',critical.length>0);}}
+  const oldRenderStats=typeof renderStats==='function'?renderStats:null;if(oldRenderStats&&!oldRenderStats.__phase3c411c){const wrapped=function(){const r=oldRenderStats.apply(this,arguments);setTimeout(actualizarBadgePendientes411C,0);return r;};wrapped.__phase3c411c=true;try{window.renderStats=renderStats=wrapped;}catch(e){window.renderStats=wrapped;}}
+  function asegurarBotonVencidos411C(){if(document.getElementById('btnVerVencidos411C'))return;const anchor=document.getElementById('btnPendientesGlobal')||document.getElementById('btnVerPendientesSolapa');if(!anchor)return;const b=document.createElement('button');b.id='btnVerVencidos411C';b.type='button';b.className='secondary pending-overdue-btn411c';b.textContent='Vencidos >7 días';b.addEventListener('click',window.verPendientesVencidos411C);anchor.insertAdjacentElement('afterend',b);}
+  function boot411C(){actualizarBadgePendientes411C();asegurarBotonVencidos411C();setTimeout(()=>{actualizarBadgePendientes411C();asegurarBotonVencidos411C();},800);setTimeout(()=>{actualizarBadgePendientes411C();asegurarBotonVencidos411C();},2200);}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot411C);else boot411C();
+})();
+(function(){if(document.getElementById('cardiolink-phase3c-style411c'))return;const s=document.createElement('style');s.id='cardiolink-phase3c-style411c';s.textContent=`.pending-age-411c{margin-left:5px!important;font-weight:800!important}.pending-age-411c.delayed{background:#fff7ed!important;color:#9a3412!important;border:1px solid #fed7aa!important}.pending-age-411c.overdue{background:#fee2e2!important;color:#991b1b!important;border:1px solid #fecaca!important}.pending-age-411c.critical{background:#7f1d1d!important;color:#fff!important;border:1px solid #7f1d1d!important}.pending-overdue-411c{background:#fff7ed!important;border-color:#fdba74!important}.pending-overdue-411c strong{color:#c2410c!important}.pending-critical-411c{background:#fef2f2!important;border-color:#fca5a5!important}.pending-critical-411c strong{color:#b91c1c!important}.welcome-pending-action411c{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:14px;margin-top:10px;padding:12px 14px;border:1px solid #fecaca;border-radius:13px;background:#fff7f7;color:#7f1d1d}.welcome-pending-action411c button{border:0;border-radius:10px;background:#b91c1c;color:#fff;padding:9px 13px;font-weight:800;cursor:pointer}.nav.has-critical-411c{box-shadow:inset 3px 0 0 #dc2626}.pending-overdue-btn411c{border-color:#fed7aa!important;color:#9a3412!important}@media(max-width:720px){.welcome-pending-action411c{display:block}.welcome-pending-action411c button{margin-top:9px;width:100%}}`;document.head.appendChild(s);})();
+
+
+/* ===== CardioLink v4.1.0-hc · Fase 3C AMPLIADA ===== */
+(function(){
+  'use strict';
+  if(window.__cardiolinkPhase3CAmpliada411C)return;
+  window.__cardiolinkPhase3CAmpliada411C=true;
+
+  const $c=id=>document.getElementById(id);
+  const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const money411=n=>typeof money==='function'?money(Number(n||0)):'$ '+Number(n||0).toLocaleString('es-AR');
+  const norm=s=>String(s||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const estado411=a=>String(a?.estadoTurno||a?.estado||'').toLowerCase();
+
+  function patientForAttention411C(a){
+    if(!a)return null;
+    try{
+      const list=typeof todosPacientes==='function'?todosPacientes():(data?.pacientes||[]);
+      const dni=String(a.dni||'').replace(/\D/g,'');
+      return list.find(p=>String(p.id||'')===String(a.pacienteId||'')) ||
+        (dni?list.find(p=>String(p.dni||'').replace(/\D/g,'')===dni):null) ||
+        list.find(p=>norm(p.nombreCompleto||p.paciente||'')===norm(a.paciente||'')) || null;
+    }catch(e){return null;}
+  }
+
+  window.abrirFichaPacienteDesdePendiente411C=function(id){
+    const a=(atenciones||[]).find(x=>String(x.id)===String(id));
+    if(!a)return;
+    const p=patientForAttention411C(a);
+    if(!p){alert('No encontré la ficha del paciente asociada a este pendiente.');return;}
+    const key=(typeof clavePacientePanel==='function'?clavePacientePanel(p):(p.id||p.dni||''));
+    try{
+      if(window.CardioLinkPacienteActual411B?.set)window.CardioLinkPacienteActual411B.set(key);
+      if(typeof window.abrirPacienteGlobal320==='function'){window.abrirPacienteGlobal320(key);return;}
+      if(typeof showSection==='function')showSection('pacientes');
+      if(typeof seleccionarPacientePanel==='function')seleccionarPacientePanel(key);
+    }catch(e){console.error(e);alert('No se pudo abrir la ficha del paciente.');}
+  };
+
+  async function copy411C(txt){
+    const v=String(txt||'');
+    try{await navigator.clipboard.writeText(v);}
+    catch(e){
+      const t=document.createElement('textarea');t.value=v;document.body.appendChild(t);t.select();document.execCommand('copy');t.remove();
+    }
+  }
+  window.copiarDatoPacienteEdit411C=async function(tipo){
+    const vals={
+      dni:$c('pacEditDni')?.value||'',
+      telefono:$c('pacEditTelefono')?.value||'',
+      email:$c('pacEditEmail')?.value||''
+    };
+    let txt='';
+    if(tipo==='dni')txt=vals.dni;
+    else if(tipo==='telefono')txt=vals.telefono;
+    else if(tipo==='email')txt=vals.email;
+    else txt=[`DNI: ${vals.dni||'s/d'}`,`Teléfono: ${vals.telefono||'s/d'}`,`Email: ${vals.email||'s/d'}`].join('\n');
+    await copy411C(txt);
+  };
+
+  // ---------- HC: buscador protagonista + integración genérica plegable ----------
+  function ajustarHcVisual411C(){
+    const search=$c('hcBuscarPaciente');
+    if(search){
+      const host=search.closest('.card,.panel,.hc-search-card,.hc-search-wrap')||search.parentElement;
+      host?.classList.add('hc-search-emphasis411c');
+      search.placeholder='Buscar paciente por apellido, DNI, teléfono o email';
+    }
+    const headings=[...document.querySelectorAll('#hc h1,#hc h2,#hc h3,#hc h4,.section h2,.section h3')];
+    const h=headings.find(x=>/integraciones clinicas|integración clínica|integraciones clínicas|medicloud/i.test(x.textContent||''));
+    if(h){
+      h.textContent='Vinculación con otra app';
+      const host=h.closest('.card,.panel,section,div');
+      if(host&&!host.classList.contains('integration-collapsible411c')){
+        host.classList.add('integration-collapsible411c','collapsed411c');
+        h.classList.add('integration-title411c');
+        h.title='Mostrar / ocultar vinculación con otra app';
+        h.addEventListener('click',()=>host.classList.toggle('collapsed411c'));
+      }
+    }
+    document.querySelectorAll('#hc button,#hc p,#hc label,#hc small').forEach(el=>{
+      if(/medicloud/i.test(el.textContent||''))el.textContent=(el.textContent||'').replace(/Medicloud/gi,'otra app');
+    });
+  }
+
+  // ---------- Seña en ausentes / cancelados ----------
+  function preguntarSenia411C(a,estado){
+    const etiqueta=estado==='ausente'?'ausente':'cancelado';
+    const pago=confirm(`Turno ${etiqueta}. ¿El paciente pagó una seña?`);
+    if(!pago){
+      a.seniaPagada=false;a.seniaMonto=0;a.seniaFormaPago='';a.seniaRegistradaEn=new Date().toISOString();
+      return;
+    }
+    const raw=prompt('Monto de la seña:',String(a.seniaMonto||''));
+    if(raw===null)return;
+    const monto=Number(String(raw).replace(/\./g,'').replace(',','.'));
+    if(!Number.isFinite(monto)||monto<0){alert('Monto inválido.');return;}
+    const forma=(prompt('Medio de pago: Efectivo / Transferencia / Débito',a.seniaFormaPago||'Efectivo')||'Efectivo').trim();
+    a.seniaPagada=true;a.seniaMonto=monto;a.seniaFormaPago=forma;a.seniaRegistradaEn=new Date().toISOString();
+  }
+
+  const oldCambiarEstado411C=window.cambiarEstadoAgenda;
+  if(typeof oldCambiarEstado411C==='function'&&!oldCambiarEstado411C.__senia411c){
+    const wrapped=function(id,estado){
+      const a=(atenciones||[]).find(x=>String(x.id)===String(id));
+      if(a&&['ausente','cancelado'].includes(String(estado))){
+        preguntarSenia411C(a,String(estado));
+      }
+      const r=oldCambiarEstado411C.apply(this,arguments);
+      try{window.renderPendientes383?.();renderStats?.();}catch(e){}
+      return r;
+    };
+    wrapped.__senia411c=true;
+    window.cambiarEstadoAgenda=cambiarEstadoAgenda=wrapped;
+  }
+
+  // Caja diaria: ausentes/cancelados no cuentan como prestación cobrada; solo su seña.
+  const oldCajaHoy411C=window.cajaHoy||((typeof cajaHoy==='function')?cajaHoy:null);
+  window.cajaHoy=cajaHoy=function(datos=atencionesOperativas()){
+    const perfil=typeof perfilObj==='function'?perfilObj():{id:'general'};
+    if(perfil.id==='general')return {particular:0,copago:0,total:0};
+    return (datos||[]).filter(a=>(a.cajaPerfil||a.profesionalId)===perfil.id).filter(a=>a.fecha===todayISO()).reduce((r,a)=>{
+      if(['ausente','cancelado'].includes(estado411(a))){
+        const s=Number(a.seniaMonto||0);r.particular+=s;r.total+=s;return r;
+      }
+      const part=Number(a.montoConsulta||0)+Number(a.montoEstudio||0),cop=Number(a.montoCopago||0);
+      r.particular+=part;r.copago+=cop;r.total+=part+cop;return r;
+    },{particular:0,copago:0,total:0});
+  };
+
+  // ---------- Estadística específica cancelados/ausentes ----------
+  function inyectarAusentismo411C(){
+    const sec=$c('estadisticas');if(!sec||$c('ausentismo411C'))return;
+    const box=document.createElement('div');box.id='ausentismo411C';box.className='card stats-ausentismo411c';
+    box.innerHTML=`<h3>Cancelaciones y ausentismo</h3><p class="muted">No se incluyen en la producción general. Se miden por separado.</p><div id="ausentismoResultado411C"></div>`;
+    sec.appendChild(box);
+  }
+  function renderAusentismo411C(){
+    const out=$c('ausentismoResultado411C');if(!out)return;
+    const desde=$c('statsDesde')?.value||'',hasta=$c('statsHasta')?.value||'',prof=$c('statsProfesional')?.value||'';
+    const list=(atenciones||[]).filter(a=>(!desde||a.fecha>=desde)&&(!hasta||a.fecha<=hasta)&&(!prof||a.profesionalId===prof));
+    const aus=list.filter(a=>estado411(a)==='ausente'),can=list.filter(a=>estado411(a)==='cancelado'),total=list.length;
+    const senias=[...aus,...can].reduce((s,a)=>s+Number(a.seniaMonto||0),0);
+    const pct=n=>total?Math.round(n*1000/total)/10:0;
+    out.innerHTML=`<div class="finance-kpis411c"><div><span>Ausentes</span><strong>${aus.length}</strong><small>${pct(aus.length)}%</small></div><div><span>Cancelados</span><strong>${can.length}</strong><small>${pct(can.length)}%</small></div><div><span>Señas cobradas</span><strong>${money411(senias)}</strong></div></div>`;
+  }
+  const oldRenderEst411C=window.renderEstadisticas;
+  if(typeof oldRenderEst411C==='function'&&!oldRenderEst411C.__ausentismo411c){
+    const w=function(){const r=oldRenderEst411C.apply(this,arguments);inyectarAusentismo411C();renderAusentismo411C();return r;};
+    w.__ausentismo411c=true;window.renderEstadisticas=renderEstadisticas=w;
+  }
+
+  // ---------- Finanzas ----------
+  function ensureMov411C(){
+    if(!data.movimientosFinancieros411C||!Array.isArray(data.movimientosFinancieros411C))data.movimientosFinancieros411C=[];
+  }
+  function saveMov411C(){
+    ensureMov411C();saveConfig();
+    try{window.guardarConfigEnSupabase298?.();}catch(e){}
+  }
+  function month411C(){
+    const d=new Date(),y=d.getFullYear(),m=String(d.getMonth()+1).padStart(2,'0');
+    return {desde:`${y}-${m}-01`,hasta:todayISO()};
+  }
+  function injectFinance411C(){
+    const sec=$c('caja');if(!sec||$c('finanzas411C'))return;
+    const p=month411C();
+    const profOpts=(data.profesionales||[]).filter(x=>x.id!=='general').map(x=>`<option value="${esc(x.id)}">${esc(x.nombre)}</option>`).join('');
+    const box=document.createElement('section');box.id='finanzas411C';box.className='card finance411c';
+    box.innerHTML=`<div class="finance-head411c"><div><h2>Informe financiero</h2><p class="muted">Ingresos y egresos por período. Los aranceles de OS/prepagas se toman de los convenios configurados.</p></div></div>
+      <div class="finance-filters411c"><label>Desde<input id="finDesde411C" type="date" value="${p.desde}"></label><label>Hasta<input id="finHasta411C" type="date" value="${p.hasta}"></label><label>Perfil<select id="finPerfil411C"><option value="">Todos</option>${profOpts}</select></label><button id="finCalcular411C" class="primary" type="button">Calcular informe</button></div>
+      <details class="finance-mov411c"><summary>Registrar egreso / movimiento</summary><div class="finance-mov-grid411c"><label>Fecha<input id="movFecha411C" type="date" value="${todayISO()}"></label><label>Categoría<select id="movCategoria411C"><option>Sueldo Secretaría</option><option>Otros egresos</option><option>Otro movimiento</option></select></label><label>Concepto<input id="movConcepto411C" placeholder="Ej. sueldo agosto"></label><label>Monto<input id="movMonto411C" type="number" min="0" step="0.01"></label><label>Medio<select id="movMedio411C"><option>Efectivo</option><option>Transferencia</option><option>Débito</option><option>Otro</option></select></label><label>Perfil<select id="movPerfil411C"><option value="">General</option>${profOpts}</select></label></div><div class="modal-actions"><button id="movGuardar411C" class="primary" type="button">Guardar egreso</button></div></details>
+      <div id="finResultado411C" class="finance-result411c"><p class="muted">Elegí período y presioná Calcular informe.</p></div>`;
+    sec.appendChild(box);
+    $c('finCalcular411C')?.addEventListener('click',renderFinance411C);
+    $c('movGuardar411C')?.addEventListener('click',()=>{
+      const monto=Number($c('movMonto411C')?.value||0);if(!(monto>0)){alert('Ingresá un monto válido.');return;}
+      ensureMov411C();
+      data.movimientosFinancieros411C.push({id:'mov_'+Date.now(),fecha:$c('movFecha411C')?.value||todayISO(),tipo:'egreso',categoria:$c('movCategoria411C')?.value||'Otros egresos',concepto:$c('movConcepto411C')?.value.trim()||'',monto,medio:$c('movMedio411C')?.value||'Otro',perfilId:$c('movPerfil411C')?.value||'',creadoEn:new Date().toISOString(),creadoPor:typeof nombreUsuarioAuditoria==='function'?nombreUsuarioAuditoria():''});
+      saveMov411C();$c('movMonto411C').value='';$c('movConcepto411C').value='';renderFinance411C();
+    });
+  }
+
+  function placementCost411C(a){
+    if(!a?.colocacionLiquidable)return 0;
+    try{return typeof valorColocacionPorPrestacion==='function'?Number(valorColocacionPorPrestacion(a.prestacion)||0):0;}catch(e){return 0;}
+  }
+  function arancel411C(a){
+    if(['particular','pami'].includes(norm(a.obraSocial)))return 0;
+    if(Number.isFinite(Number(a.valorArancelEstimado)))return Number(a.valorArancelEstimado||0);
+    return 0;
+  }
+  function isFacturaOtro411C(a,perfilId){
+    if(!a||!perfilId)return false;
+    if(perfilId==='matias'){
+      try{return typeof esRegistroFacturaRogelio==='function'&&esRegistroFacturaRogelio(a);}catch(e){return false;}
+    }
+    const prof=(data.profesionales||[]).find(p=>p.id===perfilId);
+    const destino=String(a.destinoFacturacionEstimado||a.prestacionA||'');
+    return !!(destino&&prof&&norm(destino)!==norm(prof.nombre)&&norm(destino)!=='no aplica');
+  }
+  function addBucket411C(obj,key,val){obj[key]=(obj[key]||0)+Number(val||0);}
+  function renderFinance411C(){
+    injectFinance411C();ensureMov411C();
+    const desde=$c('finDesde411C')?.value||'',hasta=$c('finHasta411C')?.value||'',perfil=$c('finPerfil411C')?.value||'';
+    const list=(atenciones||[]).filter(a=>a&&(!desde||a.fecha>=desde)&&(!hasta||a.fecha<=hasta)&&(!perfil||a.profesionalId===perfil||a.cajaPerfil===perfil));
+    const ingresos={particular:0,copago:0,os:0,facturaOtro:0,senias:0},medios={Efectivo:0,Transferencia:0,'Débito':0,Mixto:0,Otro:0};
+    let colocaciones=0;
+    list.forEach(a=>{
+      if(['ausente','cancelado'].includes(estado411(a))){
+        const s=Number(a.seniaMonto||0);ingresos.senias+=s;addBucket411C(medios,a.seniaFormaPago||'Otro',s);return;
+      }
+      const part=Number(a.montoConsulta||0)+Number(a.montoEstudio||0),cop=Number(a.montoCopago||0),forma=a.formaPago||'Otro';
+      ingresos.particular+=part;ingresos.copago+=cop;addBucket411C(medios,forma,part+cop);
+      const ar=arancel411C(a);
+      if(ar>0){
+        if(perfil&&isFacturaOtro411C(a,perfil))ingresos.facturaOtro+=ar;
+        else if(!perfil&&a.profesionalId==='matias'&&isFacturaOtro411C(a,'matias'))ingresos.facturaOtro+=ar;
+        else ingresos.os+=ar;
+      }
+      colocaciones+=placementCost411C(a);
+    });
+    const movs=(data.movimientosFinancieros411C||[]).filter(m=>(!desde||m.fecha>=desde)&&(!hasta||m.fecha<=hasta)&&(!perfil||!m.perfilId||m.perfilId===perfil));
+    const sueldo=movs.filter(m=>m.categoria==='Sueldo Secretaría').reduce((s,m)=>s+Number(m.monto||0),0);
+    const otros=movs.filter(m=>m.categoria!=='Sueldo Secretaría').reduce((s,m)=>s+Number(m.monto||0),0);
+    const totalIng=Object.values(ingresos).reduce((s,n)=>s+n,0),totalEgr=sueldo+otros+colocaciones,neto=totalIng-totalEgr;
+    const facturaLabel=perfil==='matias'?'Factura Rogelio':(perfil?'Factura otro':'Factura terceros');
+    const medioHtml=Object.entries(medios).filter(([,v])=>v>0).map(([k,v])=>`<div><span>${esc(k)}</span><strong>${money411(v)}</strong></div>`).join('')||'<p class="muted">Sin ingresos de caja en el período.</p>';
+    const movHtml=movs.slice().sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha))).map(m=>`<tr><td>${esc(m.fecha)}</td><td>${esc(m.categoria)}</td><td>${esc(m.concepto||'')}</td><td>${esc(m.medio||'')}</td><td>${money411(m.monto)}</td><td><button class="small-btn" type="button" data-del-mov411c="${esc(m.id)}">Borrar</button></td></tr>`).join('');
+    $c('finResultado411C').innerHTML=`<div class="finance-kpis411c"><div><span>Ingresos</span><strong>${money411(totalIng)}</strong></div><div><span>Egresos</span><strong>${money411(totalEgr)}</strong></div><div class="${neto<0?'neg411c':'pos411c'}"><span>Neto</span><strong>${money411(neto)}</strong></div></div>
+      <div class="finance-columns411c"><section><h3>Ingresos</h3><div class="finance-lines411c"><div><span>Particulares</span><strong>${money411(ingresos.particular)}</strong></div><div><span>Copagos</span><strong>${money411(ingresos.copago)}</strong></div><div><span>OS / prepagas (arancel configurado)</span><strong>${money411(ingresos.os)}</strong></div><div><span>${facturaLabel}</span><strong>${money411(ingresos.facturaOtro)}</strong></div><div><span>Señas de ausentes/cancelados</span><strong>${money411(ingresos.senias)}</strong></div></div><h4>Por medio de pago</h4><div class="finance-lines411c">${medioHtml}</div></section>
+      <section><h3>Egresos</h3><div class="finance-lines411c"><div><span>Sueldo Secretaría</span><strong>${money411(sueldo)}</strong></div><div><span>Colocaciones Holter / MAPA / ECG</span><strong>${money411(colocaciones)}</strong></div><div><span>Otros egresos</span><strong>${money411(otros)}</strong></div></div></section></div>
+      ${movs.length?`<h3>Movimientos manuales</h3><div class="finance-table-wrap411c"><table><thead><tr><th>Fecha</th><th>Categoría</th><th>Concepto</th><th>Medio</th><th>Monto</th><th></th></tr></thead><tbody>${movHtml}</tbody></table></div>`:''}`;
+  }
+
+  document.addEventListener('click',e=>{
+    const b=e.target.closest?.('[data-del-mov411c]');if(!b)return;
+    if(!confirm('¿Borrar este movimiento financiero?'))return;
+    ensureMov411C();data.movimientosFinancieros411C=data.movimientosFinancieros411C.filter(m=>m.id!==b.dataset.delMov411c);saveMov411C();renderFinance411C();
+  });
+
+  function ensureDebitOptions411C(){
+    document.querySelectorAll('select').forEach(sel=>{
+      const opts=[...sel.options].map(o=>o.value||o.textContent);
+      if(opts.includes('Efectivo')&&opts.includes('Transferencia')&&!opts.includes('Débito')){
+        const o=document.createElement('option');o.value='Débito';o.textContent='Débito';sel.appendChild(o);
+      }
+    });
+  }
+
+  function boot411C(){
+    ajustarHcVisual411C();inyectarAusentismo411C();injectFinance411C();ensureDebitOptions411C();
+    setTimeout(()=>{ajustarHcVisual411C();inyectarAusentismo411C();injectFinance411C();ensureDebitOptions411C();},700);
+    setTimeout(()=>{ajustarHcVisual411C();inyectarAusentismo411C();injectFinance411C();ensureDebitOptions411C();},1800);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot411C);else boot411C();
+})();
+
+/* ===== Estilos Fase 3C ampliada ===== */
+(function(){
+  if(document.getElementById('phase3c-ampliada-style411c'))return;
+  const s=document.createElement('style');s.id='phase3c-ampliada-style411c';
+  s.textContent=`
+    #hcBuscarPaciente{min-height:48px!important;font-size:17px!important;border:2px solid #174b5c!important;box-shadow:0 0 0 4px rgba(23,75,92,.08)!important;background:#fff!important}
+    .hc-search-emphasis411c{border:1px solid #9fb8c2!important;background:#f7fbfc!important;box-shadow:0 8px 24px rgba(23,75,92,.08)!important}
+    .integration-collapsible411c{transition:.2s ease}.integration-title411c{cursor:pointer;display:flex;align-items:center;justify-content:space-between}.integration-title411c:after{content:'▾';font-size:13px;color:#64748b}.integration-collapsible411c.collapsed411c>*:not(.integration-title411c){display:none!important}.integration-collapsible411c.collapsed411c .integration-title411c:after{content:'▸'}
+    .patient-copy-edit411c{display:flex;gap:7px;align-items:center;flex-wrap:wrap;padding:10px 0}.patient-copy-edit411c>span{font-weight:800;color:#475569}
+    .stats-ausentismo411c{margin-top:18px}.finance-kpis411c{display:grid;grid-template-columns:repeat(3,minmax(150px,1fr));gap:12px;margin:12px 0}.finance-kpis411c>div{border:1px solid #dbe4e8;border-radius:13px;padding:12px;background:#f8fafc}.finance-kpis411c span{display:block;color:#64748b;font-size:12px;font-weight:700}.finance-kpis411c strong{display:block;font-size:22px;color:#0f172a;margin-top:3px}.finance-kpis411c small{color:#64748b}
+    .finance411c{margin-top:22px}.finance-filters411c,.finance-mov-grid411c{display:grid;grid-template-columns:repeat(4,minmax(150px,1fr));gap:10px;align-items:end}.finance-filters411c label,.finance-mov-grid411c label{font-size:12px;font-weight:800;color:#475569}.finance-filters411c input,.finance-filters411c select,.finance-mov-grid411c input,.finance-mov-grid411c select{width:100%;margin-top:5px}
+    .finance-mov411c{margin:14px 0;padding:10px;border:1px solid #dbe4e8;border-radius:12px;background:#fbfdfe}.finance-mov411c summary{cursor:pointer;font-weight:800;color:#174b5c}
+    .finance-columns411c{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px}.finance-columns411c section{border:1px solid #dbe4e8;border-radius:13px;padding:14px;background:#fff}.finance-lines411c>div{display:flex;justify-content:space-between;gap:14px;padding:8px 0;border-bottom:1px solid #edf2f4}.finance-lines411c>div:last-child{border-bottom:0}.finance-table-wrap411c{overflow:auto}.finance-table-wrap411c table{width:100%;border-collapse:collapse}.finance-table-wrap411c th,.finance-table-wrap411c td{padding:8px;border-bottom:1px solid #e5e7eb;text-align:left}.pos411c strong{color:#166534!important}.neg411c strong{color:#b91c1c!important}
+    @media(max-width:900px){.finance-filters411c,.finance-mov-grid411c{grid-template-columns:repeat(2,minmax(130px,1fr))}.finance-columns411c{grid-template-columns:1fr}.finance-kpis411c{grid-template-columns:1fr}}
   `;
   document.head.appendChild(s);
 })();
