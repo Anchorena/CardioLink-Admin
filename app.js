@@ -3228,6 +3228,7 @@ function estadoCortoPaciente(a){
 function seleccionarPacientePanel(id){
   const p=buscarPacientePanelPorId(id); if(!p)return;
   pacienteSeleccionadoPanelId=clavePacientePanel(p);
+  try{window.CardioLinkPacienteActual411B?.set?.(pacienteSeleccionadoPanelId);}catch(e){}
   const ats=atencionesPacienteGlobal(p);
   const porProf={}; ats.forEach(a=>{porProf[a.profesional||'Sin profesional']=(porProf[a.profesional||'Sin profesional']||0)+1;});
   const detalle=$('pacienteDetalle'); if(!detalle)return;
@@ -5505,6 +5506,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function cerrarPacienteGlobal320(){ $id('pacienteGlobalModal')?.classList.add('hidden'); document.body.classList.remove('patient-modal-open-371'); }
   function abrirPacienteGlobal320(k){
     const p=pacientePorClave320(k); if(!p){alert('No encontré el paciente.'); return;}
+    try{window.CardioLinkPacienteActual411B?.set?.(clavePac320(p));}catch(e){}
     ensurePacienteGlobalModal320();
     const ats=atencionesPac320(p);
     const ult=ats[0];
@@ -5948,6 +5950,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   }
   function abrirPacienteGlobalDetalle350(k){
     const p=pacientePorClave350(k); if(!p){alert('No encontré el paciente.');return;}
+    try{window.CardioLinkPacienteActual411B?.set?.(pacienteClave(p));}catch(e){}
     if(typeof ensurePacienteGlobalModal320==='function') try{ensurePacienteGlobalModal320()}catch(e){}
     let modal=$id('pacienteGlobalModal');
     if(!modal){
@@ -8789,6 +8792,29 @@ function patientInfoTextHC(p,coverage){
     const r=norm406(currentUser406().rolId||currentUser406().rol||currentUser406().baseRole||'');
     return isAdmin406()||r.includes('medico');
   }
+  function isSecretary406(){
+    try{if(typeof esSecretaria==='function'&&esSecretaria())return true;}catch(e){}
+    const r=norm406(currentUser406().rolId||currentUser406().rol||currentUser406().baseRole||'');
+    return r.includes('secretaria');
+  }
+  function canIssueDoc406(type=''){
+    if(isMedical406()||isAdmin406())return true;
+    return isSecretary406()&&['certificado','constancia_atencion'].includes(String(type||''));
+  }
+  function responsibleProfId406(p){
+    if(!p)return currentProfId406()||selectedProfId406()||'matias';
+    try{
+      const ats=(typeof atencionesPacienteGlobal==='function'?atencionesPacienteGlobal(p):[])
+        .filter(a=>a&&a.tipoRegistro!=='mensaje'&&a.profesionalId);
+      if(ats.length){
+        const hoy=(typeof todayISO==='function'?todayISO():'');
+        const hoyActiva=ats.find(a=>a.fecha===hoy&&!['cancelado','ausente'].includes(String(a.estadoTurno||a.estado||'').toLowerCase()));
+        const activa=ats.find(a=>!['cancelado','ausente'].includes(String(a.estadoTurno||a.estado||'').toLowerCase()));
+        return String((hoyActiva||activa||ats[0]).profesionalId||'');
+      }
+    }catch(e){}
+    return currentProfId406()||selectedProfId406()||'matias';
+  }
   function currentProfId406(){
     try{return typeof profesionalIdUsuarioActual==='function'?(profesionalIdUsuarioActual()||''):(currentUser406().profesionalId||'');}catch(e){return currentUser406().profesionalId||'';}
   }
@@ -8913,7 +8939,7 @@ function patientInfoTextHC(p,coverage){
   function openOwnIdentity406(){
     ensure406();const pid=currentProfId406()||selectedProfId406(),p=prof406(pid);if(!p){alert('Este usuario no tiene un profesional asociado.');return;}
     const modal=document.createElement('div');modal.id='identityModal406';modal.className='hc-modal-overlay';
-    modal.innerHTML=`<div class="hc-modal-card identity-modal-card406"><div class="hc-modal-head"><div><h2>Mi membrete y firma</h2><p class="muted">${esc406(p.nombre||'Profesional')}</p></div><button class="modal-close" type="button" data-close-identity406>×</button></div><div id="ownIdentityPreview406">${identityPreviewHtml406(p)}</div><div class="hc-modal-grid"><div><label>Marca / consultorio</label><input id="ownMarca406" value="${esc406(p.marcaDocumento||p.nombre||'')}"></div><div><label>Color del membrete</label><input id="ownColor406" type="color" value="${esc406(/^#[0-9a-f]{6}$/i.test(p.colorDocumento||'')?p.colorDocumento:'#174b5c')}"></div><div><label>Matrícula nacional</label><input id="ownMN406" value="${esc406(p.matriculaNacional||'')}"></div><div><label>Matrícula provincial</label><input id="ownMP406" value="${esc406(p.matriculaProvincial||'')}"></div><div><label>Teléfono / WhatsApp</label><input id="ownTelefono406" value="${esc406(p.telefonoDocumento||'')}"></div><div><label>Email</label><input id="ownEmail406" value="${esc406(p.emailDocumento||'')}"></div><div class="full"><label>Dirección del consultorio</label><input id="ownDireccion406" value="${esc406(p.direccionDocumento||'')}"></div><div class="full"><label>Redes / web</label><input id="ownRedes406" value="${esc406(p.redesDocumento||'')}"></div></div><div class="identity-upload-grid406"><div><input id="ownLogoFile406" type="file" accept="image/png,image/jpeg,image/webp" hidden><button class="secondary" type="button" id="ownUploadLogo406">Subir logo</button><button class="secondary" type="button" id="ownRemoveLogo406">Quitar logo</button></div><div><input id="ownSignatureFile406" type="file" accept="image/png,image/jpeg,image/webp" hidden><button class="secondary" type="button" id="ownUploadSignature406">Subir firma</button><button class="secondary" type="button" id="ownRemoveSignature406">Quitar firma</button></div><label class="check-row-310"><input id="ownShowSignature406" type="checkbox" ${p.mostrarFirmaDocumento!==false?'checked':''}> Incluir firma en documentos</label></div><div class="hc-modal-actions"><button class="secondary" type="button" data-close-identity406>Cancelar</button><button class="primary" type="button" id="saveOwnIdentity406">Guardar cambios</button></div></div>`;
+    modal.innerHTML=`<div class="hc-modal-card identity-modal-card406"><div class="hc-modal-head"><div><h2>Mi membrete y firma</h2><p class="muted">${esc406(p.nombre||'Profesional')}</p></div><button class="modal-close" type="button" data-close-identity406>×</button></div><div id="ownIdentityPreview406">${identityPreviewHtml406(p)}</div><div class="hc-modal-grid"><div><label>Nombre del consultorio / marca</label><input id="ownMarca406" value="${esc406(p.marcaDocumento||p.nombre||'')}"></div><div><label>Color del membrete</label><input id="ownColor406" type="color" value="${esc406(/^#[0-9a-f]{6}$/i.test(p.colorDocumento||'')?p.colorDocumento:'#174b5c')}"></div><div><label>Matrícula nacional</label><input id="ownMN406" value="${esc406(p.matriculaNacional||'')}"></div><div><label>Matrícula provincial</label><input id="ownMP406" value="${esc406(p.matriculaProvincial||'')}"></div><div><label>Teléfono / WhatsApp</label><input id="ownTelefono406" value="${esc406(p.telefonoDocumento||'')}"></div><div><label>Email</label><input id="ownEmail406" value="${esc406(p.emailDocumento||'')}"></div><div class="full"><label>Dirección del consultorio</label><input id="ownDireccion406" value="${esc406(p.direccionDocumento||'')}"></div><div class="full"><label>Redes / web</label><input id="ownRedes406" value="${esc406(p.redesDocumento||'')}"></div></div><div class="identity-upload-grid406"><div><input id="ownLogoFile406" type="file" accept="image/png,image/jpeg,image/webp" hidden><button class="secondary" type="button" id="ownUploadLogo406">Subir logo</button><button class="secondary" type="button" id="ownRemoveLogo406">Quitar logo</button></div><div><input id="ownSignatureFile406" type="file" accept="image/png,image/jpeg,image/webp" hidden><button class="secondary" type="button" id="ownUploadSignature406">Subir firma</button><button class="secondary" type="button" id="ownRemoveSignature406">Quitar firma</button></div><label class="check-row-310"><input id="ownShowSignature406" type="checkbox" ${p.mostrarFirmaDocumento!==false?'checked':''}> Incluir firma en documentos</label></div><div class="hc-modal-actions"><button class="secondary" type="button" data-close-identity406>Cancelar</button><button class="primary" type="button" id="saveOwnIdentity406">Guardar cambios</button></div></div>`;
     document.body.appendChild(modal);
   }
   async function uploadOwn406(kind,file){
@@ -8968,23 +8994,29 @@ function patientInfoTextHC(p,coverage){
     return {title:'Documento clínico',body:'',extra:''};
   }
   function openDocumentModal406(key,docId='',forcedType=''){
-    if(!isMedical406()){alert('Solo los perfiles médicos o administradores pueden emitir documentos clínicos.');return;}
     const p=patient406(key);if(!p)return;ensure406();
     const existing=docId?data.documentosClinicos.find(d=>d.id===docId):null;
-    if(existing&&!canEditDoc406(existing)){alert('Este documento superó las 24 horas y solo puede modificarse con perfil Administrador.');return;}
-    const profId=existing?.profesionalId||currentProfId406()||selectedProfId406(),pr=prof406(profId);if(!pr){alert('El usuario no tiene un profesional asociado.');return;}
-    const type=existing?.tipo||forcedType||'receta',defs=defaultDoc406(type,p);
+    const type=existing?.tipo||forcedType||'receta';
+    if(!canIssueDoc406(type)){alert('Tu perfil no tiene permiso para emitir este tipo de documento.');return;}
+    if(existing&&!canEditDoc406(existing)&&!isSecretary406()){alert('Este documento superó las 24 horas y solo puede modificarse con perfil Administrador.');return;}
+    const profId=existing?.profesionalId||(isSecretary406()?responsibleProfId406(p):(currentProfId406()||selectedProfId406())),pr=prof406(profId);if(!pr){alert('No se pudo identificar el profesional responsable de la atención.');return;}
+    const defs=defaultDoc406(type,p);
     const modal=document.createElement('div');modal.id='clinicalDocModal406';modal.className='hc-modal-overlay';
-    modal.innerHTML=`<div class="hc-modal-card clinical-doc-card406"><div class="hc-modal-head"><div><h2>${existing?'Editar documento':'Nuevo documento clínico'}</h2><p class="muted">${esc406(patientName406(p))} · ${esc406(pr.nombre||'')}</p></div><button type="button" class="modal-close" data-close-doc406>×</button></div><div class="clinical-doc-header406">${identityPreviewHtml406(pr)}</div><div class="hc-modal-grid"><div><label>Tipo de documento</label><select id="docType406">${docTypeOptions406(type)}</select></div><div><label>Fecha</label><input id="docDate406" type="datetime-local" value="${esc406((existing?.fechaHora||new Date().toISOString()).slice(0,16))}"></div><div class="full"><div class="cl-voice-label4094"><label for="docTitle406">Título</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="docTitle406" aria-label="Dictar título del documento">🎤 Dictar</button></div><input id="docTitle406" value="${esc406(existing?.titulo||defs.title)}"></div><div class="full"><div class="cl-voice-label4094"><label id="docBodyLabel406" for="docBody406">Contenido</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="docBody406" aria-label="Dictar contenido del documento">🎤 Dictar</button></div><textarea id="docBody406" rows="8" placeholder="Escribí el contenido del documento">${esc406(existing?.contenido||defs.body)}</textarea></div><div class="full"><div class="cl-voice-label4094"><label for="docExtra406">Indicaciones / aclaraciones adicionales</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="docExtra406" aria-label="Dictar indicaciones adicionales">🎤 Dictar</button></div><textarea id="docExtra406" rows="4">${esc406(existing?.adicional||defs.extra)}</textarea></div><label class="check-row-310 full"><input type="checkbox" id="docIncludeSignature406" ${existing?.incluirFirma===false?'':'checked'}> Incluir firma cargada del profesional</label></div><p class="muted">El documento no se guarda si está vacío. El guardado es manual. Puede editarse durante 24 horas; el Administrador conserva edición sin límite.</p><div class="hc-modal-actions"><button class="secondary" type="button" data-close-doc406>Cancelar</button><button class="secondary" type="button" id="saveDoc406">Guardar</button><button class="primary" type="button" id="savePrintDoc406">Guardar e imprimir</button></div></div>`;
+    modal.innerHTML=`<div class="hc-modal-card clinical-doc-card406"><div class="hc-modal-head"><div><h2>${existing?'Editar documento':'Nuevo documento clínico'}</h2><p class="muted">${esc406(patientName406(p))} · <span id="docProfLabel406">${esc406(pr.nombre||'')}</span></p></div><button type="button" class="modal-close" data-close-doc406>×</button></div>${isSecretary406()?`<div class="doc-prof-selector406"><label>Profesional responsable<select id="docProfessional406">${(data.profesionales||[]).filter(x=>x.id!=='general').map(x=>`<option value="${esc406(x.id)}" ${String(x.id)===String(profId)?'selected':''}>${esc406(x.nombre)}</option>`).join('')}</select></label><p class="muted">El certificado/constancia usará el membrete del profesional seleccionado.</p></div>`:''}<div class="clinical-doc-header406" id="docIdentityPreview406">${identityPreviewHtml406(pr)}</div><div class="hc-modal-grid"><div><label>Tipo de documento</label><select id="docType406">${docTypeOptions406(type)}</select></div><div><label>Fecha</label><input id="docDate406" type="datetime-local" value="${esc406((existing?.fechaHora||new Date().toISOString()).slice(0,16))}"></div><div class="full"><div class="cl-voice-label4094"><label for="docTitle406">Título</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="docTitle406" aria-label="Dictar título del documento">🎤 Dictar</button></div><input id="docTitle406" value="${esc406(existing?.titulo||defs.title)}"></div><div class="full"><div class="cl-voice-label4094"><label id="docBodyLabel406" for="docBody406">Contenido</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="docBody406" aria-label="Dictar contenido del documento">🎤 Dictar</button></div><textarea id="docBody406" rows="8" placeholder="Escribí el contenido del documento">${esc406(existing?.contenido||defs.body)}</textarea></div><div class="full"><div class="cl-voice-label4094"><label for="docExtra406">Indicaciones / aclaraciones adicionales</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="docExtra406" aria-label="Dictar indicaciones adicionales">🎤 Dictar</button></div><textarea id="docExtra406" rows="4">${esc406(existing?.adicional||defs.extra)}</textarea></div><label class="check-row-310 full"><input type="checkbox" id="docIncludeSignature406" ${existing?.incluirFirma===false?'':'checked'}> Incluir firma cargada del profesional</label></div><p class="muted">El documento no se guarda si está vacío. El guardado es manual. Puede editarse durante 24 horas; el Administrador conserva edición sin límite.</p><div class="hc-modal-actions"><button class="secondary" type="button" data-close-doc406>Cancelar</button><button class="secondary" type="button" id="saveDoc406">Guardar</button><button class="primary" type="button" id="savePrintDoc406">Guardar e imprimir</button></div></div>`;
     document.body.appendChild(modal);
     $406('docType406').addEventListener('change',()=>{if(existing)return;const d=defaultDoc406($406('docType406').value,p);$406('docTitle406').value=d.title;$406('docBody406').value=d.body;$406('docExtra406').value=d.extra;});
+    $406('docProfessional406')?.addEventListener('change',e=>{
+      const pp=prof406(e.target.value);if(!pp)return;
+      if($406('docProfLabel406'))$406('docProfLabel406').textContent=pp.nombre||'Profesional';
+      if($406('docIdentityPreview406'))$406('docIdentityPreview406').innerHTML=identityPreviewHtml406(pp);
+    });
     $406('saveDoc406').onclick=()=>saveDocument406(p,existing,false);
     $406('savePrintDoc406').onclick=()=>saveDocument406(p,existing,true);
   }
   function saveDocument406(p,existing,printAfter){
     const tipo=$406('docType406')?.value||'receta',titulo=$406('docTitle406')?.value.trim()||docLabel406(tipo),contenido=$406('docBody406')?.value.trim()||'',adicional=$406('docExtra406')?.value.trim()||'';
     if(!contenido&&!adicional){alert('Escribí el contenido antes de guardar.');return;}
-    const profId=existing?.profesionalId||currentProfId406()||selectedProfId406(),pr=prof406(profId);if(!pr)return;
+    const profId=existing?.profesionalId||($406('docProfessional406')?.value)||(isSecretary406()?responsibleProfId406(p):(currentProfId406()||selectedProfId406())),pr=prof406(profId);if(!pr){alert('No se pudo identificar el profesional responsable.');return;}
     const now=new Date().toISOString(),fechaInput=$406('docDate406')?.value,fechaHora=fechaInput?new Date(fechaInput).toISOString():now;
     let doc=existing;
     if(existing){Object.assign(existing,{tipo,titulo,contenido,adicional,fechaHora,incluirFirma:$406('docIncludeSignature406')?.checked!==false,actualizadoEn:now,actualizadoPor:pr.nombre});}
@@ -9629,7 +9661,23 @@ function patientInfoTextHC(p,coverage){
   function restoreCurrent411B(){
     try{const k=sessionStorage.getItem(STORAGE)||'';if(k&&patientByKey(k))currentKey411B=k;}catch(_){}
   }
-  function getCurrent411B(){return patientByKey(currentKey411B);}
+  function getCurrent411B(){
+    let p=patientByKey(currentKey411B);
+    if(p)return p;
+    try{
+      const selected=(typeof pacienteSeleccionadoPanelId!=='undefined'?pacienteSeleccionadoPanelId:'')||'';
+      if(selected){p=patientByKey(String(selected));if(p){currentKey411B=patientKey(p);try{sessionStorage.setItem(STORAGE,currentKey411B);}catch(_){}return p;}}
+    }catch(_){}
+    try{
+      const modal=document.getElementById('pacienteGlobalModal');
+      const title=document.getElementById('pacienteGlobalTitulo')?.textContent?.trim()||'';
+      if(modal&&!modal.classList.contains('hidden')&&title){
+        p=patients().find(x=>patientName(x).trim()===title);
+        if(p){currentKey411B=patientKey(p);try{sessionStorage.setItem(STORAGE,currentKey411B);}catch(_){}return p;}
+      }
+    }catch(_){}
+    return null;
+  }
 
   function ensureUI411B(){
     const top=document.querySelector('.topbar');
@@ -9671,16 +9719,35 @@ function patientInfoTextHC(p,coverage){
     }
     return common.map(([a,l])=>`<button type="button" data-cp-action411b="${a}">${l}</button>`).join('');
   }
+  function resolveActionPatient411B(){
+    let p=getCurrent411B();if(p)return p;
+    try{
+      const bar=$b('currentPatient411B');
+      const k=bar?.dataset?.patientKey411b||'';
+      if(k){p=patientByKey(k);if(p)return p;}
+      const name=(bar?.querySelector?.('[data-cp-name411b]')?.textContent||'').trim();
+      const dni=(bar?.querySelector?.('[data-cp-meta411b]')?.textContent||'').replace(/\D/g,'');
+      if(name||dni){
+        p=patients().find(x=>(dni&&String(x.dni||'').replace(/\D/g,'')===dni)||(name&&patientName(x).trim()===name));
+        if(p){saveCurrent411B(patientKey(p));return p;}
+      }
+    }catch(_){}
+    try{
+      const selected=String(typeof pacienteSeleccionadoPanelId!=='undefined'?(pacienteSeleccionadoPanelId||''):'');
+      if(selected){p=patientByKey(selected);if(p){saveCurrent411B(patientKey(p));return p;}}
+    }catch(_){}
+    return null;
+  }
   function globalActionsHtml411B(){
-    const p=getCurrent411B(),secretary=isSecretary();
+    const p=resolveActionPatient411B(),secretary=isSecretary();
     let arr=[];
     if(secretary){
-      arr=[['newpatient','Nuevo paciente'],['attention','Nuevo turno / atención'],['rcta','RCTA'],['constancia','Constancia de atención'],['search','Buscar paciente']];
+      arr=[['newpatient','Nuevo paciente'],['attention','Nuevo turno / atención'],['rcta','RCTA'],['certificate','Certificado'],['constancia','Constancia de atención'],['search','Buscar paciente']];
     }else{
       arr=[['newpatient','Nuevo paciente'],['attention','Nueva atención'],['evolve','Nueva evolución'],['rcta','RCTA'],['order','Orden médica'],['certificate','Certificado'],['constancia','Constancia'],['search','Buscar paciente']];
     }
     return `<div class="gq-title411b">${p?`Paciente: ${esc(patientName(p))}`:'Comandos rápidos'}</div>`+
-      arr.map(([a,l])=>`<button type="button" data-cp-action411b="${a}" ${(a!=='newpatient'&&a!=='search'&&!p)?'disabled':''}>${l}</button>`).join('');
+      arr.map(([a,l])=>`<button type="button" data-cp-action411b="${a}">${l}</button>`).join('');
   }
   function renderCurrent411B(){
     ensureUI411B();
@@ -9689,6 +9756,7 @@ function patientInfoTextHC(p,coverage){
     if(!p){bar.classList.add('hidden');}
     else{
       bar.classList.remove('hidden');
+      bar.dataset.patientKey411b=patientKey(p);
       bar.querySelector('[data-cp-name411b]').textContent=patientName(p);
       bar.querySelector('[data-cp-meta411b]').textContent=`DNI ${p.dni||'s/d'}`;
       const ev=bar.querySelector('[data-cp-action411b="evolve"]');if(ev)ev.classList.toggle('hidden',!isMedical());
@@ -9735,20 +9803,60 @@ function patientInfoTextHC(p,coverage){
   }
   function doc411B(p,type){
     if(!p)return;const k=patientKey(p);saveCurrent411B(k);
-    if(!isMedical()){
-      if(type==='constancia_atencion'){printConstancia411B(p);return;}
-      alert('Este documento requiere un perfil médico.');
-      return;
+    if(isSecretary()&&['certificado','constancia_atencion'].includes(type)){
+      if(typeof window.openClinicalDocumentTyped406==='function'){window.openClinicalDocumentTyped406(k,type);return;}
     }
+    if(!isMedical()){alert('Este documento requiere un perfil médico o Secretaría habilitada.');return;}
     if(typeof window.openClinicalDocumentTyped406==='function')window.openClinicalDocumentTyped406(k,type);
     else if(typeof window.openClinicalDocument406==='function')window.openClinicalDocument406(k);
   }
   function printConstancia411B(p){
     const ats=(typeof atencionesPacienteGlobal==='function'?atencionesPacienteGlobal(p):[]).filter(a=>a&&!String(a.tipoRegistro||'').includes('mensaje'));
-    const a=ats[0]||null,fecha=a?.fecha?(typeof formatFecha==='function'?formatFecha(a.fecha):a.fecha):new Date().toLocaleDateString('es-AR');
-    const prof=a?.profesional||'Consultorio médico',prest=a?.prestacion||'atención';
+    const a=ats[0]||null;
+    const fecha=a?.fecha?(typeof formatFecha==='function'?formatFecha(a.fecha):a.fecha):new Date().toLocaleDateString('es-AR');
+    const prest=a?.prestacion||'atención';
+
+    const profesionales=(window.data?.profesionales||[]);
+    let pr=profesionales.find(x=>String(x.id||'')===String(a?.profesionalId||''));
+    if(!pr&&a?.profesional)pr=profesionales.find(x=>String(x.nombre||'').trim()===String(a.profesional||'').trim());
+    if(!pr)pr=profesionales.find(x=>x.id==='matias')||profesionales.find(x=>x.id!=='general')||{};
+
+    let logo=pr.logoDocumentoData||pr.logoDocumento||'icons/icon-192.png';
+    try{if(logo&&!/^data:image\//i.test(logo)&&!/^https?:/i.test(logo)&&!/^blob:/i.test(logo))logo=new URL(logo,location.href).href;}catch(e){}
+
+    const marca=pr.marcaDocumento||'CardioLink';
+    const medico=pr.nombre||a?.profesional||'Profesional';
+    const especialidades=(()=>{
+      const ids=Array.isArray(pr.especialidadIds)?pr.especialidadIds:[];
+      const names=ids.map(id=>(window.data?.especialidades||[]).find(e=>e.id===id)?.nombre).filter(Boolean);
+      return names.length?names.join(' · '):(pr.area||pr.especialidad||'');
+    })();
+    const matriculas=[pr.matriculaNacional,pr.matriculaProvincial].filter(Boolean).join(' · ');
+    const contacto=[pr.direccionDocumento,pr.telefonoDocumento,pr.emailDocumento].filter(Boolean).join(' · ');
+    const color=/^#[0-9a-f]{6}$/i.test(pr.colorDocumento||'')?pr.colorDocumento:'#174b5c';
+
     const w=window.open('','_blank');if(!w){alert('El navegador bloqueó la constancia.');return;}
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Constancia de atención</title><style>@page{size:A4;margin:25mm}body{font-family:Arial,sans-serif;color:#111827;margin:0;line-height:1.6}.head{border-bottom:2px solid #174b5c;padding-bottom:12px;margin-bottom:40px}.head h1{color:#174b5c;margin:0}.body{font-size:17px;min-height:430px}.sig{margin-top:80px;width:300px;margin-left:auto;text-align:center;border-top:1px solid #334155;padding-top:8px}.muted{color:#64748b}</style></head><body><div class="head"><h1>CardioLink</h1><div class="muted">Constancia administrativa de atención</div></div><div class="body">Se deja constancia de que <strong>${esc(patientName(p))}</strong>, DNI <strong>${esc(p.dni||'s/d')}</strong>, fue atendido/a en este consultorio el día <strong>${esc(fecha)}</strong>${a?` por <strong>${esc(prof)}</strong>, por ${esc(prest)}`:''}.<br><br>Se extiende la presente a solicitud del interesado/a.</div><div class="sig">Firma / sello del profesional</div><script>window.onload=()=>setTimeout(()=>window.print(),250)<\/script></body></html>`);
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Constancia de atención</title><style>
+      @page{size:A4;margin:18mm 16mm 20mm}*{box-sizing:border-box}
+      body{font-family:Arial,Helvetica,sans-serif;color:#111827;margin:0;font-size:14px;line-height:1.55}
+      .head{display:grid;grid-template-columns:78px 1fr;gap:16px;align-items:center;border-bottom:3px solid ${color};padding-bottom:12px;margin-bottom:28px}
+      .logo{width:74px;height:74px;object-fit:contain}.brand{font-size:23px;font-weight:800;color:${color}}
+      .doctor{font-size:17px;font-weight:800;margin-top:2px}.meta{color:#475569;line-height:1.45}
+      .title{text-align:center;text-transform:uppercase;letter-spacing:.07em;color:${color};font-size:20px;margin:26px 0 24px}
+      .patient{border:1px solid #cbd5e1;border-radius:11px;padding:12px 14px;margin-bottom:28px;background:#f8fafc}
+      .patient strong{font-size:18px}.body{font-size:17px;min-height:300px;line-height:1.7}
+      .sig{margin-top:72px;width:310px;margin-left:auto;text-align:center;border-top:1px solid #334155;padding-top:7px;font-weight:700}
+      .sig small{display:block;color:#475569;font-weight:400;line-height:1.4}
+      .footer{position:fixed;bottom:0;left:0;right:0;border-top:1px solid #cbd5e1;padding-top:6px;color:#64748b;font-size:9px;display:flex;justify-content:space-between;gap:12px}
+    </style></head><body>
+      <header class="head">${logo?`<img class="logo" src="${esc(logo)}">`:''}<div><div class="brand">${esc(marca)}</div><div class="doctor">${esc(medico)}</div>${especialidades?`<div class="meta">${esc(especialidades)}</div>`:''}${matriculas?`<div class="meta">${esc(matriculas)}</div>`:''}${contacto?`<div class="meta">${esc(contacto)}</div>`:''}</div></header>
+      <h1 class="title">Constancia de atención</h1>
+      <section class="patient"><strong>${esc(patientName(p))}</strong><div class="meta">DNI ${esc(p.dni||'s/d')} · Fecha de atención: ${esc(fecha)}</div></section>
+      <main class="body">Se deja constancia de que <strong>${esc(patientName(p))}</strong>, DNI <strong>${esc(p.dni||'s/d')}</strong>, fue atendido/a en este consultorio el día <strong>${esc(fecha)}</strong>${a?` por <strong>${esc(medico)}</strong>, por ${esc(prest)}`:''}.<br><br>Se extiende la presente a solicitud del interesado/a.</main>
+      <section class="sig">${esc(medico)}${especialidades?`<small>${esc(especialidades)}</small>`:''}${matriculas?`<small>${esc(matriculas)}</small>`:''}</section>
+      <footer class="footer"><span>${esc(marca)}</span><span>Constancia emitida administrativamente desde CardioLink</span></footer>
+      <script>window.onload=()=>setTimeout(()=>window.print(),250)<\/script>
+    </body></html>`);
     w.document.close();
   }
   function whatsapp411B(p){
@@ -9759,10 +9867,15 @@ function patientInfoTextHC(p,coverage){
   }
 
   function runAction411B(action){
-    const p=getCurrent411B();
+    const p=resolveActionPatient411B();
     if(action==='clear')return saveCurrent411B('');
     if(action==='newpatient')return newPatient411B();
     if(action==='search')return focusGlobalSearch411B();
+    if(!p&&['evolve','rcta','order','certificate','constancia'].includes(action)){
+      try{showSection('pacientes');setTimeout(()=>$b('pacientesBuscar')?.focus(),80);}catch(_){}
+      alert('Primero seleccioná un paciente. Te llevo al buscador de Pacientes.');
+      return;
+    }
     if(action==='open')return openPatient411B(p);
     if(action==='hc')return openHC411B(p);
     if(action==='evolve')return evolve411B(p);
@@ -9798,7 +9911,7 @@ function patientInfoTextHC(p,coverage){
     if(a){e.preventDefault();runAction411B(a.dataset.cpAction411b);$b('cpMenu411B')?.classList.add('hidden');$b('globalQuickMenu411B')?.classList.add('hidden');return;}
     const toggle=e.target.closest?.('[data-cp-toggle411b]');
     if(toggle){e.preventDefault();$b('cpMenu411B')?.classList.toggle('hidden');return;}
-    if(e.target.closest?.('#globalQuick411B')){e.preventDefault();renderCurrent411B();$b('globalQuickMenu411B')?.classList.toggle('hidden');return;}
+    if(e.target.closest?.('#globalQuick411B')){e.preventDefault();resolveActionPatient411B();renderCurrent411B();$b('globalQuickMenu411B')?.classList.toggle('hidden');return;}
     if(!e.target.closest?.('#currentPatient411B')&&!e.target.closest?.('#globalQuickMenu411B')){$b('cpMenu411B')?.classList.add('hidden');$b('globalQuickMenu411B')?.classList.add('hidden');}
     const patientTarget=e.target.closest?.('[data-hc-patient],[data-hc-new],[data-open-hc],[data-patient-open4091],[data-rcta-patient4095]');
     if(patientTarget){
@@ -10134,6 +10247,78 @@ function patientInfoTextHC(p,coverage){
     .finance-mov411c{margin:14px 0;padding:10px;border:1px solid #dbe4e8;border-radius:12px;background:#fbfdfe}.finance-mov411c summary{cursor:pointer;font-weight:800;color:#174b5c}
     .finance-columns411c{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:14px}.finance-columns411c section{border:1px solid #dbe4e8;border-radius:13px;padding:14px;background:#fff}.finance-lines411c>div{display:flex;justify-content:space-between;gap:14px;padding:8px 0;border-bottom:1px solid #edf2f4}.finance-lines411c>div:last-child{border-bottom:0}.finance-table-wrap411c{overflow:auto}.finance-table-wrap411c table{width:100%;border-collapse:collapse}.finance-table-wrap411c th,.finance-table-wrap411c td{padding:8px;border-bottom:1px solid #e5e7eb;text-align:left}.pos411c strong{color:#166534!important}.neg411c strong{color:#b91c1c!important}
     @media(max-width:900px){.finance-filters411c,.finance-mov-grid411c{grid-template-columns:repeat(2,minmax(130px,1fr))}.finance-columns411c{grid-template-columns:1fr}.finance-kpis411c{grid-template-columns:1fr}}
+  `;
+  document.head.appendChild(s);
+})();
+
+
+/* ===== CardioLink v4.1.0-hc · QA FINAL perfiles/documentos ===== */
+(function(){
+  'use strict';
+  if(window.__cardiolinkQaFinal410)return;
+  window.__cardiolinkQaFinal410=true;
+
+  function escQ(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+  function userQ(){
+    try{return typeof perfilUsuarioActual==='function'?perfilUsuarioActual():(window.usuarioPerfilActual||{});}catch(e){return window.usuarioPerfilActual||{};}
+  }
+  function roleLabelQ(r){
+    try{return typeof labelRol==='function'?labelRol(r):r;}catch(e){return r||'';}
+  }
+  function ensureUserBadgeQ(){
+    let box=document.getElementById('loggedUserBadgeQAF');
+    if(!box){
+      box=document.createElement('div');
+      box.id='loggedUserBadgeQAF';
+      box.className='logged-user-badge-qaf';
+      document.body.appendChild(box);
+    }
+    const u=userQ();
+    box.innerHTML=`<span>Usuario activo</span><strong>${escQ(u.nombre||u.usuario||'Usuario')}</strong><small>${escQ(roleLabelQ(u.rol||''))}${u.especialidad?' · '+escQ(u.especialidad):''}</small>`;
+  }
+
+  // Mantener el menú + actualizado cuando se abre una ficha o se cambia de solapa.
+  document.addEventListener('click',e=>{
+    if(e.target.closest?.('[data-patient-open4091],#pacienteGlobalModal,[data-hc-patient],[data-hc-new],[data-open-hc]')){
+      setTimeout(()=>{window.CardioLinkPacienteActual411B?.render?.();},40);
+    }
+  },true);
+
+  const oldApply=window.aplicarPermisosUI;
+  if(typeof oldApply==='function'&&!oldApply.__qaf){
+    const w=function(){const r=oldApply.apply(this,arguments);setTimeout(ensureUserBadgeQ,0);return r;};
+    w.__qaf=true;window.aplicarPermisosUI=aplicarPermisosUI=w;
+  }
+
+  function bootQ(){
+    ensureUserBadgeQ();
+    setTimeout(ensureUserBadgeQ,500);
+    setTimeout(()=>{ensureUserBadgeQ();window.CardioLinkPacienteActual411B?.render?.();},1500);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bootQ);else bootQ();
+})();
+
+(function(){
+  if(document.getElementById('cardiolink-qaf-style'))return;
+  const s=document.createElement('style');s.id='cardiolink-qaf-style';
+  s.textContent=`
+    .logged-user-badge-qaf{position:fixed;top:14px;right:18px;z-index:12040;display:flex;flex-direction:column;align-items:flex-end;max-width:290px;padding:7px 11px;border:1px solid #cbd5e1;border-radius:12px;background:rgba(255,255,255,.96);box-shadow:0 8px 22px rgba(15,23,42,.12);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);pointer-events:none}
+    .logged-user-badge-qaf span{font-size:9px;text-transform:uppercase;letter-spacing:.07em;color:#64748b;font-weight:800}
+    .logged-user-badge-qaf strong{font-size:13px;color:#0f172a;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:270px}
+    .logged-user-badge-qaf small{font-size:10px;color:#64748b;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:270px}
+    @media(max-width:1180px){.logged-user-badge-qaf{top:auto;bottom:14px;left:14px;right:auto;align-items:flex-start;max-width:230px}}
+  `;
+  document.head.appendChild(s);
+})();
+
+
+(function(){
+  if(document.getElementById('cardiolink-qaf2-style'))return;
+  const s=document.createElement('style');s.id='cardiolink-qaf2-style';
+  s.textContent=`
+    .doc-prof-selector406{margin:10px 0 14px;padding:12px;border:1px solid #bae6fd;border-radius:12px;background:#f0f9ff}
+    .doc-prof-selector406 label{display:block;font-weight:800;color:#0f172a}
+    .doc-prof-selector406 select{width:100%;margin-top:6px;min-height:42px}
   `;
   document.head.appendChild(s);
 })();
