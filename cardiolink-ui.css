@@ -1,0 +1,152 @@
+/* =====================================================================
+   CardioLink UI — capa visual independiente
+   No modifica app.js ni la lógica clínica/financiera/Supabase.
+   Para revertir: quitar el <link> a este archivo en index.html.
+   ===================================================================== */
+
+:root{
+  /* Paleta ajustada sobre el mismo esquema (teal-navy clínico) */
+  --cl-primary:#123f56;
+  --cl-primary-dark:#0c2c3d;
+  --cl-primary-soft:rgba(18,63,86,.08);
+  --cl-accent:#0e6e82;         /* reemplaza los azules brillantes sueltos (#2563eb) */
+  --cl-accent-soft:rgba(14,110,130,.10);
+  --cl-danger:#a13636;         /* rojo apagado en vez de #dc2626/#c81e1e */
+  --cl-danger-soft:rgba(161,54,54,.10);
+  --cl-success:#3a7d5c;
+  --cl-success-soft:rgba(58,125,92,.10);
+  --cl-warning:#8a5a20;
+  --cl-warning-soft:rgba(138,90,32,.10);
+
+  --cl-modal-radius:14px;
+  --cl-modal-shadow:0 20px 55px rgba(15,23,42,.20);
+  --cl-modal-backdrop:rgba(15,23,42,.50);
+  --cl-modal-border:rgba(18,63,86,.12);
+}
+
+body.dark{
+  --cl-primary:#5fa7c2;
+  --cl-primary-soft:rgba(95,167,194,.12);
+  --cl-accent:#4fb3c9;
+  --cl-accent-soft:rgba(79,179,201,.14);
+  --cl-modal-border:rgba(148,163,184,.18);
+  --cl-modal-shadow:0 20px 55px rgba(0,0,0,.45);
+}
+
+/* ---------- Fondo/backdrop unificado (3 sistemas) ---------- */
+.modal-backdrop,
+.modal-overlay-360,
+.hc-modal-overlay{
+  background:var(--cl-modal-backdrop) !important;
+}
+
+/* ---------- Tarjeta del modal unificada ---------- */
+.modal-backdrop .modal,
+.modal-edit-card,
+.welcome-card-360,
+.dashboard-config-card-360,
+.hc-modal-card{
+  border-radius:var(--cl-modal-radius) !important;
+  border:1px solid var(--cl-modal-border) !important;
+  box-shadow:var(--cl-modal-shadow) !important;
+}
+
+/* ---------- Encabezado unificado ---------- */
+.modal-header,
+.modal-edit-header,
+.hc-modal-head{
+  border-bottom:1px solid var(--cl-modal-border) !important;
+  padding-bottom:14px !important;
+  margin-bottom:16px !important;
+}
+
+.modal-header h2,
+.modal-edit-header h2,
+.welcome-card-360 h2,
+.hc-modal-head h2,
+.hc-modal-head h3{
+  color:var(--cl-primary) !important;
+  font-weight:800 !important;
+}
+
+/* ---------- Botón cerrar unificado (círculo sutil) ---------- */
+.modal-close,
+.modal-close-360{
+  width:32px !important;
+  height:32px !important;
+  border-radius:999px !important;
+  display:flex !important;
+  align-items:center !important;
+  justify-content:center !important;
+  background:var(--cl-primary-soft) !important;
+  color:var(--cl-primary) !important;
+  font-size:20px !important;
+  line-height:1 !important;
+  transition:background .15s ease;
+}
+.modal-close:hover,
+.modal-close-360:hover{
+  background:var(--cl-accent-soft) !important;
+}
+
+/* ---------- Fila de acciones unificada ---------- */
+.modal-actions,
+.modal-actions-360,
+.hc-modal-actions{
+  border-top:1px solid var(--cl-modal-border) !important;
+  padding-top:14px !important;
+  margin-top:16px !important;
+  display:flex !important;
+  justify-content:flex-end !important;
+  gap:10px !important;
+}
+
+/* ---------- Botones: primario / secundario / peligro, consistentes ---------- */
+.modal-actions .primary,
+.modal-actions-360 .primary,
+.hc-modal-actions .primary,
+.welcome-card-360 .primary{
+  background:var(--cl-primary) !important;
+  border-color:var(--cl-primary) !important;
+  color:#fff !important;
+}
+.modal-actions .primary:hover,
+.modal-actions-360 .primary:hover,
+.hc-modal-actions .primary:hover{
+  background:var(--cl-primary-dark) !important;
+}
+
+.modal-actions .danger,
+.modal-actions-360 .danger,
+.hc-modal-actions .danger{
+  background:var(--cl-danger-soft) !important;
+  border-color:var(--cl-danger) !important;
+  color:var(--cl-danger) !important;
+}
+
+/* ---------- Reemplazo de azules sueltos por el acento sobrio ---------- */
+.config-tabs-360 button.active,
+.pendientes-tabs383 button.active,
+.nav.active{
+  background:var(--cl-primary) !important;
+  color:#fff !important;
+}
+
+.welcome-kpi-360{
+  background:var(--cl-primary-soft) !important;
+}
+.welcome-kpi-360.warning{
+  background:var(--cl-warning-soft) !important;
+}
+
+.hc-result-item.active{
+  border-color:var(--cl-primary) !important;
+  background:var(--cl-primary-soft) !important;
+}
+
+.hc-event{
+  border-left-color:var(--cl-primary) !important;
+}
+.hc-event.attention{
+  border-left-color:var(--cl-accent) !important;
+}
