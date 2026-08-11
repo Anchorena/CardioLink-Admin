@@ -32,16 +32,22 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
     <div class="brand-by">by Matías Anchorena</div>
   </div>
   <button class="nav active" data-section="dashboard">Dashboard</button>
+  <button class="nav" data-section="pendientes383">Pendientes <span id="badgePendientesNav383" class="nav-count383">0</span></button>
+
+  <div class="nav-group-label">Clínico</div>
   <button class="nav" data-section="carga">Carga de turno/atención</button>
   <button class="nav" data-section="agenda">Agenda / sala</button>
-  <button class="nav" data-section="mensajes">Mensajes</button>
   <button class="nav" data-section="pacientes">Pacientes</button>
   <button class="nav" data-section="hc">Historia clínica</button>
-  <button class="nav" data-section="pendientes383">Pendientes <span id="badgePendientesNav383" class="nav-count383">0</span></button>
+
+  <div class="nav-group-label">Administrativo</div>
+  <button class="nav" data-section="mensajes">Mensajes</button>
   <button class="nav" data-section="listado">Listado / filtros</button>
   <button class="nav solo-matias" data-section="caja">Caja / reportes</button>
   <button class="nav" data-section="estadisticas">Estadísticas</button>
   <button class="nav" data-section="colocaciones">Colocaciones / pendientes</button>
+
+  <div class="nav-group-label">Configuración</div>
   <button class="nav" data-section="instructivos">Instructivos</button>
   <button class="nav" data-section="config">Configuración</button>
   <button id="btnDark" class="dark-toggle">🌙 Modo oscuro</button>
@@ -900,5 +906,6 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
 <script src="app.js?v=40096"></script>
 <script src="cardiolink-auth-guard.js?v=1"></script>
 <script src="cardiolink-clear-patient-fix.js?v=1"></script>
+<script src="cardiolink-pendientes-alertas.js?v=1"></script>
 </body>
 </html>

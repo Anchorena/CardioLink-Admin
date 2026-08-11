@@ -150,3 +150,34 @@ body.dark{
 .hc-event.attention{
   border-left-color:var(--cl-accent) !important;
 }
+
+/* ---------- Grupos del menú lateral ---------- */
+.nav-group-label{
+  font-size:12px;
+  font-weight:800;
+  text-transform:uppercase;
+  letter-spacing:.1em;
+  color:#5fa7c2;
+  margin:20px 6px 8px;
+  padding:10px 0 0;
+  border-top:2px solid rgba(95,167,194,.35);
+}
+.sidebar .nav-group-label:first-of-type{
+  border-top:0;
+  padding-top:0;
+  margin-top:14px;
+}
+
+/* ---------- Semáforo de antigüedad en Pendientes ---------- */
+.pend-card383{
+  border-left:4px solid transparent;
+  transition:border-color .15s ease;
+}
+.pend-card383.cl-pend-alerta{
+  border-left-color:var(--cl-warning,#8a5a20);
+  background:var(--cl-warning-soft,rgba(138,90,32,.08));
+}
+.pend-card383.cl-pend-critico{
+  border-left-color:var(--cl-danger,#a13636);
+  background:var(--cl-danger-soft,rgba(161,54,54,.08));
+}

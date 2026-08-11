@@ -1,19 +1,19 @@
 /* =====================================================================
-   CardioLink — Fix: "Quitar paciente actual" no debe reaparecer solo
+   CardioLink — Correcciones de la barra flotante "Paciente actual"
    No modifica app.js. Actúa a nivel del DOM, después de que la app
    procesa el clic (fase de burbuja, la app usa fase de captura).
    Para revertir: quitar el <script> a este archivo en index.html.
 
    Qué resuelve:
-   Al tocar la "×" de la barra flotante de paciente, app.js a veces
-   vuelve a mostrar el mismo paciente si seguís parado en su ficha
-   (Historia Clínica, etc.), porque re-detecta "cuál es el paciente
-   actual" mirando la pantalla. Esto hace que la barra "no se pueda
-   sacar" mientras seguís en esa ficha.
-
-   Ahora: al tocar "×", se marca una supresión que mantiene la barra
-   oculta pase lo que pase, hasta que elijas otro paciente de forma
-   explícita (buscador, HC, evolución, etc.) — recién ahí se libera.
+   1) Al tocar la "×", app.js a veces vuelve a mostrar el mismo
+      paciente si seguís parado en su ficha (Historia Clínica), porque
+      re-detecta "cuál es el paciente actual" mirando la pantalla.
+      Ahora se marca una supresión que mantiene la barra oculta hasta
+      que elijas otro paciente de forma explícita.
+   2) La barra solo aparecía al abrir un paciente desde Historia
+      Clínica. Al elegirlo desde la lista de "Pacientes" o desde el
+      buscador global, la clave no llegaba conectada — ahora también
+      se activa desde esos dos lugares.
    ===================================================================== */
 (function () {
   if (window.__cardiolinkClearFixInstalled) return;
@@ -47,9 +47,38 @@
       setTimeout(ocultarBarra, 60);
       return;
     }
-    // Elegir un paciente de forma explícita libera la supresión.
+
+    // Selección desde la lista de "Pacientes": la clave viaja codificada
+    // (encodeURIComponent) y app.js no la conecta con la barra flotante.
+    const filaPacientes = e.target.closest('[data-patient-open4091]');
+    if (filaPacientes) {
+      liberar();
+      try {
+        const key = decodeURIComponent(filaPacientes.dataset.patientOpen4091 || '');
+        if (key && window.CardioLinkPacienteActual411B?.set) {
+          window.CardioLinkPacienteActual411B.set(key);
+        }
+      } catch (_) {}
+      return;
+    }
+
+    // Selección desde el buscador global (arriba a la derecha).
+    const filaBusqueda = e.target.closest('[data-patient-id]');
+    if (filaBusqueda && filaBusqueda.closest('#resultadosGlobal360')) {
+      liberar();
+      try {
+        const key = filaBusqueda.dataset.patientId || '';
+        if (key && window.CardioLinkPacienteActual411B?.set) {
+          window.CardioLinkPacienteActual411B.set(key);
+        }
+      } catch (_) {}
+      return;
+    }
+
+    // Otras formas de elegir un paciente de forma explícita: liberan
+    // la supresión aunque ya tengan su propio camino para mostrarse.
     const eleccionPaciente = e.target.closest(
-      '[data-hc-patient],[data-hc-new],[data-open-hc],[data-patient-open4091],[data-rcta-patient4095],[data-cp-action411b="open"]'
+      '[data-hc-patient],[data-hc-new],[data-open-hc],[data-rcta-patient4095],[data-cp-action411b="open"]'
     );
     if (eleccionPaciente) liberar();
   }, false);
