@@ -8308,7 +8308,7 @@ function patientInfoTextHC(p,coverage){
     const grid=document.querySelector('#config .config-grid');if(!grid)return;
     [$402('cfgConvenios3102'),$402('cfgAranceles3102')].forEach(x=>{if(x)x.style.display='none';});
     let card=$402('cfgConveniosProfesional402');
-    if(!card){card=document.createElement('div');card.id='cfgConveniosProfesional402';card.className='config-smart-card-310 full-config-card';card.dataset.configGroupCard='coberturas';card.innerHTML=`<h3>Convenios y aranceles por profesional</h3><p class="muted">Cada profesional tiene su propia configuración. El catálogo global solo ofrece nombres de coberturas: no copia reglas ni destinos de otro médico.</p><div class="professional-billing-head-402"><label>Profesional que estás configurando<select id="billProf402"></select></label><label>Convenio a configurar<select id="billOS402"></select></label></div><div id="billProfileNotice404" class="billing-profile-notice-404"></div><div class="convenio-editor-3102"><label>Regla automática<select id="billRegla402"></select></label><label>Destino de consulta<select id="billDestConsulta402"></select></label><label>Destino del estudio<select id="billDestEstudio402"></select></label><label>Facturador de consulta<select id="billFactConsulta402"></select></label><label>Facturador del estudio<select id="billFactEstudio402"></select></label><label class="check-row-310"><input type="checkbox" id="billActivo402"> Habilitado: este profesional atiende este convenio</label><label class="check-row-310"><input type="checkbox" id="billBonoConsulta402"> Requiere bono de consulta</label><label class="check-row-310"><input type="checkbox" id="billBonoEstudio402"> Requiere bono de estudio</label><label class="check-row-310"><input type="checkbox" id="billFirma402"> Requiere firma</label><label class="check-row-310"><input type="checkbox" id="billCopia402"> Requiere copia para facturación</label><label class="check-row-310"><input type="checkbox" id="billRogelio402"> Incluir en Factura Rogelio</label><div class="config-actions-3102"><button class="primary" id="saveBillConv402" type="button">Guardar para este profesional</button><button class="secondary" id="newBillConv402" type="button">Nuevo convenio global</button></div></div><h4 id="billConfiguredTitle404">Convenios configurados</h4><p class="muted">Activo significa que el profesional lo atiende y sus reglas se aplican. Los deshabilitados quedan guardados, pero no intervienen en nuevas atenciones.</p><div id="billList402" class="convenios-list-3102"></div><hr><h4>Arancel del profesional seleccionado</h4><p class="muted" id="billArancelHelp404">Cada valor corresponde a una combinación exacta de profesional + convenio + prestación + fecha de vigencia.</p><div class="arancel-editor-3102 arancel-editor-prof-404"><label>Convenio al que aplica<select id="billArancelOS404"></select></label><label>Prestación<select id="billPrest402"></select></label><label>Valor esperado<input id="billValor402" type="number" min="0" step="1" placeholder="0"></label><label>Vigente desde<input id="billVigencia402" type="date"></label><button class="primary" id="saveBillArancel402" type="button">Agregar arancel</button></div><div class="arancel-table-head-404"><span>Convenio y prestación</span><span>Valor</span><span>Vigencia</span><span></span></div><div id="billArancelList402" class="aranceles-list-3102"></div>`;const ref=$402('cfgProduccionEstimada3102');if(ref)grid.insertBefore(card,ref);else grid.appendChild(card);}
+    if(!card){card=document.createElement('div');card.id='cfgConveniosProfesional402';card.className='config-smart-card-310 full-config-card';card.dataset.configGroupCard='coberturas';card.innerHTML=`<h3>Convenios y aranceles por profesional</h3><p class="muted">Cada profesional tiene su propia configuración. El catálogo global solo ofrece nombres de coberturas: no copia reglas ni destinos de otro médico.</p><div class="professional-billing-head-402"><label>Profesional que estás configurando<select id="billProf402"></select></label><label>Convenio a configurar<select id="billOS402"></select></label></div><div id="billProfileNotice404" class="billing-profile-notice-404"></div><div class="convenio-editor-3102"><label>Regla automática<select id="billRegla402"></select></label><label>Destino de consulta<select id="billDestConsulta402"></select></label><label>Destino del estudio<select id="billDestEstudio402"></select></label><label>Facturador de consulta<select id="billFactConsulta402"></select></label><label>Facturador del estudio<select id="billFactEstudio402"></select></label><label class="check-row-310"><input type="checkbox" id="billActivo402"> Habilitado: este profesional atiende este convenio</label><label class="check-row-310"><input type="checkbox" id="billBonoConsulta402"> Requiere bono de consulta</label><label class="check-row-310"><input type="checkbox" id="billBonoEstudio402"> Requiere bono de estudio</label><label class="check-row-310"><input type="checkbox" id="billFirma402"> Requiere firma</label><label class="check-row-310"><input type="checkbox" id="billCopia402"> Requiere copia para facturación</label><label class="check-row-310"><input type="checkbox" id="billRogelio402"> Incluir en Factura Rogelio</label><div class="config-actions-3102"><button class="primary" id="saveBillConv402" type="button">Guardar para este profesional</button><button class="secondary" id="newBillConv402" type="button">Nuevo convenio global</button></div></div><h4 id="billConfiguredTitle404">Convenios configurados</h4><p class="muted">Activo significa que el profesional lo atiende y sus reglas se aplican. Los deshabilitados quedan guardados, pero no intervienen en nuevas atenciones.</p><div id="billList402" class="convenios-list-3102"></div><hr><h4>Arancel del profesional seleccionado</h4><p class="muted" id="billArancelHelp404">Cada valor corresponde a una combinación exacta de profesional + convenio + prestación + fecha de vigencia.</p><div class="arancel-editor-3102 arancel-editor-prof-404"><label>Convenio al que aplica<select id="billArancelOS404"></select></label><label>Prestación<select id="billPrest402"></select></label><label>Valor convenio / particular<input id="billValor402" type="number" min="0" step="1" placeholder="0"></label><label>Copago paciente (si corresponde)<input id="billCopago402" type="number" min="0" step="1" placeholder="0"></label><label>Vigente desde<input id="billVigencia402" type="date"></label><button class="primary" id="saveBillArancel402" type="button">Agregar arancel</button></div><div class="arancel-table-head-404 arancel-head-fin411f"><span>Convenio y prestación</span><span>Valor convenio / particular</span><span>Copago</span><span>Vigencia</span><span></span></div><div id="billArancelList402" class="aranceles-list-3102"></div>`;const ref=$402('cfgProduccionEstimada3102');if(ref)grid.insertBefore(card,ref);else grid.appendChild(card);}
     renderBilling402();
   }
   function selectedBillProf402(){return $402('billProf402')?.value||$402('cfgProfEditar310')?.value||currentProfessionalId402()||'matias';}
@@ -8336,14 +8336,14 @@ function patientInfoTextHC(p,coverage){
     const row=c=>`<button type="button" class="convenio-row-3102 bill-row-402" data-load-bill-os402="${esc402(c.obraSocial)}"><strong>${esc402(c.obraSocial)}</strong><span>${esc402(c.destinoConsulta||profName402(pid))} / ${esc402(c.destinoEstudio||profName402(pid))}</span><span>${c.incluirFacturaRogelio?'Factura Rogelio':'Circuito propio'}</span><span class="billing-status-404 ${c.activo===false?'off':'on'}">${c.activo===false?'Deshabilitado':'Habilitado'}</span></button>`;
     if($402('billList402'))$402('billList402').innerHTML=`<div class="billing-group-title-404">Habilitados (${active.length})</div>${active.map(row).join('')||'<p class="muted billing-empty-404">Este profesional todavía no tiene convenios habilitados.</p>'}${inactive.length?`<details class="billing-inactive-404"><summary>Ver ${inactive.length} convenio(s) deshabilitado(s)</summary>${inactive.map(row).join('')}</details>`:''}`;
     const prest=[...new Set((prof402(pid)?.prestaciones||[]).concat(typeof allPrestaciones==='function'?allPrestaciones():[]))].filter(Boolean).sort((a,b)=>a.localeCompare(b,'es'));if($402('billPrest402'))$402('billPrest402').innerHTML=opts402(prest,$402('billPrest402').value||prest[0]);if($402('billVigencia402')&&!$402('billVigencia402').value)$402('billVigencia402').value=new Date().toISOString().slice(0,10);
-    const ars=data.arancelesPorProfesional[pid]||[];if($402('billArancelList402'))$402('billArancelList402').innerHTML=ars.slice().sort((a,b)=>String(b.vigenteDesde||'').localeCompare(String(a.vigenteDesde||''))||String(a.obraSocial||'').localeCompare(String(b.obraSocial||''),'es')).map(a=>`<div class="arancel-row-3102"><span><strong>${esc402(a.obraSocial)}</strong> · ${esc402(a.prestacion)}</span><span>${typeof money==='function'?money(a.valor):'$ '+Number(a.valor||0).toLocaleString('es-AR')}</span><span>desde ${esc402(a.vigenteDesde||'s/f')}</span><button type="button" class="small-btn" data-del-bill-arancel402="${esc402(a.id)}">Borrar</button></div>`).join('')||'<p class="muted">Sin aranceles cargados para este profesional.</p>';
+    const ars=data.arancelesPorProfesional[pid]||[];if($402('billArancelList402'))$402('billArancelList402').innerHTML=ars.slice().sort((a,b)=>String(b.vigenteDesde||'').localeCompare(String(a.vigenteDesde||''))||String(a.obraSocial||'').localeCompare(String(b.obraSocial||''),'es')).map(a=>`<div class="arancel-row-3102 arancel-row-fin411f"><span><strong>${esc402(a.obraSocial)}</strong> · ${esc402(a.prestacion)}</span><span>${typeof money==='function'?money(a.valor):'$ '+Number(a.valor||0).toLocaleString('es-AR')}</span><span>${Number(a.copago||0)>0?(typeof money==='function'?money(a.copago):'$ '+Number(a.copago||0).toLocaleString('es-AR')):'—'}</span><span>desde ${esc402(a.vigenteDesde||'s/f')}</span><button type="button" class="small-btn" data-del-bill-arancel402="${esc402(a.id)}">Borrar</button></div>`).join('')||'<p class="muted">Sin aranceles cargados para este profesional.</p>';
   }
   function saveBillConv402(){
     const pid=selectedBillProf402(),os=$402('billOS402')?.value;if(!pid||!os)return;const c=conv402(pid,os,true);c.activo=$402('billActivo402').checked;c.regla=$402('billRegla402').value;c.destinoConsulta=$402('billDestConsulta402').value;c.destinoEstudio=$402('billDestEstudio402').value;c.facturadorConsulta=$402('billFactConsulta402').value;c.facturadorEstudio=$402('billFactEstudio402').value;c.bonoConsulta=$402('billBonoConsulta402').checked;c.bonoEstudio=$402('billBonoEstudio402').checked;c.firmaRequerida=$402('billFirma402').checked;c.copiaRequerida=$402('billCopia402').checked;c.incluirFacturaRogelio=$402('billRogelio402').checked;
     if(pid==='matias')data.conveniosFacturacion=copy402(data.conveniosPorProfesional.matias);persist402();renderBilling402();alert(`Convenio guardado para ${profName402(pid)}.`);
   }
   function newGlobalConv402(){const name=prompt('Nombre de la nueva obra social, prepaga o convenio:');if(!name)return;if(!(data.obrasSociales||[]).includes(name))data.obrasSociales.push(name);persist402();renderBilling402();$402('billOS402').value=name;loadBillConv402();}
-  function saveBillArancel402(){const pid=selectedBillProf402(),obraSocial=$402('billArancelOS404')?.value||$402('billOS402')?.value,prestacion=$402('billPrest402')?.value,valor=Number($402('billValor402')?.value||0),vigenteDesde=$402('billVigencia402')?.value;if(!obraSocial||!prestacion||!vigenteDesde){alert('Completá convenio, prestación y fecha de vigencia.');return;}if(!Number.isFinite(valor)||valor<0){alert('Ingresá un valor válido.');return;}data.arancelesPorProfesional[pid].push({id:'arp_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),profesionalId:pid,obraSocial,prestacion,valor,vigenteDesde,activo:true});if(pid==='matias')data.arancelesConvenios=copy402(data.arancelesPorProfesional.matias);persist402();$402('billValor402').value='';renderBilling402();}
+  function saveBillArancel402(){const pid=selectedBillProf402(),obraSocial=$402('billArancelOS404')?.value||$402('billOS402')?.value,prestacion=$402('billPrest402')?.value,valor=Number($402('billValor402')?.value||0),copago=Number($402('billCopago402')?.value||0),vigenteDesde=$402('billVigencia402')?.value;if(!obraSocial||!prestacion||!vigenteDesde){alert('Completá convenio, prestación y fecha de vigencia.');return;}if(!Number.isFinite(valor)||valor<0||!Number.isFinite(copago)||copago<0){alert('Ingresá valores válidos.');return;}data.arancelesPorProfesional[pid].push({id:'arp_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),profesionalId:pid,obraSocial,prestacion,valor,copago,vigenteDesde,activo:true});if(pid==='matias')data.arancelesConvenios=copy402(data.arancelesPorProfesional.matias);persist402();$402('billValor402').value='';if($402('billCopago402'))$402('billCopago402').value='';renderBilling402();}
 
   const oldApply402=window.aplicarRegla;
   window.aplicarRegla=function(){
@@ -10140,13 +10140,14 @@ function patientInfoTextHC(p,coverage){
     return {desde:`${y}-${m}-01`,hasta:todayISO()};
   }
   function injectFinance411C(){
-    const sec=$c('caja');if(!sec||$c('finanzas411C'))return;
+    const permitido=(()=>{try{return !!(esMatiasDuenio?.()||esAdminComun?.());}catch(e){return false;}})();
+    const sec=$c('caja');if(!permitido){$c('finanzas411C')?.remove();return;}if(!sec||$c('finanzas411C'))return;
     const p=month411C();
     const profOpts=(data.profesionales||[]).filter(x=>x.id!=='general').map(x=>`<option value="${esc(x.id)}">${esc(x.nombre)}</option>`).join('');
     const box=document.createElement('section');box.id='finanzas411C';box.className='card finance411c';
     box.innerHTML=`<div class="finance-head411c"><div><h2>Informe financiero</h2><p class="muted">Ingresos y egresos por período. Los aranceles de OS/prepagas se toman de los convenios configurados.</p></div></div>
       <div class="finance-filters411c"><label>Desde<input id="finDesde411C" type="date" value="${p.desde}"></label><label>Hasta<input id="finHasta411C" type="date" value="${p.hasta}"></label><label>Perfil<select id="finPerfil411C"><option value="">Todos</option>${profOpts}</select></label><button id="finCalcular411C" class="primary" type="button">Calcular informe</button></div>
-      <details class="finance-mov411c"><summary>Registrar egreso / movimiento</summary><div class="finance-mov-grid411c"><label>Fecha<input id="movFecha411C" type="date" value="${todayISO()}"></label><label>Categoría<select id="movCategoria411C"><option>Sueldo Secretaría</option><option>Otros egresos</option><option>Otro movimiento</option></select></label><label>Concepto<input id="movConcepto411C" placeholder="Ej. sueldo agosto"></label><label>Monto<input id="movMonto411C" type="number" min="0" step="0.01"></label><label>Medio<select id="movMedio411C"><option>Efectivo</option><option>Transferencia</option><option>Débito</option><option>Otro</option></select></label><label>Perfil<select id="movPerfil411C"><option value="">General</option>${profOpts}</select></label></div><div class="modal-actions"><button id="movGuardar411C" class="primary" type="button">Guardar egreso</button></div></details>
+      <details class="finance-mov411c"><summary>Registrar egreso / movimiento</summary><div class="finance-mov-grid411c"><label>Fecha<input id="movFecha411C" type="date" value="${todayISO()}"></label><label>Categoría<select id="movCategoria411C"><option>Otros egresos</option><option>Otro movimiento</option></select></label><label>Concepto<input id="movConcepto411C" placeholder="Ej. sueldo agosto"></label><label>Monto<input id="movMonto411C" type="number" min="0" step="0.01"></label><label>Medio<select id="movMedio411C"><option>Efectivo</option><option>Transferencia</option><option>Débito</option><option>Otro</option></select></label><label>Perfil<select id="movPerfil411C"><option value="">General</option>${profOpts}</select></label></div><div class="modal-actions"><button id="movGuardar411C" class="primary" type="button">Guardar egreso</button></div></details>
       <div id="finResultado411C" class="finance-result411c"><p class="muted">Elegí período y presioná Calcular informe.</p></div>`;
     sec.appendChild(box);
     $c('finCalcular411C')?.addEventListener('click',renderFinance411C);
@@ -10158,14 +10159,115 @@ function patientInfoTextHC(p,coverage){
     });
   }
 
+  function ensureFinanceConfig411F(){
+    if(!data.configFinanzas411F||typeof data.configFinanzas411F!=='object')data.configFinanzas411F={};
+    if(!Array.isArray(data.configFinanzas411F.sueldosSecretaria))data.configFinanzas411F.sueldosSecretaria=[];
+    if(!data.configFinanzas411F.sueldosSecretaria.length){
+      data.configFinanzas411F.sueldosSecretaria.push({id:'sueldo_secretaria_inicial_411f',monto:400000,vigenteDesde:'2026-08-01'});
+    }
+  }
+  function mesesPeriodo411F(desde,hasta){
+    if(!desde||!hasta)return [];
+    const out=[],d=new Date(desde+'T12:00:00'),end=new Date(hasta+'T12:00:00');
+    if(Number.isNaN(d.getTime())||Number.isNaN(end.getTime()))return [];
+    d.setDate(1);
+    while(d<=end){
+      out.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
+      d.setMonth(d.getMonth()+1);
+      if(out.length>120)break;
+    }
+    return out;
+  }
+  function fechaNormal411F(v){
+    const s=String(v||'').trim();
+    if(/^\d{4}-\d{2}-\d{2}$/.test(s))return s;
+    const m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+    if(m)return `${m[3]}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`;
+    return '';
+  }
+  function sueldoMes411F(ym){
+    ensureFinanceConfig411F();
+    const finMes=ym+'-31';
+    const arr=(data.configFinanzas411F.sueldosSecretaria||[])
+      .filter(x=>x&&Number.isFinite(Number(x.monto)))
+      .map(x=>({...x,_fecha:fechaNormal411F(x.vigenteDesde)}))
+      .filter(x=>!x._fecha||x._fecha<=finMes)
+      .sort((a,b)=>String(b._fecha||'').localeCompare(String(a._fecha||'')));
+    if(arr.length)return Number(arr[0].monto||0);
+    // Respaldo seguro: si la configuración existe pero la fecha antigua tenía otro formato,
+    // usar el último monto cargado. Si no existe, mantener el valor inicial vigente.
+    const any=(data.configFinanzas411F.sueldosSecretaria||[]).slice().reverse().find(x=>Number.isFinite(Number(x?.monto)));
+    return Number(any?.monto||400000);
+  }
+  function perfilEsDuenio411F(perfil){
+    if(!perfil)return true; // vista "Todos": el costo fijo se descuenta una sola vez.
+    const p=(data.profesionales||[]).find(x=>String(x.id)===String(perfil));
+    const txt=norm([perfil,p?.id,p?.nombre].filter(Boolean).join(' '));
+    return txt.includes('matias')||txt.includes('anchorena');
+  }
+  function sueldoPeriodo411F(desde,hasta,perfil){
+    if(!perfilEsDuenio411F(perfil))return 0;
+    const meses=mesesPeriodo411F(desde,hasta);
+    if(!meses.length){
+      const d=(desde||hasta||todayISO()).slice(0,7);
+      return d?sueldoMes411F(d):sueldoMes411F(todayISO().slice(0,7));
+    }
+    return meses.reduce((s,m)=>s+sueldoMes411F(m),0);
+  }
+  function buscarArancel411F(a){
+    if(!a)return null;
+    const pid=a.profesionalId||a.cajaPerfil||'matias',os=norm(a.obraSocial),prest=norm(a.prestacion),f=a.fecha||todayISO();
+    const arr=(data.arancelesPorProfesional?.[pid]||[]).filter(x=>x&&x.activo!==false&&norm(x.obraSocial)===os&&norm(x.prestacion)===prest&&(!x.vigenteDesde||x.vigenteDesde<=f));
+    arr.sort((x,y)=>String(y.vigenteDesde||'').localeCompare(String(x.vigenteDesde||'')));
+    return arr[0]||null;
+  }
   function placementCost411C(a){
     if(!a?.colocacionLiquidable)return 0;
     try{return typeof valorColocacionPorPrestacion==='function'?Number(valorColocacionPorPrestacion(a.prestacion)||0):0;}catch(e){return 0;}
   }
+  function mesAnterior411F(ym){
+    const m=String(ym||'').match(/^(\d{4})-(\d{2})$/);if(!m)return '';
+    const d=new Date(Number(m[1]),Number(m[2])-1,1,12,0,0);
+    d.setMonth(d.getMonth()-1);
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  }
+  function nombreMes411F(ym){
+    const m=String(ym||'').match(/^(\d{4})-(\d{2})$/);if(!m)return ym||'';
+    const d=new Date(Number(m[1]),Number(m[2])-1,1,12,0,0);
+    try{return d.toLocaleDateString('es-AR',{month:'long',year:'numeric'});}catch(e){return ym;}
+  }
+  function colocacionesLiquidacion411F(desde,hasta,perfil){
+    const mesesPago=mesesPeriodo411F(desde,hasta);
+    if(!mesesPago.length){
+      const ref=(desde||hasta||todayISO()).slice(0,7);
+      if(ref)mesesPago.push(ref);
+    }
+    const mesesTrabajo=new Set(mesesPago.map(mesAnterior411F).filter(Boolean));
+    return (atenciones||[]).filter(a=>{
+      if(!a?.colocacionLiquidable||!a.fecha)return false;
+      const mesTrabajo=String(a.fecha).slice(0,7);
+      if(!mesesTrabajo.has(mesTrabajo))return false;
+      if(perfil&&a.profesionalId!==perfil&&a.cajaPerfil!==perfil)return false;
+      return true;
+    }).reduce((s,a)=>s+placementCost411C(a),0);
+  }
+  function etiquetaColocaciones411F(desde,hasta){
+    const mesesPago=mesesPeriodo411F(desde,hasta);
+    if(!mesesPago.length){
+      const ref=(desde||hasta||todayISO()).slice(0,7);
+      if(ref)mesesPago.push(ref);
+    }
+    if(mesesPago.length===1){
+      const pago=mesesPago[0],trabajo=mesAnterior411F(pago);
+      return `Colocaciones de ${nombreMes411F(trabajo)} (liquidadas en ${nombreMes411F(pago)})`;
+    }
+    return 'Colocaciones de los meses previos (liquidadas en el período)';
+  }
   function arancel411C(a){
     if(['particular','pami'].includes(norm(a.obraSocial)))return 0;
-    if(Number.isFinite(Number(a.valorArancelEstimado)))return Number(a.valorArancelEstimado||0);
-    return 0;
+    if(Number.isFinite(Number(a.valorArancelEstimado))&&Number(a.valorArancelEstimado)>=0)return Number(a.valorArancelEstimado||0);
+    const ar=buscarArancel411F(a);
+    return ar?Number(ar.valor||0):0;
   }
   function isFacturaOtro411C(a,perfilId){
     if(!a||!perfilId)return false;
@@ -10178,10 +10280,12 @@ function patientInfoTextHC(p,coverage){
   }
   function addBucket411C(obj,key,val){obj[key]=(obj[key]||0)+Number(val||0);}
   function renderFinance411C(){
-    injectFinance411C();ensureMov411C();
+    injectFinance411C();ensureMov411C();ensureFinanceConfig411F();
+    const permitido=(()=>{try{return !!(esMatiasDuenio?.()||esAdminComun?.());}catch(e){return false;}})();
+    if(!permitido)return;
     const desde=$c('finDesde411C')?.value||'',hasta=$c('finHasta411C')?.value||'',perfil=$c('finPerfil411C')?.value||'';
     const list=(atenciones||[]).filter(a=>a&&(!desde||a.fecha>=desde)&&(!hasta||a.fecha<=hasta)&&(!perfil||a.profesionalId===perfil||a.cajaPerfil===perfil));
-    const ingresos={particular:0,copago:0,os:0,facturaOtro:0,senias:0},medios={Efectivo:0,Transferencia:0,'Débito':0,Mixto:0,Otro:0};
+    const ingresos={particular:0,copago:0,os:0,facturaOtro:0,senias:0},medios={Efectivo:0,Transferencia:0,'Débito':0,Mixto:0,'No aplica':0,Otro:0};
     let colocaciones=0;
     list.forEach(a=>{
       if(['ausente','cancelado'].includes(estado411(a))){
@@ -10195,19 +10299,76 @@ function patientInfoTextHC(p,coverage){
         else if(!perfil&&a.profesionalId==='matias'&&isFacturaOtro411C(a,'matias'))ingresos.facturaOtro+=ar;
         else ingresos.os+=ar;
       }
-      colocaciones+=placementCost411C(a);
+      // Las colocaciones no se imputan por la fecha de realización:
+      // se liquidan en el mes siguiente.
     });
-    const movs=(data.movimientosFinancieros411C||[]).filter(m=>(!desde||m.fecha>=desde)&&(!hasta||m.fecha<=hasta)&&(!perfil||!m.perfilId||m.perfilId===perfil));
-    const sueldo=movs.filter(m=>m.categoria==='Sueldo Secretaría').reduce((s,m)=>s+Number(m.monto||0),0);
-    const otros=movs.filter(m=>m.categoria!=='Sueldo Secretaría').reduce((s,m)=>s+Number(m.monto||0),0);
-    const totalIng=Object.values(ingresos).reduce((s,n)=>s+n,0),totalEgr=sueldo+otros+colocaciones,neto=totalIng-totalEgr;
+    colocaciones=colocacionesLiquidacion411F(desde,hasta,perfil);
+    const etiquetaColocaciones=etiquetaColocaciones411F(desde,hasta);
+
+    // Los sueldos cargados antiguamente como movimiento manual se ignoran:
+    // desde esta versión el sueldo es un costo fijo mensual configurado.
+    const movs=(data.movimientosFinancieros411C||[]).filter(m=>m.categoria!=='Sueldo Secretaría'&&(!desde||m.fecha>=desde)&&(!hasta||m.fecha<=hasta)&&(!perfil||!m.perfilId||m.perfilId===perfil));
+    const sueldo=sueldoPeriodo411F(desde,hasta,perfil);
+    const otros=movs.reduce((s,m)=>s+Number(m.monto||0),0);
+
+    const cajaCobrada=ingresos.particular+ingresos.copago+ingresos.senias;
+    const aFacturar=ingresos.os+ingresos.facturaOtro;
+    const totalIng=cajaCobrada+aFacturar;
+    const liquidacionSecretaria=sueldo+colocaciones;
+    const totalEgr=liquidacionSecretaria+otros;
+    const neto=totalIng-totalEgr;
     const facturaLabel=perfil==='matias'?'Factura Rogelio':(perfil?'Factura otro':'Factura terceros');
-    const medioHtml=Object.entries(medios).filter(([,v])=>v>0).map(([k,v])=>`<div><span>${esc(k)}</span><strong>${money411(v)}</strong></div>`).join('')||'<p class="muted">Sin ingresos de caja en el período.</p>';
+    const medioHtml=Object.entries(medios).filter(([,v])=>v>0).map(([k,v])=>`<div><span>${esc(k)}</span><strong>${money411(v)}</strong></div>`).join('')||'<p class="muted">Sin ingresos cobrados en el período.</p>';
     const movHtml=movs.slice().sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha))).map(m=>`<tr><td>${esc(m.fecha)}</td><td>${esc(m.categoria)}</td><td>${esc(m.concepto||'')}</td><td>${esc(m.medio||'')}</td><td>${money411(m.monto)}</td><td><button class="small-btn" type="button" data-del-mov411c="${esc(m.id)}">Borrar</button></td></tr>`).join('');
-    $c('finResultado411C').innerHTML=`<div class="finance-kpis411c"><div><span>Ingresos</span><strong>${money411(totalIng)}</strong></div><div><span>Egresos</span><strong>${money411(totalEgr)}</strong></div><div class="${neto<0?'neg411c':'pos411c'}"><span>Neto</span><strong>${money411(neto)}</strong></div></div>
-      <div class="finance-columns411c"><section><h3>Ingresos</h3><div class="finance-lines411c"><div><span>Particulares</span><strong>${money411(ingresos.particular)}</strong></div><div><span>Copagos</span><strong>${money411(ingresos.copago)}</strong></div><div><span>OS / prepagas (arancel configurado)</span><strong>${money411(ingresos.os)}</strong></div><div><span>${facturaLabel}</span><strong>${money411(ingresos.facturaOtro)}</strong></div><div><span>Señas de ausentes/cancelados</span><strong>${money411(ingresos.senias)}</strong></div></div><h4>Por medio de pago</h4><div class="finance-lines411c">${medioHtml}</div></section>
-      <section><h3>Egresos</h3><div class="finance-lines411c"><div><span>Sueldo Secretaría</span><strong>${money411(sueldo)}</strong></div><div><span>Colocaciones Holter / MAPA / ECG</span><strong>${money411(colocaciones)}</strong></div><div><span>Otros egresos</span><strong>${money411(otros)}</strong></div></div></section></div>
-      ${movs.length?`<h3>Movimientos manuales</h3><div class="finance-table-wrap411c"><table><thead><tr><th>Fecha</th><th>Categoría</th><th>Concepto</th><th>Medio</th><th>Monto</th><th></th></tr></thead><tbody>${movHtml}</tbody></table></div>`:''}`;
+    const missing=list.filter(a=>!['particular','pami'].includes(norm(a.obraSocial))&&!['ausente','cancelado'].includes(estado411(a))&&arancel411C(a)<=0).length;
+
+    $c('finResultado411C').innerHTML=`
+      <div class="finance-kpis411c finance-kpis-4-411f">
+        <div><span>Caja cobrada</span><strong>${money411(cajaCobrada)}</strong></div>
+        <div><span>A facturar OS / terceros</span><strong>${money411(aFacturar)}</strong></div>
+        <div><span>Egresos</span><strong>${money411(totalEgr)}</strong></div>
+        <div class="${neto<0?'neg411c':'pos411c'}"><span>Neto estimado</span><strong>${money411(neto)}</strong></div>
+      </div>
+      ${missing?`<div class="finance-warning411f">⚠️ Hay <strong>${missing}</strong> atención(es) de OS/prepaga sin arancel cargado para esa combinación de profesional + convenio + prestación + fecha.</div>`:''}
+      <div class="finance-columns411c">
+        <section>
+          <h3>Ingresos cobrados</h3>
+          <div class="finance-lines411c">
+            <div><span>Particulares</span><strong>${money411(ingresos.particular)}</strong></div>
+            <div><span>Copagos</span><strong>${money411(ingresos.copago)}</strong></div>
+            <div><span>Señas de ausentes/cancelados</span><strong>${money411(ingresos.senias)}</strong></div>
+          </div>
+          <h4>Por medio de pago</h4><div class="finance-lines411c">${medioHtml}</div>
+        </section>
+        <section>
+          <h3>Producción a facturar</h3>
+          <div class="finance-lines411c">
+            <div><span>OS / prepagas (arancel vigente)</span><strong>${money411(ingresos.os)}</strong></div>
+            <div><span>${facturaLabel}</span><strong>${money411(ingresos.facturaOtro)}</strong></div>
+          </div>
+          <p class="muted finance-note411f">Estos importes son producción estimada según los aranceles configurados; no significan dinero ya cobrado.</p>
+        </section>
+      </div>
+      <div class="finance-columns411c">
+        <section>
+          <h3>Egresos</h3>
+          <div class="finance-lines411c">
+            <div><span>Sueldo Secretaría (costo fijo mensual)</span><strong>${money411(sueldo)}</strong></div>
+            <div><span>${esc(etiquetaColocaciones)}</span><strong>${money411(colocaciones)}</strong></div>
+            <div><span>Otros egresos</span><strong>${money411(otros)}</strong></div>
+          </div>
+        </section>
+        <section>
+          <h3>Liquidación Secretaría · solo Administración</h3>
+          <div class="finance-lines411c">
+            <div><span>Sueldo fijo</span><strong>${money411(sueldo)}</strong></div>
+            <div><span>${esc(etiquetaColocaciones)}</span><strong>${money411(colocaciones)}</strong></div>
+            <div><span>Total a liquidar</span><strong>${money411(liquidacionSecretaria)}</strong></div>
+          </div>
+          <p class="muted finance-note411f">Este bloque no se muestra en el perfil Secretaría. El sueldo se toma automáticamente de Configuración financiera según su vigencia. Las colocaciones se imputan al mes siguiente de su realización (por ejemplo: julio se liquida en agosto).</p>
+        </section>
+      </div>
+      ${movs.length?`<h3>Otros movimientos manuales</h3><div class="finance-table-wrap411c"><table><thead><tr><th>Fecha</th><th>Categoría</th><th>Concepto</th><th>Medio</th><th>Monto</th><th></th></tr></thead><tbody>${movHtml}</tbody></table></div>`:''}`;
   }
 
   document.addEventListener('click',e=>{
@@ -10227,6 +10388,36 @@ function patientInfoTextHC(p,coverage){
 
   function boot411C(){
     ajustarHcVisual411C();inyectarAusentismo411C();injectFinance411C();ensureDebitOptions411C();
+
+    // QA Finanzas 2:
+    // al iniciar la app todavía puede no estar restaurada la sesión.
+    // Si el bloque financiero fue descartado en ese momento, lo reinyectamos
+    // cuando el usuario abre Caja / reportes.
+    const oldShow411F=window.showSection;
+    if(typeof oldShow411F==='function'&&!oldShow411F.__financeVisible411F){
+      const wrapped411F=function(id){
+        const r=oldShow411F.apply(this,arguments);
+        if(id==='caja'){
+          setTimeout(()=>{
+            injectFinance411C();
+            try{renderFinance411C();}catch(e){console.warn('Informe financiero:',e);}
+          },60);
+        }
+        return r;
+      };
+      wrapped411F.__financeVisible411F=true;
+      try{window.showSection=showSection=wrapped411F;}catch(e){window.showSection=wrapped411F;}
+    }
+
+    document.addEventListener('click',e=>{
+      const nav=e.target.closest?.('.nav[data-section="caja"]');
+      if(!nav)return;
+      setTimeout(()=>{
+        injectFinance411C();
+        try{renderFinance411C();}catch(err){console.warn('Informe financiero:',err);}
+      },120);
+    },true);
+
     setTimeout(()=>{ajustarHcVisual411C();inyectarAusentismo411C();injectFinance411C();ensureDebitOptions411C();},700);
     setTimeout(()=>{ajustarHcVisual411C();inyectarAusentismo411C();injectFinance411C();ensureDebitOptions411C();},1800);
   }
@@ -10319,6 +10510,161 @@ function patientInfoTextHC(p,coverage){
     .doc-prof-selector406{margin:10px 0 14px;padding:12px;border:1px solid #bae6fd;border-radius:12px;background:#f0f9ff}
     .doc-prof-selector406 label{display:block;font-weight:800;color:#0f172a}
     .doc-prof-selector406 select{width:100%;margin-top:6px;min-height:42px}
+  `;
+  document.head.appendChild(s);
+})();
+
+
+/* ===== CardioLink v4.1.0-hc · QA FINANZAS ===== */
+(function(){
+  'use strict';
+  if(window.__cardiolinkQaFinanzas411F)return;
+  window.__cardiolinkQaFinanzas411F=true;
+  const $f=id=>document.getElementById(id);
+  const escf=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  const normf=s=>String(s??'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+  const moneyf=n=>typeof money==='function'?money(Number(n||0)):'$ '+Number(n||0).toLocaleString('es-AR');
+
+  function adminf(){try{return !!(esMatiasDuenio?.()||esAdminComun?.());}catch(e){return false;}}
+  function ensuref(){
+    if(!data.configFinanzas411F||typeof data.configFinanzas411F!=='object')data.configFinanzas411F={};
+    if(!Array.isArray(data.configFinanzas411F.sueldosSecretaria))data.configFinanzas411F.sueldosSecretaria=[];
+    if(!data.configFinanzas411F.sueldosSecretaria.length)data.configFinanzas411F.sueldosSecretaria.push({id:'sueldo_secretaria_inicial_411f',monto:400000,vigenteDesde:'2026-08-01'});
+  }
+  function persistf(){
+    try{saveConfig();}catch(e){}
+    try{window.guardarConfigEnSupabase298?.();}catch(e){}
+  }
+  function salaryCurrentf(){
+    ensuref();
+    const hoy=typeof todayISO==='function'?todayISO():new Date().toISOString().slice(0,10);
+    const arr=data.configFinanzas411F.sueldosSecretaria.filter(x=>x.vigenteDesde<=hoy).slice().sort((a,b)=>String(b.vigenteDesde).localeCompare(String(a.vigenteDesde)));
+    return arr[0]||data.configFinanzas411F.sueldosSecretaria[0];
+  }
+  function injectConfigf(){
+    const grid=document.querySelector('#config .config-grid');
+    if(!grid)return;
+    if(!adminf()){$f('cfgFinanzas411F')?.remove();return;}
+    ensuref();
+    let card=$f('cfgFinanzas411F');
+    if(!card){
+      card=document.createElement('div');card.id='cfgFinanzas411F';card.className='config-smart-card-310 full-config-card';card.dataset.configGroupCard='administracion';
+      card.innerHTML=`<h3>Configuración financiera · Administración</h3>
+        <p class="muted">Visible únicamente para dueño/Administrador. El sueldo se considera un costo fijo mensual. Las colocaciones se suman a la liquidación del mes siguiente al que fueron realizadas.</p>
+        <div class="finance-config-grid411f">
+          <label>Sueldo mensual Secretaría<input id="finSueldo411F" type="number" min="0" step="1"></label>
+          <label>Vigente desde<input id="finSueldoDesde411F" type="date"></label>
+          <button id="finGuardarSueldo411F" type="button" class="primary">Guardar nuevo valor</button>
+        </div>
+        <div id="finSueldoHist411F" class="finance-salary-history411f"></div>`;
+      grid.appendChild(card);
+      card.addEventListener('click',e=>{
+        if(e.target.id!=='finGuardarSueldo411F')return;
+        const monto=Number($f('finSueldo411F')?.value||0),desde=$f('finSueldoDesde411F')?.value;
+        if(!Number.isFinite(monto)||monto<0||!desde){alert('Ingresá sueldo y fecha de vigencia.');return;}
+        ensuref();data.configFinanzas411F.sueldosSecretaria.push({id:'sal_'+Date.now(),monto,vigenteDesde:desde});
+        persistf();renderConfigf();alert('Sueldo mensual actualizado.');
+      });
+    }
+    renderConfigf();
+  }
+  function renderConfigf(){
+    if(!adminf())return;ensuref();
+    const cur=salaryCurrentf();
+    if($f('finSueldo411F'))$f('finSueldo411F').value=Number(cur?.monto||400000);
+    if($f('finSueldoDesde411F')&&!$f('finSueldoDesde411F').value)$f('finSueldoDesde411F').value=typeof todayISO==='function'?todayISO():new Date().toISOString().slice(0,10);
+    if($f('finSueldoHist411F'))$f('finSueldoHist411F').innerHTML=`<h4>Historial de sueldo</h4>`+
+      data.configFinanzas411F.sueldosSecretaria.slice().sort((a,b)=>String(b.vigenteDesde).localeCompare(String(a.vigenteDesde))).map(x=>`<div class="salary-row411f"><span>Desde ${escf(x.vigenteDesde)}</span><strong>${moneyf(x.monto)}</strong></div>`).join('');
+  }
+
+  function tariff(pid,os,prest,fecha){
+    const arr=(data.arancelesPorProfesional?.[pid]||[]).filter(a=>a&&a.activo!==false&&normf(a.obraSocial)===normf(os)&&normf(a.prestacion)===normf(prest)&&(!a.vigenteDesde||a.vigenteDesde<=fecha));
+    arr.sort((a,b)=>String(b.vigenteDesde||'').localeCompare(String(a.vigenteDesde||'')));
+    return arr[0]||null;
+  }
+  function applyConfiguredPatientChargef(){
+    const prof=$f('profesional')?.value,os=$f('obraSocial')?.value,prest=$f('prestacion')?.value;
+    if(!prof||!os||!prest)return;
+    const ar=tariff(prof,os,prest,typeof todayISO==='function'?todayISO():new Date().toISOString().slice(0,10));
+    if(!ar)return;
+    const tipo=$f('tipoCobro'),forma=$f('formaPago'),mConsulta=$f('montoConsulta'),mEstudio=$f('montoEstudio'),mCop=$f('montoCopago');
+    const isConsult=(()=>{try{return typeof tipoPrest==='function'?tipoPrest(prest)==='CONSULTA':/consulta/i.test(prest);}catch(e){return /consulta/i.test(prest);}})();
+    if(normf(os)==='particular'){
+      if(tipo)tipo.value='Particular';if(forma&&forma.value==='No aplica')forma.value='Efectivo';
+      if(isConsult&&mConsulta)mConsulta.value=Number(ar.valor||0);
+      if(!isConsult&&mEstudio)mEstudio.value=Number(ar.valor||0);
+      if(mCop)mCop.value=0;
+    }else if(Number(ar.copago||0)>0){
+      if(tipo&&!String(tipo.value).includes('Particular'))tipo.value='Copago';
+      if(forma&&forma.value==='No aplica')forma.value='Efectivo';
+      if(mCop)mCop.value=Number(ar.copago||0);
+    }
+    try{calcularCajaCarga?.();}catch(e){}
+  }
+
+  const oldRule=window.aplicarRegla;
+  if(typeof oldRule==='function'&&!oldRule.__finance411f){
+    const wrapped=function(){const r=oldRule.apply(this,arguments);setTimeout(applyConfiguredPatientChargef,0);return r;};
+    wrapped.__finance411f=true;window.aplicarRegla=aplicarRegla=wrapped;
+  }
+
+  const oldPermFinance411F=window.aplicarPermisosUI;
+  if(typeof oldPermFinance411F==='function'&&!oldPermFinance411F.__finance411f){
+    const wrappedPerm411F=function(){
+      const r=oldPermFinance411F.apply(this,arguments);
+      setTimeout(()=>{
+        try{
+          const cajaEl=document.getElementById('caja');
+          const cajaVisible=!!(cajaEl&&cajaEl.classList.contains('visible'));
+          if(cajaVisible&&adminf()){
+            // solo refrescar si Caja es realmente la sección activa
+            if(typeof injectFinance411C==='function')injectFinance411C();
+            if(typeof renderFinance411C==='function')renderFinance411C();
+          }
+        }catch(e){}
+      },120);
+      return r;
+    };
+    wrappedPerm411F.__finance411f=true;
+    try{window.aplicarPermisosUI=aplicarPermisosUI=wrappedPerm411F;}catch(e){window.aplicarPermisosUI=wrappedPerm411F;}
+  }
+
+  const oldConfig=window.renderConfig;
+  if(typeof oldConfig==='function'&&!oldConfig.__finance411f){
+    const wrapped=function(){const r=oldConfig.apply(this,arguments);setTimeout(injectConfigf,0);return r;};
+    wrapped.__finance411f=true;window.renderConfig=renderConfig=wrapped;
+  }
+
+  function bootf(){
+    ensuref();injectConfigf();
+    document.addEventListener('click',e=>{
+      const nav=e.target.closest?.('.nav[data-section="config"]');
+      if(!nav)return;
+      setTimeout(()=>{
+        try{injectConfigf();renderConfigf();}catch(err){console.warn('Configuración financiera:',err);}
+      },120);
+    },true);
+    // Refuerzo: aunque alguien fuerce el DOM, los bloques financieros quedan solo en dueño/admin.
+    if(!adminf())document.querySelectorAll('#finanzas411C,#cfgFinanzas411F').forEach(x=>x.remove());
+    setTimeout(injectConfigf,700);
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bootf);else bootf();
+})();
+
+(function(){
+  if(document.getElementById('finance411f-style'))return;
+  const s=document.createElement('style');s.id='finance411f-style';
+  s.textContent=`
+    .finance-kpis-4-411f{grid-template-columns:repeat(4,minmax(145px,1fr))!important}
+    .finance-warning411f{margin:12px 0;padding:11px 13px;border:1px solid #fdba74;border-radius:12px;background:#fff7ed;color:#9a3412}
+    .finance-note411f{font-size:12px;margin-top:10px}
+    .finance-config-grid411f{display:grid;grid-template-columns:minmax(180px,1fr) minmax(170px,1fr) auto;gap:10px;align-items:end}
+    .finance-config-grid411f label{font-size:12px;font-weight:800;color:#475569}
+    .finance-config-grid411f input{width:100%;margin-top:5px}
+    .finance-salary-history411f{margin-top:14px}
+    .salary-row411f{display:flex;justify-content:space-between;gap:12px;padding:7px 0;border-bottom:1px solid #e5e7eb}
+    .arancel-head-fin411f,.arancel-row-fin411f{grid-template-columns:2fr 1fr 1fr 1fr auto!important}
+    @media(max-width:980px){.finance-kpis-4-411f{grid-template-columns:repeat(2,1fr)!important}.finance-config-grid411f{grid-template-columns:1fr}}
   `;
   document.head.appendChild(s);
 })();
