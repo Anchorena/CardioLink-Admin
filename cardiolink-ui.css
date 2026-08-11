@@ -181,3 +181,49 @@ body.dark{
   border-left-color:var(--cl-danger,#a13636);
   background:var(--cl-danger-soft,rgba(161,54,54,.08));
 }
+
+/* ---------- Modal de Ecocardiograma ---------- */
+.cl-eco-hint{
+  font-size:12px;
+  color:var(--muted,#64748b);
+  margin:14px 0 6px;
+  font-weight:700;
+}
+.cl-eco-grid{
+  display:grid;
+  grid-template-columns:repeat(3,minmax(0,1fr));
+  gap:10px 14px;
+}
+.cl-eco-field label{font-size:12px;font-weight:700;}
+.cl-eco-field.full{grid-column:1/-1;margin-top:10px;}
+.cl-eco-libre{
+  margin-top:16px;
+  border:1px solid var(--cl-modal-border,#dbe3ea);
+  border-radius:12px;
+  padding:10px 14px;
+}
+.cl-eco-libre summary{cursor:pointer;font-weight:800;color:var(--cl-primary,#123f56);}
+.cl-eco-narrativa{margin-top:16px;}
+.cl-eco-narrativa-head{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:10px;
+  margin-bottom:6px;
+}
+.cl-eco-narrativa-head label{font-size:13px;font-weight:800;}
+.cl-eco-stats-list{display:grid;gap:6px;margin-top:10px;}
+.cl-eco-stat-row{
+  display:flex;
+  justify-content:space-between;
+  padding:8px 10px;
+  border:1px solid var(--cl-modal-border,#dbe3ea);
+  border-radius:9px;
+  background:var(--cl-primary-soft,rgba(18,63,86,.06));
+}
+@media (max-width:640px){
+  .cl-eco-grid{grid-template-columns:1fr 1fr;}
+}
+
+/* ---------- Selector de médico solicitante ---------- */
+.hc-modal-grid select{width:100%;}
