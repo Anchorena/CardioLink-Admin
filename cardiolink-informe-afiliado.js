@@ -1,5 +1,5 @@
 /* =====================================================================
-   CardioLink -- Sumar N de afiliado a los documentos impresos
+   CardioLink -- Ajustes a los documentos impresos (PDF)
    No modifica app.js. Intercepta window.open (API del navegador, no de
    la app) para detectar cuando se abre una ventana de impresion de un
    documento clinico, y le hace tres ajustes:
