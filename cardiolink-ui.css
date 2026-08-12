@@ -227,3 +227,12 @@ body.dark{
 
 /* ---------- Selector de médico solicitante ---------- */
 .hc-modal-grid select{width:100%;}
+
+/* ---------- Evitar el parpadeo del botón "Cerrar sesión" al cargar ---------- */
+#btnCerrarSesion{
+  opacity:0 !important;
+  transition:opacity .25s ease;
+}
+#btnCerrarSesion.cl-listo{
+  opacity:1 !important;
+}
