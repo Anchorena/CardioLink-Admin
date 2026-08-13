@@ -1,23 +1,31 @@
 /* =====================================================================
-   CardioLink — Guardia de sesión Supabase
-   No modifica la lógica clínica/financiera de app.js: envuelve (wrap)
-   las funciones existentes, igual que ya hace el propio app.js con sus
-   parches internos (ej. guardarConfigEnSupabase298).
-   Para revertir: quitar el <script> a este archivo en index.html.
+   CardioLink — Guardia de sesión Supabase v2
+   FIX MAIN 2026-08-13
 
-   Qué resuelve:
-   1) Si la sesión de Supabase vence y no se puede renovar, hoy la app
-      sigue intentando sincronizar en silencio cada 30s, y en el peor
-      caso interpreta "no llegaron datos" como "no hay nada en la nube,
-      subo lo local" — arriesgado con datos de pacientes reales.
-   2) Ahora: se detecta la sesión inválida ANTES de sincronizar, se
-      pausa el refresco automático, y se muestra un aviso visible y
-      persistente (no un alert() que se puede cerrar sin leer) pidiendo
-      volver a iniciar sesión.
+   Corrección:
+   app.js declara `let supabaseClient`, que en un script clásico NO crea
+   automáticamente `window.supabaseClient`. La versión anterior del guard
+   consultaba exclusivamente window.supabaseClient, por lo que interpretaba
+   falsamente que no había sesión y bloqueaba TODA sincronización.
+
+   Esta versión obtiene el cliente desde el binding global de app.js y deja
+   window.supabaseClient solo como fallback.
    ===================================================================== */
 (function () {
-  if (window.__cardiolinkAuthGuardInstalled) return;
-  window.__cardiolinkAuthGuardInstalled = true;
+  if (window.__cardiolinkAuthGuardInstalledV2) return;
+  window.__cardiolinkAuthGuardInstalledV2 = true;
+
+  function obtenerClienteSupabase() {
+    try {
+      // `supabaseClient` viene de app.js (declarado con let).
+      // Los scripts clásicos posteriores pueden leer ese binding global,
+      // aunque no exista como propiedad de window.
+      if (typeof supabaseClient !== 'undefined' && supabaseClient) {
+        return supabaseClient;
+      }
+    } catch (_) {}
+    return window.supabaseClient || null;
+  }
 
   function mostrarAvisoSesion(mensaje) {
     let banner = document.getElementById('cl-session-banner');
@@ -42,11 +50,23 @@
 
   async function sesionValida() {
     try {
-      if (!window.supabaseClient) return false;
-      const { data, error } = await window.supabaseClient.auth.getSession();
-      if (error || !data?.session) return false;
-      const exp = data.session.expires_at; // segundos epoch
-      if (exp && Date.now() / 1000 > exp) return false;
+      const client = obtenerClienteSupabase();
+      if (!client?.auth) return false;
+
+      const { data, error } = await client.auth.getSession();
+      if (error || !data?.session?.user) return false;
+
+      // getSession normalmente administra el refresh automático.
+      // Solo rechazamos si sigue devolviendo una sesión realmente expirada.
+      const exp = Number(data.session.expires_at || 0);
+      if (exp && (Date.now() / 1000) >= exp) {
+        try {
+          const refreshed = await client.auth.refreshSession();
+          if (refreshed?.error || !refreshed?.data?.session?.user) return false;
+        } catch (_) {
+          return false;
+        }
+      }
       return true;
     } catch (_) {
       return false;
@@ -60,50 +80,71 @@
     }
   }
 
-  // Envuelve sincronizarAtencionesSupabase: si la sesión no es válida,
-  // no intenta escribir — avisa y corta, en vez de fallar en silencio
-  // contra las políticas de seguridad de Supabase.
+  function reanudarRefrescoAutomatico() {
+    try {
+      if (!window.cardioLinkRefreshInterval &&
+          typeof iniciarRefrescoAutomatico === 'function') {
+        iniciarRefrescoAutomatico();
+      }
+    } catch (_) {}
+  }
+
   function envolverSync() {
     if (typeof window.sincronizarAtencionesSupabase !== 'function') return false;
+
     const original = window.sincronizarAtencionesSupabase;
-    if (original.__clGuarded) return true;
-    const envuelta = async function (forzar) {
+    if (original.__clGuardedV2) return true;
+
+    const envuelta = async function () {
       const ok = await sesionValida();
+
       if (!ok) {
         pausarRefrescoAutomatico();
-        mostrarAvisoSesion('⚠ Tu sesión venció. Los cambios no se están guardando en la nube — volvé a iniciar sesión para seguir sincronizando.');
-        console.warn('CardioLink: sincronización cancelada, sesión inválida o vencida.');
+        mostrarAvisoSesion(
+          '⚠ Tu sesión venció. Los cambios no se están guardando en la nube — volvé a iniciar sesión para seguir sincronizando.'
+        );
+        console.warn('CardioLink: sincronización cancelada por sesión Supabase inválida.');
         return false;
       }
+
       ocultarAvisoSesion();
+      reanudarRefrescoAutomatico();
       return original.apply(this, arguments);
     };
-    envuelta.__clGuarded = true;
+
+    envuelta.__clGuardedV2 = true;
     window.sincronizarAtencionesSupabase = envuelta;
     try { sincronizarAtencionesSupabase = envuelta; } catch (_) {}
     return true;
   }
 
-  // Reintenta envolver hasta que la función exista (app.js la define
-  // de forma diferida en varias etapas de carga).
   let intentos = 0;
-  const t = setInterval(() => {
+  const timerInstalacion = setInterval(() => {
     intentos++;
-    if (envolverSync() || intentos > 40) clearInterval(t);
+    if (envolverSync() || intentos > 40) clearInterval(timerInstalacion);
   }, 500);
 
-  // Si Supabase avisa que la sesión se cerró (por ejemplo, por un
-  // refresh token vencido), pausamos el refresco y avisamos ya mismo,
-  // en vez de esperar al próximo intento fallido de sincronización.
-  if (window.supabaseClient?.auth?.onAuthStateChange) {
-    window.supabaseClient.auth.onAuthStateChange((event) => {
-      if (event === 'SIGNED_OUT' || event === 'TOKEN_REFRESH_FAILED') {
-        pausarRefrescoAutomatico();
-        mostrarAvisoSesion('⚠ Tu sesión venció. Volvé a iniciar sesión para seguir guardando cambios en la nube.');
-      }
-      if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED') {
-        ocultarAvisoSesion();
-      }
-    });
+  // Escuchar cambios reales de sesión usando el cliente correcto.
+  try {
+    const client = obtenerClienteSupabase();
+    if (client?.auth?.onAuthStateChange) {
+      client.auth.onAuthStateChange((event, session) => {
+        if (event === 'SIGNED_OUT') {
+          pausarRefrescoAutomatico();
+          mostrarAvisoSesion(
+            '⚠ Tu sesión venció. Volvé a iniciar sesión para seguir guardando cambios en la nube.'
+          );
+        }
+
+        if (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+          if (session?.user) {
+            ocultarAvisoSesion();
+            reanudarRefrescoAutomatico();
+          }
+        }
+      });
+    }
+  } catch (e) {
+    console.warn('CardioLink auth guard: no se pudo instalar listener de sesión.', e);
   }
 })();
