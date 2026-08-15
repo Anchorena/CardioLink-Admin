@@ -4453,7 +4453,6 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
   document.addEventListener('DOMContentLoaded',()=>{actualizarVersionVisible295(); ajustarLogout295(); try{renderAgenda(); renderMensajes();}catch(e){} });
   setTimeout(()=>{actualizarVersionVisible295(); ajustarLogout295(); try{renderAgenda(); renderMensajes();}catch(e){} },900);
-  setInterval(()=>{actualizarVersionVisible295(); ajustarLogout295();},3000);
 })();
 
 
@@ -4645,7 +4644,6 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   }
   document.addEventListener('DOMContentLoaded',()=>{asegurarBloques296(); version296(); moverLogout296(); try{actualizarPrestaciones(); aplicarPermisosUI(); renderAgenda?.(); renderMensajes?.();}catch(e){} });
   setTimeout(()=>{asegurarBloques296(); version296(); moverLogout296(); try{actualizarPrestaciones(); aplicarPermisosUI(); renderAgenda?.(); renderMensajes?.();}catch(e){}},900);
-  setInterval(()=>{version296(); moverLogout296();},3000);
 })();
 
 /* ===== v2.9.7 CONFIGURACION VISUAL DE BLOQUES DE PRESTACIONES ===== */
@@ -5713,7 +5711,6 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   }
   document.addEventListener('DOMContentLoaded',()=>setTimeout(init320,900));
   setTimeout(init320,1800);
-  setInterval(()=>{try{setVersion320();ensureTopSearch320();}catch(e){}},2500);
 })();
 
 
@@ -5857,7 +5854,6 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function init321(){setVersion321();ajustarBuscador321();try{renderAgenda();}catch(e){};try{window.renderContadorCoberturas321();}catch(e){}}
   document.addEventListener('DOMContentLoaded',()=>setTimeout(init321,600));
   setTimeout(init321,1200);
-  setInterval(()=>{try{setVersion321();ajustarBuscador321();}catch(e){}},2500);
 })();
 
 
@@ -6314,7 +6310,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       },250);
     }
   }
-  document.addEventListener('DOMContentLoaded',()=>setTimeout(init360,1000));setTimeout(()=>{setVersion360();document.body.classList.add('app-ready-360');},1800);setInterval(setVersion360,4000);
+  document.addEventListener('DOMContentLoaded',()=>setTimeout(init360,1000));setTimeout(()=>{setVersion360();document.body.classList.add('app-ready-360');},1800);
 })();
 
 
@@ -6380,8 +6376,8 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     btn.addEventListener('click',()=>{panel.classList.toggle('open-372');sync();});
     sync();
   }
-  document.addEventListener('DOMContentLoaded',initFiltrosCompactos372);
-  setTimeout(initFiltrosCompactos372,400);
+  if(document.readyState==='loading') document.addEventListener('DOMContentLoaded',initFiltrosCompactos372,{once:true});
+  else initFiltrosCompactos372();
 })();
 
 
@@ -7387,7 +7383,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     normalizeVersion3101();
     try{window.renderUsuariosConfig?.();}catch(e){console.warn('Usuarios 4.1.0-hc',e)}
     refreshPendingBadge3101();stableLogout3101();
-    [250,800,1600,3000].forEach(ms=>setTimeout(()=>{normalizeVersion3101();refreshPendingBadge3101();stableLogout3101();},ms));
+    [250,800,1600].forEach(ms=>setTimeout(()=>{normalizeVersion3101();refreshPendingBadge3101();stableLogout3101();},ms));
     // Refresco liviano: evita que el contador dependa de haber visitado la solapa.
     setInterval(()=>{refreshPendingBadge3101();stableLogout3101();normalizeVersion3101();},3000);
   }
