@@ -10447,31 +10447,54 @@ function patientInfoTextHC(p,coverage){
     const destino=String(a.destinoFacturacionEstimado||a.prestacionA||'');
     return !!(destino&&prof&&norm(destino)!==norm(prof.nombre)&&norm(destino)!=='no aplica');
   }
-  function addBucket411C(obj,key,val){obj[key]=(obj[key]||0)+Number(val||0);}
+  function puedeAccederIngresos411C(){
+    try{return !!(esMatiasDuenio?.()||esAdminComun?.());}catch(e){return false;}
+  }
+  function calcularIngresosCanonicos411C(filtros={}){
+    const core=window.CardioLinkFinanzasV5;
+    if(!core||typeof core.calcularIngresosCanonicos!=='function'){
+      throw new Error('Finanzas 5: proveedor canónico de ingresos no disponible.');
+    }
+    const perfil=String(filtros.perfil??filtros.profesionalId??'');
+    return core.calcularIngresosCanonicos({
+      atenciones,
+      desde:String(filtros.desde||''),
+      hasta:String(filtros.hasta||''),
+      perfil,
+      obtenerEstado:estado411,
+      obtenerArancel:arancel411C,
+      esFacturaTercero:isFacturaOtro411C,
+      normalizar:norm,
+      tipoPrestacion:prestacion=>typeof tipoPrest==='function'?tipoPrest(prestacion):'ESTUDIO'
+    });
+  }
+  const proveedorIngresos411C=Object.freeze({
+    version:'1.0.0',
+    puedeAcceder:puedeAccederIngresos411C,
+    obtenerIngresos(filtros={}){
+      if(!puedeAccederIngresos411C())return null;
+      return calcularIngresosCanonicos411C(filtros);
+    }
+  });
+  window.CardioLinkFinanzasIngresos=proveedorIngresos411C;
+  window.CardioLinkFinanzasV5?.conectarProveedor?.(proveedorIngresos411C);
+
   function renderFinance411C(){
     injectFinance411C();ensureMov411C();ensureFinanceConfig411F();
-    const permitido=(()=>{try{return !!(esMatiasDuenio?.()||esAdminComun?.());}catch(e){return false;}})();
-    if(!permitido)return;
+    if(!puedeAccederIngresos411C())return;
     const desde=$c('finDesde411C')?.value||'',hasta=$c('finHasta411C')?.value||'',perfil=$c('finPerfil411C')?.value||'';
-    const list=(atenciones||[]).filter(a=>a&&(!desde||a.fecha>=desde)&&(!hasta||a.fecha<=hasta)&&(!perfil||a.profesionalId===perfil||a.cajaPerfil===perfil));
-    const ingresos={particular:0,copago:0,os:0,facturaOtro:0,senias:0},medios={Efectivo:0,Transferencia:0,'Débito':0,Mixto:0,'No aplica':0,Otro:0};
-    let colocaciones=0;
-    list.forEach(a=>{
-      if(['ausente','cancelado'].includes(estado411(a))){
-        const s=Number(a.seniaMonto||0);ingresos.senias+=s;addBucket411C(medios,a.seniaFormaPago||'Otro',s);return;
-      }
-      const part=Number(a.montoConsulta||0)+Number(a.montoEstudio||0),cop=Number(a.montoCopago||0),forma=a.formaPago||'Otro';
-      ingresos.particular+=part;ingresos.copago+=cop;addBucket411C(medios,forma,part+cop);
-      const ar=arancel411C(a);
-      if(ar>0){
-        if(perfil&&isFacturaOtro411C(a,perfil))ingresos.facturaOtro+=ar;
-        else if(!perfil&&a.profesionalId==='matias'&&isFacturaOtro411C(a,'matias'))ingresos.facturaOtro+=ar;
-        else ingresos.os+=ar;
-      }
-      // Las colocaciones no se imputan por la fecha de realización:
-      // se liquidan en el mes siguiente.
-    });
-    colocaciones=colocacionesLiquidacion411F(desde,hasta,perfil);
+    const resumenIngresos=calcularIngresosCanonicos411C({desde,hasta,perfil});
+    const ingresos={
+      particular:resumenIngresos.cajaCobrada.particulares,
+      copago:resumenIngresos.cajaCobrada.copagos,
+      os:resumenIngresos.produccionAFacturar.obrasSocialesPrepagas,
+      facturaOtro:resumenIngresos.produccionAFacturar.terceros,
+      senias:resumenIngresos.cajaCobrada.senias
+    };
+    const medios=resumenIngresos.mediosPago;
+    // Las colocaciones no se imputan por la fecha de realización:
+    // se liquidan en el mes siguiente.
+    const colocaciones=colocacionesLiquidacion411F(desde,hasta,perfil);
     const etiquetaColocaciones=etiquetaColocaciones411F(desde,hasta);
 
     // Los sueldos cargados antiguamente como movimiento manual se ignoran:
@@ -10480,16 +10503,16 @@ function patientInfoTextHC(p,coverage){
     const sueldo=sueldoPeriodo411F(desde,hasta,perfil);
     const otros=movs.reduce((s,m)=>s+Number(m.monto||0),0);
 
-    const cajaCobrada=ingresos.particular+ingresos.copago+ingresos.senias;
-    const aFacturar=ingresos.os+ingresos.facturaOtro;
-    const totalIng=cajaCobrada+aFacturar;
+    const cajaCobrada=resumenIngresos.cajaCobrada.total;
+    const aFacturar=resumenIngresos.produccionAFacturar.total;
+    const totalIng=resumenIngresos.ingresosOperativosEstimados.total;
     const liquidacionSecretaria=sueldo+colocaciones;
     const totalEgr=liquidacionSecretaria+otros;
     const neto=totalIng-totalEgr;
     const facturaLabel=perfil==='matias'?'Factura Rogelio':(perfil?'Factura otro':'Factura terceros');
     const medioHtml=Object.entries(medios).filter(([,v])=>v>0).map(([k,v])=>`<div><span>${esc(k)}</span><strong>${money411(v)}</strong></div>`).join('')||'<p class="muted">Sin ingresos cobrados en el período.</p>';
     const movHtml=movs.slice().sort((a,b)=>String(b.fecha).localeCompare(String(a.fecha))).map(m=>`<tr><td>${esc(m.fecha)}</td><td>${esc(m.categoria)}</td><td>${esc(m.concepto||'')}</td><td>${esc(m.medio||'')}</td><td>${money411(m.monto)}</td><td><button class="small-btn" type="button" data-del-mov411c="${esc(m.id)}">Borrar</button></td></tr>`).join('');
-    const missing=list.filter(a=>!['particular','pami'].includes(norm(a.obraSocial))&&!['ausente','cancelado'].includes(estado411(a))&&arancel411C(a)<=0).length;
+    const missing=resumenIngresos.alertas.atencionesSinArancel;
 
     $c('finResultado411C').innerHTML=`
       <div class="finance-kpis411c finance-kpis-4-411f">
