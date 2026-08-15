@@ -160,6 +160,12 @@ function esMedico(){ const r=perfilUsuarioActual().rol; return r==='medico'; }
 function puedeVerFacturaRogelio(){ return esMatiasDuenio(); }
 function puedeVerCajaGlobal(){ return esMatiasDuenio() || esAdminComun(); }
 function puedeGestionarConfig(){ return esMatiasDuenio() || esSecretaria() || esAdminComun(); }
+function puedeGestionarConfigAdministrativa(){ return esMatiasDuenio() || esAdminComun(); }
+function exigirConfigAdministrativa(mensaje='Tu perfil no puede modificar esta configuración administrativa.'){
+  if(puedeGestionarConfigAdministrativa()) return true;
+  alert(mensaje);
+  return false;
+}
 function profesionalIdUsuarioActual(){ return perfilUsuarioActual().profesionalId || ''; }
 function nombreUsuarioAuditoria(){
   const u=perfilUsuarioActual();
@@ -188,6 +194,7 @@ function auditoriaHTML(a){
 }
 function seccionPermitida(section){
   if(section==='caja') return esMatiasDuenio() || esAdminComun();
+  if(section==='config') return puedeGestionarConfig();
   if(esMatiasDuenio()) return true;
   if(esSecretaria() || esAdminComun()) return true;
   if(esMedico()) return ['dashboard','carga','agenda','mensajes','pacientes','hc','listado','estadisticas','colocaciones','instructivos'].includes(section);
@@ -213,7 +220,8 @@ function aplicarPermisosUI(){
   }
   document.querySelectorAll('.solo-matias').forEach(el=>{const isCaja=el.dataset?.section==='caja';el.classList.toggle('hidden-permission',isCaja?!(esMatiasDuenio()||esAdminComun()):!esMatiasDuenio());});
   document.querySelectorAll('.no-medico').forEach(el=>el.classList.toggle('hidden-permission',esMedico()));
-  document.querySelectorAll('.solo-config').forEach(el=>el.classList.toggle('hidden-permission',!puedeGestionarConfig()));
+  document.querySelectorAll('.solo-config,[data-config-access="admin"]').forEach(el=>el.classList.toggle('hidden-permission',!puedeGestionarConfigAdministrativa()));
+  document.querySelectorAll('[data-config-group="usuarios"]').forEach(el=>el.classList.toggle('hidden-permission',!puedeGestionarConfigAdministrativa()));
   const lock=document.querySelector('.money-lock');
   if(lock) lock.classList.toggle('hidden-permission',!puedeVerCajaGlobal());
   const fOS=$('fOS');
@@ -892,6 +900,7 @@ function limpiarRegistrosCorruptosSilencioso(){
 }
 
 async function limpiarRegistrosCorruptosManual(){
+  if(!exigirConfigAdministrativa('Tu perfil no puede ejecutar mantenimiento sensible.'))return;
   const eliminados = limpiarRegistrosCorruptosSilencioso();
   localStorage.setItem(storageAtenciones, JSON.stringify(atenciones));
   if (supabaseClient && usuarioSupabase) {
@@ -1034,7 +1043,7 @@ function init(){
   on('btnAddPrestacion','click',addPrestacion);
   on('btnExportBackup','click',exportarBackup);
   on('btnImportBackup','click',importarBackup);
-  on('btnBorrarDatos','click',()=>{if(confirm('¿Borrar atenciones?')){atenciones=[];saveAtenciones();renderTabla();renderStats()}});
+  on('btnBorrarDatos','click',()=>{if(!exigirConfigAdministrativa('Tu perfil no puede borrar atenciones.'))return;if(confirm('¿Borrar atenciones?')){atenciones=[];saveAtenciones();renderTabla();renderStats()}});
   on('btnAddUsuarioSistema','click',agregarUsuarioSistema);
   on('btnBuscarDuplicadosPacientes','click',renderDuplicadosPacientes);
 
@@ -2266,8 +2275,8 @@ function verDineroPeriodo(){
 function ocultarDineroPeriodo(){$('dineroPeriodoResultado').textContent='';$('claveDinero').value=''}
 function setPrintMeta(){$('printMeta').textContent=`Perfil: ${perfilObj().nombre} | Registros: ${filtrar().length} | ${formatFecha(todayISO())}`}
 function exportarCSV(){const datos=filtrar();if(!datos.length){alert('No hay datos');return}const r=resumen(datos);const incluirValoresExport=!!$('incluirValoresImpresion')?.checked;const filas=[['CardioLink Admin v4.1.0-hc'],['Perfil',perfilObj().nombre],['Consultas',r.consultas],['Estudios',r.estudios],[],['Fecha','Paciente','OS','Profesional','Prestación','Consulta a','Estudio a','Tipo','Forma','Particular visible','Copago visible','Total visible','Estado']];datos.forEach(a=>{const m=dineroVisible(a),e=evaluarEstado(a);filas.push([formatFecha(a.fecha),a.paciente,a.obraSocial,a.profesional,prestacionListado(a),a.consultaA,a.prestacionA,a.tipoCobro,a.formaPago,incluirValoresExport?m.particular:'',incluirValoresExport?m.copago:'',incluirValoresExport?m.total:'',e.txt])});const csv=filas.map(r=>r.map(c=>`"${String(c??'').replaceAll('"','""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_listado.csv';a.click()}
-function exportarBackup(){const b={app:'CardioLink Admin',version:'4.1.0-hc',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
-function importarBackup(){const inp=$('inputImportBackup');if(!inp.files[0]){alert('Elegí archivo');return}if(!confirm('Reemplaza la base actual. ¿Continuar?'))return;const rd=new FileReader();rd.onload=e=>{try{const b=JSON.parse(e.target.result);if(!b.config||!b.atenciones)throw new Error();data=b.config;atenciones=b.atenciones;saveConfig();saveAtenciones();refreshSelects();renderConfig();cambiarPerfil('general');alert('Backup importado')}catch{alert('Backup inválido')}};rd.readAsText(inp.files[0])}
+function exportarBackup(){if(!exigirConfigAdministrativa('Tu perfil no puede exportar backups completos.'))return;const b={app:'CardioLink Admin',version:'4.1.0-hc',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
+function importarBackup(){if(!exigirConfigAdministrativa('Tu perfil no puede restaurar backups.'))return;const inp=$('inputImportBackup');if(!inp.files[0]){alert('Elegí archivo');return}if(!confirm('Reemplaza la base actual. ¿Continuar?'))return;const rd=new FileReader();rd.onload=e=>{try{const b=JSON.parse(e.target.result);if(!b.config||!b.atenciones)throw new Error();data=b.config;atenciones=b.atenciones;saveConfig();saveAtenciones();refreshSelects();renderConfig();cambiarPerfil('general');alert('Backup importado')}catch{alert('Backup inválido')}};rd.readAsText(inp.files[0])}
 
 function dniLimpio(v){return String(v||'').replace(/\D/g,'');}
 function telLimpio(v){return String(v||'').replace(/\D/g,'');}
@@ -2435,6 +2444,7 @@ function fusionarPacientes(principalId,duplicadoId){
 
 
 function repararReglasValoresBaseManual(){
+  if(!exigirConfigAdministrativa('Tu perfil no puede reparar reglas y valores administrativos.'))return;
   data=normalizarConfigCritica(data);
   saveConfig();
   refreshSelects();
@@ -2474,6 +2484,7 @@ function cargarValoresConfig(){
 }
 
 function guardarValores(){
+  if(!exigirConfigAdministrativa('Tu perfil no puede modificar valores financieros.'))return;
   if(!$('cfgProfesionalValores')) return;
   const p=(data.profesionales||[]).find(x=>x.id===$('cfgProfesionalValores').value);
   if(!p)return;
@@ -2498,6 +2509,7 @@ function cargarReglaConfig(){
 }
 
 function guardarReglaConfig(){
+  if(!exigirConfigAdministrativa('Tu perfil no puede modificar reglas administrativas de obras sociales.'))return;
   if(!$('cfgReglaOS') || !$('cfgTipoRegla')) return;
   setRegla($('cfgReglaOS').value,$('cfgTipoRegla').value);
   alert('Regla guardada');
@@ -2564,7 +2576,7 @@ function renderUsuariosConfig(){
   }
 }
 function agregarUsuarioSistema(){
-  if(!puedeGestionarConfig()){alert('Tu perfil no puede crear usuarios.');return;}
+  if(!exigirConfigAdministrativa('Tu perfil no puede crear usuarios ni modificar permisos.'))return;
   asegurarUsuariosConfig();
   const usuario=usuarioLoginCorto($('usrUsuario')?.value||'');
   const nombre=($('usrNombre')?.value||'').trim();
@@ -2602,7 +2614,7 @@ function agregarUsuarioSistema(){
   alert('Usuario interno creado. Recordá: el usuario también debe existir en Supabase Auth con el mismo nombre antes de @cardiolink.local.');
 }
 function limpiarUsuariosDuplicados(){
-  if(!puedeGestionarConfig()){alert('Tu perfil no puede depurar usuarios.');return;}
+  if(!exigirConfigAdministrativa('Tu perfil no puede depurar usuarios ni permisos.'))return;
   asegurarUsuariosConfig();
   saveConfig();
   renderUsuariosConfig();
@@ -4746,6 +4758,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const card=document.createElement('div');
     card.className='config-bloques-card full-config-card';
     card.id='configBloquesPrestaciones297';
+    card.dataset.configGroupCard='prestaciones';
     card.innerHTML=`
       <h3>Bloques de prestaciones por perfil</h3>
       <p class="muted">Usá esto cuando entra un profesional nuevo. Elegís sus bloques y esas prestaciones aparecen en el desplegable principal y en los tildes de prestaciones adicionales.</p>
@@ -6175,7 +6188,12 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function profileAtt360(date=today360(), pid=currentProfileId360()){
     return allAtt360().filter(a=>a&&a.fecha===date&&(pid==='general'||!pid||a.profesionalId===pid||a.profesional===profName360(pid)));
   }
-  function isPending360(a){return !!(a&&(!a.estudioInformado||!a.estudioImpreso||a.pendienteEnvio||a.pendienteEntrega||a.bonoPendiente||a.autorizacionPendiente));}
+  function pendingTypes360(a){
+    try{if(typeof window.pendientesDeAtencion383==='function')return window.pendientesDeAtencion383(a)}catch(e){}
+    return a&&(!a.estudioInformado||!a.estudioImpreso||a.pendienteEnvio||a.pendienteEntrega||a.bonoPendiente||a.autorizacionPendiente)?['legacy']:[];
+  }
+  function isPending360(a){return pendingTypes360(a).length>0;}
+  function isRealizedProduction360(a){return !['ausente','cancelado'].includes(norm360(a?.estadoTurno||a?.estado));}
   function prestationCounts360(list){const c={};list.forEach(a=>{const k=String(a.prestacion||'Sin prestación').trim()||'Sin prestación';c[k]=(c[k]||0)+1;});return Object.entries(c).sort((a,b)=>b[1]-a[1]);}
   function firstName360(n){const s=String(n||'').replace(/^Dr\.?\s*/i,'').replace(/^Dra\.?\s*/i,'').trim();return s||'Usuario';}
   function welcomeTitle360(u){
@@ -6215,12 +6233,12 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function closeWelcome360(apply=true){const modal=$360('welcomeModal360');if(!modal)return;if(apply){const sel=$360('welcomePerfil360');if(sel&&!$360('welcomePerfilWrap360')?.classList.contains('hidden')&&sel.value){const pa=$360('perfilActivo');if(pa){pa.value=sel.value;pa.dispatchEvent(new Event('change',{bubbles:true}));}}window.__welcomeShown371=true;}modal.classList.add('hidden');renderAdmin360();}
 
   function pendingBreakdown360(list){return [
-    ['Falta informe',list.filter(a=>!a.estudioInformado).length,'informe'],
-    ['Falta copia',list.filter(a=>!a.copiaEstudioImpresa&&!a.estudioImpreso).length,'copia'],
-    ['Falta enviar/imprimir',list.filter(a=>a.pendienteEnvio||a.pendienteEntrega||(!a.estudioImpreso&&!a.estudioEnviadoMail&&!a.estudioEnviadoWS)).length,'envio'],
-    ['Falta firma/bono',list.filter(a=>a.bonoPendiente||a.bonoEstudioFirmado===false||a.bonoConsultaFirmado===false).length,'firma']
+    ['Falta informe',list.filter(a=>pendingTypes360(a).includes('informe')).length,'informe'],
+    ['Falta copia',list.filter(a=>pendingTypes360(a).includes('copia')).length,'copia'],
+    ['Falta enviar/imprimir',list.filter(a=>pendingTypes360(a).includes('entrega')).length,'entrega'],
+    ['Falta firma/bono',list.filter(a=>pendingTypes360(a).includes('firma')).length,'firma']
   ];}
-  function openPendingFilter360(tipo){try{showSection('listado');modoPendientesGlobal=true;const sel=$360('filtroPendienteTipo300')||$360('filtroPendienteTipo');if(sel){sel.value=tipo;sel.dispatchEvent(new Event('change',{bubbles:true}));}renderTabla?.();}catch(e){console.warn(e)}}
+  function openPendingFilter360(tipo){try{showSection('pendientes383');document.querySelector(`#pendientesTabs383 [data-pendtab="${tipo}"]`)?.click();}catch(e){console.warn(e)}}
   window.openPendingFilter360=openPendingFilter360;
   function computeNotifications360(){
     const pid=currentProfileId360();const own=allAtt360().filter(a=>a&&(pid==='general'||a.profesionalId===pid||a.profesional===profName360(pid)));const pend=own.filter(isPending360);
@@ -6239,7 +6257,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     if($360('notificationsList360'))$360('notificationsList360').innerHTML=html;if($360('notificacionesDashboard360'))$360('notificacionesDashboard360').innerHTML=html;
   }
   function renderDashboard360(){const list=profileAtt360();const board=$360('tableroPendientes360');if(board){board.innerHTML=pendingBreakdown360(list).map(([t,n,k])=>`<button type="button" onclick="openPendingFilter360('${k}')"><span>${esc360(t)}</span><strong>${n}</strong></button>`).join('');}
-    const prod=$360('produccionHoy360');if(prod){const cnt=prestationCounts360(list);prod.innerHTML=cnt.length?cnt.map(([k,v])=>`<div><span>${esc360(k)}</span><strong>${v}</strong></div>`).join(''):'<p class="muted">Sin prestaciones asignadas hoy.</p>';}
+    const prod=$360('produccionHoy360');if(prod){const cnt=prestationCounts360(list.filter(isRealizedProduction360));prod.innerHTML=cnt.length?cnt.map(([k,v])=>`<div><span>${esc360(k)}</span><strong>${v}</strong></div>`).join(''):'<p class="muted">Sin prestaciones realizadas hoy.</p>';}
     renderNotifications360();applyDashboardPrefs360();}
   function dashboardPrefsKey360(){return `cl_dashboard_${usuarioActualNombreCorto?.()||'local'}`}
   function getDashboardPrefs360(){try{return JSON.parse(localStorage.getItem(dashboardPrefsKey360())||'null')||{kpis:true,resumen:true,pendientes:true,notificaciones:true,produccion:true}}catch{return {kpis:true,resumen:true,pendientes:true,notificaciones:true,produccion:true}}}
@@ -6259,8 +6277,8 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function shiftAgenda360(dir){const inp=$360('agendaFecha');if(!inp)return;const d=new Date((inp.value||today360())+'T12:00:00');const vista=$360('agendaVista')?.value||'tabla';d.setDate(d.getDate()+dir*(vista==='mes'?30:vista==='semana'?7:1));inp.value=d.toISOString().slice(0,10);renderAgenda?.();}
   function enhanceMonthClick360(){document.querySelectorAll('.month-cell320').forEach(cell=>{if(cell.dataset.nav360)return;cell.dataset.nav360='1';cell.style.cursor='pointer';cell.addEventListener('click',e=>{if(e.target.closest('button,.mini-turno320'))return;const h=cell.querySelector('h3')?.textContent||'';const n=(h.match(/(\d+)\s*$/)||[])[1];if(!n)return;const base=new Date(($360('agendaFecha')?.value||today360())+'T12:00:00');base.setDate(Number(n));$360('agendaFecha').value=base.toISOString().slice(0,10);$360('agendaVista').value='tabla';renderAgenda?.();});});}
 
-  function reorganizeConfig360(){const grid=document.querySelector('#config .config-grid');if(!grid)return;[...grid.children].forEach(card=>{if(card.dataset.configGroupCard==='sistema'){card.dataset.configGroup360='sistema';return;}const h=norm360(card.querySelector('h3')?.textContent||'');let g='mantenimiento';if(h.includes('profesional'))g='profesionales';if(h.includes('prestacion')||h.includes('bloque'))g='prestaciones';if(h.includes('obra social')||h.includes('regla')||h.includes('valor'))g='coberturas';if(h.includes('usuario')||h.includes('rol'))g='usuarios';if(h.includes('backup')||h.includes('mantenimiento')||h.includes('duplicado'))g='mantenimiento';card.dataset.configGroup360=g;});}
-  function filterConfig360(group){document.querySelectorAll('#config .config-grid > *').forEach(x=>x.classList.toggle('config-hidden-360',group!=='todos'&&x.dataset.configGroup360!==group));document.querySelectorAll('[data-config-group]').forEach(b=>b.classList.toggle('active',b.dataset.configGroup===group));}
+  function reorganizeConfig360(){const grid=document.querySelector('#config .config-grid');if(!grid)return;[...grid.children].forEach(card=>{const explicit=card.dataset.configGroupCard;if(explicit){card.dataset.configGroup360=explicit;return;}const h=norm360(card.querySelector('h3')?.textContent||'');let g='mantenimiento';if(h.includes('profesional'))g='profesionales';if(h.includes('prestacion')||h.includes('bloque'))g='prestaciones';if(h.includes('obra social')||h.includes('regla')||h.includes('valor'))g='coberturas';if(h.includes('usuario')||h.includes('rol'))g='usuarios';if(h.includes('backup')||h.includes('mantenimiento')||h.includes('duplicado'))g='mantenimiento';card.dataset.configGroup360=g;});}
+  function filterConfig360(group){reorganizeConfig360();document.querySelectorAll('#config .config-grid > *').forEach(x=>x.classList.toggle('config-hidden-360',group!=='todos'&&x.dataset.configGroup360!==group));document.querySelectorAll('[data-config-group]').forEach(b=>b.classList.toggle('active',b.dataset.configGroup===group));}
 
   function enrichStats360(){const card=document.querySelector('#estadisticas .estadisticas-card');if(!card)return;let box=$360('statsEnriched360');if(!box){box=document.createElement('div');box.id='statsEnriched360';box.className='stats-enriched-360';card.appendChild(box);}const desde=$360('statsDesde')?.value||'0000-00-00',hasta=$360('statsHasta')?.value||'9999-99-99',pid=$360('statsProfesional')?.value||'general';const list=allAtt360().filter(a=>a&&a.fecha>=desde&&a.fecha<=hasta&&(pid==='general'||!pid||a.profesionalId===pid||a.profesional===profName360(pid)));
     const os={},prod={},prof={};list.forEach(a=>{const o=a.obraSocial||a.coberturaAtencion||'Incompleto';os[o]=(os[o]||0)+1;const pr=a.prestacion||'Sin prestación';prod[pr]=(prod[pr]||0)+1;const pf=a.profesional||'Sin profesional';prof[pf]=(prof[pf]||0)+1;});
@@ -6303,35 +6321,12 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 /* ===== v3.7.0 - bienvenida real, permisos y consistencia dashboard ===== */
 (function(){
   function id(x){return document.getElementById(x)}
-  function all(){try{return Array.isArray(atenciones)?atenciones:[]}catch(e){return []}}
-  function profileName(pid){try{return (data.profesionales||[]).find(p=>p.id===pid)?.nombre||pid}catch(e){return pid}}
-  function currentList(){
-    const pid=id('perfilActivo')?.value||'general';
-    return all().filter(a=>a&&(pid==='general'||!pid||a.profesionalId===pid||a.profesional===profileName(pid)));
-  }
-  function isBad(a){try{return evaluarEstado(a).cls==='bad'}catch(e){return false}}
-  function refreshQuickPending362(){
-    const list=currentList();
-    const bad=list.filter(isBad);
-    const stat=id('statPendientes');if(stat)stat.textContent=bad.length;
-    const board=id('tableroPendientes360');if(!board)return;
-    const firma=bad.filter(a=>(a.bonoConsulta||a.bonoEstudio)&&!a.bonoFirmado).length;
-    const copia=bad.filter(a=>(a.bonoEstudio||a.requiereCopiaImpresa)&&!a.copiaImpresa).length;
-    const informe=list.filter(a=>a.requiereInforme===true&&!a.estudioInformado).length;
-    const envio=list.filter(a=>a.pendienteEnvio||a.pendienteEntrega).length;
-    const rows=[['Falta informe',informe,'informe'],['Falta copia',copia,'copia'],['Falta enviar/imprimir',envio,'envio'],['Falta firma/bono',firma,'firma']];
-    board.innerHTML=rows.map(r=>`<button type="button" onclick="openPendingFilter360('${r[2]}')"><span>${r[0]}</span><strong>${r[1]}</strong></button>`).join('');
-  }
   const oldPerm=typeof aplicarPermisosUI==='function'?aplicarPermisosUI:null;
   if(oldPerm){window.aplicarPermisosUI=aplicarPermisosUI=function(){oldPerm.apply(this,arguments);const u=perfilUsuarioActual();document.querySelectorAll('.nav[data-section="caja"]').forEach(b=>b.classList.toggle('hidden-permission',!(esMatiasDuenio()||u.rol==='admin')));};}
-  const oldStats=typeof renderStats==='function'?renderStats:null;
-  if(oldStats){window.renderStats=renderStats=function(){const r=oldStats.apply(this,arguments);setTimeout(refreshQuickPending362,0);return r;};}
   document.addEventListener('DOMContentLoaded',()=>{
     document.body.classList.add('loading-362');
-    setTimeout(()=>{document.body.classList.remove('loading-362');document.body.classList.add('app-ready-360');const b=id('btnCerrarSesion');if(b)b.style.visibility='visible';refreshQuickPending362();},1400);
+    setTimeout(()=>{document.body.classList.remove('loading-362');document.body.classList.add('app-ready-360');const b=id('btnCerrarSesion');if(b)b.style.visibility='visible';},1400);
   });
-  document.addEventListener('change',e=>{if(e.target?.id==='perfilActivo')setTimeout(refreshQuickPending362,100)});
-  setInterval(refreshQuickPending362,2500);
 })();
 
 
@@ -6464,7 +6459,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
   function reportHC380(){
     const ps=Array.isArray(data?.pacientes)?data.pacientes:[];
-    const ats=Array.isArray(window.atenciones)?window.atenciones:[];
+    const ats=Array.isArray(atenciones)?atenciones:[];
     const pSinId=ps.filter(p=>!String(p.id||'').trim()).length;
     const aSinId=ats.filter(a=>!String(a.id||'').trim()).length;
     const aSinPaciente=ats.filter(a=>!String(a.pacienteId||'').trim()).length;
@@ -6487,7 +6482,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
   async function prepararHC380(){
     const ps=Array.isArray(data?.pacientes)?data.pacientes:[];
-    const ats=Array.isArray(window.atenciones)?window.atenciones:[];
+    const ats=Array.isArray(atenciones)?atenciones:[];
     let np=0,na=0,nv=0,nprof=0;
     ps.forEach(p=>{ if(!p.id){p.id='pac_'+Date.now().toString(36)+'_'+Math.random().toString(36).slice(2,8);np++;} });
     ats.forEach(a=>{
@@ -6549,7 +6544,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   };
 
   function patients382(){ return Array.isArray(data?.pacientes)?data.pacientes:[]; }
-  function attentions382(){ return Array.isArray(window.atenciones)?window.atenciones:[]; }
+  function attentions382(){ return Array.isArray(atenciones)?atenciones:[]; }
   function isBadCoverage382(v){
     const s=lower(v);
     if(!s)return true;
@@ -6705,6 +6700,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 (function(){
   const V='383';
   let currentTab='todos';
+  let onlyOverdue383=false;
   let undo383=null;
   const norm=s=>String(s||'').trim().toLowerCase();
   const isStudy=a=>{try{return typeof esRegistroDeEstudio==='function'?esRegistroDeEstudio(a):!norm(a.prestacion).includes('consulta')}catch{return !norm(a.prestacion).includes('consulta')}};
@@ -6736,6 +6732,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function base383(){try{return typeof atencionesPerfil==='function'?atencionesPerfil().filter(a=>!(typeof esMensajeInterno==='function'&&esMensajeInterno(a))):atenciones}catch{return atenciones||[]}}
   function labels383(k){return {firma:'Falta firma / bono',copia:'Falta copia facturación',informe:'Falta informe',entrega:'Falta imprimir / enviar',retiro:'Pendiente de retiro',autorizacion:'Falta autorización'}[k]||k}
   function counts383(list){const c={todos:0,firma:0,copia:0,informe:0,entrega:0,retiro:0,autorizacion:0};list.forEach(a=>{const p=pendientes383(a);if(p.length)c.todos++;p.forEach(k=>c[k]++)});return c}
+  function overdue383(a){try{return typeof diasAntiguedadPendiente411C==='function'&&diasAntiguedadPendiente411C(a)>7}catch(e){return false}}
   function esc383(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
   function renderPendientes383(){
     const box=document.getElementById('pendientesLista383');if(!box)return;
@@ -6744,12 +6741,15 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     document.querySelectorAll('#pendientesTabs383 [data-pendtab]').forEach(b=>{const k=b.dataset.pendtab;b.classList.toggle('active',k===currentTab);const s=b.querySelector('span');if(s)s.textContent=c[k]||0});
     const nav=document.getElementById('badgePendientesNav383');if(nav){nav.textContent=c.todos;nav.classList.toggle('zero',!c.todos)}
     if(currentTab!=='todos')list=list.filter(a=>pendientes383(a).includes(currentTab));
+    if(onlyOverdue383)list=list.filter(overdue383);
     const q=norm(document.getElementById('pendBuscar383')?.value);if(q)list=list.filter(a=>norm([a.paciente,a.dni,a.prestacion,a.obraSocial,a.profesional].join(' ')).includes(q));
     const desc=document.getElementById('pendOrden383')?.value==='desc';list.sort((a,b)=>(String(a.fecha||'').localeCompare(String(b.fecha||'')))*(desc?-1:1));
-    if(!list.length){box.innerHTML='<div class="empty383">No hay pendientes en esta categoría.</div>';return}
-    box.innerHTML=list.map(a=>{const ps=pendientes383(a);return `<article class="pend-card383"><div class="pend-main383"><div class="pend-date383">${esc383(typeof formatFecha==='function'?formatFecha(a.fecha):a.fecha)}${a.horaInicio?' · '+esc383(a.horaInicio):''}</div><h3>${esc383(a.paciente||'Paciente')}</h3><p>${esc383(a.prestacion||'')} · ${esc383(a.profesional||'')}</p><p class="muted">${esc383(a.obraSocial||'Sin cobertura')} · DNI ${esc383(a.dni||'s/d')}</p></div><div class="pend-tags383">${ps.map(k=>`<button type="button" class="pend-tag383 p-${k}" onclick="resolverPendiente383('${esc383(a.id)}','${k}')">${esc383(labels383(k))}</button>`).join('')}<button type="button" class="secondary open383" onclick="abrirFichaPacienteDesdePendiente411C('${esc383(a.id)}')">Ficha paciente</button></div></article>`}).join('');
+    if(!list.length){box.innerHTML=`<div class="empty383">${onlyOverdue383?'No hay pendientes vencidos de más de 7 días.':'No hay pendientes en esta categoría.'}</div>`;return}
+    const notice=onlyOverdue383?'<div class="empty383">Mostrando pendientes vencidos de más de 7 días. Elegí una categoría para volver a la vista completa.</div>':'';
+    box.innerHTML=notice+list.map(a=>{const ps=pendientes383(a);return `<article class="pend-card383"><div class="pend-main383"><div class="pend-date383">${esc383(typeof formatFecha==='function'?formatFecha(a.fecha):a.fecha)}${a.horaInicio?' · '+esc383(a.horaInicio):''}</div><h3>${esc383(a.paciente||'Paciente')}</h3><p>${esc383(a.prestacion||'')} · ${esc383(a.profesional||'')}</p><p class="muted">${esc383(a.obraSocial||'Sin cobertura')} · DNI ${esc383(a.dni||'s/d')}</p></div><div class="pend-tags383">${ps.map(k=>`<button type="button" class="pend-tag383 p-${k}" onclick="resolverPendiente383('${esc383(a.id)}','${k}')">${esc383(labels383(k))}</button>`).join('')}<button type="button" class="secondary open383" onclick="abrirFichaPacienteDesdePendiente411C('${esc383(a.id)}')">Ficha paciente</button></div></article>`}).join('');
   }
   window.renderPendientes383=renderPendientes383;
+  window.mostrarPendientesVencidos383=function(){currentTab='todos';onlyOverdue383=true;const search=document.getElementById('pendBuscar383');if(search)search.value='';renderPendientes383();};
   function audit383(a,k){a.auditoriaPendientes=Array.isArray(a.auditoriaPendientes)?a.auditoriaPendientes:[];let u={};try{u=perfilUsuarioActual()||{}}catch{}a.auditoriaPendientes.push({tipo:k,accion:'resuelto',fecha:new Date().toISOString(),usuario:u.nombre||u.usuario||'usuario'});}
   function resolverPendiente383(id,k){
     const a=(atenciones||[]).find(x=>String(x.id)===String(id));if(!a)return;
@@ -6778,14 +6778,14 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   (atenciones||[]).forEach(applyNA383);
 
   const oldShow=typeof showSection==='function'?showSection:null;
-  if(oldShow&&!oldShow.__v383){const w=function(id){if(id==='pendientes383'){document.querySelectorAll('.section').forEach(s=>s.classList.remove('visible'));document.getElementById(id)?.classList.add('visible');document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.section===id));if(document.getElementById('tituloBienvenida'))document.getElementById('tituloBienvenida').textContent='Pendientes';if(document.getElementById('subtituloPerfil'))document.getElementById('subtituloPerfil').textContent='Bandeja operativa por fecha y tipo';renderPendientes383();return}return oldShow.apply(this,arguments)};w.__v383=true;window.showSection=showSection=w;}
+  if(oldShow&&!oldShow.__v383){const w=function(id){if(id==='pendientes383'){onlyOverdue383=false;document.querySelectorAll('.section').forEach(s=>s.classList.remove('visible'));document.getElementById(id)?.classList.add('visible');document.querySelectorAll('.nav').forEach(b=>b.classList.toggle('active',b.dataset.section===id));if(document.getElementById('tituloBienvenida'))document.getElementById('tituloBienvenida').textContent='Pendientes';if(document.getElementById('subtituloPerfil'))document.getElementById('subtituloPerfil').textContent='Bandeja operativa por fecha y tipo';renderPendientes383();return}return oldShow.apply(this,arguments)};w.__v383=true;window.showSection=showSection=w;}
 
   // Clicks de calidad de datos: abre listado editable en modal.
   function qualityPatients383(kind){const ps=(data.pacientes||[]).filter(p=>{if(kind==='dni')return !String(p.dni||'').trim();if(kind==='cobertura')return !String(p.obraSocial||p.cobertura||'').trim()||norm(p.obraSocial||p.cobertura).includes('matias anchorena');if(kind==='contacto')return !String(p.telefono||'').trim()&&!String(p.email||'').trim()&&!String(p.telefonoContacto||'').trim()&&!String(p.emailContacto||'').trim();if(kind==='nacimiento')return !String(p.fechaNacimiento||'').trim();return false});let m=document.getElementById('qualityModal383');if(!m){m=document.createElement('div');m.id='qualityModal383';m.className='modal-overlay-360 hidden';document.body.appendChild(m)}m.innerHTML=`<div class="quality-card383"><button class="modal-close-360" onclick="document.getElementById('qualityModal383').classList.add('hidden')">×</button><h2>Pacientes para completar</h2><p>${ps.length} registro(s)</p><div class="quality-list383">${ps.map(p=>`<div><strong>${esc383(p.apellidoNombre||p.nombreCompleto||p.nombre||'Paciente')}</strong><span>DNI ${esc383(p.dni||'s/d')} · ${esc383(p.telefono||'sin contacto')}</span><button class="secondary" onclick="document.getElementById('qualityModal383').classList.add('hidden');editarPacienteGlobal350('${esc383(typeof pacienteClave==='function'?pacienteClave(p):(p.id||p.dni))}')">Editar</button></div>`).join('')||'<p>No hay registros.</p>'}</div></div>`;m.classList.remove('hidden')}
   window.qualityPatients383=qualityPatients383;
 
   function bind383(){
-    document.querySelectorAll('#pendientesTabs383 [data-pendtab]').forEach(b=>b.addEventListener('click',()=>{currentTab=b.dataset.pendtab;renderPendientes383()}));
+    document.querySelectorAll('#pendientesTabs383 [data-pendtab]').forEach(b=>b.addEventListener('click',()=>{currentTab=b.dataset.pendtab;onlyOverdue383=false;renderPendientes383()}));
     document.getElementById('btnRefreshPend383')?.addEventListener('click',renderPendientes383);
     document.getElementById('pendOrden383')?.addEventListener('change',renderPendientes383);
     document.getElementById('pendBuscar383')?.addEventListener('input',renderPendientes383);
@@ -7207,7 +7207,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
   function injectCards(){
     const grid=document.querySelector('#config .config-grid'); if(!grid||document.getElementById('cfgRoles310'))return;
-    const wrap=document.createElement('div'); wrap.id='cfgRoles310'; wrap.className='config-smart-card-310'; wrap.dataset.configGroupCard='usuarios';
+    const wrap=document.createElement('div'); wrap.id='cfgRoles310'; wrap.className='config-smart-card-310'; wrap.dataset.configGroupCard='usuarios';wrap.dataset.configAccess='admin';wrap.classList.toggle('hidden-permission',!puedeGestionarConfigAdministrativa());
     wrap.innerHTML=`<h3>Roles editables</h3><p class="muted">El rol define permisos. Podés crear nuevos roles tomando como base Administrador, Médico o Secretaría.</p><div class="inline-form"><input id="nuevoRol310" placeholder="Nombre del rol"><select id="baseRol310"><option value="medico">Base Médico</option><option value="secretaria">Base Secretaría</option><option value="admin">Base Administrador</option></select><button class="primary" id="addRol310" type="button">Agregar</button></div><ul id="listaRoles310"></ul>`;
     grid.insertBefore(wrap,grid.firstChild);
 
@@ -7245,7 +7245,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     p.area=document.getElementById('cfgProfArea310').value.trim();p.activo=document.getElementById('cfgProfActivo310').checked;p.especialidadIds=selectedSpecialties();
     saveConfig();refreshSelects();renderConfig();alert('Perfil profesional guardado.');
   }
-  function addRole(){const input=document.getElementById('nuevoRol310');const nombre=input.value.trim();if(!nombre)return;let id=slug(nombre);if(data.roles.some(r=>r.id===id))id+='_'+Date.now();data.roles.push({id,nombre,baseRole:document.getElementById('baseRol310').value,activo:true});input.value='';saveConfig();renderSmartConfig();}
+  function addRole(){if(!exigirConfigAdministrativa('Tu perfil no puede crear roles ni permisos.'))return;const input=document.getElementById('nuevoRol310');const nombre=input.value.trim();if(!nombre)return;let id=slug(nombre);if(data.roles.some(r=>r.id===id))id+='_'+Date.now();data.roles.push({id,nombre,baseRole:document.getElementById('baseRol310').value,activo:true});input.value='';saveConfig();renderSmartConfig();}
   function addSpecialty(){const input=document.getElementById('nuevaEspecialidad310');const nombre=input.value.trim();if(!nombre)return;const id=slug(nombre);if(!data.especialidades.some(e=>e.id===id))data.especialidades.push({id,nombre,activo:true});input.value='';saveConfig();renderSmartConfig();}
 
   const oldRender=window.renderConfig;
@@ -7255,7 +7255,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     if(e.target.id==='addRol310')addRole();
     if(e.target.id==='addEspecialidad310')addSpecialty();
     if(e.target.id==='guardarPerfil310')saveProfessional();
-    const dr=e.target.closest('[data-del-role310]');if(dr){const id=dr.dataset.delRole310;if(confirm('¿Borrar este rol?')){data.roles=data.roles.filter(r=>r.id!==id);saveConfig();renderSmartConfig();}}
+    const dr=e.target.closest('[data-del-role310]');if(dr){if(!exigirConfigAdministrativa('Tu perfil no puede borrar roles ni permisos.'))return;const id=dr.dataset.delRole310;if(confirm('¿Borrar este rol?')){data.roles=data.roles.filter(r=>r.id!==id);saveConfig();renderSmartConfig();}}
     const de=e.target.closest('[data-del-esp310]');if(de){const id=de.dataset.delEsp310;if(confirm('¿Borrar esta especialidad?')){data.especialidades=data.especialidades.filter(x=>x.id!==id);(data.profesionales||[]).forEach(p=>p.especialidadIds=(p.especialidadIds||[]).filter(x=>x!==id));saveConfig();renderSmartConfig();}}
   });
   document.addEventListener('change',e=>{if(e.target.id==='cfgProfEditar310')loadProfessional();});
@@ -7332,6 +7332,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     document.querySelectorAll('[data-edit-user3101]').forEach(x=>x.classList.remove('selected-user-3101'));
   }
   function loadUserForm3101(id){
+    if(!exigirConfigAdministrativa('Tu perfil no puede consultar usuarios ni permisos.'))return;
     const u=(data.usuarios||[]).find(x=>String(x.id)===String(id));if(!u)return;
     editingUserId3101=String(u.id);
     if(byId('usrNombre'))byId('usrNombre').value=u.nombre||'';
@@ -7455,9 +7456,13 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
   function injectConvenios3102(){
     const grid=document.querySelector('#config .config-grid');
+    if(!puedeGestionarConfigAdministrativa()){
+      ['cfgConvenios3102','cfgAranceles3102','cfgProduccionEstimada3102'].forEach(id=>$3102(id)?.remove());
+      return;
+    }
     if(!grid||$3102('cfgConvenios3102'))return;
     const card=document.createElement('div');
-    card.id='cfgConvenios3102';card.className='config-smart-card-310 full-config-card';card.dataset.configGroupCard='coberturas';
+    card.id='cfgConvenios3102';card.className='config-smart-card-310 full-config-card';card.dataset.configGroupCard='coberturas';card.dataset.configAccess='admin';
     card.innerHTML=`<h3>Convenios y destinos de facturación</h3><p class="muted">Conserva la lógica actual de “Factura Rogelio”, pero permite cambiarla cuando cambien los convenios, sin modificar código.</p>
       <div class="convenio-editor-3102">
         <label>Obra social / prepaga<select id="convOS3102"></select></label>
@@ -7477,14 +7482,14 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     grid.appendChild(card);
 
     const ar=document.createElement('div');
-    ar.id='cfgAranceles3102';ar.className='config-smart-card-310 full-config-card';ar.dataset.configGroupCard='coberturas';
+    ar.id='cfgAranceles3102';ar.className='config-smart-card-310 full-config-card';ar.dataset.configGroupCard='coberturas';ar.dataset.configAccess='admin';
     ar.innerHTML=`<h3>Aranceles estimados por convenio</h3><p class="muted">Carga opcional. El valor vigente se fija automáticamente en cada nueva atención, pero los totales económicos solo se muestran cuando Matías o un Administrador presionan “Calcular estimación”.</p>
       <div class="arancel-editor-3102"><label>Convenio<select id="arOS3102"></select></label><label>Prestación<select id="arPrest3102"></select></label><label>Valor esperado<input id="arValor3102" type="number" min="0" step="1" placeholder="0"></label><label>Vigente desde<input id="arVigencia3102" type="date"></label><button class="primary" id="agregarArancel3102" type="button">Agregar arancel</button></div><div id="listaAranceles3102" class="aranceles-list-3102"></div>`;
     grid.appendChild(ar);
 
     if(puedeVerEconomico3102Final()&&!$3102('cfgProduccionEstimada3102')){
       const prod=document.createElement('div');
-      prod.id='cfgProduccionEstimada3102';prod.className='config-smart-card-310 full-config-card';prod.dataset.configGroupCard='coberturas';
+      prod.id='cfgProduccionEstimada3102';prod.className='config-smart-card-310 full-config-card';prod.dataset.configGroupCard='coberturas';prod.dataset.configAccess='admin';
       prod.innerHTML=`<h3>Producción estimada</h3><p class="muted">Los importes permanecen ocultos hasta que presiones <strong>Calcular estimación</strong>. Solo Matías y los perfiles Administrador pueden acceder.</p>
         <div class="estimacion-editor-3102">
           <label>Desde<input id="estDesde3102" type="date"></label>
@@ -7576,6 +7581,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function ocultarEstimacion3102Final(){const out=$3102('resultadoEstimacion3102');if(out){out.innerHTML='<p class="muted">Seleccioná el período y presioná Calcular estimación.</p>';out.classList.add('hidden');}}
 
   function renderConvenios3102(){
+    if(!puedeGestionarConfigAdministrativa()){injectConvenios3102();return;}
     ensureConvenios3102();injectConvenios3102();
     const sel=$3102('convOS3102');
     if(sel){const old=sel.value;sel.innerHTML=osOptions3102(old||data.conveniosFacturacion[0]?.obraSocial);if(old&&[...sel.options].some(o=>o.value===old))sel.value=old;loadConvenio3102();}
@@ -7586,6 +7592,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const ars=$3102('listaAranceles3102');if(ars)ars.innerHTML=(data.arancelesConvenios||[]).slice().sort((a,b)=>(b.vigenteDesde||'').localeCompare(a.vigenteDesde||'')).map(a=>`<div class="arancel-row-3102"><span><strong>${esc3102(a.obraSocial)}</strong> · ${esc3102(a.prestacion)}</span><span>${typeof money==='function'?money(a.valor):'$ '+Number(a.valor||0).toLocaleString('es-AR')}</span><span>desde ${esc3102(a.vigenteDesde||'s/f')}</span><button class="small-btn" type="button" data-del-arancel3102="${esc3102(a.id)}">Borrar</button></div>`).join('')||'<p class="muted">Todavía no hay aranceles cargados.</p>';    llenarFiltrosEstimacion3102Final();
   }
   function saveConvenio3102(){
+    if(!exigirConfigAdministrativa('Tu perfil no puede modificar convenios administrativos.'))return;
     const os=$3102('convOS3102').value; if(!os)return;
     let c=convenio3102(os); if(!c){c={obraSocial:os};data.conveniosFacturacion.push(c)}
     c.activo=$3102('convActivo3102').checked;c.regla=$3102('convRegla3102').value;
@@ -7597,12 +7604,14 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     saveConfig();try{guardarConfigEnSupabase298?.()}catch(e){};renderConvenios3102();refreshSelects?.();alert('Convenio guardado. Las nuevas atenciones usarán esta configuración.');
   }
   function newConvenio3102(){
+    if(!exigirConfigAdministrativa('Tu perfil no puede crear convenios administrativos.'))return;
     const nombre=prompt('Nombre de la nueva obra social, prepaga o convenio:');if(!nombre)return;
     if(!(data.obrasSociales||[]).includes(nombre))data.obrasSociales.push(nombre);
     data.conveniosFacturacion.push({obraSocial:nombre,activo:true,regla:'GENERAL_CONSULTA_EXTRA',destinoConsulta:'Matías',destinoEstudio:'Matías',facturadorConsulta:'Matías',facturadorEstudio:'Matías',bonoConsulta:true,bonoEstudio:true,firmaRequerida:true,copiaRequerida:true,incluirFacturaRogelio:false});
     saveConfig();renderConvenios3102();$3102('convOS3102').value=nombre;loadConvenio3102();
   }
   function addArancel3102(){
+    if(!exigirConfigAdministrativa('Tu perfil no puede modificar aranceles.'))return;
     const obraSocial=$3102('arOS3102').value,prestacion=$3102('arPrest3102').value,valor=Number($3102('arValor3102').value||0),vigenteDesde=$3102('arVigencia3102').value;
     if(!obraSocial||!prestacion||!vigenteDesde){alert('Seleccioná convenio, prestación y fecha de vigencia.');return}
     data.arancelesConvenios.push({id:'ar_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),obraSocial,prestacion,valor,vigenteDesde,activo:true});
@@ -7645,7 +7654,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     if(e.target.id==='agregarArancel3102')addArancel3102();
     if(e.target.id==='calcularEstimacion3102')calcularEstimacion3102Final();
     if(e.target.id==='limpiarEstimacion3102')ocultarEstimacion3102Final();
-    const del=e.target.closest?.('[data-del-arancel3102]');if(del&&confirm('¿Borrar este arancel?')){data.arancelesConvenios=data.arancelesConvenios.filter(a=>a.id!==del.dataset.delArancel3102);saveConfig();renderConvenios3102();}
+    const del=e.target.closest?.('[data-del-arancel3102]');if(del){if(!exigirConfigAdministrativa('Tu perfil no puede borrar aranceles.'))return;if(confirm('¿Borrar este arancel?')){data.arancelesConvenios=data.arancelesConvenios.filter(a=>a.id!==del.dataset.delArancel3102);saveConfig();renderConvenios3102();}}
   });
   function version3102(){document.title=`CardioLink Admin v${VERSION_3102}`;document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(el=>el.textContent=`v${VERSION_3102}`);document.querySelectorAll('.login-meta').forEach(el=>el.textContent=`Versión ${VERSION_3102} · 2026`);}
   function boot3102(){ensureConvenios3102();saveConfig();injectConvenios3102();renderConvenios3102();version3102();}
@@ -8098,6 +8107,7 @@ function patientInfoTextHC(p,coverage){
     try{if(typeof esMatiasDuenio==='function'&&esMatiasDuenio())return true;if(typeof esAdminComun==='function'&&esAdminComun())return true;if(typeof esMedico==='function'&&esMedico())return true;}catch(e){}
     const u=currentUser402();const r=norm402(u.rolId||u.rol||u.baseRole||'');return r.includes('medico')||r.includes('director')||r.includes('duenio')||r.includes('admin');
   }
+  function canAdminConfig402(){try{return !!(esMatiasDuenio?.()||esAdminComun?.())}catch(e){return false}}
   function currentProfessionalId402(){
     try{return typeof profesionalIdUsuarioActual==='function'?profesionalIdUsuarioActual():(currentUser402().profesionalId||'');}catch(e){return currentUser402().profesionalId||'';}
   }
@@ -8306,9 +8316,10 @@ function patientInfoTextHC(p,coverage){
   function ruleOpts402(value){return opts402(['SIN_REGLA','GENERAL_CONSULTA_EXTRA','IOMA_OSPRERA','OSDE','SANCOR_PREVENCION','INTEGRAL','TODO_MATIAS','COBERTURA_COBRA_PARTICULAR'],value);}
   function injectBilling402(){
     const grid=document.querySelector('#config .config-grid');if(!grid)return;
+    if(!canAdminConfig402()){$402('cfgConveniosProfesional402')?.remove();return;}
     [$402('cfgConvenios3102'),$402('cfgAranceles3102')].forEach(x=>{if(x)x.style.display='none';});
     let card=$402('cfgConveniosProfesional402');
-    if(!card){card=document.createElement('div');card.id='cfgConveniosProfesional402';card.className='config-smart-card-310 full-config-card';card.dataset.configGroupCard='coberturas';card.innerHTML=`<h3>Convenios y aranceles por profesional</h3><p class="muted">Cada profesional tiene su propia configuración. El catálogo global solo ofrece nombres de coberturas: no copia reglas ni destinos de otro médico.</p><div class="professional-billing-head-402"><label>Profesional que estás configurando<select id="billProf402"></select></label><label>Convenio a configurar<select id="billOS402"></select></label></div><div id="billProfileNotice404" class="billing-profile-notice-404"></div><div class="convenio-editor-3102"><label>Regla automática<select id="billRegla402"></select></label><label>Destino de consulta<select id="billDestConsulta402"></select></label><label>Destino del estudio<select id="billDestEstudio402"></select></label><label>Facturador de consulta<select id="billFactConsulta402"></select></label><label>Facturador del estudio<select id="billFactEstudio402"></select></label><label class="check-row-310"><input type="checkbox" id="billActivo402"> Habilitado: este profesional atiende este convenio</label><label class="check-row-310"><input type="checkbox" id="billBonoConsulta402"> Requiere bono de consulta</label><label class="check-row-310"><input type="checkbox" id="billBonoEstudio402"> Requiere bono de estudio</label><label class="check-row-310"><input type="checkbox" id="billFirma402"> Requiere firma</label><label class="check-row-310"><input type="checkbox" id="billCopia402"> Requiere copia para facturación</label><label class="check-row-310"><input type="checkbox" id="billRogelio402"> Incluir en Factura Rogelio</label><div class="config-actions-3102"><button class="primary" id="saveBillConv402" type="button">Guardar para este profesional</button><button class="secondary" id="newBillConv402" type="button">Nuevo convenio global</button></div></div><h4 id="billConfiguredTitle404">Convenios configurados</h4><p class="muted">Activo significa que el profesional lo atiende y sus reglas se aplican. Los deshabilitados quedan guardados, pero no intervienen en nuevas atenciones.</p><div id="billList402" class="convenios-list-3102"></div><hr><h4>Arancel del profesional seleccionado</h4><p class="muted" id="billArancelHelp404">Cada valor corresponde a una combinación exacta de profesional + convenio + prestación + fecha de vigencia.</p><div class="arancel-editor-3102 arancel-editor-prof-404"><label>Convenio al que aplica<select id="billArancelOS404"></select></label><label>Prestación<select id="billPrest402"></select></label><label>Valor convenio / particular<input id="billValor402" type="number" min="0" step="1" placeholder="0"></label><label>Copago paciente (si corresponde)<input id="billCopago402" type="number" min="0" step="1" placeholder="0"></label><label>Vigente desde<input id="billVigencia402" type="date"></label><button class="primary" id="saveBillArancel402" type="button">Agregar arancel</button></div><div class="arancel-table-head-404 arancel-head-fin411f"><span>Convenio y prestación</span><span>Valor convenio / particular</span><span>Copago</span><span>Vigencia</span><span></span></div><div id="billArancelList402" class="aranceles-list-3102"></div>`;const ref=$402('cfgProduccionEstimada3102');if(ref)grid.insertBefore(card,ref);else grid.appendChild(card);}
+    if(!card){card=document.createElement('div');card.id='cfgConveniosProfesional402';card.className='config-smart-card-310 full-config-card';card.dataset.configGroupCard='coberturas';card.dataset.configAccess='admin';card.innerHTML=`<h3>Convenios y aranceles por profesional</h3><p class="muted">Cada profesional tiene su propia configuración. El catálogo global solo ofrece nombres de coberturas: no copia reglas ni destinos de otro médico.</p><div class="professional-billing-head-402"><label>Profesional que estás configurando<select id="billProf402"></select></label><label>Convenio a configurar<select id="billOS402"></select></label></div><div id="billProfileNotice404" class="billing-profile-notice-404"></div><div class="convenio-editor-3102"><label>Regla automática<select id="billRegla402"></select></label><label>Destino de consulta<select id="billDestConsulta402"></select></label><label>Destino del estudio<select id="billDestEstudio402"></select></label><label>Facturador de consulta<select id="billFactConsulta402"></select></label><label>Facturador del estudio<select id="billFactEstudio402"></select></label><label class="check-row-310"><input type="checkbox" id="billActivo402"> Habilitado: este profesional atiende este convenio</label><label class="check-row-310"><input type="checkbox" id="billBonoConsulta402"> Requiere bono de consulta</label><label class="check-row-310"><input type="checkbox" id="billBonoEstudio402"> Requiere bono de estudio</label><label class="check-row-310"><input type="checkbox" id="billFirma402"> Requiere firma</label><label class="check-row-310"><input type="checkbox" id="billCopia402"> Requiere copia para facturación</label><label class="check-row-310"><input type="checkbox" id="billRogelio402"> Incluir en Factura Rogelio</label><div class="config-actions-3102"><button class="primary" id="saveBillConv402" type="button">Guardar para este profesional</button><button class="secondary" id="newBillConv402" type="button">Nuevo convenio global</button></div></div><h4 id="billConfiguredTitle404">Convenios configurados</h4><p class="muted">Activo significa que el profesional lo atiende y sus reglas se aplican. Los deshabilitados quedan guardados, pero no intervienen en nuevas atenciones.</p><div id="billList402" class="convenios-list-3102"></div><hr><h4>Arancel del profesional seleccionado</h4><p class="muted" id="billArancelHelp404">Cada valor corresponde a una combinación exacta de profesional + convenio + prestación + fecha de vigencia.</p><div class="arancel-editor-3102 arancel-editor-prof-404"><label>Convenio al que aplica<select id="billArancelOS404"></select></label><label>Prestación<select id="billPrest402"></select></label><label>Valor convenio / particular<input id="billValor402" type="number" min="0" step="1" placeholder="0"></label><label>Copago paciente (si corresponde)<input id="billCopago402" type="number" min="0" step="1" placeholder="0"></label><label>Vigente desde<input id="billVigencia402" type="date"></label><button class="primary" id="saveBillArancel402" type="button">Agregar arancel</button></div><div class="arancel-table-head-404 arancel-head-fin411f"><span>Convenio y prestación</span><span>Valor convenio / particular</span><span>Copago</span><span>Vigencia</span><span></span></div><div id="billArancelList402" class="aranceles-list-3102"></div>`;const ref=$402('cfgProduccionEstimada3102');if(ref)grid.insertBefore(card,ref);else grid.appendChild(card);}
     renderBilling402();
   }
   function selectedBillProf402(){return $402('billProf402')?.value||$402('cfgProfEditar310')?.value||currentProfessionalId402()||'matias';}
@@ -8339,11 +8350,12 @@ function patientInfoTextHC(p,coverage){
     const ars=data.arancelesPorProfesional[pid]||[];if($402('billArancelList402'))$402('billArancelList402').innerHTML=ars.slice().sort((a,b)=>String(b.vigenteDesde||'').localeCompare(String(a.vigenteDesde||''))||String(a.obraSocial||'').localeCompare(String(b.obraSocial||''),'es')).map(a=>`<div class="arancel-row-3102 arancel-row-fin411f"><span><strong>${esc402(a.obraSocial)}</strong> · ${esc402(a.prestacion)}</span><span>${typeof money==='function'?money(a.valor):'$ '+Number(a.valor||0).toLocaleString('es-AR')}</span><span>${Number(a.copago||0)>0?(typeof money==='function'?money(a.copago):'$ '+Number(a.copago||0).toLocaleString('es-AR')):'—'}</span><span>desde ${esc402(a.vigenteDesde||'s/f')}</span><button type="button" class="small-btn" data-del-bill-arancel402="${esc402(a.id)}">Borrar</button></div>`).join('')||'<p class="muted">Sin aranceles cargados para este profesional.</p>';
   }
   function saveBillConv402(){
+    if(!exigirConfigAdministrativa('Tu perfil no puede modificar convenios administrativos.'))return;
     const pid=selectedBillProf402(),os=$402('billOS402')?.value;if(!pid||!os)return;const c=conv402(pid,os,true);c.activo=$402('billActivo402').checked;c.regla=$402('billRegla402').value;c.destinoConsulta=$402('billDestConsulta402').value;c.destinoEstudio=$402('billDestEstudio402').value;c.facturadorConsulta=$402('billFactConsulta402').value;c.facturadorEstudio=$402('billFactEstudio402').value;c.bonoConsulta=$402('billBonoConsulta402').checked;c.bonoEstudio=$402('billBonoEstudio402').checked;c.firmaRequerida=$402('billFirma402').checked;c.copiaRequerida=$402('billCopia402').checked;c.incluirFacturaRogelio=$402('billRogelio402').checked;
     if(pid==='matias')data.conveniosFacturacion=copy402(data.conveniosPorProfesional.matias);persist402();renderBilling402();alert(`Convenio guardado para ${profName402(pid)}.`);
   }
-  function newGlobalConv402(){const name=prompt('Nombre de la nueva obra social, prepaga o convenio:');if(!name)return;if(!(data.obrasSociales||[]).includes(name))data.obrasSociales.push(name);persist402();renderBilling402();$402('billOS402').value=name;loadBillConv402();}
-  function saveBillArancel402(){const pid=selectedBillProf402(),obraSocial=$402('billArancelOS404')?.value||$402('billOS402')?.value,prestacion=$402('billPrest402')?.value,valor=Number($402('billValor402')?.value||0),copago=Number($402('billCopago402')?.value||0),vigenteDesde=$402('billVigencia402')?.value;if(!obraSocial||!prestacion||!vigenteDesde){alert('Completá convenio, prestación y fecha de vigencia.');return;}if(!Number.isFinite(valor)||valor<0||!Number.isFinite(copago)||copago<0){alert('Ingresá valores válidos.');return;}data.arancelesPorProfesional[pid].push({id:'arp_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),profesionalId:pid,obraSocial,prestacion,valor,copago,vigenteDesde,activo:true});if(pid==='matias')data.arancelesConvenios=copy402(data.arancelesPorProfesional.matias);persist402();$402('billValor402').value='';if($402('billCopago402'))$402('billCopago402').value='';renderBilling402();}
+  function newGlobalConv402(){if(!exigirConfigAdministrativa('Tu perfil no puede crear convenios administrativos.'))return;const name=prompt('Nombre de la nueva obra social, prepaga o convenio:');if(!name)return;if(!(data.obrasSociales||[]).includes(name))data.obrasSociales.push(name);persist402();renderBilling402();$402('billOS402').value=name;loadBillConv402();}
+  function saveBillArancel402(){if(!exigirConfigAdministrativa('Tu perfil no puede modificar aranceles.'))return;const pid=selectedBillProf402(),obraSocial=$402('billArancelOS404')?.value||$402('billOS402')?.value,prestacion=$402('billPrest402')?.value,valor=Number($402('billValor402')?.value||0),copago=Number($402('billCopago402')?.value||0),vigenteDesde=$402('billVigencia402')?.value;if(!obraSocial||!prestacion||!vigenteDesde){alert('Completá convenio, prestación y fecha de vigencia.');return;}if(!Number.isFinite(valor)||valor<0||!Number.isFinite(copago)||copago<0){alert('Ingresá valores válidos.');return;}data.arancelesPorProfesional[pid].push({id:'arp_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),profesionalId:pid,obraSocial,prestacion,valor,copago,vigenteDesde,activo:true});if(pid==='matias')data.arancelesConvenios=copy402(data.arancelesPorProfesional.matias);persist402();$402('billValor402').value='';if($402('billCopago402'))$402('billCopago402').value='';renderBilling402();}
 
   const oldApply402=window.aplicarRegla;
   window.aplicarRegla=function(){
@@ -8366,7 +8378,7 @@ function patientInfoTextHC(p,coverage){
     if(e.target.id==='newBillConv402'){newGlobalConv402();return;}
     if(e.target.id==='saveBillArancel402'){saveBillArancel402();return;}
     const row=e.target.closest?.('[data-load-bill-os402]');if(row){$402('billOS402').value=row.dataset.loadBillOs402;if($402('billArancelOS404'))$402('billArancelOS404').value=row.dataset.loadBillOs402;loadBillConv402();row.scrollIntoView({behavior:'smooth',block:'nearest'});return;}
-    const del=e.target.closest?.('[data-del-bill-arancel402]');if(del&&confirm('¿Borrar este arancel?')){const pid=selectedBillProf402();data.arancelesPorProfesional[pid]=data.arancelesPorProfesional[pid].filter(a=>a.id!==del.dataset.delBillArancel402);if(pid==='matias')data.arancelesConvenios=copy402(data.arancelesPorProfesional.matias);persist402();renderBilling402();}
+    const del=e.target.closest?.('[data-del-bill-arancel402]');if(del){if(!exigirConfigAdministrativa('Tu perfil no puede borrar aranceles.'))return;if(confirm('¿Borrar este arancel?')){const pid=selectedBillProf402();data.arancelesPorProfesional[pid]=data.arancelesPorProfesional[pid].filter(a=>a.id!==del.dataset.delBillArancel402);if(pid==='matias')data.arancelesConvenios=copy402(data.arancelesPorProfesional.matias);persist402();renderBilling402();}}
   },true);
   document.addEventListener('change',e=>{
     if(e.target.id==='cfgProfEditar310'){setTimeout(loadDocumentFields402,0);const b=$402('billProf402');if(b&&[...b.options].some(o=>o.value===e.target.value)){b.value=e.target.value;renderBilling402();}}
@@ -9966,10 +9978,9 @@ function patientInfoTextHC(p,coverage){
 /* ===== CardioLink v4.1.0-hc · Fase 3C: cierre operativo ===== */
 (function(){
   'use strict';if(window.__cardiolinkPhase3C411C)return;window.__cardiolinkPhase3C411C=true;
-  function fechaHaceDias411C(dias){const d=new Date();d.setDate(d.getDate()-dias);const off=d.getTimezoneOffset()*60000;return new Date(d-off).toISOString().slice(0,10);}
-  window.verPendientesVencidos411C=function(){try{const welcome=document.getElementById('welcomeModal360');if(welcome)welcome.classList.add('hidden');if(typeof showSection==='function'){const navPend=document.querySelector('.nav[data-section="pendientes"]');showSection(navPend?'pendientes':'listado');}if(typeof activarFiltroPendientesGlobal==='function')activarFiltroPendientesGlobal();const hasta=document.getElementById('fHasta');if(hasta)hasta.value=fechaHaceDias411C(8);if(typeof renderTabla==='function')renderTabla();}catch(e){console.error(e);alert('No se pudo abrir el filtro de vencidos.');}};
-  function pendientesPerfil411C(){let base=[];try{base=typeof atencionesPerfil==='function'?atencionesPerfil():(window.atenciones||[]);}catch(e){base=window.atenciones||[];}return (base||[]).filter(a=>{try{return typeof esPendienteAdministrativo==='function'&&esPendienteAdministrativo(a);}catch(e){return false;}});}
-  function actualizarBadgePendientes411C(){const list=pendientesPerfil411C();const overdue=list.filter(a=>{const d=diasAntiguedadPendiente411C(a);return d!=null&&d>7;});const critical=list.filter(a=>{const d=diasAntiguedadPendiente411C(a);return d!=null&&d>14;});const btn=document.querySelector('.nav[data-section="pendientes"]')||document.querySelector('[data-section="pendientes"]');if(btn){btn.title=`${list.length} pendientes · ${overdue.length} vencidos >7 días · ${critical.length} críticos >14 días`;btn.classList.toggle('has-critical-411c',critical.length>0);}}
+  window.verPendientesVencidos411C=function(){try{const welcome=document.getElementById('welcomeModal360');if(welcome)welcome.classList.add('hidden');if(typeof showSection==='function')showSection('pendientes383');if(typeof window.mostrarPendientesVencidos383==='function')window.mostrarPendientesVencidos383();}catch(e){console.error(e);alert('No se pudo abrir la bandeja de pendientes vencidos.');}};
+  function pendientesPerfil411C(){let base=[];try{base=typeof atencionesPerfil==='function'?atencionesPerfil():(Array.isArray(atenciones)?atenciones:[]);}catch(e){base=[];}return (base||[]).filter(a=>{try{return typeof window.pendientesDeAtencion383==='function'&&window.pendientesDeAtencion383(a).length>0;}catch(e){return false;}});}
+  function actualizarBadgePendientes411C(){const list=pendientesPerfil411C();const overdue=list.filter(a=>{const d=diasAntiguedadPendiente411C(a);return d!=null&&d>7;});const critical=list.filter(a=>{const d=diasAntiguedadPendiente411C(a);return d!=null&&d>14;});const btn=document.querySelector('.nav[data-section="pendientes383"]');if(btn){btn.title=`${list.length} pendientes · ${overdue.length} vencidos >7 días · ${critical.length} críticos >14 días`;btn.classList.toggle('has-critical-411c',critical.length>0);}}
   const oldRenderStats=typeof renderStats==='function'?renderStats:null;if(oldRenderStats&&!oldRenderStats.__phase3c411c){const wrapped=function(){const r=oldRenderStats.apply(this,arguments);setTimeout(actualizarBadgePendientes411C,0);return r;};wrapped.__phase3c411c=true;try{window.renderStats=renderStats=wrapped;}catch(e){window.renderStats=wrapped;}}
   function asegurarBotonVencidos411C(){if(document.getElementById('btnVerVencidos411C'))return;const anchor=document.getElementById('btnPendientesGlobal')||document.getElementById('btnVerPendientesSolapa');if(!anchor)return;const b=document.createElement('button');b.id='btnVerVencidos411C';b.type='button';b.className='secondary pending-overdue-btn411c';b.textContent='Vencidos >7 días';b.addEventListener('click',window.verPendientesVencidos411C);anchor.insertAdjacentElement('afterend',b);}
   function boot411C(){actualizarBadgePendientes411C();asegurarBotonVencidos411C();setTimeout(()=>{actualizarBadgePendientes411C();asegurarBotonVencidos411C();},800);setTimeout(()=>{actualizarBadgePendientes411C();asegurarBotonVencidos411C();},2200);}if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot411C);else boot411C();
