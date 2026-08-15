@@ -2148,7 +2148,25 @@ function actualizarPaginacionListado(totalRegistros,totalPaginas){
  box.classList.remove('hidden');
 }
 function renderResumenCaja(datos=filtrar()){const r=resumen(datos),c=cajaHoy(datos);$('rConsultas').textContent=r.consultas;$('rEstudios').textContent=r.estudios;$('rBonoConsulta').textContent=r.bonoConsulta;$('rBonoEstudio').textContent=r.bonoEstudio;$('rParticular').textContent=money(c.particular);$('rCopago').textContent=money(c.copago);$('rTotal').textContent=money(c.total)}
-function renderStats(){const datos=atencionesPerfil(),c=cajaHoy(datos);$('statTotal').textContent=mostrarConteoDashboard?datos.length:'•••';if($('btnToggleConteo'))$('btnToggleConteo').textContent=mostrarConteoDashboard?'Ocultar':'Mostrar';$('statHoy').textContent=datos.filter(a=>a.fecha===todayISO()).length;$('statPendientes').textContent=datos.filter(a=>evaluarEstado(a).cls==='bad').length;$('statParticular').textContent=money(c.particular);$('statCopagos').textContent=money(c.copago);$('statTotalCaja').textContent=money(c.total);if($('dashboardDetalle')){$('dashboardDetalle').style.display='block';const u=perfilUsuarioActual();$('dashboardDetalle').textContent=`Sesión: ${u.nombre||u.usuario} · ${labelRol(u.rol)}${u.especialidad?' · '+u.especialidad:''}`;}}
+function renderStats(){
+  if(window.CardioLinkDashboardV1?.render){
+    window.CardioLinkDashboardV1.render();
+    return;
+  }
+  const datos=atencionesPerfil(),c=cajaHoy(datos);
+  if($('statTotal'))$('statTotal').textContent=mostrarConteoDashboard?datos.length:'•••';
+  if($('btnToggleConteo'))$('btnToggleConteo').textContent=mostrarConteoDashboard?'Ocultar':'Mostrar';
+  if($('statHoy'))$('statHoy').textContent=datos.filter(a=>a.fecha===todayISO()).length;
+  if($('statPendientes'))$('statPendientes').textContent=datos.filter(a=>evaluarEstado(a).cls==='bad').length;
+  if($('statParticular'))$('statParticular').textContent=money(c.particular);
+  if($('statCopagos'))$('statCopagos').textContent=money(c.copago);
+  if($('statTotalCaja'))$('statTotalCaja').textContent=money(c.total);
+  if($('dashboardDetalle')){
+    $('dashboardDetalle').style.display='block';
+    const u=perfilUsuarioActual();
+    $('dashboardDetalle').textContent=`Sesión: ${u.nombre||u.usuario} · ${labelRol(u.rol)}${u.especialidad?' · '+u.especialidad:''}`;
+  }
+}
 
 function selectHTML(id,items,selected){return `<select id="${id}">`+items.map(x=>`<option ${x===selected?'selected':''}>${escapeHtml(x)}</option>`).join('')+'</select>'}
 function opcionesDestinos(extra){const base=['Matías','Rogelio','No aplica','A definir'];data.profesionales.filter(p=>p.id!=='general').forEach(p=>base.push(p.nombre));if(extra)base.push(extra);return [...new Set(base.filter(Boolean))];}
@@ -6335,9 +6353,18 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const html=items.length?items.map((n,i)=>`<button type="button" class="notification-item-360" data-notif-action="${n.action}"><span>${n.icon}</span><span>${esc360(n.text)}</span></button>`).join(''):'<p class="muted">No hay alertas importantes.</p>';
     if($360('notificationsList360'))$360('notificationsList360').innerHTML=html;if($360('notificacionesDashboard360'))$360('notificacionesDashboard360').innerHTML=html;
   }
-  function renderDashboard360(){const list=profileAtt360();const board=$360('tableroPendientes360');if(board){board.innerHTML=pendingBreakdown360(list).map(([t,n,k])=>`<button type="button" onclick="openPendingFilter360('${k}')"><span>${esc360(t)}</span><strong>${n}</strong></button>`).join('');}
-    const prod=$360('produccionHoy360');if(prod){const cnt=prestationCounts360(list.filter(isRealizedProduction360));prod.innerHTML=cnt.length?cnt.map(([k,v])=>`<div><span>${esc360(k)}</span><strong>${v}</strong></div>`).join(''):'<p class="muted">Sin prestaciones realizadas hoy.</p>';}
-    renderNotifications360();applyDashboardPrefs360();}
+  function renderDashboard360(){
+    // Dashboard V1 ya no monta los widgets 360; evitar sus cálculos si no existen.
+    const board=$360('tableroPendientes360'),prod=$360('produccionHoy360');
+    if(board||prod){
+      const list=profileAtt360();
+      if(board)board.innerHTML=pendingBreakdown360(list).map(([t,n,k])=>`<button type="button" onclick="openPendingFilter360('${k}')"><span>${esc360(t)}</span><strong>${n}</strong></button>`).join('');
+      if(prod){const cnt=prestationCounts360(list.filter(isRealizedProduction360));prod.innerHTML=cnt.length?cnt.map(([k,v])=>`<div><span>${esc360(k)}</span><strong>${v}</strong></div>`).join(''):'<p class="muted">Sin prestaciones realizadas hoy.</p>';}
+    }
+    // La campana de la cabecera sigue siendo una función global vigente.
+    renderNotifications360();
+    if(document.querySelector('[data-dashboard-widget]'))applyDashboardPrefs360();
+  }
   function dashboardPrefsKey360(){return `cl_dashboard_${usuarioActualNombreCorto?.()||'local'}`}
   function getDashboardPrefs360(){try{return JSON.parse(localStorage.getItem(dashboardPrefsKey360())||'null')||{kpis:true,resumen:true,pendientes:true,notificaciones:true,produccion:true}}catch{return {kpis:true,resumen:true,pendientes:true,notificaciones:true,produccion:true}}}
   function applyDashboardPrefs360(){const prefs=getDashboardPrefs360();document.querySelectorAll('[data-dashboard-widget]').forEach(x=>x.classList.toggle('dashboard-hidden-360',prefs[x.dataset.dashboardWidget]===false));}
@@ -6384,14 +6411,8 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function init360(){
     setVersion360();bind360();renderAdmin360();document.body.classList.add('app-ready-360');
     const logout=document.getElementById('btnCerrarSesion');if(logout)logout.style.visibility='visible';
-    if(location.protocol!=='file:'){
-      let tries=0;
-      const waitWelcome=setInterval(()=>{
-        tries++;
-        if(hasAuthenticatedSession360()){clearInterval(waitWelcome);openWelcome360(false);}
-        else if(tries>=60)clearInterval(waitWelcome);
-      },250);
-    }
+    // La bienvenida ahora vive en la portada V1. El modal 360 queda dormido
+    // para compatibilidad, sin abrirse ni crear un timer duplicado al iniciar.
   }
   document.addEventListener('DOMContentLoaded',()=>setTimeout(init360,1000));setTimeout(()=>{setVersion360();document.body.classList.add('app-ready-360');},1800);
 })();

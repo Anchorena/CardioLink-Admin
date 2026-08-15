@@ -41,6 +41,12 @@ Pueden existir, entre otros:
 - `cardiolink-clear-patient-fix.js`
 - `cardiolink-hc-referidos.js`
 - `cardiolink-prestaciones-perfil.js`
+- `cardiolink-dashboard-v1.js`
+
+`cardiolink-dashboard-v1.js` se carga al final de los scripts de `index.html`.
+Renderiza únicamente la portada y reutiliza los bindings ya inicializados por
+`app.js` para perfiles, agenda, Pendientes y acciones rápidas. Sus estilos están
+aislados en `cardiolink-dashboard-v1.css`.
 
 Antes de crear otro módulo:
 1. revisar los existentes;

@@ -1,0 +1,117 @@
+/* CardioLink Admin — Dashboard V1. Capa visual aislada y reversible. */
+#dashboard{
+  --dashboard-border:rgba(18,63,86,.13);
+  --dashboard-soft:rgba(18,63,86,.055);
+  --dashboard-accent:#0e6e82;
+  --dashboard-warning:#9a5b16;
+  --dashboard-danger:#a13636;
+}
+
+.dashboard-v1{width:100%;max-width:1480px;margin:0 auto;min-width:0}
+.dashboard-hero-v1{
+  display:flex;align-items:center;justify-content:space-between;gap:28px;
+  min-height:184px;padding:28px 32px;border:1px solid var(--dashboard-border);
+  border-radius:24px;background:linear-gradient(135deg,#fff 0%,#f2f8fa 58%,#e7f1f4 100%);
+  box-shadow:0 14px 38px rgba(18,63,86,.09);overflow:hidden;position:relative
+}
+.dashboard-hero-v1:after{content:"";position:absolute;width:240px;height:240px;right:-90px;bottom:-150px;border-radius:50%;background:rgba(14,110,130,.08)}
+.dashboard-identity-v1{display:flex;align-items:center;gap:20px;min-width:0;position:relative;z-index:1}
+.dashboard-logo-v1{width:82px;height:82px;flex:0 0 82px;display:grid;place-items:center;padding:9px;border:1px solid rgba(18,63,86,.12);border-radius:22px;background:#fff;box-shadow:0 8px 24px rgba(18,63,86,.12)}
+.dashboard-logo-v1 img{display:block;width:100%;height:100%;object-fit:contain;border-radius:14px}
+.dashboard-eyebrow-v1{margin:0 0 6px;color:var(--dashboard-accent);font-size:11px;font-weight:900;letter-spacing:.11em;text-transform:uppercase}
+.dashboard-hero-v1 h2,.dashboard-section-head-v1 h2{margin:0;color:#123f56;line-height:1.12}
+.dashboard-hero-v1 h2{font-size:clamp(28px,3vw,42px)}
+.dashboard-user-v1{margin:9px 0 0;color:#1f2937;font-size:16px;font-weight:800}
+.dashboard-specialty-v1{margin:4px 0 0;color:#526273;font-size:14px}
+.dashboard-date-v1{display:flex;flex-direction:column;align-items:flex-end;gap:8px;max-width:320px;text-align:right;position:relative;z-index:1}
+.dashboard-date-v1 time{color:#123f56;font-size:17px;font-weight:850}
+.dashboard-date-v1 span,.dashboard-context-v1{display:inline-flex;padding:7px 10px;border:1px solid rgba(18,63,86,.12);border-radius:999px;background:rgba(255,255,255,.72);color:#526273;font-size:12px;font-weight:750}
+
+.dashboard-section-v1{margin-top:30px}
+.dashboard-section-head-v1{display:flex;align-items:flex-end;justify-content:space-between;gap:18px;margin-bottom:14px}
+.dashboard-section-head-v1 h2{font-size:23px}
+.dashboard-context-v1{flex:0 1 auto;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dashboard-kpis-v1{display:grid;grid-template-columns:repeat(7,minmax(120px,1fr));gap:12px}
+.dashboard-kpi-v1{min-width:0;min-height:112px;padding:17px;border:1px solid var(--dashboard-border);border-radius:18px;background:var(--card,#fff);box-shadow:0 6px 22px rgba(15,23,42,.055);position:relative;overflow:hidden}
+.dashboard-kpi-v1:before{content:"";position:absolute;left:0;right:0;top:0;height:3px;background:#bfd3da}
+.dashboard-kpi-v1 span{display:block;min-height:32px;color:#607080;font-size:12px;font-weight:800;line-height:1.3}
+.dashboard-kpi-v1 strong{display:block;margin-top:9px;color:#123f56;font-size:31px;line-height:1}
+.dashboard-kpi-room-v1:before{background:#3a7d5c}.dashboard-kpi-room-v1 strong{color:#2c6b4d}
+.dashboard-kpi-pending-v1:before{background:#b7791f}.dashboard-kpi-pending-v1 strong{color:#8a5a20}
+.dashboard-kpi-muted-v1:before{background:#94a3b8}.dashboard-kpi-muted-v1 strong{color:#526273}
+
+.dashboard-quick-actions-v1{display:grid;grid-template-columns:repeat(6,minmax(130px,1fr));gap:10px}
+.dashboard-quick-actions-v1 [hidden]{display:none!important}
+.dashboard-quick-actions-v1 button{display:flex;align-items:center;justify-content:flex-start;gap:10px;min-width:0;min-height:58px;padding:13px 15px;border:1px solid var(--dashboard-border);border-radius:15px;background:var(--card,#fff);color:#123f56;box-shadow:0 4px 14px rgba(15,23,42,.045);font-size:14px;text-align:left}
+.dashboard-quick-actions-v1 button:hover{border-color:#6f9bab;background:#f3f8fa;transform:translateY(-1px)}
+.dashboard-quick-actions-v1 button>span{display:grid;place-items:center;width:29px;height:29px;flex:0 0 29px;border-radius:9px;background:var(--dashboard-soft);color:var(--dashboard-accent);font-size:17px}
+.dashboard-quick-actions-v1 .dashboard-action-primary-v1{background:#123f56;color:#fff;border-color:#123f56}
+.dashboard-quick-actions-v1 .dashboard-action-primary-v1>span{background:rgba(255,255,255,.14);color:#fff}
+
+.dashboard-content-grid-v1{display:grid;grid-template-columns:minmax(0,1.8fr) minmax(280px,.8fr);gap:16px;margin-top:30px}
+.dashboard-panel-v1{min-width:0;padding:22px;border:1px solid var(--dashboard-border);border-radius:20px;background:var(--card,#fff);box-shadow:0 7px 24px rgba(15,23,42,.055)}
+.dashboard-link-v1{padding:8px 11px;border:1px solid var(--dashboard-border);background:var(--dashboard-soft);color:#123f56;font-size:12px;min-height:36px}
+.dashboard-upcoming-head-v1,.dashboard-upcoming-row-v1{display:grid;grid-template-columns:74px minmax(150px,1.25fr) minmax(150px,1.15fr) minmax(140px,1fr) 112px;gap:12px;align-items:center}
+.dashboard-upcoming-head-v1{padding:0 12px 9px;color:#718096;font-size:10px;font-weight:900;letter-spacing:.07em;text-transform:uppercase}
+.dashboard-upcoming-list-v1{display:grid;gap:8px}
+.dashboard-upcoming-row-v1{width:100%;min-width:0;padding:12px;border:1px solid #e3eaed;border-radius:13px;background:#fbfdfe;color:#263444;text-align:left;transition:border-color .15s ease,background .15s ease}
+.dashboard-upcoming-row-v1:hover{border-color:#8babb7;background:#f2f8fa}
+.dashboard-time-v1,.dashboard-patient-v1{display:block;min-width:0;min-height:0;padding:3px 0;border:0;border-radius:6px;background:transparent;color:inherit;text-align:left;box-shadow:none}
+.dashboard-time-v1:hover,.dashboard-patient-v1:hover{background:transparent;color:var(--dashboard-accent);transform:none;text-decoration:underline;text-underline-offset:3px}
+.dashboard-time-v1 time{color:#123f56;font-size:16px;font-weight:900}
+.dashboard-upcoming-row-v1>span{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.dashboard-patient-v1 strong{font-size:14px;color:#1f2937}
+.dashboard-status-v1{overflow:visible!important}.dashboard-status-v1 .agenda-status{font-size:10px!important;white-space:nowrap}
+.dashboard-empty-v1{display:flex;flex-direction:column;gap:5px;padding:26px 16px;border:1px dashed #c8d5da;border-radius:14px;text-align:center;background:#fbfdfe}
+.dashboard-empty-v1 strong{color:#334155}.dashboard-empty-v1 span{color:#718096;font-size:13px}
+
+.dashboard-alerts-v1{display:grid;gap:9px}
+.dashboard-alert-v1{display:flex;align-items:center;justify-content:space-between;gap:14px;width:100%;padding:14px;border:1px solid #dbe4e8;border-radius:14px;background:#f8fafc;color:#334155;text-align:left}
+.dashboard-alert-v1 span{font-size:13px;font-weight:800}.dashboard-alert-v1 strong{font-size:23px}
+.dashboard-alert-room-v1{border-color:#b8d8c7;background:#f3faf6;color:#2f6a4d}
+.dashboard-alert-warning-v1{border-color:#ead0a9;background:#fffaf1;color:#8a5a20}
+.dashboard-alert-critical-v1{border-color:#e7bcbc;background:#fff7f7;color:#923737}
+.dashboard-no-alerts-v1{display:flex;align-items:center;gap:12px;padding:18px;border:1px solid #cce2d6;border-radius:14px;background:#f4faf7;color:#2f6a4d}
+.dashboard-no-alerts-v1>span{display:grid;place-items:center;width:34px;height:34px;flex:0 0 34px;border-radius:50%;background:#dcefe4;font-weight:900}
+.dashboard-no-alerts-v1 strong,.dashboard-no-alerts-v1 small{display:block}.dashboard-no-alerts-v1 small{margin-top:3px;color:#62766b;line-height:1.35}
+
+body.dark .dashboard-hero-v1{background:linear-gradient(135deg,#1e293b,#172538);border-color:#334155}
+body.dark .dashboard-logo-v1{background:#f8fafc}
+body.dark .dashboard-hero-v1 h2,body.dark .dashboard-section-head-v1 h2,body.dark .dashboard-date-v1 time,body.dark .dashboard-kpi-v1 strong,body.dark .dashboard-link-v1{color:#d6edf4}
+body.dark .dashboard-user-v1,body.dark .dashboard-patient-v1 strong{color:#e5e7eb}
+body.dark .dashboard-specialty-v1,body.dark .dashboard-kpi-v1 span{color:#a7b7c7}
+body.dark .dashboard-date-v1 span,body.dark .dashboard-context-v1{background:rgba(15,23,42,.45);border-color:#475569;color:#cbd5e1}
+body.dark .dashboard-upcoming-row-v1,body.dark .dashboard-empty-v1{background:#172033;border-color:#334155;color:#cbd5e1}
+body.dark .dashboard-quick-actions-v1 button:hover{background:#26354a}
+body.dark .dashboard-alert-v1{background:#172033}
+
+@media(max-width:1250px){
+  .dashboard-kpis-v1{grid-template-columns:repeat(4,minmax(130px,1fr))}
+  .dashboard-quick-actions-v1{grid-template-columns:repeat(3,minmax(150px,1fr))}
+}
+@media(max-width:980px){
+  .dashboard-content-grid-v1{grid-template-columns:1fr}
+  .dashboard-hero-v1{padding:24px}
+}
+@media(max-width:720px){
+  .dashboard-hero-v1{align-items:flex-start;flex-direction:column;gap:20px;min-height:0;padding:22px;border-radius:20px}
+  .dashboard-logo-v1{width:68px;height:68px;flex-basis:68px;border-radius:18px}
+  .dashboard-date-v1{align-items:flex-start;max-width:none;text-align:left}
+  .dashboard-section-v1,.dashboard-content-grid-v1{margin-top:24px}
+  .dashboard-section-head-v1{align-items:flex-start}
+  .dashboard-kpis-v1{grid-template-columns:repeat(2,minmax(0,1fr));gap:9px}
+  .dashboard-kpi-v1{min-height:100px;padding:14px}.dashboard-kpi-v1 strong{font-size:28px}
+  .dashboard-quick-actions-v1{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .dashboard-panel-v1{padding:17px}
+  .dashboard-upcoming-head-v1{display:none}
+  .dashboard-upcoming-row-v1{grid-template-columns:64px minmax(0,1fr);grid-template-areas:"time patient" "time service" "time professional" "time status";gap:7px 11px;padding:13px}
+  .dashboard-time-v1{grid-area:time;align-self:start}.dashboard-patient-v1{grid-area:patient}
+  .dashboard-service-v1{grid-area:service}.dashboard-professional-v1{grid-area:professional}.dashboard-status-v1{grid-area:status}
+}
+@media(max-width:430px){
+  .dashboard-identity-v1{align-items:flex-start}.dashboard-hero-v1 h2{font-size:27px}
+  .dashboard-context-v1{display:none}
+  .dashboard-quick-actions-v1{grid-template-columns:1fr}
+  .dashboard-quick-actions-v1 button{min-height:54px}
+  .dashboard-section-head-v1 h2{font-size:21px}
+}

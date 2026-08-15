@@ -13,6 +13,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png?v=40096">
 <link rel="stylesheet" href="styles.css?v=40096">
 <link rel="stylesheet" href="cardiolink-ui.css?v=1">
+<link rel="stylesheet" href="cardiolink-dashboard-v1.css?v=1">
 <script>
 window.CARDIOLINK_BUILD="4.0.9.6";
 if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.update())).catch(()=>{});});}
@@ -76,50 +77,66 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
   </header>
 
   <section id="dashboard" class="section visible">
-    <div class="dashboard-toolbar-360">
-      <button type="button" class="secondary" id="btnPersonalizarDashboard360">Personalizar dashboard</button>
-      <button type="button" class="secondary" id="btnAbrirBienvenida360">Resumen de hoy</button>
-    </div>
-    <div class="stats" data-dashboard-widget="kpis">
-      <div class="card"><span>Atenciones perfil</span><strong id="statTotal">•••</strong><button type="button" id="btnToggleConteo" class="mini-link">Mostrar</button></div>
-      <div class="card"><span>Hoy</span><strong id="statHoy">0</strong></div>
-      <div class="card"><span>Pendientes</span><strong id="statPendientes">0</strong></div>
-      <div class="card money"><span>Caja hoy particular</span><strong id="statParticular">$0</strong></div>
-      <div class="card money"><span>Caja hoy copagos</span><strong id="statCopagos">$0</strong></div>
-      <div class="card money"><span>Caja hoy total</span><strong id="statTotalCaja">$0</strong></div>
-    </div>
-    <div class="card" data-dashboard-widget="resumen">
-      <h2>Resumen del perfil activo</h2>
-      <p id="dashboardDetalle" style="display:none !important;"></p>
-      <button class="primary" id="btnIrCarga">Ir a carga de turno/atención</button>
-    </div>
-    <div class="dashboard-grid-360">
-      <div class="card" data-dashboard-widget="pendientes">
-        <h2>Pendientes rápidos</h2>
-        <div id="tableroPendientes360" class="quick-board-360"></div>
-      </div>
-      <div class="card" data-dashboard-widget="notificaciones">
-        <h2>Centro de notificaciones</h2>
-        <div id="notificacionesDashboard360" class="notification-list-360"></div>
-      </div>
-      <div class="card" data-dashboard-widget="produccion">
-        <h2>Producción de hoy</h2>
-        <div id="produccionHoy360" class="production-grid-360"></div>
-      </div>
-    </div>
+    <div class="dashboard-v1">
+      <section class="dashboard-hero-v1" aria-labelledby="dashboardSaludoV1">
+        <div class="dashboard-identity-v1">
+          <div class="dashboard-logo-v1"><img id="dashboardLogoV1" src="icons/icon-192.png" alt="Identidad de CardioLink"></div>
+          <div>
+            <p class="dashboard-eyebrow-v1" id="dashboardMarcaV1">CardioLink Admin</p>
+            <h2 id="dashboardSaludoV1">Bienvenido</h2>
+            <p class="dashboard-user-v1" id="dashboardUsuarioV1"></p>
+            <p class="dashboard-specialty-v1" id="dashboardEspecialidadesV1"></p>
+          </div>
+        </div>
+        <div class="dashboard-date-v1">
+          <time id="dashboardFechaV1"></time>
+          <span id="dashboardPerfilV1"></span>
+        </div>
+      </section>
 
-    <div class="card instructivo-general" id="instructivoPerfiles">
-      <h2>Instructivo paso a paso: agregar nuevos perfiles</h2>
-      <ol>
-        <li>Entrá a <strong>Configuración</strong> desde el menú lateral.</li>
-        <li>En <strong>Profesionales</strong>, cargá el nombre del nuevo profesional y su área. Tocá <strong>Agregar</strong>.</li>
-        <li>En <strong>Valores por profesional</strong>, elegí ese profesional y cargá sus valores propios: consulta particular, ECG/electro, estudio, copago consulta, copago ECG y copago estudio. Tocá <strong>Guardar valores</strong>.</li>
-        <li>En <strong>Prestaciones</strong>, escribí cada prestación que realiza ese profesional, elegí su perfil en el desplegable y tocá <strong>Agregar</strong>.</li>
-        <li>En <strong>Obras sociales</strong>, agregá una cobertura solo si todavía no existe en la lista general.</li>
-        <li>Recordatorio: las <strong>reglas especiales por obra social</strong> aplican solo a Matías. Los demás profesionales facturan para sí mismos, salvo que más adelante se configure algo distinto.</li>
-        <li>Probá con una atención ficticia, revisá que la caja quede en el perfil correcto y luego borrá la prueba.</li>
-      </ol>
-      <p class="muted">Consejo: no uses espacios ni tildes en IDs internos; la app los genera sola cuando agregás desde esta pantalla.</p>
+      <section class="dashboard-section-v1" aria-labelledby="dashboardResumenTituloV1">
+        <div class="dashboard-section-head-v1">
+          <div><p class="dashboard-eyebrow-v1">Actividad operativa</p><h2 id="dashboardResumenTituloV1">Resumen del día</h2></div>
+          <span id="dashboardResumenContextoV1" class="dashboard-context-v1"></span>
+        </div>
+        <div class="dashboard-kpis-v1">
+          <div class="dashboard-kpi-v1"><span>Pacientes de hoy</span><strong id="dashboardPacientesHoyV1">0</strong></div>
+          <div class="dashboard-kpi-v1"><span>Consultas de hoy</span><strong id="dashboardConsultasHoyV1">0</strong></div>
+          <div class="dashboard-kpi-v1"><span>Estudios de hoy</span><strong id="dashboardEstudiosHoyV1">0</strong></div>
+          <div class="dashboard-kpi-v1 dashboard-kpi-room-v1"><span>En sala / esperando</span><strong id="dashboardSalaV1">0</strong></div>
+          <div class="dashboard-kpi-v1 dashboard-kpi-pending-v1"><span>Pendientes</span><strong id="dashboardPendientesV1">0</strong></div>
+          <div class="dashboard-kpi-v1 dashboard-kpi-muted-v1"><span>Ausentes</span><strong id="dashboardAusentesV1">0</strong></div>
+          <div class="dashboard-kpi-v1 dashboard-kpi-muted-v1"><span>Cancelados</span><strong id="dashboardCanceladosV1">0</strong></div>
+        </div>
+      </section>
+
+      <section class="dashboard-section-v1" aria-labelledby="dashboardAccesosTituloV1">
+        <div class="dashboard-section-head-v1"><div><p class="dashboard-eyebrow-v1">Atajos</p><h2 id="dashboardAccesosTituloV1">Accesos rápidos</h2></div></div>
+        <div class="dashboard-quick-actions-v1">
+          <button type="button" class="dashboard-action-primary-v1" data-cp-action411b="attention"><span>＋</span>Nuevo turno</button>
+          <button type="button" data-cp-action411b="search"><span>⌕</span>Buscar paciente</button>
+          <button type="button" data-dashboard-action-v1="waiting"><span>◷</span>Sala de espera</button>
+          <button type="button" id="dashboardPendientesActionV1" data-dashboard-action-v1="pending"><span>✓</span>Pendientes</button>
+          <button type="button" data-dashboard-action-v1="patients"><span>👤</span>Pacientes</button>
+          <button type="button" id="dashboardNuevaEvolucionV1" data-clinical-access data-cp-action411b="evolve"><span>＋</span>Nueva evolución</button>
+        </div>
+      </section>
+
+      <div class="dashboard-content-grid-v1">
+        <section class="dashboard-panel-v1" aria-labelledby="dashboardProximosTituloV1">
+          <div class="dashboard-section-head-v1">
+            <div><p class="dashboard-eyebrow-v1">Agenda de hoy</p><h2 id="dashboardProximosTituloV1">Próximos pacientes</h2></div>
+            <button type="button" class="dashboard-link-v1" data-dashboard-action-v1="agenda">Ver agenda</button>
+          </div>
+          <div class="dashboard-upcoming-head-v1" aria-hidden="true"><span>Hora</span><span>Paciente</span><span>Prestación</span><span>Profesional</span><span>Estado</span></div>
+          <div id="dashboardProximosV1" class="dashboard-upcoming-list-v1" aria-live="polite"></div>
+        </section>
+
+        <section class="dashboard-panel-v1" aria-labelledby="dashboardAlertasTituloV1">
+          <div class="dashboard-section-head-v1"><div><p class="dashboard-eyebrow-v1">Seguimiento</p><h2 id="dashboardAlertasTituloV1">Alertas operativas</h2></div></div>
+          <div id="dashboardAlertasV1" class="dashboard-alerts-v1" aria-live="polite"></div>
+        </section>
+      </div>
     </div>
   </section>
 
@@ -913,5 +930,6 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
 <script src="cardiolink-arancel-monto.js?v=1"></script>
 <script src="cardiolink-hc-referidos.js?v=3"></script>
 <script src="cardiolink-prestaciones-perfil.js?v=1"></script>
+<script src="cardiolink-dashboard-v1.js?v=1"></script>
 </body>
 </html>
