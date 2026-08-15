@@ -1,6 +1,6 @@
 # CardioLink Admin — Contexto funcional
 
-Última actualización: 2026-08-14
+Última actualización: 2026-08-15
 
 ## Objetivo
 Sistema médico propio para consultorio/polo ambulatorio con:
@@ -20,17 +20,54 @@ Uso principal: Windows, Mac, iPad y teléfonos.
 ## Roles
 
 ### Dueño / Administrador
-Puede configurar profesionales, prestaciones, convenios, aranceles, parámetros financieros, reportes y permisos.
+Tiene acceso completo a administración, configuración, usuarios/roles, finanzas,
+Caja, HC, documentos, reportes, backups, prestaciones, profesionales, obras
+sociales/prepagas, convenios, aranceles y mantenimiento.
 
 ### Médico
-Puede ver agenda, pacientes, HC, evoluciones, documentos y acciones clínicas según su perfil.
+Conserva acceso clínico a pacientes, Historia Clínica, evoluciones,
+antecedentes, alergias, medicación, signos vitales clínicos, RCTA, documentos
+e informes clínicos, y a la agenda según sus permisos actuales.
+
+El rol Médico no adquiere por ello permisos administrativos o comerciales.
 
 ### Secretaría
-Puede cargar/editar turnos, confirmar llegada, manejar sala de espera, cobertura, pagos/bonos/autorizaciones y asignar profesional.
-No debe ver información financiera administrativa sensible como sueldo/liquidación interna.
+Es un rol administrativo, operativo y comercial.
 
-## Pacientes
-Datos habituales:
+Puede:
+- crear y editar turnos/atenciones;
+- gestionar sala de espera y estados;
+- editar la ficha administrativa del paciente;
+- gestionar profesionales y especialidades;
+- agregar o eliminar prestaciones del catálogo y modificar la matriz habilitada
+  por profesional, sin borrar antecedentes históricos;
+- agregar o eliminar obras sociales/prepagas y modificar convenios, aranceles,
+  valores particulares y copagos;
+- cargar pagos, bonos, autorizaciones, médico solicitante y motivo/indicación;
+- importar o restaurar backups;
+- emitir constancias administrativas cuando corresponda.
+
+No puede:
+- acceder a Historia Clínica, resumen clínico, evoluciones, antecedentes,
+  alergias, medicación habitual, signos vitales almacenados dentro de HC ni
+  notas privadas médicas;
+- acceder a RCTA o informes clínicos, ni emitir certificados médicos;
+- gestionar usuarios/roles, seguridad o autenticación;
+- acceder a Caja, producción financiera, sueldo de Secretaría o liquidaciones;
+- ejecutar borrado global de datos ni reparaciones administrativas sensibles;
+- exportar un backup completo si contiene información financiera o clínica
+  sensible.
+
+La ficha administrativa del paciente no equivale a la Historia Clínica y no
+habilita acceso a datos clínicos.
+
+### Roles personalizados
+Los roles personalizados heredan capacidades según su `baseRole`: `admin`,
+`medico` o `secretaria`. `baseRole` es la referencia funcional para resolver
+permisos.
+
+## Ficha administrativa de pacientes
+Datos administrativos habituales:
 - nombre/apellido;
 - DNI;
 - fecha de nacimiento;
@@ -40,6 +77,9 @@ Datos habituales:
 - obra social/prepaga;
 - número de afiliado;
 - observaciones administrativas.
+
+Secretaría puede crear y editar estos datos. Este acceso permanece separado de
+la Historia Clínica.
 
 Debe existir acceso rápido para copiar:
 - DNI;
@@ -112,7 +152,7 @@ Debe poder cargarse:
 Las estadísticas deben permitir ranking de médicos solicitantes por período y prestación.
 
 ## Documentos
-Incluyen, según permisos:
+Incluyen:
 - receta/RCTA;
 - orden médica;
 - certificado;
@@ -120,6 +160,21 @@ Incluyen, según permisos:
 - otros documentos clínicos.
 
 El membrete pertenece al profesional responsable del documento, no necesariamente al usuario que lo genera.
+
+Secretaría solo puede emitir constancias administrativas: no puede emitir
+certificados médicos, RCTA ni informes clínicos. Médico y Dueño/Administrador
+mantienen el acceso a documentos clínicos que corresponda a sus permisos.
+
+## Backups
+Secretaría puede importar y restaurar backups operativos, pero no exportar un
+backup completo con información financiera o clínica sensible ni ejecutar un
+borrado global. Dueño/Administrador conserva acceso completo.
+
+## Seguridad actual de permisos
+Los permisos actuales se aplican en la interfaz y en los handlers de la
+aplicación. Siguen siendo controles de frontend: Hardening 2 no modificó
+Supabase ni RLS. La autorización por rol respaldada en backend queda pendiente
+como evolución futura.
 
 ## Dashboard
 Debe evolucionar hacia una pantalla de bienvenida/operativa:
@@ -146,8 +201,19 @@ Debe ordenarse por bloques:
 
 ## Evolución futura
 - Supabase Auth consolidado;
-- RLS;
+- seguridad backend por roles y RLS;
 - multiusuario/multiconsultorio;
 - PWA más robusta;
 - versión comercializable;
 - posible sincronización entre sedes.
+
+### Acceso clínico delegado de solo lectura
+En una fase futura, Secretaría podrá solicitar o generar una salida clínica en
+PDF de solo lectura sin entrar ni navegar por la Historia Clínica y sin requerir
+aprobación previa del médico.
+
+Según lo que se implemente, podrá visualizar, generar, imprimir o enviar ese
+PDF, pero no editar evoluciones ni datos clínicos. Cada acceso deberá registrar
+de forma persistente paciente, usuario, rol, fecha y hora, tipo de documento y
+acción realizada. Esta auditoría deberá respaldarse también con controles de
+backend/RLS y no depender solo del frontend.

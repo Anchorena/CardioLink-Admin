@@ -1,30 +1,80 @@
 # CardioLink Admin — Reglas de negocio
 
-Última actualización: 2026-08-14
+Última actualización: 2026-08-15
 
 ## Permisos
 
-### Administración
-Puede ver:
-- Caja/reportes;
-- sueldo Secretaría;
-- liquidaciones;
-- configuraciones financieras;
-- convenios/aranceles;
-- reportes sensibles.
+### Dueño / Administrador
+Tiene acceso completo a:
+- administración y configuración;
+- usuarios y roles;
+- finanzas, Caja, sueldo y liquidaciones;
+- Historia Clínica, documentos y reportes;
+- backups y mantenimiento;
+- prestaciones, profesionales y especialidades;
+- obras sociales/prepagas, convenios, aranceles, valores particulares y
+  copagos.
+
+### Médico
+Mantiene acceso a:
+- pacientes y agenda según sus permisos actuales;
+- Historia Clínica, resumen clínico y evoluciones;
+- antecedentes, alergias, medicación y signos vitales clínicos;
+- RCTA, documentos e informes clínicos.
+
+Este acceso clínico no concede permisos administrativos o comerciales que no
+le correspondan.
 
 ### Secretaría
-No debe ver:
-- sueldo;
-- liquidación de Secretaría;
-- movimientos financieros administrativos sensibles.
+Es un rol administrativo, operativo y comercial.
 
-Sí puede cargar:
-- pagos/copagos;
-- cobertura;
-- bono/autorización;
-- médico solicitante;
-- motivo del estudio.
+Puede:
+- crear y editar turnos/atenciones, sala de espera y estados;
+- crear y editar la ficha administrativa del paciente: nombre, apellido, DNI,
+  fecha de nacimiento, teléfono, email, obra social/prepaga, número de afiliado
+  y observaciones administrativas;
+- gestionar profesionales y especialidades;
+- agregar o eliminar prestaciones del catálogo y modificar la matriz de
+  prestaciones habilitadas por profesional;
+- agregar o eliminar obras sociales/prepagas;
+- modificar convenios, aranceles, valores particulares y copagos;
+- cargar pagos, bonos, autorizaciones, médico solicitante y motivo/indicación;
+- importar o restaurar backups;
+- emitir constancias administrativas cuando corresponda.
+
+No puede:
+- acceder a Historia Clínica, resumen clínico, evoluciones, antecedentes,
+  alergias, medicación habitual, signos vitales almacenados en HC ni notas
+  privadas médicas;
+- acceder a RCTA o informes clínicos, ni emitir certificados médicos;
+- acceder a usuarios y roles;
+- acceder a Caja, producción financiera, sueldo de Secretaría o liquidaciones;
+- ejecutar borrado global o reparaciones administrativas sensibles;
+- modificar seguridad o autenticación.
+
+La ficha administrativa del paciente es independiente de la Historia Clínica.
+Acceder a la primera no habilita a consultar ni modificar la segunda.
+
+### Roles personalizados
+Los roles personalizados heredan permisos de `admin`, `medico` o `secretaria`
+según su `baseRole`. `baseRole` es la referencia funcional de permisos.
+
+### Alcance técnico actual
+Los permisos se aplican en UI y handlers, por lo que continúan siendo controles
+de frontend. Hardening 2 no modificó Supabase ni RLS. La seguridad por rol en
+backend queda pendiente como evolución futura.
+
+## Backups
+
+### Secretaría
+- puede importar y restaurar backups;
+- no puede exportar un backup completo si contiene información financiera o
+  clínica sensible;
+- no puede ejecutar borrado global de datos.
+
+### Dueño / Administrador
+Tiene acceso completo a importación, restauración y exportación de backups, y a
+las acciones de mantenimiento autorizadas.
 
 ## Caja
 
@@ -103,4 +153,9 @@ Si hubo seña:
 
 ## Documentos
 El membrete/documento usa la identidad del profesional responsable.
-Si Secretaría emite un documento, debe elegir o respetar el profesional responsable.
+
+Secretaría puede emitir constancias administrativas cuando corresponda. No
+puede emitir certificados médicos, RCTA ni informes clínicos.
+
+Médico y Dueño/Administrador conservan acceso a documentos clínicos según sus
+permisos actuales.

@@ -1,6 +1,6 @@
 # CardioLink Admin — QA mínima antes de producción
 
-Última actualización: 2026-08-14
+Última actualización: 2026-08-15
 
 ## Regla
 No considerar estable un cambio solo porque “abre”.
@@ -29,12 +29,30 @@ Si el cambio toca HC:
 - confirmar persistencia.
 
 ## 4. Roles
-Probar como mínimo:
-- dueño/admin;
-- Secretaría;
-- médico.
+### Secretaría
+- crear y editar la ficha administrativa del paciente;
+- confirmar que HC, RCTA y Certificado están bloqueados;
+- confirmar que Constancia administrativa está disponible;
+- gestionar prestaciones por profesional, obras sociales/prepagas, convenios,
+  aranceles, valores particulares y copagos;
+- confirmar que importar/restaurar backup está disponible;
+- confirmar que exportar un backup completo sensible y ejecutar borrado global
+  están bloqueados;
+- confirmar que Caja, producción financiera, sueldo, liquidaciones y
+  usuarios/roles están bloqueados.
 
-Confirmar que cada rol ve solo lo permitido.
+### Médico
+- confirmar acceso a pacientes, HC, evoluciones, RCTA y documentos clínicos;
+- confirmar que no obtiene permisos administrativos o comerciales adicionales.
+
+### Dueño / Administrador
+- confirmar acceso completo a administración, configuración, usuarios/roles,
+  finanzas, Caja, HC, documentos, reportes, backups y mantenimiento.
+
+### Roles personalizados
+- probar al menos un rol basado en `admin`, uno en `medico` y uno en
+  `secretaria`;
+- confirmar que cada uno hereda capacidades y restricciones de su `baseRole`.
 
 ## 5. Navegación
 Recorrer:
@@ -42,13 +60,14 @@ Recorrer:
 - Carga
 - Agenda
 - Pacientes
-- HC
+- HC (solo con un rol permitido)
 - Pendientes
-- Caja (si corresponde)
+- Caja (solo con un rol permitido)
 - Estadísticas
 - Configuración
 
 ## 6. Paciente actual
+Con Médico o Dueño/Administrador:
 - seleccionar paciente;
 - abrir HC;
 - evolucionar;
