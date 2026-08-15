@@ -146,7 +146,7 @@ function perfilUsuarioActual(){
   let u=(data.usuarios||[]).find(x=>usuarioCoincide(x,user,email) && x.activo!==false);
   if(!u) u=inferirUsuarioPorLogin(user) || inferirUsuarioPorLogin(email);
   // Si no se reconoce el usuario, entra con permisos mínimos. No cae en Matías para evitar exposición de caja/reportes.
-  if(!u) u={id:'usr_sin_config',usuario:user,nombre:user||'Usuario sin configurar',rol:'medico',profesionalId:'',especialidad:'Perfil no configurado',activo:true};
+  if(!u) u={id:'usr_sin_config',usuario:user,nombre:user||'Usuario sin configurar',rol:'sin_configurar',profesionalId:'',especialidad:'Perfil no configurado',activo:true};
   usuarioPerfilActual=u;
   return u;
 }
@@ -154,13 +154,41 @@ function esMatiasDuenio(){
   const u=perfilUsuarioActual();
   return u.rol==='duenio' && (normalizarUsuarioClave(u.usuario)==='matias' || u.soloMatias===true || u.id==='matias');
 }
-function esSecretaria(){ const r=perfilUsuarioActual().rol; return r==='secretaria'; }
-function esAdminComun(){ const r=perfilUsuarioActual().rol; return r==='admin'; }
-function esMedico(){ const r=perfilUsuarioActual().rol; return r==='medico'; }
+function rolBaseUsuarioActual(){
+  const u=perfilUsuarioActual();
+  const rolId=u.rolId||u.rol||'';
+  const rolConfigurado=(data.roles||[]).find(r=>r.id===rolId);
+  return rolConfigurado?.baseRole||u.baseRole||u.rol||'';
+}
+function esSecretaria(){ return rolBaseUsuarioActual()==='secretaria'; }
+function esAdminComun(){ return rolBaseUsuarioActual()==='admin'; }
+function esMedico(){ return rolBaseUsuarioActual()==='medico'; }
 function puedeVerFacturaRogelio(){ return esMatiasDuenio(); }
 function puedeVerCajaGlobal(){ return esMatiasDuenio() || esAdminComun(); }
-function puedeGestionarConfig(){ return esMatiasDuenio() || esSecretaria() || esAdminComun(); }
+function puedeVerLiquidacionColocaciones(){ return esMatiasDuenio() || esAdminComun(); }
+function puedeAccederInformacionClinica(){ return esMatiasDuenio() || esAdminComun() || esMedico(); }
+function puedeGestionarConfigOperativa(){ return esMatiasDuenio() || esAdminComun() || esSecretaria(); }
+function puedeGestionarConfigComercial(){ return esMatiasDuenio() || esAdminComun() || esSecretaria(); }
+function puedeRestaurarBackups(){ return esMatiasDuenio() || esAdminComun() || esSecretaria(); }
+function puedeGestionarUsuariosPermisos(){ return esMatiasDuenio() || esAdminComun(); }
+function puedeGestionarMantenimientoSensible(){ return esMatiasDuenio() || esAdminComun(); }
+function puedeGestionarConfig(){ return puedeGestionarConfigOperativa(); }
 function puedeGestionarConfigAdministrativa(){ return esMatiasDuenio() || esAdminComun(); }
+function exigirConfigOperativa(mensaje='Tu perfil no puede modificar esta configuración operativa.'){
+  if(puedeGestionarConfigOperativa()) return true;
+  alert(mensaje);
+  return false;
+}
+function exigirConfigComercial(mensaje='Tu perfil no puede modificar esta configuración comercial.'){
+  if(puedeGestionarConfigComercial()) return true;
+  alert(mensaje);
+  return false;
+}
+function exigirRestaurarBackup(mensaje='Tu perfil no puede restaurar backups.'){
+  if(puedeRestaurarBackups()) return true;
+  alert(mensaje);
+  return false;
+}
 function exigirConfigAdministrativa(mensaje='Tu perfil no puede modificar esta configuración administrativa.'){
   if(puedeGestionarConfigAdministrativa()) return true;
   alert(mensaje);
@@ -195,14 +223,16 @@ function auditoriaHTML(a){
 function seccionPermitida(section){
   if(section==='caja') return esMatiasDuenio() || esAdminComun();
   if(section==='config') return puedeGestionarConfig();
+  if(section==='hc') return puedeAccederInformacionClinica();
   if(esMatiasDuenio()) return true;
-  if(esSecretaria() || esAdminComun()) return true;
-  if(esMedico()) return ['dashboard','carga','agenda','mensajes','pacientes','hc','listado','estadisticas','colocaciones','instructivos'].includes(section);
-  return section!=='config';
+  if(esAdminComun()) return true;
+  if(esSecretaria()) return ['dashboard','pendientes383','carga','agenda','mensajes','pacientes','listado','estadisticas','instructivos'].includes(section);
+  if(esMedico()) return ['dashboard','carga','agenda','mensajes','pacientes','hc','listado','estadisticas','instructivos'].includes(section);
+  return section==='dashboard';
 }
 function aplicarPermisosUI(){
   perfilUsuarioActual();
-  document.body.dataset.rol = perfilUsuarioActual().rol || '';
+  document.body.dataset.rol = rolBaseUsuarioActual() || perfilUsuarioActual().rol || '';
   document.body.dataset.usuario = usuarioActualNombreCorto();
   document.querySelectorAll('.nav').forEach(b=>{
     const ok=seccionPermitida(b.dataset.section);
@@ -221,7 +251,18 @@ function aplicarPermisosUI(){
   document.querySelectorAll('.solo-matias').forEach(el=>{const isCaja=el.dataset?.section==='caja';el.classList.toggle('hidden-permission',isCaja?!(esMatiasDuenio()||esAdminComun()):!esMatiasDuenio());});
   document.querySelectorAll('.no-medico').forEach(el=>el.classList.toggle('hidden-permission',esMedico()));
   document.querySelectorAll('.solo-config,[data-config-access="admin"]').forEach(el=>el.classList.toggle('hidden-permission',!puedeGestionarConfigAdministrativa()));
+  document.querySelectorAll('[data-config-access="operational"]').forEach(el=>el.classList.toggle('hidden-permission',!puedeGestionarConfigOperativa()));
+  document.querySelectorAll('[data-config-access="commercial"]').forEach(el=>el.classList.toggle('hidden-permission',!puedeGestionarConfigComercial()));
+  document.querySelectorAll('[data-config-access="restore"]').forEach(el=>el.classList.toggle('hidden-permission',!puedeRestaurarBackups()));
   document.querySelectorAll('[data-config-group="usuarios"]').forEach(el=>el.classList.toggle('hidden-permission',!puedeGestionarConfigAdministrativa()));
+  document.querySelectorAll('[data-clinical-access],[data-open-hc],[data-hc-new],[data-hc-edit],[data-hc-delete411b1],[data-hc-edit-summary],[data-hc-edit-patient409],[data-hc-print],[data-new-doc406],[data-edit-doc406],[data-print-doc406],[data-rcta-patient4095],[data-cp-action411b="hc"],[data-cp-action411b="evolve"],[data-cp-action411b="rcta"],[data-cp-action411b="order"],[data-cp-action411b="certificate"],#btnImportEvolMedicloud405,#btnImportEvolMedicloudPac407,#btnUndoEvolMedicloud405').forEach(el=>el.classList.toggle('hidden-permission',!puedeAccederInformacionClinica()));
+  if(!puedeAccederInformacionClinica()){
+    ['hcEvolutionModal','hcSummaryModal','hcPatientEditModal409','modalImportEvol405'].forEach(id=>$(id)?.remove());
+    if($('hcResultadosPacientes'))$('hcResultadosPacientes').innerHTML='';
+    if($('hcPacienteDetalle'))$('hcPacienteDetalle').innerHTML='<div class="muted">Historia clínica no disponible para este perfil.</div>';
+  }
+  document.querySelectorAll('.delete-patient386,#btnRepararCoberturasMedicloud350').forEach(el=>el.classList.toggle('hidden-permission',!puedeGestionarMantenimientoSensible()));
+  if($('liquidacionBox'))$('liquidacionBox').classList.toggle('hidden-permission',!puedeVerLiquidacionColocaciones());
   const lock=document.querySelector('.money-lock');
   if(lock) lock.classList.toggle('hidden-permission',!puedeVerCajaGlobal());
   const fOS=$('fOS');
@@ -950,11 +991,11 @@ function esElectro(prest){const s=(prest||'').toLowerCase();return s.includes('e
 function tipoPrest(prest){const s=(prest||'').toLowerCase();if(s.includes('consulta')&&(s.includes('ecg')||s.includes('electro')))return'CONSULTA_ECG';if(s.includes('consulta'))return'CONSULTA';if(s.includes('ecg')||s.includes('electro'))return'ECG';if(s.includes('holter'))return'HOLTER';if(s.includes('mapa'))return'MAPA';if(s.includes('eco'))return'ECO';return'ESTUDIO'}
 function esPrestacionColocable(prest){return ['HOLTER','MAPA','ECG'].includes(tipoPrest(prest))}
 function valoresColocacion(){try{return Object.assign({holter:10000,mapa:10000,ecg:0},JSON.parse(localStorage.getItem(storageValoresColocacion)||'{}'))}catch{return {holter:10000,mapa:10000,ecg:0}}}
-function guardarValoresColocacion(){const v={holter:Number($('valorColocacionHolter')?.value||$('liqValorHolter')?.value||10000),mapa:Number($('valorColocacionMapa')?.value||$('liqValorMapa')?.value||10000),ecg:Number($('valorColocacionEcg')?.value||$('liqValorEcg')?.value||0)};localStorage.setItem(storageValoresColocacion,JSON.stringify(v));return v}
+function guardarValoresColocacion(){if(!puedeVerLiquidacionColocaciones())return valoresColocacion();const v={holter:Number($('valorColocacionHolter')?.value||$('liqValorHolter')?.value||10000),mapa:Number($('valorColocacionMapa')?.value||$('liqValorMapa')?.value||10000),ecg:Number($('valorColocacionEcg')?.value||$('liqValorEcg')?.value||0)};localStorage.setItem(storageValoresColocacion,JSON.stringify(v));return v}
 function mostrarResumenFiltros(){resumenFiltrosVisible=true;if($('resumenCaja'))$('resumenCaja').classList.remove('hidden');if($('liquidacionBox'))$('liquidacionBox').classList.remove('hidden')}
 function ocultarResumenFiltros(){resumenFiltrosVisible=false;if($('resumenCaja'))$('resumenCaja').classList.add('hidden');if($('liquidacionBox'))$('liquidacionBox').classList.add('hidden');if($('liquidacionResultado'))$('liquidacionResultado').textContent=''}
 function getRegla(os){ if(os==='PAMI') return 'COBERTURA_COBRA_PARTICULAR'; return (data.reglasOS||{})[os] || (defaults.reglasOS||{})[os] || 'GENERAL_CONSULTA_EXTRA'}
-function setRegla(os,regla){if(!data.reglasOS)data.reglasOS={};data.reglasOS[os]=regla;saveConfig()}
+function setRegla(os,regla){if(!puedeGestionarConfigComercial())return false;if(!data.reglasOS)data.reglasOS={};data.reglasOS[os]=regla;saveConfig();return true}
 function escapeHtml(s){return String(s??'').replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;')}
 function esMensajeInterno(a){return a && a.tipoRegistro==='mensaje';}
 function atencionesOperativas(datos=atenciones){return (datos||[]).filter(a=>!esMensajeInterno(a) && !esAtencionCorrupta(a));}
@@ -1986,6 +2027,7 @@ function prestacionListado(a){
 function badgeColocacion(a){return a.colocacionLiquidable?`<br><span class="badge ok colocacion-badge">Coloc. ${escapeHtml(a.colocador||'')}</span>`:''}
 function calcularLiquidacionColocaciones(){
   if(!$('liquidacionResultado'))return;
+  if(!puedeVerLiquidacionColocaciones()){$('liquidacionResultado').textContent='';return;}
   const v=guardarValoresColocacion();
   const datos=filtrar().filter(a=>a.colocacionLiquidable && esPrestacionColocable(a.prestacion));
   const holter=datos.filter(a=>tipoPrest(a.prestacion)==='HOLTER').length;
@@ -2003,6 +2045,7 @@ function valorColocacionPorPrestacion(prest){
  return 0;
 }
 function datosLiquidacionColocaciones(){
+ if(!puedeVerLiquidacionColocaciones())return [];
  const desde=$('liqDesde')?.value||'';
  const hasta=$('liqHasta')?.value||'';
  const colocador=$('liqColocador')?.value||'';
@@ -2016,6 +2059,7 @@ function datosLiquidacionColocaciones(){
 }
 
 function datosLiquidacionColocacionesSolapa(){
+  if(!puedeVerLiquidacionColocaciones())return {desde:'',hasta:'',colocador:'',v:{holter:0,mapa:0,ecg:0},datos:[],holter:0,mapa:0,ecg:0,totalHolter:0,totalMapa:0,totalEcg:0,total:0};
   guardarValoresColocacion();
   const desde=$('liqDesde')?.value||'';
   const hasta=$('liqHasta')?.value||'';
@@ -2040,6 +2084,7 @@ function datosLiquidacionColocacionesSolapa(){
 }
 
 function imprimirLiquidacionColocaciones(){
+  if(!puedeVerLiquidacionColocaciones()){alert('Tu perfil no puede acceder a liquidaciones.');return;}
   const l=datosLiquidacionColocacionesSolapa();
   if(!l.datos.length){alert('No hay colocaciones para imprimir con esos filtros.');return;}
   const desdeTxt=l.desde?formatFecha(l.desde):'Inicio';
@@ -2076,6 +2121,7 @@ function imprimirLiquidacionColocaciones(){
 
 function renderLiquidacionColocacionesSolapa(){
   if(!$('liqResultado'))return;
+  if(!puedeVerLiquidacionColocaciones()){$('liqResultado').textContent='';if($('tablaLiquidacionColocaciones'))$('tablaLiquidacionColocaciones').innerHTML='';return;}
   const l=datosLiquidacionColocacionesSolapa();
   $('liqResultado').innerHTML=`<strong>Total a pagar: ${money(l.total)}</strong><br>Holter: ${l.holter} × ${money(l.v.holter)} = ${money(l.totalHolter)} · MAPA: ${l.mapa} × ${money(l.v.mapa)} = ${money(l.totalMapa)} · ECG: ${l.ecg} × ${money(l.v.ecg)} = ${money(l.totalEcg)}`;
   const tbody=$('tablaLiquidacionColocaciones');
@@ -2276,7 +2322,7 @@ function ocultarDineroPeriodo(){$('dineroPeriodoResultado').textContent='';$('cl
 function setPrintMeta(){$('printMeta').textContent=`Perfil: ${perfilObj().nombre} | Registros: ${filtrar().length} | ${formatFecha(todayISO())}`}
 function exportarCSV(){const datos=filtrar();if(!datos.length){alert('No hay datos');return}const r=resumen(datos);const incluirValoresExport=!!$('incluirValoresImpresion')?.checked;const filas=[['CardioLink Admin v4.1.0-hc'],['Perfil',perfilObj().nombre],['Consultas',r.consultas],['Estudios',r.estudios],[],['Fecha','Paciente','OS','Profesional','Prestación','Consulta a','Estudio a','Tipo','Forma','Particular visible','Copago visible','Total visible','Estado']];datos.forEach(a=>{const m=dineroVisible(a),e=evaluarEstado(a);filas.push([formatFecha(a.fecha),a.paciente,a.obraSocial,a.profesional,prestacionListado(a),a.consultaA,a.prestacionA,a.tipoCobro,a.formaPago,incluirValoresExport?m.particular:'',incluirValoresExport?m.copago:'',incluirValoresExport?m.total:'',e.txt])});const csv=filas.map(r=>r.map(c=>`"${String(c??'').replaceAll('"','""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_listado.csv';a.click()}
 function exportarBackup(){if(!exigirConfigAdministrativa('Tu perfil no puede exportar backups completos.'))return;const b={app:'CardioLink Admin',version:'4.1.0-hc',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
-function importarBackup(){if(!exigirConfigAdministrativa('Tu perfil no puede restaurar backups.'))return;const inp=$('inputImportBackup');if(!inp.files[0]){alert('Elegí archivo');return}if(!confirm('Reemplaza la base actual. ¿Continuar?'))return;const rd=new FileReader();rd.onload=e=>{try{const b=JSON.parse(e.target.result);if(!b.config||!b.atenciones)throw new Error();data=b.config;atenciones=b.atenciones;saveConfig();saveAtenciones();refreshSelects();renderConfig();cambiarPerfil('general');alert('Backup importado')}catch{alert('Backup inválido')}};rd.readAsText(inp.files[0])}
+function importarBackup(){if(!exigirRestaurarBackup())return;const inp=$('inputImportBackup');if(!inp.files[0]){alert('Elegí archivo');return}if(!confirm('Reemplaza la base actual. ¿Continuar?'))return;const rd=new FileReader();rd.onload=e=>{try{const b=JSON.parse(e.target.result);if(!b.config||!b.atenciones)throw new Error();data=b.config;atenciones=b.atenciones;saveConfig();saveAtenciones();refreshSelects();renderConfig();cambiarPerfil('general');alert('Backup importado')}catch{alert('Backup inválido')}};rd.readAsText(inp.files[0])}
 
 function dniLimpio(v){return String(v||'').replace(/\D/g,'');}
 function telLimpio(v){return String(v||'').replace(/\D/g,'');}
@@ -2348,6 +2394,11 @@ function resumenPacienteDuplicado(p){
 function renderDuplicadosPacientes(){
   const box=$('resultadoDuplicadosPacientes');
   const boxPac=$('resultadoDuplicadosPacientesPacientes');
+  if(!puedeGestionarMantenimientoSensible()){
+    if(box)box.innerHTML='';
+    if(boxPac)boxPac.innerHTML='';
+    return;
+  }
   const pares=detectarDuplicadosPacientes();
   const renderTarget=(html)=>{ if(box)box.innerHTML=html; if(boxPac)boxPac.innerHTML=html; };
   if(!pares.length){renderTarget('<div class="ok-box">No encontré duplicados probables entre pacientes activos.</div>');return;}
@@ -2388,6 +2439,7 @@ function asegurarPacientePersistente(p){
   return existente;
 }
 function fusionarPacientes(principalId,duplicadoId){
+  if(!exigirConfigAdministrativa('Tu perfil no puede fusionar pacientes.'))return;
   if(principalId===duplicadoId)return;
   const principalOrigen=todosPacientes().find(p=>clavePacientePanel(p)===principalId || p.id===principalId);
   const duplicado=todosPacientes().find(p=>clavePacientePanel(p)===duplicadoId || p.id===duplicadoId);
@@ -2484,7 +2536,7 @@ function cargarValoresConfig(){
 }
 
 function guardarValores(){
-  if(!exigirConfigAdministrativa('Tu perfil no puede modificar valores financieros.'))return;
+  if(!exigirConfigComercial('Tu perfil no puede modificar valores comerciales.'))return;
   if(!$('cfgProfesionalValores')) return;
   const p=(data.profesionales||[]).find(x=>x.id===$('cfgProfesionalValores').value);
   if(!p)return;
@@ -2509,7 +2561,7 @@ function cargarReglaConfig(){
 }
 
 function guardarReglaConfig(){
-  if(!exigirConfigAdministrativa('Tu perfil no puede modificar reglas administrativas de obras sociales.'))return;
+  if(!exigirConfigComercial('Tu perfil no puede modificar reglas de obras sociales.'))return;
   if(!$('cfgReglaOS') || !$('cfgTipoRegla')) return;
   setRegla($('cfgReglaOS').value,$('cfgTipoRegla').value);
   alert('Regla guardada');
@@ -2517,6 +2569,7 @@ function guardarReglaConfig(){
 }
 
 function addProfesional(){
+  if(!exigirConfigOperativa('Tu perfil no puede crear profesionales.'))return;
   const n=$('nuevoProfesional')?.value.trim();
   if(!n)return;
   data.profesionales=data.profesionales||[];
@@ -2524,11 +2577,13 @@ function addProfesional(){
   saveConfig();refreshSelects();renderConfig();
 }
 function delProfesional(id){
+  if(!exigirConfigOperativa('Tu perfil no puede borrar profesionales.'))return;
   if(!confirm('¿Borrar profesional?'))return;
   data.profesionales=(data.profesionales||[]).filter(p=>p.id!==id);
   saveConfig();refreshSelects();renderConfig();
 }
 function addOS(){
+  if(!exigirConfigComercial('Tu perfil no puede crear obras sociales.'))return;
   const n=$('nuevaOS')?.value.trim();
   if(!n)return;
   data.obrasSociales=data.obrasSociales||[];
@@ -2536,12 +2591,14 @@ function addOS(){
   saveConfig();refreshSelects();renderConfig();
 }
 function delOS(enc){
+  if(!exigirConfigComercial('Tu perfil no puede borrar obras sociales.'))return;
   const n=decodeURIComponent(enc);
   if(!confirm('¿Borrar obra social?'))return;
   data.obrasSociales=(data.obrasSociales||[]).filter(o=>o!==n);
   saveConfig();refreshSelects();renderConfig();
 }
 function addPrestacion(){
+  if(!exigirConfigComercial('Tu perfil no puede crear prestaciones.'))return;
   const n=$('nuevaPrestacion')?.value.trim(), pid=$('profPrestacion')?.value;
   if(!n)return;
   const p=(data.profesionales||[]).find(x=>x.id===pid);
@@ -2552,6 +2609,7 @@ function addPrestacion(){
   saveConfig();refreshSelects();renderConfig();actualizarPrestaciones();
 }
 function delPrestacion(enc){
+  if(!exigirConfigComercial('Tu perfil no puede borrar prestaciones.'))return;
   const n=decodeURIComponent(enc);
   if(!confirm('¿Borrar prestación de todos los perfiles?'))return;
   (data.profesionales||[]).forEach(p=>p.prestaciones=(p.prestaciones||[]).filter(x=>x!==n));
@@ -2563,6 +2621,12 @@ function delPrestacion(enc){
 function renderUsuariosConfig(){
   asegurarUsuariosConfig();
   const lista=$('listaUsuariosSistema');
+  if(!puedeGestionarUsuariosPermisos()){
+    if(lista)lista.innerHTML='';
+    const profSel=$('usrProfesionalId');
+    if(profSel)profSel.innerHTML='';
+    return;
+  }
   if(lista){
     lista.innerHTML=(data.usuarios||[]).map(u=>{
       const prof=(data.profesionales||[]).find(p=>p.id===u.profesionalId);
@@ -4055,7 +4119,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   const $id=(id)=>document.getElementById(id);
   const esc=(v)=> typeof escapeHtml==='function' ? escapeHtml(v) : String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   const usuarioCortoActual=()=>{ try{return usuarioLoginCorto(perfilUsuarioActual().usuario||usuarioActualNombreCorto());}catch(e){return usuarioActualNombreCorto?.()||'local';} };
-  const esAdminActual=()=>{ try{return esDuenioMatias?.() || perfilUsuarioActual().rol==='admin';}catch(e){return false;} };
+  const esAdminActual=()=>{ try{return esMatiasDuenio?.() || esAdminComun?.();}catch(e){return false;} };
 
   // Versión visible incluso si alguna etiqueta quedó cacheada en el login.
   function actualizarVersionVisible294(){
@@ -4337,7 +4401,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   const $id=(id)=>document.getElementById(id);
   const esc=(v)=> typeof escapeHtml==='function' ? escapeHtml(v) : String(v??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   const usrActual=()=>{ try{return usuarioLoginCorto(perfilUsuarioActual().usuario||usuarioActualNombreCorto());}catch(e){return usuarioActualNombreCorto?.()||'local';} };
-  const esAdmin=()=>{ try{return esDuenioMatias?.() || perfilUsuarioActual().rol==='admin';}catch(e){return false;} };
+  const esAdmin=()=>{ try{return esMatiasDuenio?.() || esAdminComun?.();}catch(e){return false;} };
 
   function actualizarVersionVisible295(){
     try{document.title='CardioLink Admin v2.9.5';}catch(e){}
@@ -4610,9 +4674,9 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     };
   }
 
-  // Oculta Colocaciones/Pendientes a médicos comunes. Queda para Matías, Administración y Secretaría.
+  // La liquidación de colocaciones queda fuera del perfil Secretaría.
   window.puedeVerColocaciones296=function(){
-    try{return esMatiasDuenio?.() || esSecretaria?.() || esAdminComun?.() || perfilObj?.().id==='general';}catch(e){return false;}
+    try{return typeof puedeVerLiquidacionColocaciones==='function'?puedeVerLiquidacionColocaciones():(esMatiasDuenio?.()||esAdminComun?.());}catch(e){return false;}
   };
   const seccionPre296=typeof seccionPermitida==='function'?seccionPermitida:null;
   if(seccionPre296){
@@ -4750,6 +4814,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   };
 
   function insertarPanelBloques(){
+    if(!puedeGestionarConfigComercial()) return;
     if($id('configBloquesPrestaciones297')) return;
     const grid=document.querySelector('#config .config-grid');
     if(!grid) return;
@@ -4757,6 +4822,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     card.className='config-bloques-card full-config-card';
     card.id='configBloquesPrestaciones297';
     card.dataset.configGroupCard='prestaciones';
+    card.dataset.configAccess='commercial';
     card.innerHTML=`
       <h3>Bloques de prestaciones por perfil</h3>
       <p class="muted">Usá esto cuando entra un profesional nuevo. Elegís sus bloques y esas prestaciones aparecen en el desplegable principal y en los tildes de prestaciones adicionales.</p>
@@ -4794,6 +4860,10 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     return Object.keys(data.bloquesPrestaciones||{}).map(k=>`<option value="${esc(k)}" ${k===selected?'selected':''}>${esc(data.bloquesPrestacionesLabels?.[k]||k)}</option>`).join('');
   }
   function renderBloquesConfig297(){
+    if(!puedeGestionarConfigComercial()){
+      $id('configBloquesPrestaciones297')?.remove();
+      return;
+    }
     insertarPanelBloques(); asegurarBloques297();
     const profSel=$id('cfgBloquesProfesional');
     const bloqueSel=$id('cfgBloqueEditar');
@@ -4835,6 +4905,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     document.addEventListener('click',(e)=>{
       const btn=e.target.closest?.('button'); if(!btn) return;
       if(btn.id==='btnGuardarBloquesProfesional'){
+        if(!exigirConfigComercial('Tu perfil no puede modificar los bloques de prestaciones.')) return;
         const profId=$id('cfgBloquesProfesional')?.value; const p=(data.profesionales||[]).find(x=>x.id===profId);
         if(!p) return;
         const bloques=[...document.querySelectorAll('.cfgBloqueProfCheck:checked')].map(ch=>ch.value);
@@ -4847,6 +4918,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         return;
       }
       if(btn.id==='btnAgregarPrestacionBloque'){
+        if(!exigirConfigComercial('Tu perfil no puede modificar el catálogo de prestaciones.')) return;
         const b=$id('cfgBloqueEditar')?.value; const pr=($id('cfgNuevaPrestacionBloque')?.value||'').trim();
         if(!b||!pr) return;
         if(esCompuesta(pr)){alert('No agregues prestaciones compuestas acá. Las combinaciones se manejan con tildes de prestaciones adicionales.');return;}
@@ -4857,6 +4929,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         return;
       }
       if(btn.id==='btnCrearBloquePrestaciones'){
+        if(!exigirConfigComercial('Tu perfil no puede modificar el catálogo de prestaciones.')) return;
         const nombre=($id('cfgNuevoBloqueNombre')?.value||'').trim();
         if(!nombre) return;
         const k=normKey(nombre);
@@ -4869,6 +4942,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         return;
       }
       if(btn.dataset?.bloqueDel){
+        if(!exigirConfigComercial('Tu perfil no puede modificar el catálogo de prestaciones.')) return;
         const b=btn.dataset.bloqueDel; const pr=btn.dataset.prestDel;
         if(!confirm('¿Borrar esta prestación del bloque?')) return;
         data.bloquesPrestaciones[b]=(data.bloquesPrestaciones[b]||[]).filter(x=>x!==pr);
@@ -5908,6 +5982,10 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   window.coberturaVisible350=coberturaVisible350;
   window.coberturaPacienteNormalizada321=function(p){return coberturaVisible350(p)};
   function limpiarCoberturasMedicloud350(silencioso=false){
+    if(!puedeGestionarMantenimientoSensible()){
+      if(!silencioso)alert('Tu perfil no puede ejecutar reparaciones sensibles.');
+      return 0;
+    }
     let n=0;
     pacientesBase().forEach(p=>{
       const v=String(p.coberturaHabitual||p.obraSocial||p.cobertura||'').trim();
@@ -5934,12 +6012,14 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
   // Agrega botón manual de reparación en Configuración.
   function asegurarBotonRepararCoberturas350(){
+    if(!puedeGestionarMantenimientoSensible()){$id('btnRepararCoberturasMedicloud350')?.remove();return;}
     if($id('btnRepararCoberturasMedicloud350'))return;
     const backupTitle=Array.from(document.querySelectorAll('#config h3')).find(h=>/backup/i.test(h.textContent||''));
     const cont=backupTitle?.parentElement || document.querySelector('#config .config-grid') || document.querySelector('#config .card');
     if(!cont)return;
     const btn=document.createElement('button');
     btn.id='btnRepararCoberturasMedicloud350';
+    btn.dataset.configAccess='admin';
     btn.type='button';
     btn.className='secondary';
     btn.textContent='Reparar coberturas Medicloud';
@@ -6085,7 +6165,8 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     (typeof todosPacientes==='function'?todosPacientes():pacientesBase()).filter(p=>p&&p.estado!=='fusionado').forEach(p=>{const key=dniClean(p.dni)||norm(nombrePac(p)); if(key && !map.has(key))map.set(key,p);});
     const counts={}; Array.from(map.values()).forEach(p=>{const c=coberturaVisible350(p); counts[c]=(counts[c]||0)+1;});
     const entries=Object.entries(counts).sort((a,b)=>(a[0]==='Incompleto'?-1:b[0]==='Incompleto'?1:b[1]-a[1]));
-    box.innerHTML=`<h3>Contador de coberturas de pacientes</h3><p class="muted">Conteo de fichas administrativas. Cobertura vacía o importada como médico aparece como <strong>Incompleto</strong>.</p><div class="coverage-grid320">${entries.length?entries.map(([k,v])=>`<button type="button" class="coverage-pill320 ${k==='Incompleto'?'incomplete':''}" onclick="showSection('pacientes');document.getElementById('pacientesBuscar').value='${k==='Incompleto'?'':esc(k)}';renderPacientesPanel(document.getElementById('pacientesBuscar').value,true)"><span>${esc(k)}</span><strong>${v}</strong></button>`).join(''):'<p class="muted">Sin pacientes cargados.</p>'}</div><div class="mini-actions350"><button class="secondary" type="button" onclick="limpiarCoberturasMedicloud350(false)">Reparar coberturas Medicloud</button></div>`;
+    const repair=puedeGestionarMantenimientoSensible()?'<div class="mini-actions350"><button class="secondary" type="button" onclick="limpiarCoberturasMedicloud350(false)">Reparar coberturas Medicloud</button></div>':'';
+    box.innerHTML=`<h3>Contador de coberturas de pacientes</h3><p class="muted">Conteo de fichas administrativas. Cobertura vacía o importada como médico aparece como <strong>Incompleto</strong>.</p><div class="coverage-grid320">${entries.length?entries.map(([k,v])=>`<button type="button" class="coverage-pill320 ${k==='Incompleto'?'incomplete':''}" onclick="showSection('pacientes');document.getElementById('pacientesBuscar').value='${k==='Incompleto'?'':esc(k)}';renderPacientesPanel(document.getElementById('pacientesBuscar').value,true)"><span>${esc(k)}</span><strong>${v}</strong></button>`).join(''):'<p class="muted">Sin pacientes cargados.</p>'}</div>${repair}`;
   };
   const oldRenderEst350=typeof renderEstadisticas==='function'?renderEstadisticas:null;
   if(oldRenderEst350 && !oldRenderEst350.__v350){
@@ -6197,9 +6278,10 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       const nombre=profName360(currentProfileId360());
       return nombre&&nombre!=='general' ? `Resumen de ${nombre}` : 'Vista previa local';
     }
-    if(u.rol==='secretaria')return `Bienvenida, ${firstName360(u.nombre)}`;
-    if(u.rol==='admin')return `Bienvenido, ${firstName360(u.nombre)}`;
-    const isDoc=['medico','duenio'].includes(u.rol);return `Bienvenido${isDoc?' Dr.':''} ${firstName360(u.nombre)}`;
+    const base=typeof rolBaseUsuarioActual==='function'?rolBaseUsuarioActual():u.rol;
+    if(base==='secretaria')return `Bienvenida, ${firstName360(u.nombre)}`;
+    if(base==='admin')return `Bienvenido, ${firstName360(u.nombre)}`;
+    const isDoc=base==='medico'||u.rol==='duenio';return `Bienvenido${isDoc?' Dr.':''} ${firstName360(u.nombre)}`;
   }
   function renderWelcomeSummary360(){
     const pid=$360('welcomePerfil360')?.value||currentProfileId360();
@@ -6221,7 +6303,8 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     $360('welcomeFecha360').textContent=new Date().toLocaleDateString('es-AR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
     $360('welcomeTitulo360').textContent=welcomeTitle360(u);
     $360('welcomeUsuario360').textContent=isLocalPreview360()?'Vista local de diseño':`Usuario conectado: ${u.nombre||u.usuario||''}`;
-    const canChoose=isLocalPreview360()||u.rol==='secretaria'||u.rol==='admin'||u.rol==='duenio';const wrap=$360('welcomePerfilWrap360'),sel=$360('welcomePerfil360');
+    const base=typeof rolBaseUsuarioActual==='function'?rolBaseUsuarioActual():u.rol;
+    const canChoose=isLocalPreview360()||base==='secretaria'||base==='admin'||u.rol==='duenio';const wrap=$360('welcomePerfilWrap360'),sel=$360('welcomePerfil360');
     wrap?.classList.toggle('hidden',!canChoose);
     if(sel){sel.innerHTML=(data?.profesionales||[]).map(p=>`<option value="${esc360(p.id)}">${esc360(p.nombre)}</option>`).join('');let target=currentProfileId360();if(target==='general')target=u.profesionalId||(data?.profesionales||[])[0]?.id;sel.value=target||'';sel.onchange=renderWelcomeSummary360;}
     renderWelcomeSummary360();modal.classList.remove('hidden');modal.dataset.key=key;
@@ -6318,7 +6401,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 (function(){
   function id(x){return document.getElementById(x)}
   const oldPerm=typeof aplicarPermisosUI==='function'?aplicarPermisosUI:null;
-  if(oldPerm){window.aplicarPermisosUI=aplicarPermisosUI=function(){oldPerm.apply(this,arguments);const u=perfilUsuarioActual();document.querySelectorAll('.nav[data-section="caja"]').forEach(b=>b.classList.toggle('hidden-permission',!(esMatiasDuenio()||u.rol==='admin')));};}
+  if(oldPerm){window.aplicarPermisosUI=aplicarPermisosUI=function(){oldPerm.apply(this,arguments);document.querySelectorAll('.nav[data-section="caja"]').forEach(b=>b.classList.toggle('hidden-permission',!(esMatiasDuenio()||esAdminComun())));};}
   document.addEventListener('DOMContentLoaded',()=>{
     document.body.classList.add('loading-362');
     setTimeout(()=>{document.body.classList.remove('loading-362');document.body.classList.add('app-ready-360');const b=id('btnCerrarSesion');if(b)b.style.visibility='visible';},1400);
@@ -6864,7 +6947,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function nombre386(p){return p?.apellidoNombre||p?.nombreCompleto||p?.paciente||p?.nombre||'Paciente';}
   function clave386(p){try{return typeof pacienteClave==='function'?pacienteClave(p):(p?.id||p?.dni||nombre386(p));}catch{return p?.id||p?.dni||nombre386(p)}}
   function dni386(v){return String(v||'').replace(/\D/g,'');}
-  function puedeEliminar386(){try{return typeof esAdmin==='function'?esAdmin():true}catch{return true}}
+  function puedeEliminar386(){try{return !!puedeGestionarMantenimientoSensible()}catch{return false}}
   function paciente386(key){
     const ps=(data?.pacientes||[]);
     let p=ps.find(x=>String(x.id||'')===String(key));
@@ -6925,6 +7008,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         setTimeout(()=>{
           const modal=document.getElementById('qualityModal383');
           if(!modal)return;
+          if(!puedeEliminar386()){modal.querySelectorAll('.delete-patient386').forEach(x=>x.remove());return;}
           modal.querySelectorAll('.quality-row384').forEach(row=>{
             if(row.querySelector('.delete-patient386'))return;
             const full=row.querySelector('[onclick*="editarPacienteGlobal350"]');
@@ -6955,11 +7039,11 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
   // Botón Eliminar en ficha de Pacientes.
   const selOld386=typeof seleccionarPacientePanel==='function'?seleccionarPacientePanel:null;
-  if(selOld386){window.seleccionarPacientePanel=seleccionarPacientePanel=function(id){const r=selOld386.apply(this,arguments);setTimeout(()=>{const actions=document.querySelector('#pacienteDetalle .paciente-ficha-actions');if(actions&&!actions.querySelector('.delete-patient386')){const b=document.createElement('button');b.type='button';b.className='danger delete-patient386';b.textContent='Eliminar paciente';b.onclick=()=>eliminarPacienteCompleto386(id);actions.appendChild(b);}},0);return r;};}
+  if(selOld386){window.seleccionarPacientePanel=seleccionarPacientePanel=function(id){const r=selOld386.apply(this,arguments);setTimeout(()=>{const actions=document.querySelector('#pacienteDetalle .paciente-ficha-actions');if(!puedeEliminar386()){actions?.querySelectorAll('.delete-patient386').forEach(x=>x.remove());return;}if(actions&&!actions.querySelector('.delete-patient386')){const b=document.createElement('button');b.type='button';b.className='danger delete-patient386';b.textContent='Eliminar paciente';b.onclick=()=>eliminarPacienteCompleto386(id);actions.appendChild(b);}},0);return r;};}
 
   // Botón Eliminar en ficha emergente global.
   const openOld386=typeof abrirPacienteGlobalDetalle350==='function'?abrirPacienteGlobalDetalle350:null;
-  if(openOld386){window.abrirPacienteGlobalDetalle350=abrirPacienteGlobalDetalle350=function(k){const r=openOld386.apply(this,arguments);setTimeout(()=>{const actions=document.querySelector('#pacienteGlobalBody .paciente-global-actions-top');if(actions&&!actions.querySelector('.delete-patient386')){const b=document.createElement('button');b.type='button';b.className='danger delete-patient386';b.textContent='Eliminar paciente';b.onclick=()=>eliminarPacienteCompleto386(k);actions.appendChild(b);}},0);return r;};}
+  if(openOld386){window.abrirPacienteGlobalDetalle350=abrirPacienteGlobalDetalle350=function(k){const r=openOld386.apply(this,arguments);setTimeout(()=>{const actions=document.querySelector('#pacienteGlobalBody .paciente-global-actions-top');if(!puedeEliminar386()){actions?.querySelectorAll('.delete-patient386').forEach(x=>x.remove());return;}if(actions&&!actions.querySelector('.delete-patient386')){const b=document.createElement('button');b.type='button';b.className='danger delete-patient386';b.textContent='Eliminar paciente';b.onclick=()=>eliminarPacienteCompleto386(k);actions.appendChild(b);}},0);return r;};}
 
   function refrescarVersion386(){
     document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(x=>x.textContent='v4.1.0-hc');
@@ -7207,11 +7291,11 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     wrap.innerHTML=`<h3>Roles editables</h3><p class="muted">El rol define permisos. Podés crear nuevos roles tomando como base Administrador, Médico o Secretaría.</p><div class="inline-form"><input id="nuevoRol310" placeholder="Nombre del rol"><select id="baseRol310"><option value="medico">Base Médico</option><option value="secretaria">Base Secretaría</option><option value="admin">Base Administrador</option></select><button class="primary" id="addRol310" type="button">Agregar</button></div><ul id="listaRoles310"></ul>`;
     grid.insertBefore(wrap,grid.firstChild);
 
-    const esp=document.createElement('div'); esp.id='cfgEspecialidades310'; esp.className='config-smart-card-310'; esp.dataset.configGroupCard='profesionales';
+    const esp=document.createElement('div'); esp.id='cfgEspecialidades310'; esp.className='config-smart-card-310'; esp.dataset.configGroupCard='profesionales';esp.dataset.configAccess='operational';
     esp.innerHTML=`<h3>Especialidades editables</h3><p class="muted">Cada profesional puede tener una o varias especialidades.</p><div class="inline-form"><input id="nuevaEspecialidad310" placeholder="Nueva especialidad"><button class="primary" id="addEspecialidad310" type="button">Agregar</button></div><ul id="listaEspecialidades310"></ul>`;
     grid.insertBefore(esp,wrap.nextSibling);
 
-    const perfil=document.createElement('div'); perfil.id='cfgPerfilProfesional310'; perfil.className='config-smart-card-310 full-config-card'; perfil.dataset.configGroupCard='profesionales';
+    const perfil=document.createElement('div'); perfil.id='cfgPerfilProfesional310'; perfil.className='config-smart-card-310 full-config-card'; perfil.dataset.configGroupCard='profesionales';perfil.dataset.configAccess='operational';
     perfil.innerHTML=`<h3>Perfil profesional</h3><p class="muted">Editá nombre, área visible, estado y especialidades sin tocar el código.</p><div class="profile-editor-310"><label>Profesional<select id="cfgProfEditar310"></select></label><label>Nombre<input id="cfgProfNombre310"></label><label>Área visible<input id="cfgProfArea310"></label><label class="check-row-310"><input type="checkbox" id="cfgProfActivo310"> Profesional activo</label><div><strong>Especialidades</strong><div id="cfgEspecialidadesProfesional310" class="checks-grid-310"></div></div><button class="primary" id="guardarPerfil310" type="button">Guardar perfil profesional</button></div>`;
     grid.insertBefore(perfil,esp.nextSibling);
   }
@@ -7219,12 +7303,12 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function renderSmartConfig(){
     ensureSmartConfig(); injectCards();
     const lr=document.getElementById('listaRoles310');
-    if(lr)lr.innerHTML=data.roles.map(r=>`<li><strong>${esc(r.nombre)}</strong> <span class="muted">Base: ${esc(r.baseRole)}</span> ${['admin','director_medico','medico','secretaria'].includes(r.id)?'':`<button class="small-btn" data-del-role310="${esc(r.id)}">Borrar</button>`}</li>`).join('');
+    if(lr)lr.innerHTML=puedeGestionarUsuariosPermisos()?data.roles.map(r=>`<li><strong>${esc(r.nombre)}</strong> <span class="muted">Base: ${esc(r.baseRole)}</span> ${['admin','director_medico','medico','secretaria'].includes(r.id)?'':`<button class="small-btn" data-del-role310="${esc(r.id)}">Borrar</button>`}</li>`).join(''):'';
     const le=document.getElementById('listaEspecialidades310');
     if(le)le.innerHTML=data.especialidades.map(e=>`<li>${esc(e.nombre)} <button class="small-btn" data-del-esp310="${esc(e.id)}">Borrar</button></li>`).join('');
     const ps=document.getElementById('cfgProfEditar310');
     if(ps){const old=ps.value;ps.innerHTML=(data.profesionales||[]).filter(p=>p.id!=='general').map(p=>`<option value="${esc(p.id)}">${esc(p.nombre)}</option>`).join('');if([...ps.options].some(o=>o.value===old))ps.value=old;loadProfessional();}
-    const usrRole=document.getElementById('usrRol'); if(usrRole){const current=usrRole.value;usrRole.innerHTML=roleOptions(current);}
+    const usrRole=document.getElementById('usrRol'); if(usrRole&&puedeGestionarUsuariosPermisos()){const current=usrRole.value;usrRole.innerHTML=roleOptions(current);}
   }
 
   function loadProfessional(){
@@ -7236,13 +7320,14 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     if(box)box.innerHTML=(data.especialidades||[]).filter(e=>e.activo!==false).map(e=>`<label><input type="checkbox" value="${esc(e.id)}" ${(p.especialidadIds||[]).includes(e.id)?'checked':''}> ${esc(e.nombre)}</label>`).join('');
   }
   function saveProfessional(){
+    if(!exigirConfigOperativa('Tu perfil no puede modificar profesionales.'))return;
     const p=(data.profesionales||[]).find(x=>x.id===document.getElementById('cfgProfEditar310')?.value);if(!p)return;
     p.nombre=document.getElementById('cfgProfNombre310').value.trim()||p.nombre;
     p.area=document.getElementById('cfgProfArea310').value.trim();p.activo=document.getElementById('cfgProfActivo310').checked;p.especialidadIds=selectedSpecialties();
     saveConfig();refreshSelects();renderConfig();alert('Perfil profesional guardado.');
   }
   function addRole(){if(!exigirConfigAdministrativa('Tu perfil no puede crear roles ni permisos.'))return;const input=document.getElementById('nuevoRol310');const nombre=input.value.trim();if(!nombre)return;let id=slug(nombre);if(data.roles.some(r=>r.id===id))id+='_'+Date.now();data.roles.push({id,nombre,baseRole:document.getElementById('baseRol310').value,activo:true});input.value='';saveConfig();renderSmartConfig();}
-  function addSpecialty(){const input=document.getElementById('nuevaEspecialidad310');const nombre=input.value.trim();if(!nombre)return;const id=slug(nombre);if(!data.especialidades.some(e=>e.id===id))data.especialidades.push({id,nombre,activo:true});input.value='';saveConfig();renderSmartConfig();}
+  function addSpecialty(){if(!exigirConfigOperativa('Tu perfil no puede crear especialidades.'))return;const input=document.getElementById('nuevaEspecialidad310');const nombre=input.value.trim();if(!nombre)return;const id=slug(nombre);if(!data.especialidades.some(e=>e.id===id))data.especialidades.push({id,nombre,activo:true});input.value='';saveConfig();renderSmartConfig();}
 
   const oldRender=window.renderConfig;
   window.renderConfig=function(){if(typeof oldRender==='function')oldRender();renderSmartConfig();};
@@ -7252,7 +7337,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     if(e.target.id==='addEspecialidad310')addSpecialty();
     if(e.target.id==='guardarPerfil310')saveProfessional();
     const dr=e.target.closest('[data-del-role310]');if(dr){if(!exigirConfigAdministrativa('Tu perfil no puede borrar roles ni permisos.'))return;const id=dr.dataset.delRole310;if(confirm('¿Borrar este rol?')){data.roles=data.roles.filter(r=>r.id!==id);saveConfig();renderSmartConfig();}}
-    const de=e.target.closest('[data-del-esp310]');if(de){const id=de.dataset.delEsp310;if(confirm('¿Borrar esta especialidad?')){data.especialidades=data.especialidades.filter(x=>x.id!==id);(data.profesionales||[]).forEach(p=>p.especialidadIds=(p.especialidadIds||[]).filter(x=>x!==id));saveConfig();renderSmartConfig();}}
+    const de=e.target.closest('[data-del-esp310]');if(de){if(!exigirConfigOperativa('Tu perfil no puede borrar especialidades.'))return;const id=de.dataset.delEsp310;if(confirm('¿Borrar esta especialidad?')){data.especialidades=data.especialidades.filter(x=>x.id!==id);(data.profesionales||[]).forEach(p=>p.especialidadIds=(p.especialidadIds||[]).filter(x=>x!==id));saveConfig();renderSmartConfig();}}
   });
   document.addEventListener('change',e=>{if(e.target.id==='cfgProfEditar310')loadProfessional();});
 
@@ -7346,6 +7431,12 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   window.renderUsuariosConfig=renderUsuariosConfig=function(){
     try{asegurarUsuariosConfig();}catch{}
     const lista=byId('listaUsuariosSistema');
+    if(!puedeGestionarUsuariosPermisos()){
+      if(lista)lista.innerHTML='';
+      if(byId('usrProfesionalId'))byId('usrProfesionalId').innerHTML='';
+      byId('btnNuevoUsuario3101')?.remove();
+      return;
+    }
     if(lista){
       lista.classList.add('users-list-3101');
       lista.innerHTML=(data.usuarios||[]).map(u=>{
@@ -7452,13 +7543,15 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
   function injectConvenios3102(){
     const grid=document.querySelector('#config .config-grid');
-    if(!puedeGestionarConfigAdministrativa()){
+    if(!puedeGestionarConfigComercial()){
       ['cfgConvenios3102','cfgAranceles3102','cfgProduccionEstimada3102'].forEach(id=>$3102(id)?.remove());
       return;
     }
-    if(!grid||$3102('cfgConvenios3102'))return;
-    const card=document.createElement('div');
-    card.id='cfgConvenios3102';card.className='config-smart-card-310 full-config-card';card.dataset.configGroupCard='coberturas';card.dataset.configAccess='admin';
+    if(!puedeVerEconomico3102Final())$3102('cfgProduccionEstimada3102')?.remove();
+    if(!grid)return;
+    if(!$3102('cfgConvenios3102')){
+      const card=document.createElement('div');
+      card.id='cfgConvenios3102';card.className='config-smart-card-310 full-config-card';card.dataset.configGroupCard='coberturas';card.dataset.configAccess='commercial';
     card.innerHTML=`<h3>Convenios y destinos de facturación</h3><p class="muted">Conserva la lógica actual de “Factura Rogelio”, pero permite cambiarla cuando cambien los convenios, sin modificar código.</p>
       <div class="convenio-editor-3102">
         <label>Obra social / prepaga<select id="convOS3102"></select></label>
@@ -7478,10 +7571,11 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     grid.appendChild(card);
 
     const ar=document.createElement('div');
-    ar.id='cfgAranceles3102';ar.className='config-smart-card-310 full-config-card';ar.dataset.configGroupCard='coberturas';ar.dataset.configAccess='admin';
+    ar.id='cfgAranceles3102';ar.className='config-smart-card-310 full-config-card';ar.dataset.configGroupCard='coberturas';ar.dataset.configAccess='commercial';
     ar.innerHTML=`<h3>Aranceles estimados por convenio</h3><p class="muted">Carga opcional. El valor vigente se fija automáticamente en cada nueva atención, pero los totales económicos solo se muestran cuando Matías o un Administrador presionan “Calcular estimación”.</p>
       <div class="arancel-editor-3102"><label>Convenio<select id="arOS3102"></select></label><label>Prestación<select id="arPrest3102"></select></label><label>Valor esperado<input id="arValor3102" type="number" min="0" step="1" placeholder="0"></label><label>Vigente desde<input id="arVigencia3102" type="date"></label><button class="primary" id="agregarArancel3102" type="button">Agregar arancel</button></div><div id="listaAranceles3102" class="aranceles-list-3102"></div>`;
-    grid.appendChild(ar);
+      grid.appendChild(ar);
+    }
 
     if(puedeVerEconomico3102Final()&&!$3102('cfgProduccionEstimada3102')){
       const prod=document.createElement('div');
@@ -7577,7 +7671,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function ocultarEstimacion3102Final(){const out=$3102('resultadoEstimacion3102');if(out){out.innerHTML='<p class="muted">Seleccioná el período y presioná Calcular estimación.</p>';out.classList.add('hidden');}}
 
   function renderConvenios3102(){
-    if(!puedeGestionarConfigAdministrativa()){injectConvenios3102();return;}
+    if(!puedeGestionarConfigComercial()){injectConvenios3102();return;}
     ensureConvenios3102();injectConvenios3102();
     const sel=$3102('convOS3102');
     if(sel){const old=sel.value;sel.innerHTML=osOptions3102(old||data.conveniosFacturacion[0]?.obraSocial);if(old&&[...sel.options].some(o=>o.value===old))sel.value=old;loadConvenio3102();}
@@ -7588,7 +7682,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const ars=$3102('listaAranceles3102');if(ars)ars.innerHTML=(data.arancelesConvenios||[]).slice().sort((a,b)=>(b.vigenteDesde||'').localeCompare(a.vigenteDesde||'')).map(a=>`<div class="arancel-row-3102"><span><strong>${esc3102(a.obraSocial)}</strong> · ${esc3102(a.prestacion)}</span><span>${typeof money==='function'?money(a.valor):'$ '+Number(a.valor||0).toLocaleString('es-AR')}</span><span>desde ${esc3102(a.vigenteDesde||'s/f')}</span><button class="small-btn" type="button" data-del-arancel3102="${esc3102(a.id)}">Borrar</button></div>`).join('')||'<p class="muted">Todavía no hay aranceles cargados.</p>';    llenarFiltrosEstimacion3102Final();
   }
   function saveConvenio3102(){
-    if(!exigirConfigAdministrativa('Tu perfil no puede modificar convenios administrativos.'))return;
+    if(!exigirConfigComercial('Tu perfil no puede modificar convenios.'))return;
     const os=$3102('convOS3102').value; if(!os)return;
     let c=convenio3102(os); if(!c){c={obraSocial:os};data.conveniosFacturacion.push(c)}
     c.activo=$3102('convActivo3102').checked;c.regla=$3102('convRegla3102').value;
@@ -7600,14 +7694,14 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     saveConfig();try{guardarConfigEnSupabase298?.()}catch(e){};renderConvenios3102();refreshSelects?.();alert('Convenio guardado. Las nuevas atenciones usarán esta configuración.');
   }
   function newConvenio3102(){
-    if(!exigirConfigAdministrativa('Tu perfil no puede crear convenios administrativos.'))return;
+    if(!exigirConfigComercial('Tu perfil no puede crear convenios.'))return;
     const nombre=prompt('Nombre de la nueva obra social, prepaga o convenio:');if(!nombre)return;
     if(!(data.obrasSociales||[]).includes(nombre))data.obrasSociales.push(nombre);
     data.conveniosFacturacion.push({obraSocial:nombre,activo:true,regla:'GENERAL_CONSULTA_EXTRA',destinoConsulta:'Matías',destinoEstudio:'Matías',facturadorConsulta:'Matías',facturadorEstudio:'Matías',bonoConsulta:true,bonoEstudio:true,firmaRequerida:true,copiaRequerida:true,incluirFacturaRogelio:false});
     saveConfig();renderConvenios3102();$3102('convOS3102').value=nombre;loadConvenio3102();
   }
   function addArancel3102(){
-    if(!exigirConfigAdministrativa('Tu perfil no puede modificar aranceles.'))return;
+    if(!exigirConfigComercial('Tu perfil no puede modificar aranceles.'))return;
     const obraSocial=$3102('arOS3102').value,prestacion=$3102('arPrest3102').value,valor=Number($3102('arValor3102').value||0),vigenteDesde=$3102('arVigencia3102').value;
     if(!obraSocial||!prestacion||!vigenteDesde){alert('Seleccioná convenio, prestación y fecha de vigencia.');return}
     data.arancelesConvenios.push({id:'ar_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),obraSocial,prestacion,valor,vigenteDesde,activo:true});
@@ -7650,7 +7744,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     if(e.target.id==='agregarArancel3102')addArancel3102();
     if(e.target.id==='calcularEstimacion3102')calcularEstimacion3102Final();
     if(e.target.id==='limpiarEstimacion3102')ocultarEstimacion3102Final();
-    const del=e.target.closest?.('[data-del-arancel3102]');if(del){if(!exigirConfigAdministrativa('Tu perfil no puede borrar aranceles.'))return;if(confirm('¿Borrar este arancel?')){data.arancelesConvenios=data.arancelesConvenios.filter(a=>a.id!==del.dataset.delArancel3102);saveConfig();renderConvenios3102();}}
+    const del=e.target.closest?.('[data-del-arancel3102]');if(del){if(!exigirConfigComercial('Tu perfil no puede borrar aranceles.'))return;if(confirm('¿Borrar este arancel?')){data.arancelesConvenios=data.arancelesConvenios.filter(a=>a.id!==del.dataset.delArancel3102);saveConfig();renderConvenios3102();}}
   });
   function version3102(){document.title=`CardioLink Admin v${VERSION_3102}`;document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(el=>el.textContent=`v${VERSION_3102}`);document.querySelectorAll('.login-meta').forEach(el=>el.textContent=`Versión ${VERSION_3102} · 2026`);}
   function boot3102(){ensureConvenios3102();saveConfig();injectConvenios3102();renderConvenios3102();version3102();}
@@ -7680,6 +7774,12 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     return {id:id||u.profesionalId||u.id||'local',nombre:prof?.nombre||u.nombre||usuarioSupabase?.email||'Profesional'};
   }
   function adminHC(){try{return !!(esMatiasDuenio?.()||esAdminComun?.());}catch(e){return false;}}
+  function canAccessClinicalHC(){try{return !!puedeAccederInformacionClinica();}catch(e){return false;}}
+  function requireClinicalHC(silencioso=false){
+    if(canAccessClinicalHC())return true;
+    if(!silencioso)alert('Tu perfil no puede acceder a información clínica.');
+    return false;
+  }
   function patientKeyHC(p){return p?.id||('legacy_'+(dniLimpio?.(p?.dni||'')||normalizarTexto?.(nombrePacientePanel?.(p)||p?.nombreCompleto||'')));}
   function patientByKeyHC(key){return (typeof todosPacientes==='function'?todosPacientes():data.pacientes||[]).find(p=>patientKeyHC(p)===key||p.id===key)||null;}
   function evolucionesHC(p){
@@ -7741,6 +7841,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     }).map(x=>x.p);
   }
   function renderSearchHC(autoOpenExact=false){
+    if(!requireClinicalHC(true))return;
     const input=($hc('hcBuscarPaciente')?.value||'').trim();
     const qDigits=cleanDigitsHC(input);
     const all=resultPatientsHC();
@@ -7832,6 +7933,7 @@ function patientInfoTextHC(p,coverage){
     return `<option value="">Sin definir</option>`+unique.map(x=>`<option value="${escHC(x)}" ${x===value?'selected':''}>${escHC(x)}</option>`).join('');
   }
   function openPatientEditHC(key,context='detail'){
+    if(!requireClinicalHC())return;
     const p=patientByKeyHC(key);if(!p)return;
     document.getElementById('hcPatientEditModal409')?.remove();
     const iso=birthISOHC(p),overlay=document.createElement('div');overlay.id='hcPatientEditModal409';overlay.className='hc-modal-overlay';overlay.dataset.context409=context;
@@ -7864,6 +7966,7 @@ function patientInfoTextHC(p,coverage){
     const actions=modal.querySelector('#hcCopyActions409');if(actions)actions.innerHTML=copyActionsHtmlHC409(p,values.coverage,info,digits);
   }
   function savePatientEditHC(key,context){
+    if(!requireClinicalHC())return;
     const original=patientByKeyHC(key);if(!original)return;
     const oldKey=patientKeyHC(original),oldDni=cleanDigitsHC(original.dni||''),oldName=nombrePacientePanel?.(original)||original.nombreCompleto||'';
     const nombre=$hc('hcEditNombre409')?.value.trim()||'',dni=cleanDigitsHC($hc('hcEditDni409')?.value||'');
@@ -7920,6 +8023,7 @@ function patientInfoTextHC(p,coverage){
     return partes.join(' · ') || e?.diagnostico || e?.evolucion || 'Evolución clínica';
   }
   function renderDetailHC(key){
+    if(!requireClinicalHC())return;
     const p=patientByKeyHC(key),box=$hc('hcPacienteDetalle');if(!p||!box)return;
     hcPacienteSeleccionado=patientKeyHC(p); renderSearchHC();
     const sum=resumenHC(p),evs=evolucionesHC(p),ats=atencionesHC(p),timeline=timelineHC(p),age=ageHC(p);
@@ -7960,6 +8064,7 @@ function patientInfoTextHC(p,coverage){
   }
   function renderAttentionEventHC(a){return `<article class="hc-event attention" data-hc-attention-id="${escHC(a.id)}"><div class="hc-event-head"><div><strong>${escHC(a.prestacion||'Atención')}</strong><div class="hc-event-meta">${escHC(formatFecha?.(a.fecha)||a.fecha||'')} ${escHC(a.horaInicio||'')} · ${escHC(a.profesional||'')}</div></div><span class="hc-lock">Atención administrativa</span></div><div class="hc-event-section"><label>Cobertura</label><p>${escHC(a.obraSocial||'s/d')}</p></div>${a.observaciones?`<div class="hc-event-section"><label>Observaciones</label><p>${escHC(a.observaciones)}</p></div>`:''}<div class="hc-event-section"><button class="secondary small-btn" data-hc-new="${escHC(hcPacienteSeleccionado)}" data-atencion-id="${escHC(a.id)}">Evolucionar esta atención</button></div></article>`;}
   function openEvolutionModalHC(key,evolutionId='',atencionId=''){
+    if(!requireClinicalHC())return;
     const p=patientByKeyHC(key);if(!p)return;ensureHC();
     const existing=evolutionId?data.evolucionesClinicas.find(x=>x.id===evolutionId):null;
     if(existing&&!canEditHC(existing)){alert('Esta evolución superó las 24 horas y solo puede modificarse con perfil Administrador.');return;}
@@ -8018,6 +8123,7 @@ function patientInfoTextHC(p,coverage){
     $hc('hcGuardarEvolucion').onclick=()=>saveEvolutionHC(p,existing,linked);
   }
   function saveEvolutionHC(p,existing,atencionId){
+    if(!requireClinicalHC())return;
     const motivo=$hc('hcMotivo')?.value.trim()||'',evolucion=$hc('hcEvolucion')?.value.trim()||'',diagnostico=$hc('hcDiagnostico')?.value.trim()||'',conducta=$hc('hcConducta')?.value.trim()||'';
     const pesoKg=numHC($hc('hcPeso410')?.value),tallaCm=numHC($hc('hcTalla410')?.value),imc=imcHC(pesoKg,tallaCm),taSistolica=numHC($hc('hcTas410')?.value),taDiastolica=numHC($hc('hcTad410')?.value),frecuenciaCardiaca=numHC($hc('hcFc410')?.value),sato2=numHC($hc('hcSat410')?.value);
     const hasVitales=[pesoKg,tallaCm,taSistolica,taDiastolica,frecuenciaCardiaca,sato2].some(v=>v!==null);
@@ -8055,12 +8161,13 @@ function patientInfoTextHC(p,coverage){
     if(!hasEvolution&&summaryChanged)setTimeout(()=>alert('Resumen clínico actualizado. No se creó una evolución en blanco.'),30);
   }
   function editSummaryHC(key){
+    if(!requireClinicalHC())return;
     const p=patientByKeyHC(key);if(!p)return;const s=resumenHC(p),o=document.createElement('div');o.id='hcSummaryModal';o.className='hc-modal-overlay';o.innerHTML=`<div class="hc-modal-card"><div class="hc-modal-head"><div><h2>Resumen clínico</h2><p class="muted">${escHC(nombrePacientePanel?.(p)||p.nombreCompleto||'')}</p></div><button class="modal-close" data-hc-close-summary>×</button></div><div class="hc-modal-grid"><div><div class="cl-voice-label4094"><label for="hcSumAntecedentes">Antecedentes</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAntecedentes" aria-label="Dictar antecedentes">🎤 Dictar</button></div><textarea id="hcSumAntecedentes">${escHC(s.antecedentes||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcSumAlergias">Alergias</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAlergias" aria-label="Dictar alergias">🎤 Dictar</button></div><textarea id="hcSumAlergias">${escHC(s.alergias||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcSumMedicacion">Medicación habitual</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumMedicacion" aria-label="Dictar medicación habitual">🎤 Dictar</button></div><textarea id="hcSumMedicacion">${escHC(s.medicacion||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcSumAlertas">Alertas clínicas</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAlertas" aria-label="Dictar alertas clínicas">🎤 Dictar</button></div><textarea id="hcSumAlertas">${escHC(s.alertas||'')}</textarea></div></div><div class="hc-modal-actions"><button class="secondary" data-hc-close-summary>Cancelar</button><button class="primary" id="hcSaveSummary">Guardar resumen</button></div></div>`;document.body.appendChild(o);$hc('hcSaveSummary').onclick=()=>{ensureHC();data.resumenesClinicos[patientKeyHC(p)]={antecedentes:$hc('hcSumAntecedentes').value.trim(),alergias:$hc('hcSumAlergias').value.trim(),medicacion:$hc('hcSumMedicacion').value.trim(),alertas:$hc('hcSumAlertas').value.trim(),actualizadoEn:new Date().toISOString()};saveConfig();try{programarSyncSupabase?.();}catch(e){}try{window.cardiolinkClinica410?.sincronizarPacienteCompleto?.(p);}catch(e){console.warn('No se pudo sincronizar el resumen clínico relacional:',e);}o.remove();renderDetailHC(patientKeyHC(p));};
   }
   function printHC(key){const p=patientByKeyHC(key);if(!p)return;const s=resumenHC(p),tl=timelineHC(p);const w=window.open('','_blank');if(!w)return;w.document.write(`<html><head><title>Historia clínica - ${escHC(nombrePacientePanel?.(p)||p.nombreCompleto||'')}</title><style>body{font-family:Arial,sans-serif;margin:32px;color:#111}h1{margin-bottom:4px}.muted{color:#555}.box{border:1px solid #bbb;border-radius:10px;padding:12px;margin:12px 0}.event{border-left:4px solid #174b5c;padding:8px 14px;margin:14px 0;page-break-inside:avoid}label{font-size:11px;text-transform:uppercase;color:#555;font-weight:bold}p{white-space:pre-wrap}</style></head><body><h1>${escHC(nombrePacientePanel?.(p)||p.nombreCompleto||'')}</h1><div class="muted">DNI ${escHC(p.dni||'s/d')} · Fecha de emisión ${escHC(fmtDateTimeHC(new Date().toISOString()))}</div><div class="box"><strong>Antecedentes:</strong> ${escHC(s.antecedentes||'s/d')}<br><strong>Alergias:</strong> ${escHC(s.alergias||'s/d')}<br><strong>Medicación:</strong> ${escHC(s.medicacion||'s/d')}</div>${tl.map(x=>x.type==='evolution'?`<div class="event"><h3>Evolución clínica · ${escHC(fmtDateTimeHC(x.obj.fechaHora))}</h3><div>${escHC(x.obj.profesionalNombre||'')}</div>${x.obj.motivo?`<p><label>Motivo</label><br>${escHC(x.obj.motivo)}</p>`:''}${x.obj.evolucion?`<p><label>Evolución</label><br>${escHC(x.obj.evolucion)}</p>`:''}${x.obj.diagnostico?`<p><label>Diagnóstico</label><br>${escHC(x.obj.diagnostico)}</p>`:''}${x.obj.conducta?`<p><label>Conducta</label><br>${escHC(x.obj.conducta)}</p>`:''}</div>`:`<div class="event"><h3>${escHC(x.obj.prestacion||'Atención')} · ${escHC(formatFecha?.(x.obj.fecha)||x.obj.fecha||'')}</h3><div>${escHC(x.obj.profesional||'')} · ${escHC(x.obj.obraSocial||'')}</div></div>`).join('')}</body></html>`);w.document.close();setTimeout(()=>w.print(),300);}
   function addPatientButtonHC(){
     const old=window.seleccionarPacientePanel;if(typeof old!=='function'||old.__hcWrapped)return;
-    const wrapped=function(id){const r=old.apply(this,arguments);setTimeout(()=>{const actions=document.querySelector('#pacienteDetalle .paciente-ficha-actions');if(actions&&!actions.querySelector('[data-open-hc]')){const b=document.createElement('button');b.className='primary';b.type='button';b.dataset.openHc=id;b.textContent='Historia clínica';actions.prepend(b);}},0);return r};wrapped.__hcWrapped=true;window.seleccionarPacientePanel=wrapped;
+    const wrapped=function(id){const r=old.apply(this,arguments);setTimeout(()=>{const actions=document.querySelector('#pacienteDetalle .paciente-ficha-actions');if(!canAccessClinicalHC()){actions?.querySelectorAll('[data-open-hc]').forEach(x=>x.remove());return;}if(actions&&!actions.querySelector('[data-open-hc]')){const b=document.createElement('button');b.className='primary';b.type='button';b.dataset.openHc=id;b.textContent='Historia clínica';actions.prepend(b);}},0);return r};wrapped.__hcWrapped=true;window.seleccionarPacientePanel=wrapped;
   }
   function bootHC(){ensureHC();addPatientButtonHC();
     const search=$hc('hcBuscarPaciente');
@@ -8069,6 +8176,8 @@ function patientInfoTextHC(p,coverage){
     search?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();hcPaginaResultados=1;renderSearchHC(true);}});
     $hc('hcLimpiarBusqueda')?.addEventListener('click',()=>{if(search)search.value='';hcPaginaResultados=1;renderSearchHC(false);});
     document.addEventListener('click',e=>{
+      const protectedClinicalTarget=e.target.closest?.('[data-hc-patient],[data-hc-new],[data-hc-edit],[data-hc-delete411b1],[data-hc-edit-summary],[data-hc-edit-patient409],[data-hc-print],[data-open-hc]');
+      if(protectedClinicalTarget&&!requireClinicalHC())return;
       const copyBtn=e.target.closest?.('[data-hc-copy408]');
       if(copyBtn){e.preventDefault();const value=decodeURIComponent(copyBtn.dataset.hcCopy408||'');copyHC408(value,copyBtn.dataset.hcCopyLabel408||'dato',copyBtn);return;}
       const page=e.target.closest?.('[data-hc-page]');
@@ -8079,7 +8188,7 @@ function patientInfoTextHC(p,coverage){
       if(t.dataset.hcPatient)renderDetailHC(t.dataset.hcPatient);else if(t.dataset.hcNew)openEvolutionModalHC(t.dataset.hcNew,'',t.dataset.atencionId||'');else if(t.dataset.hcEdit){const ev=data.evolucionesClinicas.find(x=>x.id===t.dataset.hcEdit);if(ev)openEvolutionModalHC(ev.pacienteId,ev.id,ev.atencionId||'');}else if(t.dataset.hcDelete411b1){eliminarEvolucionHCProtegida411B1(t.dataset.hcDelete411b1);}else if(t.dataset.hcEditSummary)editSummaryHC(t.dataset.hcEditSummary);else if(t.dataset.hcEditPatient409)openPatientEditHC(t.dataset.hcEditPatient409,t.dataset.hcEditContext409||'detail');else if(t.dataset.hcPrint)printHC(t.dataset.hcPrint);else if(t.hasAttribute('data-hc-close'))$hc('hcEvolutionModal')?.remove();else if(t.hasAttribute('data-hc-close-summary'))$hc('hcSummaryModal')?.remove();else if(t.hasAttribute('data-hc-close-patient409'))$hc('hcPatientEditModal409')?.remove();else if(t.dataset.openHc){showSection('hc');setTimeout(()=>renderDetailHC(t.dataset.openHc),40);}
     });
     // Mostrar pacientes desde el ingreso y volver a calcular tras la sincronización inicial.
-    setTimeout(()=>renderSearchHC(false),50);setTimeout(()=>renderSearchHC(false),900);setTimeout(()=>renderSearchHC(false),2200);
+    if(canAccessClinicalHC()){setTimeout(()=>renderSearchHC(false),50);setTimeout(()=>renderSearchHC(false),900);setTimeout(()=>renderSearchHC(false),2200);}
     document.title='CardioLink 4.1.0-hc HC';document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(x=>x.textContent='v4.1.0-hc');
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',bootHC);else bootHC();
@@ -8100,10 +8209,11 @@ function patientInfoTextHC(p,coverage){
     try{return typeof perfilUsuarioActual==='function'?perfilUsuarioActual():(window.usuarioPerfilActual||{});}catch(e){return window.usuarioPerfilActual||{};}
   }
   function canMedical402(){
+    try{if(typeof puedeAccederInformacionClinica==='function')return !!puedeAccederInformacionClinica();}catch(e){}
     try{if(typeof esMatiasDuenio==='function'&&esMatiasDuenio())return true;if(typeof esAdminComun==='function'&&esAdminComun())return true;if(typeof esMedico==='function'&&esMedico())return true;}catch(e){}
     const u=currentUser402();const r=norm402(u.rolId||u.rol||u.baseRole||'');return r.includes('medico')||r.includes('director')||r.includes('duenio')||r.includes('admin');
   }
-  function canAdminConfig402(){try{return !!(esMatiasDuenio?.()||esAdminComun?.())}catch(e){return false}}
+  function canCommercialConfig402(){try{return !!puedeGestionarConfigComercial()}catch(e){return false}}
   function currentProfessionalId402(){
     try{return typeof profesionalIdUsuarioActual==='function'?profesionalIdUsuarioActual():(currentUser402().profesionalId||'');}catch(e){return currentUser402().profesionalId||'';}
   }
@@ -8171,6 +8281,7 @@ function patientInfoTextHC(p,coverage){
   /* Datos profesionales que se imprimen en documentos */
   function injectDocumentFields402(){
     const editor=document.querySelector('#cfgPerfilProfesional310 .profile-editor-310');
+    if(!canMedical402()){$402('docProfFields402')?.remove();return;}
     if(!editor||$402('docProfFields402'))return;
     const block=document.createElement('div');block.id='docProfFields402';block.className='doc-prof-fields-402';
     block.innerHTML=`<h4>Encabezado de documentos</h4><p class="muted">Estos datos se usan en la Historia Clínica impresa y futuros informes.</p>
@@ -8191,6 +8302,7 @@ function patientInfoTextHC(p,coverage){
     Object.entries(vals).forEach(([id,v])=>{if($402(id))$402(id).value=v||'';});
   }
   function saveDocumentFields402(){
+    if(!canMedical402()){alert('Tu perfil no puede modificar datos para documentos clínicos.');return;}
     ensure402();const p=prof402($402('cfgProfEditar310')?.value||currentProfessionalId402()||'matias');if(!p)return;
     p.marcaDocumento=$402('docMarca402')?.value.trim()||p.nombre;
     p.logoDocumento=$402('docLogo402')?.value.trim()||'icons/icon-192.png';
@@ -8231,6 +8343,7 @@ function patientInfoTextHC(p,coverage){
     document.body.appendChild(o);
   }
   function saveNote402(key){
+    if(!canMedical402()){alert('Tu perfil no puede modificar notas clínicas privadas.');return;}
     ensure402();const tags=[...document.querySelectorAll('#privateNoteModal402 input[type="checkbox"]:checked')].map(x=>x.value),texto=$402('privateNoteText402')?.value.trim()||'';
     const owner=noteOwnerId402();noteBucket402()[key]={tags,texto,profesionalId:owner,profesionalNombre:noteOwnerName402(),actualizadoEn:new Date().toISOString(),actualizadoPor:currentUser402().nombre||currentUser402().usuario||'Usuario'};
     persist402();$402('privateNoteModal402')?.remove();document.querySelector('#hcPacienteDetalle [data-private-note-card402]')?.remove();enhanceHC402();enhancePatientFicha402(key);
@@ -8251,6 +8364,7 @@ function patientInfoTextHC(p,coverage){
     return `<div class="hc-status-box-402"><strong>Estado de la prestación</strong><div class="hc-status-actions-402">${studyButtons}${btn('bono',needsBono?'Bono / firma OK':'Bono no requerido',!!a.bonoFirmado,!needsBono)}${btn('copia',needsCopy?'Copia facturación':'Copia no requerida',!!a.copiaImpresa,!needsCopy)}${btn('pago','Pago registrado',!!a.pagoRegistrado)}</div></div>`;
   }
   function toggleStatus402(id,field){
+    if(!canMedical402()){alert('Tu perfil no puede operar desde Historia Clínica.');return;}
     const a=attention402(id);if(!a)return;
     if(field==='informe')a.estudioInformado=!a.estudioInformado;
     if(field==='impreso')a.estudioImpreso=!a.estudioImpreso;
@@ -8288,6 +8402,7 @@ function patientInfoTextHC(p,coverage){
   function fmtDT402(v){try{return new Intl.DateTimeFormat('es-AR',{dateStyle:'short',timeStyle:'short'}).format(new Date(v));}catch(e){return v||'';}}
   function fmtD402(v){try{return typeof formatFecha==='function'?formatFecha(v):v;}catch(e){return v||'';}}
   function printHC402(key){
+    if(!canMedical402()){alert('Tu perfil no puede imprimir historias clínicas.');return;}
     const p=patient402(key);if(!p)return;ensure402();
     const pid=currentProfessionalId402()||'matias',pr=prof402(pid)||prof402('matias')||{},summary=data.resumenesClinicos?.[patientKey402(p)]||{};
     const ev=evolutions402(p).map(x=>({type:'evolution',date:x.fechaHora,obj:x})),ats=attentionsForPatient402(p).map(x=>({type:'attention',date:(x.fecha||'')+'T'+(x.horaInicio||'00:00'),obj:x}));
@@ -8312,10 +8427,10 @@ function patientInfoTextHC(p,coverage){
   function ruleOpts402(value){return opts402(['SIN_REGLA','GENERAL_CONSULTA_EXTRA','IOMA_OSPRERA','OSDE','SANCOR_PREVENCION','INTEGRAL','TODO_MATIAS','COBERTURA_COBRA_PARTICULAR'],value);}
   function injectBilling402(){
     const grid=document.querySelector('#config .config-grid');if(!grid)return;
-    if(!canAdminConfig402()){$402('cfgConveniosProfesional402')?.remove();return;}
+    if(!canCommercialConfig402()){$402('cfgConveniosProfesional402')?.remove();return;}
     [$402('cfgConvenios3102'),$402('cfgAranceles3102')].forEach(x=>{if(x)x.style.display='none';});
     let card=$402('cfgConveniosProfesional402');
-    if(!card){card=document.createElement('div');card.id='cfgConveniosProfesional402';card.className='config-smart-card-310 full-config-card';card.dataset.configGroupCard='coberturas';card.dataset.configAccess='admin';card.innerHTML=`<h3>Convenios y aranceles por profesional</h3><p class="muted">Cada profesional tiene su propia configuración. El catálogo global solo ofrece nombres de coberturas: no copia reglas ni destinos de otro médico.</p><div class="professional-billing-head-402"><label>Profesional que estás configurando<select id="billProf402"></select></label><label>Convenio a configurar<select id="billOS402"></select></label></div><div id="billProfileNotice404" class="billing-profile-notice-404"></div><div class="convenio-editor-3102"><label>Regla automática<select id="billRegla402"></select></label><label>Destino de consulta<select id="billDestConsulta402"></select></label><label>Destino del estudio<select id="billDestEstudio402"></select></label><label>Facturador de consulta<select id="billFactConsulta402"></select></label><label>Facturador del estudio<select id="billFactEstudio402"></select></label><label class="check-row-310"><input type="checkbox" id="billActivo402"> Habilitado: este profesional atiende este convenio</label><label class="check-row-310"><input type="checkbox" id="billBonoConsulta402"> Requiere bono de consulta</label><label class="check-row-310"><input type="checkbox" id="billBonoEstudio402"> Requiere bono de estudio</label><label class="check-row-310"><input type="checkbox" id="billFirma402"> Requiere firma</label><label class="check-row-310"><input type="checkbox" id="billCopia402"> Requiere copia para facturación</label><label class="check-row-310"><input type="checkbox" id="billRogelio402"> Incluir en Factura Rogelio</label><div class="config-actions-3102"><button class="primary" id="saveBillConv402" type="button">Guardar para este profesional</button><button class="secondary" id="newBillConv402" type="button">Nuevo convenio global</button></div></div><h4 id="billConfiguredTitle404">Convenios configurados</h4><p class="muted">Activo significa que el profesional lo atiende y sus reglas se aplican. Los deshabilitados quedan guardados, pero no intervienen en nuevas atenciones.</p><div id="billList402" class="convenios-list-3102"></div><hr><h4>Arancel del profesional seleccionado</h4><p class="muted" id="billArancelHelp404">Cada valor corresponde a una combinación exacta de profesional + convenio + prestación + fecha de vigencia.</p><div class="arancel-editor-3102 arancel-editor-prof-404"><label>Convenio al que aplica<select id="billArancelOS404"></select></label><label>Prestación<select id="billPrest402"></select></label><label>Valor convenio / particular<input id="billValor402" type="number" min="0" step="1" placeholder="0"></label><label>Copago paciente (si corresponde)<input id="billCopago402" type="number" min="0" step="1" placeholder="0"></label><label>Vigente desde<input id="billVigencia402" type="date"></label><button class="primary" id="saveBillArancel402" type="button">Agregar arancel</button></div><div class="arancel-table-head-404 arancel-head-fin411f"><span>Convenio y prestación</span><span>Valor convenio / particular</span><span>Copago</span><span>Vigencia</span><span></span></div><div id="billArancelList402" class="aranceles-list-3102"></div>`;const ref=$402('cfgProduccionEstimada3102');if(ref)grid.insertBefore(card,ref);else grid.appendChild(card);}
+    if(!card){card=document.createElement('div');card.id='cfgConveniosProfesional402';card.className='config-smart-card-310 full-config-card';card.dataset.configGroupCard='coberturas';card.dataset.configAccess='commercial';card.innerHTML=`<h3>Convenios y aranceles por profesional</h3><p class="muted">Cada profesional tiene su propia configuración. El catálogo global solo ofrece nombres de coberturas: no copia reglas ni destinos de otro médico.</p><div class="professional-billing-head-402"><label>Profesional que estás configurando<select id="billProf402"></select></label><label>Convenio a configurar<select id="billOS402"></select></label></div><div id="billProfileNotice404" class="billing-profile-notice-404"></div><div class="convenio-editor-3102"><label>Regla automática<select id="billRegla402"></select></label><label>Destino de consulta<select id="billDestConsulta402"></select></label><label>Destino del estudio<select id="billDestEstudio402"></select></label><label>Facturador de consulta<select id="billFactConsulta402"></select></label><label>Facturador del estudio<select id="billFactEstudio402"></select></label><label class="check-row-310"><input type="checkbox" id="billActivo402"> Habilitado: este profesional atiende este convenio</label><label class="check-row-310"><input type="checkbox" id="billBonoConsulta402"> Requiere bono de consulta</label><label class="check-row-310"><input type="checkbox" id="billBonoEstudio402"> Requiere bono de estudio</label><label class="check-row-310"><input type="checkbox" id="billFirma402"> Requiere firma</label><label class="check-row-310"><input type="checkbox" id="billCopia402"> Requiere copia para facturación</label><label class="check-row-310"><input type="checkbox" id="billRogelio402"> Incluir en Factura Rogelio</label><div class="config-actions-3102"><button class="primary" id="saveBillConv402" type="button">Guardar para este profesional</button><button class="secondary" id="newBillConv402" type="button">Nuevo convenio global</button></div></div><h4 id="billConfiguredTitle404">Convenios configurados</h4><p class="muted">Activo significa que el profesional lo atiende y sus reglas se aplican. Los deshabilitados quedan guardados, pero no intervienen en nuevas atenciones.</p><div id="billList402" class="convenios-list-3102"></div><hr><h4>Arancel del profesional seleccionado</h4><p class="muted" id="billArancelHelp404">Cada valor corresponde a una combinación exacta de profesional + convenio + prestación + fecha de vigencia.</p><div class="arancel-editor-3102 arancel-editor-prof-404"><label>Convenio al que aplica<select id="billArancelOS404"></select></label><label>Prestación<select id="billPrest402"></select></label><label>Valor convenio / particular<input id="billValor402" type="number" min="0" step="1" placeholder="0"></label><label>Copago paciente (si corresponde)<input id="billCopago402" type="number" min="0" step="1" placeholder="0"></label><label>Vigente desde<input id="billVigencia402" type="date"></label><button class="primary" id="saveBillArancel402" type="button">Agregar arancel</button></div><div class="arancel-table-head-404 arancel-head-fin411f"><span>Convenio y prestación</span><span>Valor convenio / particular</span><span>Copago</span><span>Vigencia</span><span></span></div><div id="billArancelList402" class="aranceles-list-3102"></div>`;const ref=$402('cfgProduccionEstimada3102');if(ref)grid.insertBefore(card,ref);else grid.appendChild(card);}
     renderBilling402();
   }
   function selectedBillProf402(){return $402('billProf402')?.value||$402('cfgProfEditar310')?.value||currentProfessionalId402()||'matias';}
@@ -8326,6 +8441,7 @@ function patientInfoTextHC(p,coverage){
     if($402('billActivo402'))$402('billActivo402').checked=c.activo!==false;if($402('billBonoConsulta402'))$402('billBonoConsulta402').checked=!!c.bonoConsulta;if($402('billBonoEstudio402'))$402('billBonoEstudio402').checked=!!c.bonoEstudio;if($402('billFirma402'))$402('billFirma402').checked=!!c.firmaRequerida;if($402('billCopia402'))$402('billCopia402').checked=!!c.copiaRequerida;if($402('billRogelio402'))$402('billRogelio402').checked=!!c.incluirFacturaRogelio;
   }
   function renderBilling402(){
+    if(!canCommercialConfig402())return;
     ensure402();const ps=$402('billProf402');if(!ps)return;
     const activePid=$402('perfilActivo')?.value||'';const contextPid=(activePid&&activePid!=='general'?activePid:'')||$402('cfgProfEditar310')?.value||currentProfessionalId402()||'matias';
     const oldP=ps.value||contextPid;
@@ -8346,12 +8462,12 @@ function patientInfoTextHC(p,coverage){
     const ars=data.arancelesPorProfesional[pid]||[];if($402('billArancelList402'))$402('billArancelList402').innerHTML=ars.slice().sort((a,b)=>String(b.vigenteDesde||'').localeCompare(String(a.vigenteDesde||''))||String(a.obraSocial||'').localeCompare(String(b.obraSocial||''),'es')).map(a=>`<div class="arancel-row-3102 arancel-row-fin411f"><span><strong>${esc402(a.obraSocial)}</strong> · ${esc402(a.prestacion)}</span><span>${typeof money==='function'?money(a.valor):'$ '+Number(a.valor||0).toLocaleString('es-AR')}</span><span>${Number(a.copago||0)>0?(typeof money==='function'?money(a.copago):'$ '+Number(a.copago||0).toLocaleString('es-AR')):'—'}</span><span>desde ${esc402(a.vigenteDesde||'s/f')}</span><button type="button" class="small-btn" data-del-bill-arancel402="${esc402(a.id)}">Borrar</button></div>`).join('')||'<p class="muted">Sin aranceles cargados para este profesional.</p>';
   }
   function saveBillConv402(){
-    if(!exigirConfigAdministrativa('Tu perfil no puede modificar convenios administrativos.'))return;
+    if(!exigirConfigComercial('Tu perfil no puede modificar convenios.'))return;
     const pid=selectedBillProf402(),os=$402('billOS402')?.value;if(!pid||!os)return;const c=conv402(pid,os,true);c.activo=$402('billActivo402').checked;c.regla=$402('billRegla402').value;c.destinoConsulta=$402('billDestConsulta402').value;c.destinoEstudio=$402('billDestEstudio402').value;c.facturadorConsulta=$402('billFactConsulta402').value;c.facturadorEstudio=$402('billFactEstudio402').value;c.bonoConsulta=$402('billBonoConsulta402').checked;c.bonoEstudio=$402('billBonoEstudio402').checked;c.firmaRequerida=$402('billFirma402').checked;c.copiaRequerida=$402('billCopia402').checked;c.incluirFacturaRogelio=$402('billRogelio402').checked;
     if(pid==='matias')data.conveniosFacturacion=copy402(data.conveniosPorProfesional.matias);persist402();renderBilling402();alert(`Convenio guardado para ${profName402(pid)}.`);
   }
-  function newGlobalConv402(){if(!exigirConfigAdministrativa('Tu perfil no puede crear convenios administrativos.'))return;const name=prompt('Nombre de la nueva obra social, prepaga o convenio:');if(!name)return;if(!(data.obrasSociales||[]).includes(name))data.obrasSociales.push(name);persist402();renderBilling402();$402('billOS402').value=name;loadBillConv402();}
-  function saveBillArancel402(){if(!exigirConfigAdministrativa('Tu perfil no puede modificar aranceles.'))return;const pid=selectedBillProf402(),obraSocial=$402('billArancelOS404')?.value||$402('billOS402')?.value,prestacion=$402('billPrest402')?.value,valor=Number($402('billValor402')?.value||0),copago=Number($402('billCopago402')?.value||0),vigenteDesde=$402('billVigencia402')?.value;if(!obraSocial||!prestacion||!vigenteDesde){alert('Completá convenio, prestación y fecha de vigencia.');return;}if(!Number.isFinite(valor)||valor<0||!Number.isFinite(copago)||copago<0){alert('Ingresá valores válidos.');return;}data.arancelesPorProfesional[pid].push({id:'arp_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),profesionalId:pid,obraSocial,prestacion,valor,copago,vigenteDesde,activo:true});if(pid==='matias')data.arancelesConvenios=copy402(data.arancelesPorProfesional.matias);persist402();$402('billValor402').value='';if($402('billCopago402'))$402('billCopago402').value='';renderBilling402();}
+  function newGlobalConv402(){if(!exigirConfigComercial('Tu perfil no puede crear convenios.'))return;const name=prompt('Nombre de la nueva obra social, prepaga o convenio:');if(!name)return;if(!(data.obrasSociales||[]).includes(name))data.obrasSociales.push(name);persist402();renderBilling402();$402('billOS402').value=name;loadBillConv402();}
+  function saveBillArancel402(){if(!exigirConfigComercial('Tu perfil no puede modificar aranceles.'))return;const pid=selectedBillProf402(),obraSocial=$402('billArancelOS404')?.value||$402('billOS402')?.value,prestacion=$402('billPrest402')?.value,valor=Number($402('billValor402')?.value||0),copago=Number($402('billCopago402')?.value||0),vigenteDesde=$402('billVigencia402')?.value;if(!obraSocial||!prestacion||!vigenteDesde){alert('Completá convenio, prestación y fecha de vigencia.');return;}if(!Number.isFinite(valor)||valor<0||!Number.isFinite(copago)||copago<0){alert('Ingresá valores válidos.');return;}data.arancelesPorProfesional[pid].push({id:'arp_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),profesionalId:pid,obraSocial,prestacion,valor,copago,vigenteDesde,activo:true});if(pid==='matias')data.arancelesConvenios=copy402(data.arancelesPorProfesional.matias);persist402();$402('billValor402').value='';if($402('billCopago402'))$402('billCopago402').value='';renderBilling402();}
 
   const oldApply402=window.aplicarRegla;
   window.aplicarRegla=function(){
@@ -8374,7 +8490,7 @@ function patientInfoTextHC(p,coverage){
     if(e.target.id==='newBillConv402'){newGlobalConv402();return;}
     if(e.target.id==='saveBillArancel402'){saveBillArancel402();return;}
     const row=e.target.closest?.('[data-load-bill-os402]');if(row){$402('billOS402').value=row.dataset.loadBillOs402;if($402('billArancelOS404'))$402('billArancelOS404').value=row.dataset.loadBillOs402;loadBillConv402();row.scrollIntoView({behavior:'smooth',block:'nearest'});return;}
-    const del=e.target.closest?.('[data-del-bill-arancel402]');if(del){if(!exigirConfigAdministrativa('Tu perfil no puede borrar aranceles.'))return;if(confirm('¿Borrar este arancel?')){const pid=selectedBillProf402();data.arancelesPorProfesional[pid]=data.arancelesPorProfesional[pid].filter(a=>a.id!==del.dataset.delBillArancel402);if(pid==='matias')data.arancelesConvenios=copy402(data.arancelesPorProfesional.matias);persist402();renderBilling402();}}
+    const del=e.target.closest?.('[data-del-bill-arancel402]');if(del){if(!exigirConfigComercial('Tu perfil no puede borrar aranceles.'))return;if(confirm('¿Borrar este arancel?')){const pid=selectedBillProf402();data.arancelesPorProfesional[pid]=data.arancelesPorProfesional[pid].filter(a=>a.id!==del.dataset.delBillArancel402);if(pid==='matias')data.arancelesConvenios=copy402(data.arancelesPorProfesional.matias);persist402();renderBilling402();}}
   },true);
   document.addEventListener('change',e=>{
     if(e.target.id==='cfgProfEditar310'){setTimeout(loadDocumentFields402,0);const b=$402('billProf402');if(b&&[...b.options].some(o=>o.value===e.target.value)){b.value=e.target.value;renderBilling402();}}
@@ -8569,7 +8685,7 @@ function patientInfoTextHC(p,coverage){
     try{return !!(esMatiasDuenio?.()||esAdminComun?.());}catch(e){return false;}
   }
   function canImport405(){
-    try{return !!(isAdmin405()||esMedico?.());}catch(e){return true;}
+    try{if(typeof puedeAccederInformacionClinica==='function')return !!puedeAccederInformacionClinica();return !!(isAdmin405()||esMedico?.());}catch(e){return false;}
   }
   function patients405(){
     try{return typeof todosPacientes==='function'?todosPacientes():data.pacientes;}catch(e){return data.pacientes||[];}
@@ -8702,6 +8818,7 @@ function patientInfoTextHC(p,coverage){
     const prof=$405('importProf405');if(prof){prof.value=defaultProfessional405();if(!isAdmin405())prof.disabled=true;}
   }
   async function chooseFile405(file){
+    if(!canImport405()){alert('Tu perfil no puede importar evoluciones clínicas.');return;}
     if(!file)return;
     try{
       currentFile405=file.name;const rows=await readFile405(file);
@@ -8715,6 +8832,7 @@ function patientInfoTextHC(p,coverage){
     data.pacientes.push(p);return p;
   }
   function confirmImport405(){
+    if(!canImport405()){alert('Tu perfil no puede importar evoluciones clínicas.');return;}
     ensure405();if(!preview405.length)return;
     const profId=$405('importProf405')?.value;const prof=(data.profesionales||[]).find(p=>p.id===profId);
     if(!prof){alert('Seleccioná el profesional autor.');return;}
@@ -8738,6 +8856,7 @@ function patientInfoTextHC(p,coverage){
   }
   function lastBatch405(){ensure405();return [...data.importacionesMedicloudEvoluciones].sort((a,b)=>String(b.importadoEn||'').localeCompare(String(a.importadoEn||'')))[0]||null;}
   function undoLast405(){
+    if(!canImport405()){alert('Tu perfil no puede deshacer importaciones clínicas.');return;}
     const b=lastBatch405();if(!b){alert('No hay lotes de evoluciones importadas para deshacer.');return;}
     if(!confirm(`¿Deshacer el lote ${b.archivo||''} con ${b.evolucionesImportadas||b.evolutionIds?.length||0} evoluciones?`))return;
     const ids=new Set(b.evolutionIds||[]);data.evolucionesClinicas=(data.evolucionesClinicas||[]).filter(e=>!ids.has(e.id)&&e.importacionLoteId!==b.id);
@@ -8751,6 +8870,7 @@ function patientInfoTextHC(p,coverage){
   }
   function updateStatus405(){
     const box=$405('hcImportStatus405'),btn=$405('btnUndoEvolMedicloud405');const b=lastBatch405();
+    if(!canImport405()){if(box)box.textContent='';if(btn)btn.disabled=true;return;}
     if(box)box.textContent=b?`Último lote importado: ${b.archivo||'archivo'} · ${b.evolucionesImportadas||0} evoluciones · ${new Intl.DateTimeFormat('es-AR',{dateStyle:'short',timeStyle:'short'}).format(new Date(b.importadoEn))}`:'Todavía no se importaron evoluciones desde otra app.';
     if(btn)btn.disabled=!b;
   }
@@ -8763,7 +8883,7 @@ function patientInfoTextHC(p,coverage){
   function boot405(){
     ensure405();setVersion405();updateStatus405();
     const importBtn=$405('btnImportEvolMedicloud405'),importPacBtn=$405('btnImportEvolMedicloudPac407'),undoBtn=$405('btnUndoEvolMedicloud405');
-    if(!canImport405()){if(importBtn)importBtn.hidden=true;if(importPacBtn)importPacBtn.hidden=true;if(undoBtn)undoBtn.hidden=true;}
+    if(importBtn)importBtn.hidden=!canImport405();if(importPacBtn)importPacBtn.hidden=!canImport405();if(undoBtn)undoBtn.hidden=!canImport405();
     const detail=$405('hcPacienteDetalle');if(detail)new MutationObserver(()=>decorateImported405()).observe(detail,{childList:true,subtree:true});
     setTimeout(()=>{setVersion405();updateStatus405();decorateImported405();},600);
   }
@@ -8796,6 +8916,7 @@ function patientInfoTextHC(p,coverage){
     return r.includes('admin')||r.includes('duenio');
   }
   function isMedical406(){
+    try{if(typeof puedeAccederInformacionClinica==='function')return !!puedeAccederInformacionClinica();}catch(e){}
     try{if(typeof esMedico==='function'&&esMedico())return true;}catch(e){}
     const r=norm406(currentUser406().rolId||currentUser406().rol||currentUser406().baseRole||'');
     return isAdmin406()||r.includes('medico');
@@ -8807,7 +8928,7 @@ function patientInfoTextHC(p,coverage){
   }
   function canIssueDoc406(type=''){
     if(isMedical406()||isAdmin406())return true;
-    return isSecretary406()&&['certificado','constancia_atencion'].includes(String(type||''));
+    return isSecretary406()&&String(type||'')==='constancia_atencion';
   }
   function responsibleProfId406(p){
     if(!p)return currentProfId406()||selectedProfId406()||'matias';
@@ -8913,6 +9034,7 @@ function patientInfoTextHC(p,coverage){
   }
 
   function enhanceConfigIdentity406(){
+    if(!isMedical406()){$406('identityUploads406')?.remove();return;}
     ensure406();
     const block=$406('docProfFields402');if(!block||$406('identityUploads406'))return;
     const add=document.createElement('div');add.id='identityUploads406';add.className='identity-uploads406';
@@ -8927,6 +9049,7 @@ function patientInfoTextHC(p,coverage){
     const allowed=canEditIdentity406(pid);['uploadLogo406','removeLogo406','uploadSignature406','removeSignature406','saveIdentity406','docColor406','showSignature406'].forEach(id=>{const el=$406(id);if(el)el.disabled=!allowed;});
   }
   async function handleIdentityFile406(kind,file){
+    if(!isMedical406()){alert('Tu perfil no puede modificar identidad para documentos clínicos.');return;}
     const pid=selectedProfId406(),p=prof406(pid);if(!p||!canEditIdentity406(pid))return;
     try{
       const dataUrl=await compressImage406(file,kind);
@@ -8935,26 +9058,31 @@ function patientInfoTextHC(p,coverage){
     }catch(e){alert(e.message||'No se pudo procesar la imagen.');}
   }
   function saveIdentity406(){
+    if(!isMedical406()){alert('Tu perfil no puede modificar identidad para documentos clínicos.');return;}
     const pid=selectedProfId406(),p=prof406(pid);if(!p||!canEditIdentity406(pid))return;
     p.colorDocumento=$406('docColor406')?.value||'#174b5c';p.mostrarFirmaDocumento=$406('showSignature406')?.checked!==false;
     persist406();loadIdentityFields406();alert('Identidad profesional guardada.');
   }
   function removeIdentityImage406(kind){
+    if(!isMedical406()){alert('Tu perfil no puede modificar identidad para documentos clínicos.');return;}
     const pid=selectedProfId406(),p=prof406(pid);if(!p||!canEditIdentity406(pid))return;
     if(kind==='logo')p.logoDocumentoData='';else p.firmaDocumentoData='';persist406();loadIdentityFields406();
   }
 
   function openOwnIdentity406(){
+    if(!isMedical406()){alert('Tu perfil no puede modificar identidad para documentos clínicos.');return;}
     ensure406();const pid=currentProfId406()||selectedProfId406(),p=prof406(pid);if(!p){alert('Este usuario no tiene un profesional asociado.');return;}
     const modal=document.createElement('div');modal.id='identityModal406';modal.className='hc-modal-overlay';
     modal.innerHTML=`<div class="hc-modal-card identity-modal-card406"><div class="hc-modal-head"><div><h2>Mi membrete y firma</h2><p class="muted">${esc406(p.nombre||'Profesional')}</p></div><button class="modal-close" type="button" data-close-identity406>×</button></div><div id="ownIdentityPreview406">${identityPreviewHtml406(p)}</div><div class="hc-modal-grid"><div><label>Nombre del consultorio / marca</label><input id="ownMarca406" value="${esc406(p.marcaDocumento||p.nombre||'')}"></div><div><label>Color del membrete</label><input id="ownColor406" type="color" value="${esc406(/^#[0-9a-f]{6}$/i.test(p.colorDocumento||'')?p.colorDocumento:'#174b5c')}"></div><div><label>Matrícula nacional</label><input id="ownMN406" value="${esc406(p.matriculaNacional||'')}"></div><div><label>Matrícula provincial</label><input id="ownMP406" value="${esc406(p.matriculaProvincial||'')}"></div><div><label>Teléfono / WhatsApp</label><input id="ownTelefono406" value="${esc406(p.telefonoDocumento||'')}"></div><div><label>Email</label><input id="ownEmail406" value="${esc406(p.emailDocumento||'')}"></div><div class="full"><label>Dirección del consultorio</label><input id="ownDireccion406" value="${esc406(p.direccionDocumento||'')}"></div><div class="full"><label>Redes / web</label><input id="ownRedes406" value="${esc406(p.redesDocumento||'')}"></div></div><div class="identity-upload-grid406"><div><input id="ownLogoFile406" type="file" accept="image/png,image/jpeg,image/webp" hidden><button class="secondary" type="button" id="ownUploadLogo406">Subir logo</button><button class="secondary" type="button" id="ownRemoveLogo406">Quitar logo</button></div><div><input id="ownSignatureFile406" type="file" accept="image/png,image/jpeg,image/webp" hidden><button class="secondary" type="button" id="ownUploadSignature406">Subir firma</button><button class="secondary" type="button" id="ownRemoveSignature406">Quitar firma</button></div><label class="check-row-310"><input id="ownShowSignature406" type="checkbox" ${p.mostrarFirmaDocumento!==false?'checked':''}> Incluir firma en documentos</label></div><div class="hc-modal-actions"><button class="secondary" type="button" data-close-identity406>Cancelar</button><button class="primary" type="button" id="saveOwnIdentity406">Guardar cambios</button></div></div>`;
     document.body.appendChild(modal);
   }
   async function uploadOwn406(kind,file){
+    if(!isMedical406()){alert('Tu perfil no puede modificar identidad para documentos clínicos.');return;}
     const pid=currentProfId406()||selectedProfId406(),p=prof406(pid);if(!p)return;
     try{const url=await compressImage406(file,kind);if(kind==='logo')p.logoDocumentoData=url;else p.firmaDocumentoData=url;persist406();$406('ownIdentityPreview406').innerHTML=identityPreviewHtml406(p);}catch(e){alert(e.message||'No se pudo procesar la imagen.');}
   }
   function saveOwnIdentity406(){
+    if(!isMedical406()){alert('Tu perfil no puede modificar identidad para documentos clínicos.');return;}
     const pid=currentProfId406()||selectedProfId406(),p=prof406(pid);if(!p)return;
     p.marcaDocumento=$406('ownMarca406')?.value.trim()||p.nombre;p.colorDocumento=$406('ownColor406')?.value||'#174b5c';p.matriculaNacional=$406('ownMN406')?.value.trim()||'';p.matriculaProvincial=$406('ownMP406')?.value.trim()||'';p.telefonoDocumento=$406('ownTelefono406')?.value.trim()||'';p.emailDocumento=$406('ownEmail406')?.value.trim()||'';p.direccionDocumento=$406('ownDireccion406')?.value.trim()||'';p.redesDocumento=$406('ownRedes406')?.value.trim()||'';p.mostrarFirmaDocumento=$406('ownShowSignature406')?.checked!==false;persist406();$406('identityModal406')?.remove();alert('Membrete y firma guardados.');
   }
@@ -8979,7 +9107,7 @@ function patientInfoTextHC(p,coverage){
     ['indicacion_paciente','Indicación al paciente']
   ];
   function docLabel406(type){return (DOC_TYPES_4093.find(x=>x[0]===type)||['','Documento clínico'])[1];}
-  function docTypeOptions406(type){return DOC_TYPES_4093.map(([value,label])=>`<option value="${esc406(value)}" ${type===value?'selected':''}>${esc406(label)}</option>`).join('');}
+  function docTypeOptions406(type){return DOC_TYPES_4093.filter(([value])=>canIssueDoc406(value)).map(([value,label])=>`<option value="${esc406(value)}" ${type===value?'selected':''}>${esc406(label)}</option>`).join('');}
   function canEditDoc406(d){
     if(isAdmin406())return true;
     const ts=new Date(d.fechaHora||d.creadoEn||0).getTime();return String(d.profesionalId)===String(currentProfId406())&&Date.now()-ts<=24*60*60*1000;
@@ -9006,11 +9134,11 @@ function patientInfoTextHC(p,coverage){
     const existing=docId?data.documentosClinicos.find(d=>d.id===docId):null;
     const type=existing?.tipo||forcedType||'receta';
     if(!canIssueDoc406(type)){alert('Tu perfil no tiene permiso para emitir este tipo de documento.');return;}
-    if(existing&&!canEditDoc406(existing)&&!isSecretary406()){alert('Este documento superó las 24 horas y solo puede modificarse con perfil Administrador.');return;}
+    if(existing&&!canEditDoc406(existing)){alert('Este documento no puede modificarse con tu perfil o superó las 24 horas.');return;}
     const profId=existing?.profesionalId||(isSecretary406()?responsibleProfId406(p):(currentProfId406()||selectedProfId406())),pr=prof406(profId);if(!pr){alert('No se pudo identificar el profesional responsable de la atención.');return;}
     const defs=defaultDoc406(type,p);
     const modal=document.createElement('div');modal.id='clinicalDocModal406';modal.className='hc-modal-overlay';
-    modal.innerHTML=`<div class="hc-modal-card clinical-doc-card406"><div class="hc-modal-head"><div><h2>${existing?'Editar documento':'Nuevo documento clínico'}</h2><p class="muted">${esc406(patientName406(p))} · <span id="docProfLabel406">${esc406(pr.nombre||'')}</span></p></div><button type="button" class="modal-close" data-close-doc406>×</button></div>${isSecretary406()?`<div class="doc-prof-selector406"><label>Profesional responsable<select id="docProfessional406">${(data.profesionales||[]).filter(x=>x.id!=='general').map(x=>`<option value="${esc406(x.id)}" ${String(x.id)===String(profId)?'selected':''}>${esc406(x.nombre)}</option>`).join('')}</select></label><p class="muted">El certificado/constancia usará el membrete del profesional seleccionado.</p></div>`:''}<div class="clinical-doc-header406" id="docIdentityPreview406">${identityPreviewHtml406(pr)}</div><div class="hc-modal-grid"><div><label>Tipo de documento</label><select id="docType406">${docTypeOptions406(type)}</select></div><div><label>Fecha</label><input id="docDate406" type="datetime-local" value="${esc406((existing?.fechaHora||new Date().toISOString()).slice(0,16))}"></div><div class="full"><div class="cl-voice-label4094"><label for="docTitle406">Título</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="docTitle406" aria-label="Dictar título del documento">🎤 Dictar</button></div><input id="docTitle406" value="${esc406(existing?.titulo||defs.title)}"></div><div class="full"><div class="cl-voice-label4094"><label id="docBodyLabel406" for="docBody406">Contenido</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="docBody406" aria-label="Dictar contenido del documento">🎤 Dictar</button></div><textarea id="docBody406" rows="8" placeholder="Escribí el contenido del documento">${esc406(existing?.contenido||defs.body)}</textarea></div><div class="full"><div class="cl-voice-label4094"><label for="docExtra406">Indicaciones / aclaraciones adicionales</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="docExtra406" aria-label="Dictar indicaciones adicionales">🎤 Dictar</button></div><textarea id="docExtra406" rows="4">${esc406(existing?.adicional||defs.extra)}</textarea></div><label class="check-row-310 full"><input type="checkbox" id="docIncludeSignature406" ${existing?.incluirFirma===false?'':'checked'}> Incluir firma cargada del profesional</label></div><p class="muted">El documento no se guarda si está vacío. El guardado es manual. Puede editarse durante 24 horas; el Administrador conserva edición sin límite.</p><div class="hc-modal-actions"><button class="secondary" type="button" data-close-doc406>Cancelar</button><button class="secondary" type="button" id="saveDoc406">Guardar</button><button class="primary" type="button" id="savePrintDoc406">Guardar e imprimir</button></div></div>`;
+    modal.innerHTML=`<div class="hc-modal-card clinical-doc-card406"><div class="hc-modal-head"><div><h2>${existing?'Editar documento':'Nuevo documento clínico'}</h2><p class="muted">${esc406(patientName406(p))} · <span id="docProfLabel406">${esc406(pr.nombre||'')}</span></p></div><button type="button" class="modal-close" data-close-doc406>×</button></div>${isSecretary406()?`<div class="doc-prof-selector406"><label>Profesional responsable<select id="docProfessional406">${(data.profesionales||[]).filter(x=>x.id!=='general').map(x=>`<option value="${esc406(x.id)}" ${String(x.id)===String(profId)?'selected':''}>${esc406(x.nombre)}</option>`).join('')}</select></label><p class="muted">La constancia usará el membrete del profesional seleccionado.</p></div>`:''}<div class="clinical-doc-header406" id="docIdentityPreview406">${identityPreviewHtml406(pr)}</div><div class="hc-modal-grid"><div><label>Tipo de documento</label><select id="docType406">${docTypeOptions406(type)}</select></div><div><label>Fecha</label><input id="docDate406" type="datetime-local" value="${esc406((existing?.fechaHora||new Date().toISOString()).slice(0,16))}"></div><div class="full"><div class="cl-voice-label4094"><label for="docTitle406">Título</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="docTitle406" aria-label="Dictar título del documento">🎤 Dictar</button></div><input id="docTitle406" value="${esc406(existing?.titulo||defs.title)}"></div><div class="full"><div class="cl-voice-label4094"><label id="docBodyLabel406" for="docBody406">Contenido</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="docBody406" aria-label="Dictar contenido del documento">🎤 Dictar</button></div><textarea id="docBody406" rows="8" placeholder="Escribí el contenido del documento">${esc406(existing?.contenido||defs.body)}</textarea></div><div class="full"><div class="cl-voice-label4094"><label for="docExtra406">Indicaciones / aclaraciones adicionales</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="docExtra406" aria-label="Dictar indicaciones adicionales">🎤 Dictar</button></div><textarea id="docExtra406" rows="4">${esc406(existing?.adicional||defs.extra)}</textarea></div><label class="check-row-310 full"><input type="checkbox" id="docIncludeSignature406" ${existing?.incluirFirma===false?'':'checked'}> Incluir firma cargada del profesional</label></div><p class="muted">El documento no se guarda si está vacío. El guardado es manual. Puede editarse durante 24 horas; el Administrador conserva edición sin límite.</p><div class="hc-modal-actions"><button class="secondary" type="button" data-close-doc406>Cancelar</button><button class="secondary" type="button" id="saveDoc406">Guardar</button><button class="primary" type="button" id="savePrintDoc406">Guardar e imprimir</button></div></div>`;
     document.body.appendChild(modal);
     $406('docType406').addEventListener('change',()=>{if(existing)return;const d=defaultDoc406($406('docType406').value,p);$406('docTitle406').value=d.title;$406('docBody406').value=d.body;$406('docExtra406').value=d.extra;});
     $406('docProfessional406')?.addEventListener('change',e=>{
@@ -9023,6 +9151,8 @@ function patientInfoTextHC(p,coverage){
   }
   function saveDocument406(p,existing,printAfter){
     const tipo=$406('docType406')?.value||'receta',titulo=$406('docTitle406')?.value.trim()||docLabel406(tipo),contenido=$406('docBody406')?.value.trim()||'',adicional=$406('docExtra406')?.value.trim()||'';
+    if(!canIssueDoc406(tipo)){alert('Tu perfil no tiene permiso para emitir este tipo de documento.');return;}
+    if(existing&&!canEditDoc406(existing)){alert('Tu perfil no puede modificar este documento.');return;}
     if(!contenido&&!adicional){alert('Escribí el contenido antes de guardar.');return;}
     const profId=existing?.profesionalId||($406('docProfessional406')?.value)||(isSecretary406()?responsibleProfId406(p):(currentProfId406()||selectedProfId406())),pr=prof406(profId);if(!pr){alert('No se pudo identificar el profesional responsable.');return;}
     const now=new Date().toISOString(),fechaInput=$406('docDate406')?.value,fechaHora=fechaInput?new Date(fechaInput).toISOString():now;
@@ -9032,7 +9162,7 @@ function patientInfoTextHC(p,coverage){
     persist406();$406('clinicalDocModal406')?.remove();enhanceHC406();enhancePatientFicha406();if(printAfter)printDocument406(doc.id);
   }
   function printDocument406(id){
-    ensure406();const d=data.documentosClinicos.find(x=>x.id===id);if(!d)return;const p=patient406(d.pacienteId)||patients406().find(x=>String(x.dni||'').replace(/\D/g,'')===String(d.dni||'').replace(/\D/g,''))||{},pr=prof406(d.profesionalId)||{},color=/^#[0-9a-f]{6}$/i.test(pr.colorDocumento||'')?pr.colorDocumento:'#174b5c';
+    ensure406();const d=data.documentosClinicos.find(x=>x.id===id);if(!d)return;if(!canIssueDoc406(d.tipo)){alert('Tu perfil no puede imprimir este documento.');return;}const p=patient406(d.pacienteId)||patients406().find(x=>String(x.dni||'').replace(/\D/g,'')===String(d.dni||'').replace(/\D/g,''))||{},pr=prof406(d.profesionalId)||{},color=/^#[0-9a-f]{6}$/i.test(pr.colorDocumento||'')?pr.colorDocumento:'#174b5c';
     const logo=resolveImage406(getLogo406(pr)),sig=d.incluirFirma!==false&&pr.mostrarFirmaDocumento!==false?resolveImage406(getSignature406(pr)):'';
     const contacts=[pr.telefonoDocumento,pr.emailDocumento,pr.direccionDocumento,pr.redesDocumento].filter(Boolean).map(esc406).join(' · '),licenses=[pr.matriculaNacional,pr.matriculaProvincial].filter(Boolean).map(esc406).join(' · ');
     const w=window.open('','_blank');if(!w)return;
@@ -9044,12 +9174,12 @@ function patientInfoTextHC(p,coverage){
     return `<section class="clinical-docs406" data-docs-section406><div class="clinical-docs-head406"><div><h3>Documentos clínicos e informes rápidos</h3><p class="muted">Recetas, órdenes, certificados, informes breves e indicaciones emitidas para este paciente.</p></div>${isMedical406()?`<button class="primary" type="button" data-new-doc406="${esc406(patientKey406(p))}">+ Nuevo documento</button>`:''}</div><div class="clinical-doc-list406">${docs.length?docs.map(d=>`<article class="clinical-doc-row406"><div><strong>${esc406(d.titulo||docLabel406(d.tipo))}</strong><span>${esc406(fmtDT406(d.fechaHora))} · ${esc406(d.profesionalNombre||'')}</span></div><div class="clinical-doc-actions406">${canEditDoc406(d)?`<button class="secondary small-btn" type="button" data-edit-doc406="${esc406(d.id)}" data-doc-patient406="${esc406(patientKey406(p))}">Editar</button>`:''}<button class="secondary small-btn" type="button" data-print-doc406="${esc406(d.id)}">Imprimir</button></div></article>`).join(''):'<p class="muted">Todavía no hay documentos emitidos.</p>'}</div></section>`;
   }
   function enhanceHC406(){
-    ensure406();const root=$406('hcPacienteDetalle');if(!root)return;const key=root.querySelector('[data-hc-new]')?.dataset.hcNew;if(!key)return;const p=patient406(key);if(!p)return;
+    ensure406();const root=$406('hcPacienteDetalle');if(!root)return;if(!isMedical406()){root.querySelectorAll('[data-docs-section406],[data-new-doc406]').forEach(x=>x.remove());return;}const key=root.querySelector('[data-hc-new]')?.dataset.hcNew;if(!key)return;const p=patient406(key);if(!p)return;
     const actions=root.querySelector('.hc-patient-actions');if(actions&&isMedical406()&&!actions.querySelector('[data-new-doc406]')){const b=document.createElement('button');b.className='secondary';b.type='button';b.dataset.newDoc406=key;b.textContent='+ Documento';actions.insertBefore(b,actions.querySelector('[data-hc-print]')||null);}
     if(!root.querySelector('[data-docs-section406]')){const summary=root.querySelector('.hc-clinical-summary');if(summary)summary.insertAdjacentHTML('afterend',docsSection406(p));else root.insertAdjacentHTML('beforeend',docsSection406(p));}
   }
   function enhancePatientFicha406(id){
-    ensure406();const key=id||window.pacienteSeleccionadoPanelId||'';const p=patient406(key);if(!p)return;const root=$406('pacienteDetalle');if(!root)return;
+    ensure406();const root=$406('pacienteDetalle');if(!root)return;if(!isMedical406()){root.querySelectorAll('[data-docs-section406],[data-new-doc406]').forEach(x=>x.remove());return;}const key=id||window.pacienteSeleccionadoPanelId||'';const p=patient406(key);if(!p)return;
     const actions=root.querySelector('.paciente-ficha-actions');if(actions&&isMedical406()&&!actions.querySelector('[data-new-doc406]')){const b=document.createElement('button');b.className='secondary';b.type='button';b.dataset.newDoc406=patientKey406(p);b.textContent='Documento / informe rápido';actions.prepend(b);}
     if(!root.querySelector('[data-docs-section406]')){const history=root.querySelector('.paciente-historial-wrap');if(history)history.insertAdjacentHTML('beforebegin',docsSection406(p));}
   }
@@ -9232,6 +9362,7 @@ function patientInfoTextHC(p,coverage){
 
   const esc4095=(value)=>String(value??'').replace(/[&<>"']/g,ch=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[ch]));
   const digits4095=(value)=>String(value||'').replace(/\D/g,'');
+  function canUseRcta4095(){try{return !!puedeAccederInformacionClinica();}catch(_){return false;}}
   const patientName4095=(p)=>{
     try{return nombrePacientePanel?.(p)||p?.nombreCompleto||[p?.apellido,p?.nombre].filter(Boolean).join(' ')||'Paciente';}
     catch(_){return p?.nombreCompleto||[p?.apellido,p?.nombre].filter(Boolean).join(' ')||'Paciente';}
@@ -9291,10 +9422,12 @@ function patientInfoTextHC(p,coverage){
     try{return String(window.data?.integracionesClinicas?.rctaUrl||DEFAULT_RCTA_URL);}catch(_){return DEFAULT_RCTA_URL;}
   }
   function openRcta4095(){
+    if(!canUseRcta4095()){alert('Tu perfil no puede acceder a prescripción clínica.');return;}
     const win=window.open(rctaUrl4095(),'_blank','noopener');
     if(!win)alert('El navegador bloqueó la apertura de RCTA. Habilitá las ventanas emergentes para CardioLink.');
   }
   function openRctaModal4095(key){
+    if(!canUseRcta4095()){alert('Tu perfil no puede acceder a prescripción clínica.');return;}
     const p=findPatient4095(key);if(!p){alert('No se encontró la ficha del paciente.');return;}
     document.getElementById('rctaAssistModal4095')?.remove();
     const text=preparedText4095(p),o=document.createElement('div');o.id='rctaAssistModal4095';o.className='hc-modal-overlay';
@@ -9306,11 +9439,17 @@ function patientInfoTextHC(p,coverage){
     document.body.appendChild(o);
   }
   function addButton4095(container,key,label='Recetar en RCTA',before=null){
+    if(!canUseRcta4095())return;
     if(!container||!key||container.querySelector('[data-rcta-patient4095]'))return;
     const b=document.createElement('button');b.className='secondary rcta-button4095';b.type='button';b.dataset.rctaPatient4095=key;b.textContent=label;
     if(before&&before.parentNode===container)container.insertBefore(b,before);else container.appendChild(b);
   }
   function decorate4095(root=document){
+    if(!canUseRcta4095()){
+      root.querySelectorAll?.('[data-rcta-patient4095]').forEach(x=>x.remove());
+      document.getElementById('rctaAssistModal4095')?.remove();
+      return;
+    }
     // Historia clínica seleccionada.
     const hc=root.querySelector?.('#hcPacienteDetalle')||document.getElementById('hcPacienteDetalle');
     if(hc){const actions=hc.querySelector('.hc-patient-actions'),key=hc.querySelector('[data-hc-new]')?.dataset.hcNew;if(actions&&key)addButton4095(actions,key,'Recetar en RCTA',actions.querySelector('[data-hc-print]'));}
@@ -9654,10 +9793,11 @@ function patientInfoTextHC(p,coverage){
   }
   function patientName(p){return p?.nombreCompleto||p?.paciente||p?.nombre||'Paciente';}
   function role(){
-    try{return norm(perfilUsuarioActual()?.rol||'');}catch(_){return '';}
+    try{return norm(typeof rolBaseUsuarioActual==='function'?rolBaseUsuarioActual():(perfilUsuarioActual()?.rol||''));}catch(_){return '';}
   }
-  function isSecretary(){return role().includes('secretaria');}
+  function isSecretary(){try{return typeof esSecretaria==='function'?!!esSecretaria():role().includes('secretaria');}catch(_){return false;}}
   function isMedical(){
+    try{if(typeof puedeAccederInformacionClinica==='function')return !!puedeAccederInformacionClinica();}catch(_){}
     try{return (typeof esMedico==='function'&&esMedico())||(typeof esMatiasDuenio==='function'&&esMatiasDuenio())||(typeof esAdminComun==='function'&&esAdminComun());}catch(_){return false;}
   }
 
@@ -9713,14 +9853,11 @@ function patientInfoTextHC(p,coverage){
   function patientActionsHtml411B(p){
     if(!p)return '';
     const medical=isMedical();
-    const common=[
-      ['attention','Nueva atención'],
-      ['rcta','RCTA'],
-      ['constancia','Constancia']
-    ];
+    if(!medical&&!isSecretary())return '';
+    const common=[['attention','Nueva atención'],['constancia','Constancia']];
     if(medical){
-      common.splice(1,0,['evolve','Nueva evolución']);
-      common.splice(3,0,['order','Orden médica'],['certificate','Certificado']);
+      common.splice(1,0,['evolve','Nueva evolución'],['rcta','RCTA']);
+      common.splice(4,0,['order','Orden médica'],['certificate','Certificado']);
       common.push(['whatsapp','WhatsApp']);
     }else{
       common.push(['whatsapp','WhatsApp']);
@@ -9750,9 +9887,11 @@ function patientInfoTextHC(p,coverage){
     const p=resolveActionPatient411B(),secretary=isSecretary();
     let arr=[];
     if(secretary){
-      arr=[['newpatient','Nuevo paciente'],['attention','Nuevo turno / atención'],['rcta','RCTA'],['certificate','Certificado'],['constancia','Constancia de atención'],['search','Buscar paciente']];
-    }else{
+      arr=[['newpatient','Nuevo paciente'],['attention','Nuevo turno / atención'],['constancia','Constancia de atención'],['search','Buscar paciente']];
+    }else if(isMedical()){
       arr=[['newpatient','Nuevo paciente'],['attention','Nueva atención'],['evolve','Nueva evolución'],['rcta','RCTA'],['order','Orden médica'],['certificate','Certificado'],['constancia','Constancia'],['search','Buscar paciente']];
+    }else{
+      arr=[['search','Buscar paciente']];
     }
     return `<div class="gq-title411b">${p?`Paciente: ${esc(patientName(p))}`:'Comandos rápidos'}</div>`+
       arr.map(([a,l])=>`<button type="button" data-cp-action411b="${a}">${l}</button>`).join('');
@@ -9767,6 +9906,7 @@ function patientInfoTextHC(p,coverage){
       bar.dataset.patientKey411b=patientKey(p);
       bar.querySelector('[data-cp-name411b]').textContent=patientName(p);
       bar.querySelector('[data-cp-meta411b]').textContent=`DNI ${p.dni||'s/d'}`;
+      const hc=bar.querySelector('[data-cp-action411b="hc"]');if(hc)hc.classList.toggle('hidden',!isMedical());
       const ev=bar.querySelector('[data-cp-action411b="evolve"]');if(ev)ev.classList.toggle('hidden',!isMedical());
       const menu=$b('cpMenu411B');if(menu)menu.innerHTML=patientActionsHtml411B(p);
     }
@@ -9790,7 +9930,7 @@ function patientInfoTextHC(p,coverage){
     try{showSection('pacientes');setTimeout(()=>window.seleccionarPacientePanel?.(k),60);}catch(_){}
   }
   function openHC411B(p){
-    if(!p)return;const k=patientKey(p);saveCurrent411B(k);
+    if(!p)return;if(!isMedical()){alert('Tu perfil no puede acceder a Historia Clínica.');return;}const k=patientKey(p);saveCurrent411B(k);
     try{
       showSection('hc');
       const fake=document.createElement('button');fake.dataset.openHc=k;fake.style.display='none';document.body.appendChild(fake);fake.click();fake.remove();
@@ -9806,12 +9946,12 @@ function patientInfoTextHC(p,coverage){
     try{showSection('carga');}catch(_){}
   }
   function rcta411B(p){
-    if(!p)return;const k=patientKey(p);saveCurrent411B(k);
+    if(!p)return;if(!isMedical()){alert('La prescripción clínica requiere perfil médico.');return;}const k=patientKey(p);saveCurrent411B(k);
     if(window.CardioLinkRCTA4095?.open)window.CardioLinkRCTA4095.open(k);else alert('RCTA todavía no está disponible en esta pantalla.');
   }
   function doc411B(p,type){
     if(!p)return;const k=patientKey(p);saveCurrent411B(k);
-    if(isSecretary()&&['certificado','constancia_atencion'].includes(type)){
+    if(isSecretary()&&type==='constancia_atencion'){
       if(typeof window.openClinicalDocumentTyped406==='function'){window.openClinicalDocumentTyped406(k,type);return;}
     }
     if(!isMedical()){alert('Este documento requiere un perfil médico o Secretaría habilitada.');return;}
@@ -10159,6 +10299,7 @@ function patientInfoTextHC(p,coverage){
     sec.appendChild(box);
     $c('finCalcular411C')?.addEventListener('click',renderFinance411C);
     $c('movGuardar411C')?.addEventListener('click',()=>{
+      if(!(esMatiasDuenio?.()||esAdminComun?.())){alert('Tu perfil no puede registrar movimientos financieros.');return;}
       const monto=Number($c('movMonto411C')?.value||0);if(!(monto>0)){alert('Ingresá un monto válido.');return;}
       ensureMov411C();
       data.movimientosFinancieros411C.push({id:'mov_'+Date.now(),fecha:$c('movFecha411C')?.value||todayISO(),tipo:'egreso',categoria:$c('movCategoria411C')?.value||'Otros egresos',concepto:$c('movConcepto411C')?.value.trim()||'',monto,medio:$c('movMedio411C')?.value||'Otro',perfilId:$c('movPerfil411C')?.value||'',creadoEn:new Date().toISOString(),creadoPor:typeof nombreUsuarioAuditoria==='function'?nombreUsuarioAuditoria():''});
@@ -10380,6 +10521,7 @@ function patientInfoTextHC(p,coverage){
 
   document.addEventListener('click',e=>{
     const b=e.target.closest?.('[data-del-mov411c]');if(!b)return;
+    if(!(esMatiasDuenio?.()||esAdminComun?.())){alert('Tu perfil no puede borrar movimientos financieros.');return;}
     if(!confirm('¿Borrar este movimiento financiero?'))return;
     ensureMov411C();data.movimientosFinancieros411C=data.movimientosFinancieros411C.filter(m=>m.id!==b.dataset.delMov411c);saveMov411C();renderFinance411C();
   });
@@ -10555,7 +10697,7 @@ function patientInfoTextHC(p,coverage){
     ensuref();
     let card=$f('cfgFinanzas411F');
     if(!card){
-      card=document.createElement('div');card.id='cfgFinanzas411F';card.className='config-smart-card-310 full-config-card';card.dataset.configGroupCard='administracion';
+      card=document.createElement('div');card.id='cfgFinanzas411F';card.className='config-smart-card-310 full-config-card';card.dataset.configGroupCard='administracion';card.dataset.configAccess='admin';
       card.innerHTML=`<h3>Configuración financiera · Administración</h3>
         <p class="muted">Visible únicamente para dueño/Administrador. El sueldo se considera un costo fijo mensual. Las colocaciones se suman a la liquidación del mes siguiente al que fueron realizadas.</p>
         <div class="finance-config-grid411f">
@@ -10567,6 +10709,7 @@ function patientInfoTextHC(p,coverage){
       grid.appendChild(card);
       card.addEventListener('click',e=>{
         if(e.target.id!=='finGuardarSueldo411F')return;
+        if(!adminf()){alert('Tu perfil no puede modificar sueldos.');return;}
         const monto=Number($f('finSueldo411F')?.value||0),desde=$f('finSueldoDesde411F')?.value;
         if(!Number.isFinite(monto)||monto<0||!desde){alert('Ingresá sueldo y fecha de vigencia.');return;}
         ensuref();data.configFinanzas411F.sueldosSecretaria.push({id:'sal_'+Date.now(),monto,vigenteDesde:desde});

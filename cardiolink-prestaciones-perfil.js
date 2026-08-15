@@ -51,8 +51,10 @@
 
   function puedeConfigurar() {
     try {
+      if (typeof puedeGestionarConfigComercial === 'function') return !!puedeGestionarConfigComercial();
       if (typeof esMatiasDuenio === 'function' && esMatiasDuenio()) return true;
       if (typeof esAdminComun === 'function' && esAdminComun()) return true;
+      if (typeof esSecretaria === 'function' && esSecretaria()) return true;
     } catch (_) {}
     return false;
   }
@@ -96,6 +98,10 @@
   }
 
   function setActiva(profId, prest, on) {
+    if (!puedeConfigurar()) {
+      alert('Tu perfil no puede modificar la matriz de prestaciones.');
+      return;
+    }
     const p = (data.profesionales || []).find(x => String(x.id) === String(profId));
     if (!p) return;
     p.prestaciones = Array.isArray(p.prestaciones) ? p.prestaciones.slice() : [];
@@ -163,6 +169,7 @@
       card.id = 'clPrestacionesPerfil411P';
       card.className = 'cl-prest-card411p';
       card.dataset.configGroupCard = 'prestaciones';
+      card.dataset.configAccess = 'commercial';
       card.innerHTML = `
         <div class="cl-prest-head411p">
           <div>
@@ -185,6 +192,7 @@
       card.addEventListener('click', e => {
         const add = e.target.closest('#clAddPrest411P');
         if (add) {
+          if (!puedeConfigurar()) return;
           const inp = $p('clNuevaPrest411P');
           const nombre = String(inp?.value || '').trim();
           if (!nombre) return;
@@ -197,6 +205,7 @@
 
         const del = e.target.closest('[data-cl-del-prest411p]');
         if (del) {
+          if (!puedeConfigurar()) return;
           const nombre = decodeURIComponent(del.dataset.clDelPrest411p || '');
           const usada = (data.profesionales || []).some(p => activa(p, nombre));
           if (usada) {
@@ -214,6 +223,7 @@
       card.addEventListener('change', e => {
         const ch = e.target.closest('[data-cl-prof-prest411p]');
         if (!ch) return;
+        if (!puedeConfigurar()) return;
         const [pid, enc] = String(ch.dataset.clProfPrest411p || '').split('|');
         const prest = decodeURIComponent(enc || '');
         setActiva(pid, prest, !!ch.checked);

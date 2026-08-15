@@ -720,7 +720,7 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
         <button type="button" data-config-group="sistema">App y preparación HC</button>
       </div>
       <div class="config-grid">
-        <div data-config-group-card="coberturas" data-config-access="admin">
+        <div data-config-group-card="coberturas" data-config-access="commercial">
           <h3>Valores por profesional</h3>
           <label>Profesional</label><select id="cfgProfesionalValores"></select>
           <label>Consulta particular</label><input type="number" id="cfgConsultaParticular">
@@ -733,7 +733,7 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
           <button class="primary" id="btnGuardarValores">Guardar valores</button>
         </div>
 
-        <div data-config-group-card="coberturas" data-config-access="admin">
+        <div data-config-group-card="coberturas" data-config-access="commercial">
           <h3>Reglas por obra social</h3>
           <p class="muted">Reglas especiales aplicadas solo al perfil Matías. Los demás profesionales facturan para sí mismos.</p>
           <label>Obra social</label><select id="cfgReglaOS"></select>
@@ -750,7 +750,7 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
           <button class="primary" id="btnGuardarReglaOS">Guardar regla</button>
         </div>
 
-        <div data-config-group-card="profesionales">
+        <div data-config-group-card="profesionales" data-config-access="operational">
           <h3>Profesionales</h3>
           <div class="inline-form">
             <input id="nuevoProfesional" placeholder="Nuevo profesional">
@@ -760,7 +760,7 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
           <ul id="listaProfesionales"></ul>
         </div>
 
-        <div data-config-group-card="coberturas">
+        <div data-config-group-card="coberturas" data-config-access="commercial">
           <h3>Obras sociales</h3>
           <div class="inline-form">
             <input id="nuevaOS" placeholder="Nueva OS">
@@ -769,7 +769,7 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
           <ul id="listaOS"></ul>
         </div>
 
-        <div data-config-group-card="prestaciones">
+        <div data-config-group-card="prestaciones" data-config-access="commercial">
           <h3>Prestaciones</h3>
           <div class="inline-form">
             <input id="nuevaPrestacion" placeholder="Nueva prestación">
@@ -779,7 +779,7 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
           <ul id="listaPrestaciones"></ul>
         </div>
 
-        <div class="maintenance-card" data-config-group-card="mantenimiento">
+        <div class="maintenance-card" data-config-group-card="mantenimiento" data-config-access="admin">
           <h3>Mantenimiento de pacientes</h3>
           <p class="muted">Busca posibles pacientes duplicados y permite fusionarlos sin borrar consultas, estudios, caja ni estadísticas.</p>
           <button class="primary" id="btnBuscarDuplicadosPacientes" type="button">Buscar duplicados de pacientes</button>
@@ -805,20 +805,20 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
           <ul id="listaUsuariosSistema"></ul>
         </div>
 
-        <div data-config-group-card="mantenimiento" data-config-access="admin">
+        <div data-config-group-card="mantenimiento" data-config-access="restore">
           <h3>Backup / traslado</h3>
-          <button class="primary" id="btnExportBackup">Exportar backup completo</button>
+          <button class="primary" id="btnExportBackup" data-config-access="admin">Exportar backup completo</button>
           <label>Importar backup JSON</label>
           <input type="file" id="inputImportBackup" accept=".json,application/json">
           <button class="secondary" id="btnImportBackup">Importar backup</button>
           <p class="danger-text">Importar reemplaza la base de esta computadora.</p>
-          <button class="danger" id="btnBorrarDatos">Borrar atenciones de prueba</button>
-          <button class="secondary" type="button" onclick="limpiarRegistrosCorruptosManual()">Limpiar registros corruptos / undefined</button>
-          <button class="secondary" type="button" onclick="repararReglasValoresBaseManual()">Reparar reglas y valores base</button>
-          <p class="muted">Usar solo si aparecen filas vacías o con “undefined”. No borra atenciones reales con paciente cargado.</p>
+          <button class="danger" id="btnBorrarDatos" data-config-access="admin">Borrar atenciones de prueba</button>
+          <button class="secondary" data-config-access="admin" type="button" onclick="limpiarRegistrosCorruptosManual()">Limpiar registros corruptos / undefined</button>
+          <button class="secondary" data-config-access="admin" type="button" onclick="repararReglasValoresBaseManual()">Reparar reglas y valores base</button>
+          <p class="muted" data-config-access="admin">Usar solo si aparecen filas vacías o con “undefined”. No borra atenciones reales con paciente cargado.</p>
         </div>
 
-        <div class="config-system-380" data-config-group-card="sistema">
+        <div class="config-system-380" data-config-group-card="sistema" data-config-access="operational">
           <h3>Instalación como app</h3>
           <p class="muted">Instalá CardioLink en iPhone, iPad, Android, Windows o Mac para abrirlo como una aplicación.</p>
           <button class="primary" type="button" id="btnInstalarApp380">Instalar CardioLink</button>
@@ -828,7 +828,7 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
 
 
 
-        <div class="config-system-380 system-health-card-382" data-config-group-card="sistema">
+        <div class="config-system-380 system-health-card-382" data-config-group-card="sistema" data-config-access="admin">
           <h3>Estado del sistema</h3>
           <p class="muted">Diagnóstico rápido de conexión, sesión, sincronización, backup y preparación para HC.</p>
           <div id="systemHealth382" class="system-health-grid-382"></div>
@@ -838,7 +838,7 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
           </div>
         </div>
 
-        <div class="maintenance-card data-quality-card-382" data-config-group-card="mantenimiento">
+        <div class="maintenance-card data-quality-card-382" data-config-group-card="mantenimiento" data-config-access="operational">
           <h3>Calidad de datos</h3>
           <p class="muted">Detecta fichas incompletas, duplicados probables y registros que conviene corregir antes de comenzar CardioLink HC.</p>
           <div id="dataQuality382" class="data-quality-grid-382"></div>
@@ -848,13 +848,13 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
           </div>
         </div>
 
-        <div class="maintenance-card audit-card-382" data-config-group-card="mantenimiento">
+        <div class="maintenance-card audit-card-382" data-config-group-card="mantenimiento" data-config-access="admin">
           <h3>Auditoría resumida</h3>
           <p class="muted">Resumen de altas, ediciones, fusiones y usuarios que realizaron cambios.</p>
           <div id="auditSummary382" class="audit-summary-382"></div>
           <button class="secondary" type="button" id="btnExportAudit382">Exportar auditoría JSON</button>
         </div>
-        <div class="config-system-380" data-config-group-card="sistema">
+        <div class="config-system-380" data-config-group-card="sistema" data-config-access="admin">
           <h3>Preparación para CardioLink HC 4.0</h3>
           <p class="muted">Verifica que pacientes y atenciones tengan identificadores estables para vincular futuras evoluciones, informes y adjuntos.</p>
           <button class="primary" type="button" id="btnRevisarHC380">Revisar estructura</button>

@@ -34,6 +34,11 @@
     'Cardiología', 'Neumonología', 'Clínica médica', 'Pediatría',
     'Terapia intensiva', 'Infectología', 'Hematología', 'Obra social',
   ];
+
+  function puedeUsarClinica() {
+    try { return typeof puedeAccederInformacionClinica === 'function' && !!puedeAccederInformacionClinica(); }
+    catch (e) { return false; }
+  }
  
   const ORGANOS_REGION = [
     'Abdominal', 'Renal / vías urinarias', 'Tiroides / cuello',
@@ -96,6 +101,7 @@
     try { localStorage.setItem(STATS_KEY, JSON.stringify(s)); } catch (e) {}
   }
   function mostrarStats() {
+    if (!puedeUsarClinica()) { alert('Tu perfil no puede acceder a informes clínicos.'); return; }
     var s = leerStats();
     var filas = Object.entries(s).sort(function (a, b) { return b[1] - a[1]; });
     var cuerpo = filas.length
@@ -306,6 +312,7 @@
   }
  
   function abrirModalEco(patientKey, patientNombre) {
+    if (!puedeUsarClinica()) { alert('Tu perfil no puede crear informes clínicos.'); return; }
     var existente = document.getElementById('clEcoModal');
     if (existente) existente.remove();
     var overlay = document.createElement('div');
@@ -373,6 +380,7 @@
   }
  
   function abrirModalEcoGeneral(patientKey, patientNombre) {
+    if (!puedeUsarClinica()) { alert('Tu perfil no puede crear informes clínicos.'); return; }
     var existente = document.getElementById('clUsgModal');
     if (existente) existente.remove();
     var overlay = document.createElement('div');
@@ -430,6 +438,10 @@
   }
  
   function insertarBotones() {
+    if (!puedeUsarClinica()) {
+      document.querySelectorAll('[data-cl-eco-open],[data-cl-usg-open],#clEcoModal,#clUsgModal').forEach(function (el) { el.remove(); });
+      return;
+    }
     document.querySelectorAll('.hc-patient-actions').forEach(function (actions) {
       var keyEl = actions.querySelector('[data-hc-new]');
       if (!keyEl) return;
