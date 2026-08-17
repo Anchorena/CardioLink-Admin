@@ -205,4 +205,65 @@ assert.deepStrictEqual(finanzasV5.obtenerIngresos({}), { cajaCobrada: { total: 1
 assert.equal(lecturasProveedor, 1, 'La lectura autorizada usa el proveedor conectado');
 assert.equal(finanzasV5.conectarProveedor({ obtenerIngresos: () => ({}) }), false, 'No permite reemplazar el proveedor conectado');
 
+const resumenEgresos = finanzasV5.calcularResumenEgresos({
+  ingresos: agostoTodos,
+  egresos: [
+    { id: 'pagado-en-periodo', status: 'paid', amount: 25000 },
+    { id: 'pendiente-en-periodo', status: 'pending', amount: 12000 },
+    { id: 'anulado-en-periodo', status: 'voided', amount: 999999 }
+  ],
+  egresosPagadosPorFechaPago: [
+    { id: 'pagado-en-caja', status: 'paid', amount: 25000 },
+    { id: 'proteccion-no-pagado', status: 'voided', amount: 500000 }
+  ]
+});
+assert.deepStrictEqual(resumenEgresos, {
+  cajaCobrada: 111000,
+  produccionAFacturar: 315000,
+  ingresosOperativosEstimados: 426000,
+  egresosPagados: 25000,
+  egresosPendientes: 12000,
+  resultadoOperativoEstimado: 389000,
+  resultadoCaja: 86000,
+  egresosOperativos: 37000,
+  egresosPagadosPorFechaPago: 25000
+}, 'Finanzas 5 separa devengado operativo de caja por paid_on y excluye anulados');
+assert.equal(
+  finanzasV5.CONFLICT_MESSAGE,
+  'Este egreso fue modificado desde otra sesión. Actualizá la información antes de volver a guardar.',
+  'El conflicto optimista informa el mensaje funcional exacto'
+);
+
+const resumenVacio = finanzasV5.calcularResumenEgresos({
+  ingresos: {
+    cajaCobrada: { total: 0 },
+    produccionAFacturar: { total: 0 },
+    ingresosOperativosEstimados: { total: 0 }
+  },
+  egresos: [],
+  egresosPagadosPorFechaPago: []
+});
+const sieteKpiVacios = {
+  cajaCobrada: resumenVacio.cajaCobrada,
+  produccionAFacturar: resumenVacio.produccionAFacturar,
+  ingresosOperativosEstimados: resumenVacio.ingresosOperativosEstimados,
+  egresosPagados: resumenVacio.egresosPagados,
+  egresosPendientes: resumenVacio.egresosPendientes,
+  resultadoOperativoEstimado: resumenVacio.resultadoOperativoEstimado,
+  resultadoCaja: resumenVacio.resultadoCaja
+};
+assert.deepStrictEqual(sieteKpiVacios, {
+  cajaCobrada: 0,
+  produccionAFacturar: 0,
+  ingresosOperativosEstimados: 0,
+  egresosPagados: 0,
+  egresosPendientes: 0,
+  resultadoOperativoEstimado: 0,
+  resultadoCaja: 0
+}, 'Los siete KPI devuelven cero cuando no hay ingresos ni egresos');
+assert.ok(
+  Object.values(sieteKpiVacios).every((valor) => Number.isFinite(valor)),
+  'Los siete KPI vacíos no contienen NaN ni undefined'
+);
+
 console.log(`Paridad Finanzas 4/5 OK: ${escenarios.length} escenarios, ${atenciones.length} atenciones de prueba.`);
