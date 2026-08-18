@@ -10481,6 +10481,11 @@ function patientInfoTextHC(p,coverage){
 
   // Adaptador de solo lectura para Finanzas 5. Conserva como fuente única las
   // funciones privadas ya usadas por Finanzas 4; no crea ni guarda movimientos.
+  function rangoCalendarioMesObligacionesF5(ym){
+    const match=String(ym||'').match(/^(\d{4})-(0[1-9]|1[0-2])$/);if(!match)return null;
+    const ultimoDia=new Date(Number(match[1]),Number(match[2]),0,12).getDate();
+    return {desde:ym+'-01',hasta:ym+'-'+String(ultimoDia).padStart(2,'0')};
+  }
   const proveedorObligacionesF4411F=Object.freeze({
     version:'1.0.0',
     puedeAcceder:puedeAccederIngresos411C,
@@ -10493,6 +10498,7 @@ function patientInfoTextHC(p,coverage){
       const ym=String(periodo||'').slice(0,7);
       if(!puedeAccederIngresos411C()||!/^\d{4}-(0[1-9]|1[0-2])$/.test(ym))return null;
       const workMonth=mesAnterior411F(ym);
+      const rangoLiquidacion=rangoCalendarioMesObligacionesF5(ym);
       const rates=typeof valoresColocacion==='function'?valoresColocacion():{holter:0,mapa:0,ecg:0};
       const breakdown={HOLTER:{type:'HOLTER',count:0,rate:Number(rates.holter||0),total:0},MAPA:{type:'MAPA',count:0,rate:Number(rates.mapa||0),total:0},ECG:{type:'ECG',count:0,rate:Number(rates.ecg||0),total:0}};
       (atenciones||[]).filter(a=>a?.colocacionLiquidable&&String(a.fecha||'').slice(0,7)===workMonth&&(!perfil||a.profesionalId===perfil||a.cajaPerfil===perfil)).forEach(a=>{
@@ -10502,7 +10508,7 @@ function patientInfoTextHC(p,coverage){
         breakdown[tipo].total+=placementCost411C(a);
       });
       const rows=Object.values(breakdown);
-      return {work_month:workMonth+'-01',settlement_month:ym+'-01',count:rows.reduce((s,x)=>s+x.count,0),rates:{holter:Number(rates.holter||0),mapa:Number(rates.mapa||0),ecg:Number(rates.ecg||0)},breakdown:rows,total:colocacionesLiquidacion411F(ym+'-01',ym+'-31',perfil),origin:'atenciones + tarifas actuales de colocación F4'};
+      return {work_month:workMonth+'-01',settlement_month:ym+'-01',count:rows.reduce((s,x)=>s+x.count,0),rates:{holter:Number(rates.holter||0),mapa:Number(rates.mapa||0),ecg:Number(rates.ecg||0)},breakdown:rows,total:colocacionesLiquidacion411F(rangoLiquidacion.desde,rangoLiquidacion.hasta,perfil),origin:'atenciones + tarifas actuales de colocación F4'};
     }
   });
   window.CardioLinkFinanzasV5?.conectarProveedorObligacionesF4?.(proveedorObligacionesF4411F);
