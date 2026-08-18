@@ -27,8 +27,7 @@ const instrumentedSource = originalSource.replace(injectionMarker, `
 ${injectionMarker}`);
 
 const testWindow = {
-  atob: (value) => Buffer.from(value, 'base64').toString('binary'),
-  supabaseClient: null
+  atob: (value) => Buffer.from(value, 'base64').toString('binary')
 };
 const context = vm.createContext({
   module: { exports: {} },
@@ -98,7 +97,17 @@ assertRejectedWithoutLeak(fakeSecret, `Rechaza ${fakeSecretPrefix}_`);
 assertRejectedWithoutLeak('service_role_valor_privado_que_no_debe_salir', 'Rechaza service_role');
 assertRejectedWithoutLeak(jwtForRole('authenticated'), 'Rechaza JWT cuyo role no es anon');
 
-testWindow.supabaseClient = { supabaseUrl: 'https://produccion.example.com' };
+const clientePrincipal = {
+  supabaseUrl: 'https://produccion.example.com',
+  auth: { getSession: async () => ({ data: { session: null }, error: null }) },
+  rpc: async () => ({ data: false, error: null }),
+  from: () => ({})
+};
+assert.equal(
+  context.module.exports.conectarClientePrincipal(clientePrincipal),
+  true,
+  'Recibe explícitamente el cliente principal para comparar destinos'
+);
 assert.doesNotThrow(
   () => asegurarDestinoIndependiente('https://staging.example.com'),
   'Permite un proyecto de Staging diferente de producción'
@@ -114,7 +123,8 @@ assert.throws(
   'Rechaza equivalentes con diferencias de case y trailing slash'
 );
 
-testWindow.supabaseClient = { rest: { url: 'https://PRODUCCION.EXAMPLE.COM/rest/v1/' } };
+clientePrincipal.supabaseUrl = '';
+clientePrincipal.rest = { url: 'https://PRODUCCION.EXAMPLE.COM/rest/v1/' };
 assert.throws(
   () => asegurarDestinoIndependiente('https://produccion.example.com/cualquier-ruta'),
   /coincide con el Supabase principal/,

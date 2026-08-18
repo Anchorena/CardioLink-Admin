@@ -10478,6 +10478,9 @@ function patientInfoTextHC(p,coverage){
   });
   window.CardioLinkFinanzasIngresos=proveedorIngresos411C;
   window.CardioLinkFinanzasV5?.conectarProveedor?.(proveedorIngresos411C);
+  // Inyección explícita: en Producción Finanzas 5 reutiliza la sesión principal
+  // sin crear otro cliente ni depender de un global lexicalmente inaccesible.
+  window.CardioLinkFinanzasV5?.conectarClientePrincipal?.(supabaseClient);
 
   // Adaptador de solo lectura para Finanzas 5. Conserva como fuente única las
   // funciones privadas ya usadas por Finanzas 4; no crea ni guarda movimientos.

@@ -1,6 +1,6 @@
 /* =====================================================================
-   CardioLink Admin — Finanzas 5 · Etapa 3B
-   Ingresos canónicos + egresos, recurrentes y obligaciones F4 en Staging.
+   CardioLink Admin — Finanzas 5 · Etapa 4A
+   Staging local con CRUD + producción conectada en modo solo lectura.
 
    Orden de carga: antes de app.js. app.js conecta las dependencias y expone
    el proveedor autorizado de solo lectura para los consumidores futuros.
@@ -17,6 +17,7 @@
 
   let proveedorAutorizado = null;
   let proveedorObligacionesF4Autorizado = null;
+  let clientePrincipalAutorizado = null;
 
   const numero = (valor) => Number(valor || 0);
 
@@ -330,7 +331,7 @@
   }
 
   // -----------------------------------------------------------------------
-  // Etapa 3B: cliente de Staging aislado y disponible exclusivamente en local
+  // Etapa 4A: Staging aislado en local y cliente principal inyectado en producción
   // -----------------------------------------------------------------------
 
   const CONFIG_STORAGE_KEY = 'cardiolink_finanzas_v5_staging_config_v1';
@@ -348,10 +349,14 @@
   });
   const estadoUI = {
     client: null,
+    clientOwned: false,
     authSubscription: null,
     config: null,
     session: null,
     accesoBackend: false,
+    accesoDenegadoProduccion: false,
+    inicializandoCliente: false,
+    modo: 'inactivo',
     categorias: [],
     plantillas: [],
     egresos: [],
@@ -376,6 +381,39 @@
     if (!hayNavegador()) return false;
     if (window.location.protocol === 'file:') return true;
     return ['localhost', '127.0.0.1', '::1', '[::1]'].includes(window.location.hostname);
+  }
+
+  function resolverModoEjecucion({ local = false, stagingConfigurado = false, clientePrincipalDisponible = false } = {}) {
+    if (local) return stagingConfigurado ? 'staging-local' : 'local-desactivado';
+    return clientePrincipalDisponible ? 'produccion-solo-lectura' : 'produccion-sin-cliente';
+  }
+
+  function modoPermiteMutaciones(modo = estadoUI.modo) {
+    return modo === 'staging-local';
+  }
+
+  function esProduccionSoloLectura() {
+    return estadoUI.modo === 'produccion-solo-lectura';
+  }
+
+  function exigirMutacionPermitida() {
+    if (modoPermiteMutaciones()) return true;
+    estadoUI.mensaje = esProduccionSoloLectura()
+      ? 'Finanzas 5 está conectado a Producción en modo solo lectura.'
+      : 'Las modificaciones sólo están habilitadas en Staging Local.';
+    estadoUI.tipoMensaje = 'error';
+    renderInterfaz();
+    return false;
+  }
+
+  function conectarClientePrincipal(cliente) {
+    if (clientePrincipalAutorizado || !cliente?.auth || typeof cliente.auth.getSession !== 'function'
+      || typeof cliente.rpc !== 'function' || typeof cliente.from !== 'function') return false;
+    clientePrincipalAutorizado = cliente;
+    if (hayNavegador() && !esEntornoLocal() && document.readyState !== 'loading') {
+      window.setTimeout(montarInterfaz, 0);
+    }
+    return true;
   }
 
   function frontendPuedeAcceder() {
@@ -433,7 +471,7 @@
   }
 
   function asegurarDestinoIndependiente(url) {
-    const clientePrincipal = typeof supabaseClient !== 'undefined' ? supabaseClient : window.supabaseClient;
+    const clientePrincipal = clientePrincipalAutorizado;
     const urlPrincipal = clientePrincipal?.supabaseUrl || clientePrincipal?.rest?.url?.replace(/\/rest\/v1\/?$/, '') || '';
     if (urlPrincipal && normalizarUrl(urlPrincipal) === normalizarUrl(url)) {
       throw new Error('La URL configurada coincide con el Supabase principal. Finanzas 5 sólo admite un proyecto de Staging independiente.');
@@ -479,12 +517,16 @@
   }
 
   function destruirCliente() {
-    try { estadoUI.authSubscription?.unsubscribe?.(); } catch (error) {}
-    try { estadoUI.client?.auth?.stopAutoRefresh?.(); } catch (error) {}
+    if (estadoUI.clientOwned) {
+      try { estadoUI.authSubscription?.unsubscribe?.(); } catch (error) {}
+      try { estadoUI.client?.auth?.stopAutoRefresh?.(); } catch (error) {}
+    }
     estadoUI.authSubscription = null;
     estadoUI.client = null;
+    estadoUI.clientOwned = false;
     estadoUI.session = null;
     estadoUI.accesoBackend = false;
+    estadoUI.inicializandoCliente = false;
   }
 
   function limpiarDatosFinancieros() {
@@ -518,6 +560,7 @@
         detectSessionInUrl: false
       }
     });
+    estadoUI.clientOwned = true;
     const suscripcion = estadoUI.client.auth.onAuthStateChange((_evento, session) => {
       if (!frontendPuedeAcceder()) return;
       estadoUI.session = session || null;
@@ -540,13 +583,28 @@
   }
 
   function mensajeError(error, fallback) {
-    if (esErrorAcceso(error)) return 'Acceso denegado por Finanzas 5 en Staging. Verificá la sesión y el rol backend owner/admin.';
+    if (esErrorAcceso(error)) return esProduccionSoloLectura()
+      ? 'Acceso financiero denegado por el backend.'
+      : 'Acceso denegado por Finanzas 5 en Staging. Verificá la sesión y el rol backend owner/admin.';
     return String(error?.message || fallback || 'No se pudo completar la operación.');
+  }
+
+  function desmontarInterfaz() {
+    const root = estadoUI.root || (hayNavegador() ? document.getElementById('cardiolinkFinanzasV5') : null);
+    root?.remove();
+    estadoUI.root = null;
   }
 
   function negarAcceso(error) {
     estadoUI.accesoBackend = false;
     limpiarDatosFinancieros();
+    if (esProduccionSoloLectura()) {
+      estadoUI.accesoDenegadoProduccion = true;
+      estadoUI.mensaje = '';
+      estadoUI.tipoMensaje = '';
+      desmontarInterfaz();
+      return;
+    }
     estadoUI.mensaje = mensajeError(error, 'La cuenta de Staging no tiene acceso financiero.');
     estadoUI.tipoMensaje = 'error';
     renderInterfaz();
@@ -640,6 +698,21 @@
     }
     estadoUI.accesoBackend = true;
     return true;
+  }
+
+  async function autorizarYEjecutarLecturaProduccion(client, lecturaAutorizada) {
+    if (!client?.auth || typeof client.auth.getSession !== 'function' || typeof client.rpc !== 'function') {
+      return { autorizado: false, motivo: 'cliente' };
+    }
+    const { data: datosSesion, error: errorSesion } = await client.auth.getSession();
+    if (errorSesion) throw errorSesion;
+    const session = datosSesion?.session || null;
+    if (!session?.user) return { autorizado: false, motivo: 'sesion' };
+    const { data, error } = await client.rpc('cardiolink_has_finance_access');
+    if (error) throw error;
+    if (data !== true) return { autorizado: false, motivo: 'acceso', session };
+    if (typeof lecturaAutorizada === 'function') await lecturaAutorizada(session);
+    return { autorizado: true, motivo: '', session };
   }
 
   function aplicarFiltroProfesional(consulta, perfil) {
@@ -919,7 +992,9 @@
         <td data-label="Estado"><span class="fin-v5-chip fin-v5-chip-${escapar(item.status)}">${escapar(estadoEtiqueta(item.status))}</span>${item.paid_on ? `<small>Pago: ${fechaVisible(item.paid_on)}</small>` : ''}</td>
         <td data-label="Profesional">${escapar(nombreProfesional(item.professional_id))}</td>
         <td data-label="Monto" class="fin-v5-monto">${dinero(item.amount)}</td>
-        <td data-label="Acciones" class="fin-v5-acciones">${anulado
+        <td data-label="Acciones" class="fin-v5-acciones">${esProduccionSoloLectura()
+          ? '<span class="fin-v5-inmutable">Solo lectura</span>'
+          : anulado
           ? '<span class="fin-v5-inmutable">Sin edición</span>'
           : `<button type="button" class="secondary small-btn" data-fin-v5-action="editar" data-id="${escapar(item.id)}">Editar</button><button type="button" class="small-btn fin-v5-btn-anular" data-fin-v5-action="anular" data-id="${escapar(item.id)}">Anular</button>`}</td>
       </tr>`;
@@ -928,16 +1003,21 @@
   }
 
   function renderPlantillas() {
-    if (!estadoUI.plantillas.length) return '<div class="fin-v5-vacio">No hay plantillas recurrentes activas. Crear una plantilla no registra ningún egreso automáticamente.</div>';
+    if (!estadoUI.plantillas.length) return `<div class="fin-v5-vacio">No hay plantillas recurrentes activas.${esProduccionSoloLectura() ? '' : ' Crear una plantilla no registra ningún egreso automáticamente.'}</div>`;
     const filas = estadoUI.plantillas.map((plantilla) => `<tr>
       <td data-label="Categoría">${escapar(rutaCategoria(plantilla.category_id))}</td>
       <td data-label="Concepto"><strong>${escapar(plantilla.concept)}</strong><small>${escapar(plantilla.beneficiary || 'Sin beneficiario')}</small></td>
       <td data-label="Monto" class="fin-v5-monto">${plantilla.default_amount == null ? 'A completar' : dinero(plantilla.default_amount)}</td>
       <td data-label="Vencimiento">${plantilla.due_day ? `Día ${escapar(plantilla.due_day)}` : 'Sin día fijo'}<small>Desde ${fechaVisible(plantilla.start_month)}${plantilla.end_month ? ` hasta ${fechaVisible(plantilla.end_month)}` : ''}</small></td>
       <td data-label="Profesional">${escapar(nombreProfesional(plantilla.professional_id))}</td>
-      <td data-label="Acciones" class="fin-v5-acciones"><button type="button" class="primary small-btn" data-fin-v5-action="registrar-recurrente" data-id="${escapar(plantilla.id)}">Registrar gasto</button><button type="button" class="secondary small-btn" data-fin-v5-action="editar-plantilla" data-id="${escapar(plantilla.id)}">Editar</button><button type="button" class="small-btn fin-v5-btn-anular" data-fin-v5-action="desactivar-plantilla" data-id="${escapar(plantilla.id)}">Desactivar</button></td>
+      <td data-label="Acciones" class="fin-v5-acciones">${esProduccionSoloLectura()
+        ? '<span class="fin-v5-inmutable">Solo lectura</span>'
+        : `<button type="button" class="primary small-btn" data-fin-v5-action="registrar-recurrente" data-id="${escapar(plantilla.id)}">Registrar gasto</button><button type="button" class="secondary small-btn" data-fin-v5-action="editar-plantilla" data-id="${escapar(plantilla.id)}">Editar</button><button type="button" class="small-btn fin-v5-btn-anular" data-fin-v5-action="desactivar-plantilla" data-id="${escapar(plantilla.id)}">Desactivar</button>`}</td>
     </tr>`).join('');
-    return `<div class="fin-v5-aviso fin-v5-aviso-info"><strong>Precarga manual.</strong> Las plantillas nunca generan egresos por sí solas. “Registrar gasto” abre un snapshot editable y requiere confirmación. Para otros empleados, usar una plantilla bajo PERSONAL.</div><div class="fin-v5-tabla-wrap"><table class="fin-v5-tabla"><thead><tr><th>Categoría / subcategoría</th><th>Concepto</th><th>Monto sugerido</th><th>Vigencia</th><th>Profesional</th><th>Acciones</th></tr></thead><tbody>${filas}</tbody></table></div>`;
+    const aviso = esProduccionSoloLectura()
+      ? '<strong>Solo lectura.</strong> Se muestran las plantillas activas sin habilitar generación ni edición.'
+      : '<strong>Precarga manual.</strong> Las plantillas nunca generan egresos por sí solas. “Registrar gasto” abre un snapshot editable y requiere confirmación. Para otros empleados, usar una plantilla bajo PERSONAL.';
+    return `<div class="fin-v5-aviso fin-v5-aviso-info">${aviso}</div><div class="fin-v5-tabla-wrap"><table class="fin-v5-tabla"><thead><tr><th>Categoría / subcategoría</th><th>Concepto</th><th>Monto sugerido</th><th>Vigencia</th><th>Profesional</th><th>Acciones</th></tr></thead><tbody>${filas}</tbody></table></div>`;
   }
 
   function estadoObligacion(obligacion) {
@@ -965,12 +1045,17 @@
       const faltaCategoria = !obligacion.category_available;
       const noRegistrable = faltaCategoria || !(numero(obligacion.amount) > 0) || estado === 'registrada';
       const etiqueta = estado === 'registrada' ? 'Registrado' : estado === 'reemplazable' ? 'Anulado · reemplazable' : 'Pendiente de registrar';
-      const accion = estado === 'registrada'
+      const accion = esProduccionSoloLectura()
+        ? `<button type="button" class="secondary" disabled aria-disabled="true">${estado === 'registrada' ? 'Ya registrado' : 'Solo lectura'}</button>`
+        : estado === 'registrada'
         ? '<button type="button" class="secondary" disabled aria-disabled="true">Ya registrado</button>'
         : `<button type="button" class="primary" data-fin-v5-action="registrar-obligacion" data-key="${escapar(obligacion.key)}"${noRegistrable ? ' disabled' : ''}>Registrar pago</button>`;
-      return `<article class="fin-v5-obligacion"><div class="fin-v5-obligacion-head"><div><span class="fin-v5-chip fin-v5-chip-calculated">Calculado</span><h3>${escapar(obligacion.title)}</h3><p>${escapar(detalle)}</p></div><strong>${dinero(obligacion.amount)}</strong></div><div class="fin-v5-obligacion-foot"><span class="fin-v5-chip fin-v5-chip-${estado === 'registrada' ? 'paid' : 'pending'}">${etiqueta}</span>${faltaCategoria ? '<small>Falta la categoría de sistema requerida en Staging.</small>' : ''}${!(numero(obligacion.amount) > 0) ? '<small>El total calculado es cero: no hay un egreso registrable.</small>' : ''}${accion}</div></article>`;
+      return `<article class="fin-v5-obligacion"><div class="fin-v5-obligacion-head"><div><span class="fin-v5-chip fin-v5-chip-calculated">Calculado</span><h3>${escapar(obligacion.title)}</h3><p>${escapar(detalle)}</p></div><strong>${dinero(obligacion.amount)}</strong></div><div class="fin-v5-obligacion-foot"><span class="fin-v5-chip fin-v5-chip-${estado === 'registrada' ? 'paid' : 'pending'}">${etiqueta}</span>${faltaCategoria ? `<small>Falta la categoría de sistema requerida${esProduccionSoloLectura() ? '.' : ' en Staging.'}</small>` : ''}${!(numero(obligacion.amount) > 0) ? '<small>El total calculado es cero: no hay un egreso registrable.</small>' : ''}${accion}</div></article>`;
     }).join('');
-    return `${control}<div class="fin-v5-aviso fin-v5-aviso-info">Los importes calculados no afectan los KPI hasta que se confirme un egreso real. Si se anula, puede registrarse un reemplazo.</div><div class="fin-v5-obligaciones">${tarjetas}</div>`;
+    const aviso = esProduccionSoloLectura()
+      ? 'Vista calculada desde Finanzas 4. Producción no permite registrar pagos ni reemplazos.'
+      : 'Los importes calculados no afectan los KPI hasta que se confirme un egreso real. Si se anula, puede registrarse un reemplazo.';
+    return `${control}<div class="fin-v5-aviso fin-v5-aviso-info">${aviso}</div><div class="fin-v5-obligaciones">${tarjetas}</div>`;
   }
 
   function descripcionAuditoria(evento) {
@@ -1008,7 +1093,9 @@
       obligaciones: renderObligacionesF4(),
       historial: renderAuditoria()
     };
-    const acciones = estadoUI.vista === 'egresos'
+    const acciones = esProduccionSoloLectura()
+      ? '<button type="button" class="secondary" data-fin-v5-action="actualizar">Actualizar</button>'
+      : estadoUI.vista === 'egresos'
       ? '<button type="button" class="secondary" data-fin-v5-action="actualizar">Actualizar</button><button type="button" class="primary" data-fin-v5-action="nuevo">Nuevo egreso</button>'
       : estadoUI.vista === 'recurrentes'
         ? '<button type="button" class="secondary" data-fin-v5-action="actualizar">Actualizar</button><button type="button" class="primary" data-fin-v5-action="nueva-plantilla">Nueva plantilla</button>'
@@ -1021,27 +1108,35 @@
   function renderInterfaz() {
     const root = estadoUI.root;
     if (!root || !root.isConnected) return;
-    const config = estadoUI.config || leerConfigLocal();
+    const local = esEntornoLocal();
+    const produccion = esProduccionSoloLectura();
+    const config = local ? (estadoUI.config || leerConfigLocal()) : null;
     const host = config ? new URL(config.url).host : '';
     const mensaje = estadoUI.mensaje ? `<div class="fin-v5-aviso fin-v5-aviso-${escapar(estadoUI.tipoMensaje || 'info')}" role="status">${escapar(estadoUI.mensaje)}</div>` : '';
     const sesionEmail = estadoUI.session?.user?.email || '';
-    root.innerHTML = `<div class="fin-v5-encabezado"><div><div class="fin-v5-titulo-linea"><h2>Finanzas 5</h2>${config ? '<span class="fin-v5-staging-badge">STAGING LOCAL</span>' : '<span class="fin-v5-inactivo-badge">DESACTIVADO</span>'}</div><p>Ingresos canónicos de Finanzas 4 y egresos auditables de Finanzas 5.</p></div>${config ? `<div class="fin-v5-destino"><span>Proyecto aislado</span><strong>${escapar(host)}</strong></div>` : ''}</div>
+    const badge = produccion
+      ? '<span class="fin-v5-production-badge">PRODUCCIÓN · SOLO LECTURA</span>'
+      : config ? '<span class="fin-v5-staging-badge">STAGING LOCAL</span>' : '<span class="fin-v5-inactivo-badge">DESACTIVADO</span>';
+    root.innerHTML = `<div class="fin-v5-encabezado"><div><div class="fin-v5-titulo-linea"><h2>Finanzas 5</h2>${badge}</div><p>Ingresos canónicos de Finanzas 4 y egresos auditables de Finanzas 5.</p></div>${config ? `<div class="fin-v5-destino"><span>Proyecto aislado</span><strong>${escapar(host)}</strong></div>` : ''}</div>
       ${mensaje}
-      ${!config ? '<div class="fin-v5-desactivado"><strong>Finanzas 5 no está conectado.</strong><p>No se creó ningún cliente ni se realizó ninguna consulta. La activación local está documentada en <code>docs/FINANZAS_V5_STAGING.md</code>.</p></div>' : ''}
-      ${config && !estadoUI.session ? `<form id="finV5Login" class="fin-v5-login"><div><strong>Sesión independiente de Staging</strong><p>Ingresá con una cuenta Auth del proyecto de Staging. La contraseña no se guarda en el módulo.</p></div><label>Email<input name="email" type="email" autocomplete="username" required></label><label>Contraseña<input name="password" type="password" autocomplete="current-password" required></label><button class="primary" type="submit">Ingresar a Staging</button></form>` : ''}
-      ${config && estadoUI.session ? `<div class="fin-v5-sesion"><span>Sesión Staging: <strong>${escapar(sesionEmail)}</strong></span><button type="button" class="secondary" data-fin-v5-action="salir">Cerrar sesión Staging</button></div>` : ''}
-      ${config && estadoUI.session && !estadoUI.accesoBackend && !estadoUI.mensaje ? `<div class="fin-v5-desactivado"><strong>Validando acceso financiero backend…</strong></div>` : ''}
-      ${config && estadoUI.session && estadoUI.accesoBackend ? renderContenidoAutenticado() : ''}
+      ${local && !config ? '<div class="fin-v5-desactivado"><strong>Finanzas 5 no está conectado.</strong><p>No se creó ningún cliente ni se realizó ninguna consulta. La activación local está documentada en <code>docs/FINANZAS_V5_STAGING.md</code>.</p></div>' : ''}
+      ${local && config && !estadoUI.session ? `<form id="finV5Login" class="fin-v5-login"><div><strong>Sesión independiente de Staging</strong><p>Ingresá con una cuenta Auth del proyecto de Staging. La contraseña no se guarda en el módulo.</p></div><label>Email<input name="email" type="email" autocomplete="username" required></label><label>Contraseña<input name="password" type="password" autocomplete="current-password" required></label><button class="primary" type="submit">Ingresar a Staging</button></form>` : ''}
+      ${local && config && estadoUI.session ? `<div class="fin-v5-sesion"><span>Sesión Staging: <strong>${escapar(sesionEmail)}</strong></span><button type="button" class="secondary" data-fin-v5-action="salir">Cerrar sesión Staging</button></div>` : ''}
+      ${produccion && estadoUI.session ? `<div class="fin-v5-sesion fin-v5-sesion-produccion"><span>Sesión principal: <strong>${escapar(sesionEmail)}</strong></span><span>Consultas protegidas por RLS</span></div>` : ''}
+      ${(local && config && estadoUI.session && !estadoUI.accesoBackend && !estadoUI.mensaje) || (produccion && !estadoUI.accesoBackend)
+        ? '<div class="fin-v5-desactivado"><strong>Validando acceso financiero backend…</strong></div>' : ''}
+      ${((local && config) || produccion) && estadoUI.session && estadoUI.accesoBackend ? renderContenidoAutenticado() : ''}
       ${estadoUI.cargando ? '<div class="fin-v5-cargando" aria-live="polite">Actualizando Finanzas 5…</div>' : ''}
       <dialog id="finV5Dialog" class="fin-v5-dialog"></dialog>`;
     enlazarFormularioLogin();
   }
 
   function montarInterfaz() {
-    if (!hayNavegador() || !esEntornoLocal()) return false;
+    if (!hayNavegador()) return false;
+    const local = esEntornoLocal();
     const caja = document.getElementById('caja');
     if (!caja) return false;
-    if (!frontendPuedeAcceder()) {
+    if (!frontendPuedeAcceder() || (!local && estadoUI.accesoDenegadoProduccion)) {
       const rootExistente = document.getElementById('cardiolinkFinanzasV5');
       if (rootExistente || estadoUI.client) {
         destruirCliente();
@@ -1049,6 +1144,16 @@
       }
       rootExistente?.remove();
       estadoUI.root = null;
+      return false;
+    }
+    const config = local ? leerConfigLocal() : null;
+    const modo = resolverModoEjecucion({
+      local,
+      stagingConfigurado: !!config,
+      clientePrincipalDisponible: !!clientePrincipalAutorizado
+    });
+    if (!local && modo === 'produccion-sin-cliente') {
+      desmontarInterfaz();
       return false;
     }
     let root = document.getElementById('cardiolinkFinanzasV5');
@@ -1060,13 +1165,56 @@
       enlazarEventos(root);
     }
     estadoUI.root = root;
-    estadoUI.config = leerConfigLocal();
+    estadoUI.config = config;
+    estadoUI.modo = modo;
+    if (!local && !estadoUI.client) {
+      estadoUI.client = clientePrincipalAutorizado;
+      estadoUI.clientOwned = false;
+    }
     renderInterfaz();
-    if (estadoUI.config && !estadoUI.client) iniciarSesionExistente();
+    if (local && estadoUI.config && !estadoUI.client) iniciarSesionExistente();
+    if (!local && !estadoUI.accesoBackend) iniciarSesionPrincipalProduccion();
     return true;
   }
 
+  async function iniciarSesionPrincipalProduccion() {
+    if (esEntornoLocal() || estadoUI.inicializandoCliente || estadoUI.accesoBackend
+      || estadoUI.accesoDenegadoProduccion || !clientePrincipalAutorizado) return;
+    estadoUI.inicializandoCliente = true;
+    estadoUI.client = clientePrincipalAutorizado;
+    estadoUI.clientOwned = false;
+    estadoUI.modo = 'produccion-solo-lectura';
+    renderInterfaz();
+    try {
+      const resultado = await autorizarYEjecutarLecturaProduccion(clientePrincipalAutorizado, async (session) => {
+        if (estadoUI.client !== clientePrincipalAutorizado || !frontendPuedeAcceder()) return;
+        estadoUI.session = session;
+        estadoUI.accesoBackend = true;
+        estadoUI.inicializandoCliente = false;
+        await cargarDatos();
+      });
+      if (resultado.autorizado) return;
+      estadoUI.session = resultado.session || null;
+      estadoUI.accesoBackend = false;
+      limpiarDatosFinancieros();
+      if (resultado.motivo === 'acceso') {
+        const denegado = new Error('La sesión principal no tiene finance_access.');
+        denegado.status = 403;
+        negarAcceso(denegado);
+      } else {
+        desmontarInterfaz();
+      }
+    } catch (error) {
+      if (esErrorAcceso(error)) negarAcceso(error);
+      else desmontarInterfaz();
+    } finally {
+      estadoUI.inicializandoCliente = false;
+      renderInterfaz();
+    }
+  }
+
   async function iniciarSesionExistente() {
+    if (!esEntornoLocal()) return;
     try {
       const client = crearClienteStaging();
       if (!client) return;
@@ -1145,6 +1293,7 @@
   }
 
   function abrirFormulario(item = null) {
+    if (!exigirMutacionPermitida()) return;
     if (item?.status === 'voided') {
       estadoUI.mensaje = 'Los egresos anulados son inmutables y no se pueden editar.';
       estadoUI.tipoMensaje = 'error';
@@ -1189,6 +1338,7 @@
   }
 
   function abrirFormularioPlantilla(plantilla = null) {
+    if (!exigirMutacionPermitida()) return;
     const dialog = estadoUI.root?.querySelector('#finV5Dialog');
     if (!dialog) return;
     estadoUI.edicionPlantilla = plantilla ? { id: plantilla.id, revision: plantilla.revision } : null;
@@ -1219,6 +1369,7 @@
 
   async function guardarPlantilla(event) {
     event.preventDefault();
+    if (!exigirMutacionPermitida()) return;
     const form = event.currentTarget;
     if (!form.reportValidity()) return;
     const valores = new FormData(form);
@@ -1277,6 +1428,7 @@
   }
 
   async function desactivarPlantilla(plantilla) {
+    if (!exigirMutacionPermitida()) return;
     if (!plantilla?.active || !window.confirm(`¿Desactivar la plantilla “${plantilla.concept}”?\n\nSe conserva el historial y no se elimina ningún egreso.`)) return;
     estadoUI.cargando = true;
     renderInterfaz();
@@ -1300,6 +1452,7 @@
   }
 
   function abrirGeneracionRecurrente(plantilla) {
+    if (!exigirMutacionPermitida()) return;
     if (!plantilla?.active) return;
     const dialog = estadoUI.root?.querySelector('#finV5Dialog');
     if (!dialog) return;
@@ -1354,6 +1507,7 @@
 
   async function guardarEgresoRecurrente(event, plantilla) {
     event.preventDefault();
+    if (!exigirMutacionPermitida()) return;
     const form = event.currentTarget;
     if (!form.reportValidity()) return;
     const valores = new FormData(form);
@@ -1401,6 +1555,7 @@
   }
 
   function abrirRegistroObligacion(obligacion) {
+    if (!exigirMutacionPermitida()) return;
     if (!obligacion?.category_available || !(numero(obligacion.amount) > 0)) return;
     const dialog = estadoUI.root?.querySelector('#finV5Dialog');
     if (!dialog) return;
@@ -1425,6 +1580,7 @@
 
   async function guardarObligacion(event, obligacion) {
     event.preventDefault();
+    if (!exigirMutacionPermitida()) return;
     const form = event.currentTarget;
     if (!form.reportValidity()) return;
     const valores = new FormData(form);
@@ -1478,6 +1634,7 @@
 
   async function guardarFormulario(event) {
     event.preventDefault();
+    if (!exigirMutacionPermitida()) return;
     const form = event.currentTarget;
     if (!form.reportValidity()) return;
     const valores = new FormData(form);
@@ -1534,6 +1691,7 @@
   }
 
   async function anularEgreso(item) {
+    if (!exigirMutacionPermitida()) return;
     if (!item || item.status === 'voided') return;
     if (!window.confirm(`¿Anular el egreso “${item.concept}” por ${dinero(item.amount)}?\n\nLa anulación es permanente, conserva la fecha de pago histórica y queda auditada.`)) return;
     estadoUI.cargando = true;
@@ -1593,6 +1751,7 @@
       if (accion === 'cargar-obligaciones') return cargarObligacionesF4();
       if (accion === 'registrar-obligacion') return abrirRegistroObligacion(estadoUI.obligacionesF4.find((item) => item.key === boton.dataset.key));
       if (accion === 'salir') {
+        if (!esEntornoLocal()) return;
         estadoUI.cargando = true;
         renderInterfaz();
         try { await estadoUI.client.auth.signOut({ scope: 'local' }); } finally {
@@ -1606,8 +1765,8 @@
     });
   }
 
-  function iniciarIntegracionLocal() {
-    if (!hayNavegador() || !esEntornoLocal()) return;
+  function iniciarIntegracion() {
+    if (!hayNavegador()) return;
     const intentar = () => montarInterfaz();
     document.addEventListener('click', (event) => {
       if (event.target.closest?.('.nav[data-section="caja"]')) window.setTimeout(intentar, 160);
@@ -1619,11 +1778,12 @@
   }
 
   const api = Object.freeze({
-    version: '5.0.0-etapa-3b',
+    version: '5.0.0-etapa-4a',
     calcularIngresosCanonicos,
     calcularResumenEgresos,
     conectarProveedor,
     conectarProveedorObligacionesF4,
+    conectarClientePrincipal,
     puedeAcceder,
     obtenerIngresos,
     diagnostico,
@@ -1636,8 +1796,8 @@
   });
 
   if (hayNavegador()) {
-    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciarIntegracionLocal, { once: true });
-    else iniciarIntegracionLocal();
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', iniciarIntegracion, { once: true });
+    else iniciarIntegracion();
   }
 
   return api;
