@@ -10479,6 +10479,34 @@ function patientInfoTextHC(p,coverage){
   window.CardioLinkFinanzasIngresos=proveedorIngresos411C;
   window.CardioLinkFinanzasV5?.conectarProveedor?.(proveedorIngresos411C);
 
+  // Adaptador de solo lectura para Finanzas 5. Conserva como fuente única las
+  // funciones privadas ya usadas por Finanzas 4; no crea ni guarda movimientos.
+  const proveedorObligacionesF4411F=Object.freeze({
+    version:'1.0.0',
+    puedeAcceder:puedeAccederIngresos411C,
+    obtenerSueldoMensual(periodo){
+      const ym=String(periodo||'').slice(0,7);
+      if(!puedeAccederIngresos411C()||!/^\d{4}-(0[1-9]|1[0-2])$/.test(ym))return null;
+      return {period_month:ym+'-01',amount:sueldoMes411F(ym),origin:'data.configFinanzas411F.sueldosSecretaria',prorated:false};
+    },
+    obtenerColocacionesMensuales(periodo,perfil=''){
+      const ym=String(periodo||'').slice(0,7);
+      if(!puedeAccederIngresos411C()||!/^\d{4}-(0[1-9]|1[0-2])$/.test(ym))return null;
+      const workMonth=mesAnterior411F(ym);
+      const rates=typeof valoresColocacion==='function'?valoresColocacion():{holter:0,mapa:0,ecg:0};
+      const breakdown={HOLTER:{type:'HOLTER',count:0,rate:Number(rates.holter||0),total:0},MAPA:{type:'MAPA',count:0,rate:Number(rates.mapa||0),total:0},ECG:{type:'ECG',count:0,rate:Number(rates.ecg||0),total:0}};
+      (atenciones||[]).filter(a=>a?.colocacionLiquidable&&String(a.fecha||'').slice(0,7)===workMonth&&(!perfil||a.profesionalId===perfil||a.cajaPerfil===perfil)).forEach(a=>{
+        const tipo=typeof tipoPrest==='function'?tipoPrest(a.prestacion):'';
+        if(!breakdown[tipo])return;
+        breakdown[tipo].count+=1;
+        breakdown[tipo].total+=placementCost411C(a);
+      });
+      const rows=Object.values(breakdown);
+      return {work_month:workMonth+'-01',settlement_month:ym+'-01',count:rows.reduce((s,x)=>s+x.count,0),rates:{holter:Number(rates.holter||0),mapa:Number(rates.mapa||0),ecg:Number(rates.ecg||0)},breakdown:rows,total:colocacionesLiquidacion411F(ym+'-01',ym+'-31',perfil),origin:'atenciones + tarifas actuales de colocación F4'};
+    }
+  });
+  window.CardioLinkFinanzasV5?.conectarProveedorObligacionesF4?.(proveedorObligacionesF4411F);
+
   function renderFinance411C(){
     injectFinance411C();ensureMov411C();ensureFinanceConfig411F();
     if(!puedeAccederIngresos411C())return;

@@ -1,13 +1,14 @@
 # Finanzas 5 — conexión local a CardioLink Staging
 
-Estado: Etapa 3A. Esta conexión existe sólo para probar el frontend local contra
+Estado: Etapa 3B. Esta conexión existe sólo para probar el frontend local contra
 el esquema ya validado de CardioLink Staging. No cambia el cliente Supabase
 principal ni habilita Finanzas 5 en el sitio publicado.
 
 En `index.html`, la biblioteca pública de Supabase se carga primero,
 `cardiolink-finanzas-v5.js` se carga después y `app.js` queda a continuación.
 Ese orden permite que `app.js` conecte una sola vez el proveedor canónico de
-ingresos sin que el módulo de Finanzas 5 redefina lógica ni funciones globales.
+ingresos y el adaptador de solo lectura de obligaciones F4, sin que el módulo de
+Finanzas 5 redefina sus fórmulas ni funciones globales.
 
 ## Barreras de seguridad
 
@@ -176,6 +177,58 @@ Para evitar un mock artificial del CRUD, este caso continúa como prueba manual:
 5. repetir dejando una anulación con revisión obsoleta y confirmar el mismo
    rechazo.
 
+## Etapa 3B: QA manual de recurrentes y obligaciones F4
+
+Estas pruebas dependen de Auth, RLS, índices únicos y datos reales de Staging;
+por eso complementan los tests puros locales y no se reemplazan con mocks.
+
+### Plantillas recurrentes
+
+1. Abrir **Recurrentes** y crear una plantilla activa con categoría,
+   subcategoría, concepto, beneficiario, monto sugerido, forma de pago, día de
+   vencimiento, mes de inicio y, opcionalmente, profesional y mes de fin.
+2. Confirmar que la creación de la plantilla aparece en **Historial**, pero no
+   aparece como egreso ni modifica ninguno de los siete KPI.
+3. Editarla y verificar el nuevo evento de auditoría. Desactivarla y confirmar
+   que deja de aparecer en la lista activa sin borrarse de la auditoría.
+4. Para sueldos de otras secretarias, limpieza u otros empleados, usar una
+   plantilla recurrente bajo **PERSONAL**. No agregarlos a la obligación fija de
+   Secretaría proveniente de Finanzas 4.
+5. En una plantilla activa, pulsar **Registrar gasto**, revisar el snapshot,
+   cambiar al menos un campo editable y confirmar. Verificar que el egreso real
+   tenga origen **Recurrente**, `recurring_template_id`, `period_month` y que
+   recién entonces impacte en los KPI correspondientes.
+6. Intentar registrar otra vez la misma plantilla para el mismo mes. Debe
+   rechazarse con un mensaje de duplicado, primero por la comprobación frontend
+   y, ante carreras entre sesiones, por el índice único de base.
+7. Anular el egreso recurrente y repetir el registro del mismo período. El
+   reemplazo debe permitirse porque el egreso anterior quedó `voided`.
+
+### Sueldo y colocaciones de Finanzas 4
+
+1. Abrir **Obligaciones F4**, elegir un mes y pulsar **Calcular obligaciones**.
+2. Verificar que **Sueldo Secretaría** coincide con el valor mensual vigente de
+   `data.configFinanzas411F.sueldosSecretaria`, sin prorrateo. Debe figurar como
+   **Calculado / Pendiente de registrar** y no afectar todavía los KPI.
+3. Verificar que **Colocaciones Holter / MAPA / ECG** muestre el período de
+   trabajo del mes anterior, el período de liquidación elegido, la cantidad y
+   el total calculado con las tarifas actuales de Finanzas 4.
+4. Pulsar **Registrar pago** en cada obligación, revisar fechas y forma de pago,
+   y confirmar. El sueldo debe guardarse con `source_type='salary_f4'`; las
+   colocaciones, con `source_type='placements_f4'`. Ambos deben conservar
+   `period_month`, `source_ref` estable y `source_snapshot`.
+5. Recalcular el mes. Cada obligación confirmada debe figurar **Registrado** y
+   el botón debe quedar deshabilitado. El egreso real sí debe afectar los KPI.
+6. Intentar el mismo registro desde dos sesiones concurrentes. Sólo uno debe
+   persistir; el segundo debe recibir el mensaje amigable de duplicado respaldado
+   por la unicidad `(source_type, source_ref)`.
+7. Anular una obligación registrada y recalcular. Debe volver a figurar
+   **Pendiente de registrar** y permitir un reemplazo, conservando el registro
+   anulado y sus eventos de auditoría.
+
+Durante toda la secuencia mantener visibles la insignia **STAGING LOCAL** y el
+host, y repetir la comprobación de DevTools → Network de la sección anterior.
+
 ## Desactivación
 
 Desde la consola del mismo origen local:
@@ -200,6 +253,9 @@ Si se cambia entre `localhost` y `127.0.0.1`, recordar que cada host tiene un
 - Caja de Finanzas 4 intacta, arriba de la nueva sección;
 - egresos anulados visibles, fuera de los totales y sin acciones de edición;
 - historial legible, sin exponer los snapshots JSON crudos.
+- pestañas **Egresos**, **Recurrentes**, **Obligaciones F4** e **Historial**;
+- obligaciones calculadas fuera de los KPI hasta confirmar un egreso real;
+- duplicados de plantilla/período y de `source_ref` rechazados sin crear filas.
 
 ## Despliegue publicado
 

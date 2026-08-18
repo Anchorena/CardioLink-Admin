@@ -1,6 +1,6 @@
 /* =====================================================================
-   CardioLink Admin — Finanzas 5 · Etapa 3A
-   Proveedor canónico de ingresos + CRUD local de egresos contra Staging.
+   CardioLink Admin — Finanzas 5 · Etapa 3B
+   Ingresos canónicos + egresos, recurrentes y obligaciones F4 en Staging.
 
    Orden de carga: antes de app.js. app.js conecta las dependencias y expone
    el proveedor autorizado de solo lectura para los consumidores futuros.
@@ -16,6 +16,7 @@
   'use strict';
 
   let proveedorAutorizado = null;
+  let proveedorObligacionesF4Autorizado = null;
 
   const numero = (valor) => Number(valor || 0);
 
@@ -203,16 +204,145 @@
     };
   }
 
+  function conectarProveedorObligacionesF4(proveedor) {
+    if (proveedorObligacionesF4Autorizado || !proveedor
+      || typeof proveedor.obtenerSueldoMensual !== 'function'
+      || typeof proveedor.obtenerColocacionesMensuales !== 'function') return false;
+    proveedorObligacionesF4Autorizado = proveedor;
+    return true;
+  }
+
+  function normalizarPeriodoMes(valor) {
+    const coincidencia = String(valor || '').trim().match(/^(\d{4})-(\d{2})(?:-\d{2})?$/);
+    if (!coincidencia) return '';
+    const mes = Number(coincidencia[2]);
+    return mes >= 1 && mes <= 12 ? `${coincidencia[1]}-${coincidencia[2]}-01` : '';
+  }
+
+  function desplazarPeriodoMes(valor, desplazamiento) {
+    const periodo = normalizarPeriodoMes(valor);
+    if (!periodo) return '';
+    const [anio, mes] = periodo.split('-').map(Number);
+    const fecha = new Date(anio, mes - 1 + Number(desplazamiento || 0), 1, 12);
+    return `${fecha.getFullYear()}-${String(fecha.getMonth() + 1).padStart(2, '0')}-01`;
+  }
+
+  function sourceRefSueldo(periodo) {
+    const mes = normalizarPeriodoMes(periodo);
+    return mes ? `salary_f4:secretaria:${mes.slice(0, 7)}` : '';
+  }
+
+  function sourceRefColocaciones(periodoLiquidacion) {
+    const mes = normalizarPeriodoMes(periodoLiquidacion);
+    return mes ? `placements_f4:all:${mes.slice(0, 7)}` : '';
+  }
+
+  function sourceRefRecurrente(templateId, periodo) {
+    const mes = normalizarPeriodoMes(periodo);
+    const id = String(templateId || '').trim().toLowerCase();
+    return id && mes ? `recurring:${id}:${mes.slice(0, 7)}` : '';
+  }
+
+  function coincideIdentidad(fila, identidad = {}) {
+    if (!fila || fila.status === 'voided') return false;
+    if (identidad.recurringTemplateId) {
+      return String(fila.recurring_template_id || '') === String(identidad.recurringTemplateId)
+        && normalizarPeriodoMes(fila.period_month) === normalizarPeriodoMes(identidad.periodMonth);
+    }
+    return String(fila.source_type || '') === String(identidad.sourceType || '')
+      && String(fila.source_ref || '').toLowerCase() === String(identidad.sourceRef || '').toLowerCase();
+  }
+
+  function hayRegistroActivo(filas, identidad) {
+    return (Array.isArray(filas) ? filas : []).some((fila) => coincideIdentidad(fila, identidad));
+  }
+
+  function plantillaAplicaAlPeriodo(plantilla, periodo) {
+    const mes = normalizarPeriodoMes(periodo);
+    const inicio = normalizarPeriodoMes(plantilla?.start_month);
+    const fin = normalizarPeriodoMes(plantilla?.end_month);
+    return !!(plantilla?.active && mes && inicio && mes >= inicio && (!fin || mes <= fin));
+  }
+
+  function esErrorDuplicado(error) {
+    const texto = `${error?.message || ''} ${error?.details || ''}`.toLowerCase();
+    return String(error?.code || '') === '23505' || texto.includes('duplicate key') || texto.includes('unique constraint');
+  }
+
+  function snapshotRecurrente(plantilla, valores) {
+    return {
+      origin: 'cardiolink_finance_recurring_templates',
+      template_id: plantilla.id,
+      template_revision: numero(plantilla.revision),
+      period_month: normalizarPeriodoMes(valores.period_month),
+      category_id: plantilla.category_id,
+      concept: String(valores.concept || '').trim(),
+      amount: numero(valores.amount),
+      beneficiary: valores.beneficiary || null,
+      payment_method: valores.payment_method || null,
+      professional_id: valores.professional_id || null,
+      notes: valores.notes || null
+    };
+  }
+
+  function construirEgresoRecurrente(plantilla, valores = {}) {
+    const periodMonth = normalizarPeriodoMes(valores.period_month);
+    return {
+      expense_date: String(valores.expense_date || ''),
+      category_id: plantilla.category_id,
+      concept: String(valores.concept || '').trim(),
+      amount: numero(valores.amount),
+      beneficiary: valores.beneficiary || null,
+      payment_method: valores.payment_method || null,
+      notes: valores.notes || null,
+      professional_id: valores.professional_id || null,
+      receipt_reference: null,
+      status: valores.status === 'paid' ? 'paid' : 'pending',
+      paid_on: valores.status === 'paid' ? String(valores.paid_on || '') : null,
+      recurring_template_id: plantilla.id,
+      period_month: periodMonth,
+      source_type: 'recurring',
+      source_ref: sourceRefRecurrente(plantilla.id, periodMonth),
+      source_snapshot: snapshotRecurrente(plantilla, { ...valores, period_month: periodMonth })
+    };
+  }
+
+  function construirEgresoObligacion(obligacion, valores = {}) {
+    const periodMonth = normalizarPeriodoMes(obligacion.period_month);
+    return {
+      expense_date: String(valores.expense_date || ''),
+      category_id: obligacion.category_id,
+      concept: String(valores.concept || obligacion.concept || '').trim(),
+      amount: numero(obligacion.amount),
+      beneficiary: valores.beneficiary || null,
+      payment_method: valores.payment_method || null,
+      notes: valores.notes || null,
+      professional_id: obligacion.professional_id || null,
+      receipt_reference: null,
+      status: valores.status === 'paid' ? 'paid' : 'pending',
+      paid_on: valores.status === 'paid' ? String(valores.paid_on || '') : null,
+      recurring_template_id: null,
+      period_month: periodMonth,
+      source_type: obligacion.source_type,
+      source_ref: obligacion.source_ref,
+      source_snapshot: obligacion.source_snapshot
+    };
+  }
+
   // -----------------------------------------------------------------------
-  // Etapa 3A: cliente de Staging aislado y disponible exclusivamente en local
+  // Etapa 3B: cliente de Staging aislado y disponible exclusivamente en local
   // -----------------------------------------------------------------------
 
   const CONFIG_STORAGE_KEY = 'cardiolink_finanzas_v5_staging_config_v1';
   const AUTH_STORAGE_KEY = 'cardiolink_finanzas_v5_staging_auth_v1';
   const CONFLICT_MESSAGE = 'Este egreso fue modificado desde otra sesión. Actualizá la información antes de volver a guardar.';
+  const TEMPLATE_CONFLICT_MESSAGE = 'Esta plantilla fue modificada desde otra sesión. Actualizá la información antes de volver a guardar.';
+  const DUPLICATE_EXPENSE_MESSAGE = 'Ya existe un egreso vigente para este origen y período. Actualizá la lista antes de volver a registrar.';
+  const DUPLICATE_TEMPLATE_MESSAGE = 'Ya existe una plantilla activa equivalente para esa categoría, concepto, beneficiario y profesional.';
   const PAGE_SIZE = 1000;
   const TABLAS = Object.freeze({
     categorias: 'cardiolink_finance_categories',
+    plantillas: 'cardiolink_finance_recurring_templates',
     egresos: 'cardiolink_finance_expenses',
     auditoria: 'cardiolink_finance_audit_events'
   });
@@ -223,14 +353,20 @@
     session: null,
     accesoBackend: false,
     categorias: [],
+    plantillas: [],
     egresos: [],
     egresosPagadosPorFechaPago: [],
+    obligacionesF4: [],
+    egresosObligacionesF4: [],
+    periodoObligaciones: '',
     auditoria: [],
     cargando: false,
     mensaje: '',
     tipoMensaje: '',
     vista: 'egresos',
     edicion: null,
+    edicionPlantilla: null,
+    generacion: null,
     root: null
   };
 
@@ -353,10 +489,15 @@
 
   function limpiarDatosFinancieros() {
     estadoUI.categorias = [];
+    estadoUI.plantillas = [];
     estadoUI.egresos = [];
     estadoUI.egresosPagadosPorFechaPago = [];
+    estadoUI.obligacionesF4 = [];
+    estadoUI.egresosObligacionesF4 = [];
     estadoUI.auditoria = [];
     estadoUI.edicion = null;
+    estadoUI.edicionPlantilla = null;
+    estadoUI.generacion = null;
   }
 
   function crearClienteStaging() {
@@ -425,6 +566,17 @@
     const m = String(fecha.getMonth() + 1).padStart(2, '0');
     const d = String(fecha.getDate()).padStart(2, '0');
     return `${y}-${m}-${d}`;
+  }
+
+  function fechaSugeridaPeriodo(periodo, diaVencimiento = null) {
+    const mes = normalizarPeriodoMes(periodo);
+    if (!mes) return fechaISO();
+    const hoy = fechaISO();
+    if (hoy.slice(0, 7) === mes.slice(0, 7) && !diaVencimiento) return hoy;
+    const [anio, numeroMes] = mes.split('-').map(Number);
+    const ultimoDia = new Date(anio, numeroMes, 0, 12).getDate();
+    const dia = Math.min(Math.max(Number(diaVencimiento) || 1, 1), ultimoDia);
+    return `${mes.slice(0, 8)}${String(dia).padStart(2, '0')}`;
   }
 
   function filtrosActuales() {
@@ -508,12 +660,15 @@
     estadoUI.mensaje = '';
     renderInterfaz();
     try {
-      const [categorias, egresos, egresosPagados] = await Promise.all([
+      const [categorias, plantillas, egresos, egresosPagados] = await Promise.all([
         consultarPaginas(() => client.from(TABLAS.categorias)
           .select('id,parent_id,system_key,name,active,sort_order,revision')
           .order('sort_order', { ascending: true }).order('name', { ascending: true })),
+        consultarPaginas(() => client.from(TABLAS.plantillas)
+          .select('id,category_id,concept,default_amount,beneficiary,payment_method,notes,professional_id,due_day,start_month,end_month,active,created_at,updated_at,revision')
+          .eq('active', true).order('concept', { ascending: true })),
         consultarPaginas(() => aplicarFiltroProfesional(client.from(TABLAS.egresos)
-          .select('id,expense_date,category_id,concept,amount,beneficiary,payment_method,notes,professional_id,receipt_reference,status,paid_on,source_type,created_at,updated_at,voided_at,created_by,updated_by,voided_by,revision')
+          .select('id,expense_date,category_id,concept,amount,beneficiary,payment_method,notes,professional_id,receipt_reference,status,paid_on,recurring_template_id,period_month,source_type,source_ref,source_snapshot,created_at,updated_at,voided_at,created_by,updated_by,voided_by,revision')
           .gte('expense_date', filtros.desde).lte('expense_date', filtros.hasta)
           .order('expense_date', { ascending: false }).order('created_at', { ascending: false }), filtros.perfil)),
         consultarPaginas(() => aplicarFiltroProfesional(client.from(TABLAS.egresos)
@@ -523,12 +678,113 @@
       ]);
       if (estadoUI.client !== client || !frontendPuedeAcceder()) return;
       estadoUI.categorias = categorias;
+      estadoUI.plantillas = plantillas;
       estadoUI.egresos = egresos;
       estadoUI.egresosPagadosPorFechaPago = egresosPagados;
       estadoUI.mensaje = '';
     } catch (error) {
       if (esErrorAcceso(error)) return negarAcceso(error);
       estadoUI.mensaje = mensajeError(error, 'No se pudieron cargar los egresos.');
+      estadoUI.tipoMensaje = 'error';
+    } finally {
+      estadoUI.cargando = false;
+      renderInterfaz();
+    }
+  }
+
+  function periodoObligacionesActual() {
+    const desdeUI = estadoUI.root?.querySelector('#finV5PeriodoObligaciones')?.value || '';
+    const base = desdeUI || estadoUI.periodoObligaciones || fechaISO().slice(0, 7);
+    return normalizarPeriodoMes(base);
+  }
+
+  function categoriaSistema(systemKey) {
+    return estadoUI.categorias.find((categoria) => categoria.system_key === systemKey) || null;
+  }
+
+  function obtenerObligacionesCalculadas(periodo) {
+    if (!puedeAcceder() || proveedorObligacionesF4Autorizado?.puedeAcceder?.() === false) return [];
+    const mes = normalizarPeriodoMes(periodo);
+    if (!mes || !proveedorObligacionesF4Autorizado) return [];
+    const ym = mes.slice(0, 7);
+    const sueldo = proveedorObligacionesF4Autorizado.obtenerSueldoMensual(ym) || {};
+    const colocaciones = proveedorObligacionesF4Autorizado.obtenerColocacionesMensuales(ym, '') || {};
+    const categoriaSueldo = categoriaSistema('PERSONAL_SECRETARIA');
+    const categoriaColocaciones = categoriaSistema('PERSONAL_COLOCACIONES');
+    const totalSueldo = numero(sueldo.amount ?? sueldo.monto);
+    const totalColocaciones = numero(colocaciones.amount ?? colocaciones.total);
+    return [
+      {
+        key: 'salary',
+        title: 'Sueldo Secretaría',
+        category_id: categoriaSueldo?.id || '',
+        category_available: !!categoriaSueldo,
+        concept: `Sueldo Secretaría · ${ym}`,
+        beneficiary: 'Secretaría',
+        amount: totalSueldo,
+        period_month: mes,
+        source_type: 'salary_f4',
+        source_ref: sourceRefSueldo(mes),
+        source_snapshot: {
+          origin: 'data.configFinanzas411F.sueldosSecretaria',
+          description: 'Sueldo Secretaría',
+          period_month: mes,
+          amount: totalSueldo,
+          configuration_id: sueldo.configuration_id || null,
+          effective_from: sueldo.effective_from || null,
+          prorated: false
+        }
+      },
+      {
+        key: 'placements',
+        title: 'Colocaciones Holter / MAPA / ECG',
+        category_id: categoriaColocaciones?.id || '',
+        category_available: !!categoriaColocaciones,
+        concept: `Colocaciones · liquidación ${ym}`,
+        beneficiary: 'Secretaría',
+        amount: totalColocaciones,
+        period_month: mes,
+        work_month: normalizarPeriodoMes(colocaciones.work_month || desplazarPeriodoMes(mes, -1)),
+        source_type: 'placements_f4',
+        source_ref: sourceRefColocaciones(mes),
+        source_snapshot: {
+          origin: 'atenciones + tarifas actuales de colocación F4',
+          work_month: normalizarPeriodoMes(colocaciones.work_month || desplazarPeriodoMes(mes, -1)),
+          settlement_month: mes,
+          count: numero(colocaciones.count ?? colocaciones.cantidad),
+          rates: colocaciones.rates || colocaciones.tarifas || {},
+          breakdown: colocaciones.breakdown || colocaciones.desglose || [],
+          total: totalColocaciones
+        }
+      }
+    ];
+  }
+
+  async function cargarObligacionesF4(periodo = periodoObligacionesActual()) {
+    if (!estadoUI.client || !estadoUI.session || !estadoUI.accesoBackend || estadoUI.cargando) return;
+    const mes = normalizarPeriodoMes(periodo);
+    if (!mes) {
+      estadoUI.mensaje = 'Elegí un mes de liquidación válido.';
+      estadoUI.tipoMensaje = 'error';
+      renderInterfaz();
+      return;
+    }
+    estadoUI.periodoObligaciones = mes.slice(0, 7);
+    estadoUI.cargando = true;
+    estadoUI.mensaje = '';
+    renderInterfaz();
+    try {
+      const obligaciones = obtenerObligacionesCalculadas(mes);
+      if (!proveedorObligacionesF4Autorizado) throw new Error('El proveedor de obligaciones de Finanzas 4 todavía no está conectado.');
+      const { data, error } = await estadoUI.client.from(TABLAS.egresos)
+        .select('id,status,revision,source_type,source_ref,period_month,amount,paid_on,voided_at')
+        .eq('period_month', mes).in('source_type', ['salary_f4', 'placements_f4']);
+      if (error) throw error;
+      estadoUI.obligacionesF4 = obligaciones;
+      estadoUI.egresosObligacionesF4 = Array.isArray(data) ? data : [];
+    } catch (error) {
+      if (esErrorAcceso(error)) return negarAcceso(error);
+      estadoUI.mensaje = mensajeError(error, 'No se pudieron calcular las obligaciones de Finanzas 4.');
       estadoUI.tipoMensaje = 'error';
     } finally {
       estadoUI.cargando = false;
@@ -610,6 +866,16 @@
     return ({ pending: 'Pendiente', paid: 'Pagado', voided: 'Anulado' })[status] || status;
   }
 
+  function origenEtiqueta(sourceType) {
+    return ({
+      manual: 'Manual',
+      recurring: 'Recurrente',
+      salary_f4: 'Sueldo F4',
+      placements_f4: 'Colocaciones F4',
+      migration_f4: 'Migración F4'
+    })[sourceType] || sourceType || 'Manual';
+  }
+
   function ingresosActuales() {
     const filtros = filtrosActuales();
     try {
@@ -648,7 +914,7 @@
       return `<tr class="fin-v5-fila fin-v5-estado-${escapar(item.status)}">
         <td data-label="Fecha">${fechaVisible(item.expense_date)}</td>
         <td data-label="Categoría">${escapar(rutaCategoria(item.category_id))}</td>
-        <td data-label="Concepto"><strong>${escapar(item.concept)}</strong>${item.receipt_reference ? `<small>Comprobante: ${escapar(item.receipt_reference)}</small>` : ''}</td>
+        <td data-label="Concepto"><strong>${escapar(item.concept)}</strong><small>Origen: ${escapar(origenEtiqueta(item.source_type))}</small>${item.receipt_reference ? `<small>Comprobante: ${escapar(item.receipt_reference)}</small>` : ''}</td>
         <td data-label="Beneficiario">${escapar(item.beneficiary || '—')}</td>
         <td data-label="Estado"><span class="fin-v5-chip fin-v5-chip-${escapar(item.status)}">${escapar(estadoEtiqueta(item.status))}</span>${item.paid_on ? `<small>Pago: ${fechaVisible(item.paid_on)}</small>` : ''}</td>
         <td data-label="Profesional">${escapar(nombreProfesional(item.professional_id))}</td>
@@ -659,6 +925,52 @@
       </tr>`;
     }).join('');
     return `<div class="fin-v5-tabla-wrap"><table class="fin-v5-tabla"><thead><tr><th>Fecha</th><th>Categoría / subcategoría</th><th>Concepto</th><th>Beneficiario</th><th>Estado</th><th>Profesional</th><th>Monto</th><th>Acciones</th></tr></thead><tbody>${filas}</tbody></table></div>`;
+  }
+
+  function renderPlantillas() {
+    if (!estadoUI.plantillas.length) return '<div class="fin-v5-vacio">No hay plantillas recurrentes activas. Crear una plantilla no registra ningún egreso automáticamente.</div>';
+    const filas = estadoUI.plantillas.map((plantilla) => `<tr>
+      <td data-label="Categoría">${escapar(rutaCategoria(plantilla.category_id))}</td>
+      <td data-label="Concepto"><strong>${escapar(plantilla.concept)}</strong><small>${escapar(plantilla.beneficiary || 'Sin beneficiario')}</small></td>
+      <td data-label="Monto" class="fin-v5-monto">${plantilla.default_amount == null ? 'A completar' : dinero(plantilla.default_amount)}</td>
+      <td data-label="Vencimiento">${plantilla.due_day ? `Día ${escapar(plantilla.due_day)}` : 'Sin día fijo'}<small>Desde ${fechaVisible(plantilla.start_month)}${plantilla.end_month ? ` hasta ${fechaVisible(plantilla.end_month)}` : ''}</small></td>
+      <td data-label="Profesional">${escapar(nombreProfesional(plantilla.professional_id))}</td>
+      <td data-label="Acciones" class="fin-v5-acciones"><button type="button" class="primary small-btn" data-fin-v5-action="registrar-recurrente" data-id="${escapar(plantilla.id)}">Registrar gasto</button><button type="button" class="secondary small-btn" data-fin-v5-action="editar-plantilla" data-id="${escapar(plantilla.id)}">Editar</button><button type="button" class="small-btn fin-v5-btn-anular" data-fin-v5-action="desactivar-plantilla" data-id="${escapar(plantilla.id)}">Desactivar</button></td>
+    </tr>`).join('');
+    return `<div class="fin-v5-aviso fin-v5-aviso-info"><strong>Precarga manual.</strong> Las plantillas nunca generan egresos por sí solas. “Registrar gasto” abre un snapshot editable y requiere confirmación. Para otros empleados, usar una plantilla bajo PERSONAL.</div><div class="fin-v5-tabla-wrap"><table class="fin-v5-tabla"><thead><tr><th>Categoría / subcategoría</th><th>Concepto</th><th>Monto sugerido</th><th>Vigencia</th><th>Profesional</th><th>Acciones</th></tr></thead><tbody>${filas}</tbody></table></div>`;
+  }
+
+  function estadoObligacion(obligacion) {
+    const registrada = hayRegistroActivo(estadoUI.egresosObligacionesF4, {
+      sourceType: obligacion.source_type,
+      sourceRef: obligacion.source_ref
+    });
+    if (registrada) return 'registrada';
+    const anulada = estadoUI.egresosObligacionesF4.some((fila) => fila?.status === 'voided'
+      && String(fila.source_type || '') === obligacion.source_type
+      && String(fila.source_ref || '').toLowerCase() === obligacion.source_ref.toLowerCase());
+    return anulada ? 'reemplazable' : 'pendiente';
+  }
+
+  function renderObligacionesF4() {
+    const periodo = (periodoObligacionesActual() || normalizarPeriodoMes(fechaISO())).slice(0, 7);
+    const control = `<div class="fin-v5-obligaciones-control"><label>Mes de liquidación<input id="finV5PeriodoObligaciones" type="month" value="${escapar(periodo)}"></label><button type="button" class="primary" data-fin-v5-action="cargar-obligaciones">Calcular obligaciones</button></div>`;
+    if (!estadoUI.obligacionesF4.length) return `${control}<div class="fin-v5-vacio">Elegí el mes y calculá. Esto sólo lee Finanzas 4: no registra gastos automáticamente.</div>`;
+    const tarjetas = estadoUI.obligacionesF4.map((obligacion) => {
+      const estado = estadoObligacion(obligacion);
+      const esColocacion = obligacion.key === 'placements';
+      const detalle = esColocacion
+        ? `Trabajo: ${(obligacion.work_month || '').slice(0, 7)} · Liquidación: ${obligacion.period_month.slice(0, 7)} · ${numero(obligacion.source_snapshot?.count)} colocaciones`
+        : `Mes: ${obligacion.period_month.slice(0, 7)} · sin prorrateo`;
+      const faltaCategoria = !obligacion.category_available;
+      const noRegistrable = faltaCategoria || !(numero(obligacion.amount) > 0) || estado === 'registrada';
+      const etiqueta = estado === 'registrada' ? 'Registrado' : estado === 'reemplazable' ? 'Anulado · reemplazable' : 'Pendiente de registrar';
+      const accion = estado === 'registrada'
+        ? '<button type="button" class="secondary" disabled aria-disabled="true">Ya registrado</button>'
+        : `<button type="button" class="primary" data-fin-v5-action="registrar-obligacion" data-key="${escapar(obligacion.key)}"${noRegistrable ? ' disabled' : ''}>Registrar pago</button>`;
+      return `<article class="fin-v5-obligacion"><div class="fin-v5-obligacion-head"><div><span class="fin-v5-chip fin-v5-chip-calculated">Calculado</span><h3>${escapar(obligacion.title)}</h3><p>${escapar(detalle)}</p></div><strong>${dinero(obligacion.amount)}</strong></div><div class="fin-v5-obligacion-foot"><span class="fin-v5-chip fin-v5-chip-${estado === 'registrada' ? 'paid' : 'pending'}">${etiqueta}</span>${faltaCategoria ? '<small>Falta la categoría de sistema requerida en Staging.</small>' : ''}${!(numero(obligacion.amount) > 0) ? '<small>El total calculado es cero: no hay un egreso registrable.</small>' : ''}${accion}</div></article>`;
+    }).join('');
+    return `${control}<div class="fin-v5-aviso fin-v5-aviso-info">Los importes calculados no afectan los KPI hasta que se confirme un egreso real. Si se anula, puede registrarse un reemplazo.</div><div class="fin-v5-obligaciones">${tarjetas}</div>`;
   }
 
   function descripcionAuditoria(evento) {
@@ -690,9 +1002,20 @@
   }
 
   function renderContenidoAutenticado() {
-    return `${renderFiltros()}
-      <div class="fin-v5-barra"><div class="fin-v5-tabs" role="tablist"><button type="button" class="${estadoUI.vista === 'egresos' ? 'activo' : ''}" data-fin-v5-vista="egresos">Egresos</button><button type="button" class="${estadoUI.vista === 'historial' ? 'activo' : ''}" data-fin-v5-vista="historial">Historial</button></div><div><button type="button" class="secondary" data-fin-v5-action="actualizar">Actualizar</button><button type="button" class="primary" data-fin-v5-action="nuevo">Nuevo egreso</button></div></div>
-      ${estadoUI.vista === 'egresos' ? `${renderResumen()}${renderTablaEgresos()}` : renderAuditoria()}`;
+    const vistas = {
+      egresos: `${renderResumen()}${renderTablaEgresos()}`,
+      recurrentes: renderPlantillas(),
+      obligaciones: renderObligacionesF4(),
+      historial: renderAuditoria()
+    };
+    const acciones = estadoUI.vista === 'egresos'
+      ? '<button type="button" class="secondary" data-fin-v5-action="actualizar">Actualizar</button><button type="button" class="primary" data-fin-v5-action="nuevo">Nuevo egreso</button>'
+      : estadoUI.vista === 'recurrentes'
+        ? '<button type="button" class="secondary" data-fin-v5-action="actualizar">Actualizar</button><button type="button" class="primary" data-fin-v5-action="nueva-plantilla">Nueva plantilla</button>'
+        : '<button type="button" class="secondary" data-fin-v5-action="actualizar">Actualizar</button>';
+    return `${estadoUI.vista === 'egresos' ? renderFiltros() : ''}
+      <div class="fin-v5-barra"><div class="fin-v5-tabs" role="tablist"><button type="button" class="${estadoUI.vista === 'egresos' ? 'activo' : ''}" data-fin-v5-vista="egresos">Egresos</button><button type="button" class="${estadoUI.vista === 'recurrentes' ? 'activo' : ''}" data-fin-v5-vista="recurrentes">Recurrentes</button><button type="button" class="${estadoUI.vista === 'obligaciones' ? 'activo' : ''}" data-fin-v5-vista="obligaciones">Obligaciones F4</button><button type="button" class="${estadoUI.vista === 'historial' ? 'activo' : ''}" data-fin-v5-vista="historial">Historial</button></div><div>${acciones}</div></div>
+      ${vistas[estadoUI.vista] || vistas.egresos}`;
   }
 
   function renderInterfaz() {
@@ -865,12 +1188,287 @@
     else dialog.setAttribute('open', '');
   }
 
+  function abrirFormularioPlantilla(plantilla = null) {
+    const dialog = estadoUI.root?.querySelector('#finV5Dialog');
+    if (!dialog) return;
+    estadoUI.edicionPlantilla = plantilla ? { id: plantilla.id, revision: plantilla.revision } : null;
+    const categorias = categoriasFormulario(plantilla);
+    dialog.innerHTML = `<form id="finV5TemplateForm" method="dialog" class="fin-v5-form"><div class="fin-v5-form-head"><div><h3>${plantilla ? 'Editar plantilla recurrente' : 'Nueva plantilla recurrente'}</h3><p>La plantilla sólo precarga datos. Nunca crea egresos automáticamente.</p></div><button type="button" class="fin-v5-cerrar" data-fin-v5-action="cerrar" aria-label="Cerrar">×</button></div>
+      <div class="fin-v5-form-grid">
+        <label>Categoría<select name="category_root" required><option value="">Elegir…</option>${categorias.raices.map((categoria) => `<option value="${escapar(categoria.id)}"${categoria.id === categorias.idRaizActual ? ' selected' : ''}>${escapar(categoria.name)}${categoria.active ? '' : ' (inactiva)'}</option>`).join('')}</select></label>
+        <label>Subcategoría<select name="category_child">${opcionesSubcategorias(categorias.idRaizActual, categorias.actual?.parent_id ? categorias.actual.id : '')}</select></label>
+        <label class="fin-v5-span-2">Concepto<input name="concept" maxlength="240" value="${escapar(plantilla?.concept || '')}" required></label>
+        <label>Monto sugerido (opcional)<input name="default_amount" type="number" min="0.01" step="0.01" value="${plantilla?.default_amount != null ? escapar(plantilla.default_amount) : ''}"></label>
+        <label>Beneficiario (opcional)<input name="beneficiary" maxlength="240" value="${escapar(plantilla?.beneficiary || '')}"></label>
+        <label>Forma de pago (opcional)<select name="payment_method"><option value="">Sin informar</option>${['Efectivo', 'Transferencia', 'Débito', 'Crédito', 'Otro'].map((valor) => `<option value="${valor}"${plantilla?.payment_method === valor ? ' selected' : ''}>${valor}</option>`).join('')}</select></label>
+        <label>Profesional (opcional)<select name="professional_id">${opcionesProfesional(plantilla?.professional_id || '')}</select></label>
+        <label>Día de vencimiento (opcional)<input name="due_day" type="number" min="1" max="31" step="1" value="${plantilla?.due_day || ''}"></label>
+        <label>Mes de inicio<input name="start_month" type="month" value="${escapar((plantilla?.start_month || fechaISO()).slice(0, 7))}" required></label>
+        <label>Mes de fin (opcional)<input name="end_month" type="month" value="${escapar((plantilla?.end_month || '').slice(0, 7))}"></label>
+        <label>Estado<select name="active"><option value="true"${plantilla?.active !== false ? ' selected' : ''}>Activa</option><option value="false"${plantilla?.active === false ? ' selected' : ''}>Inactiva</option></select></label>
+        <label class="fin-v5-span-2">Notas (opcional)<textarea name="notes" rows="3" maxlength="2000">${escapar(plantilla?.notes || '')}</textarea></label>
+      </div><div class="fin-v5-form-actions"><button type="button" class="secondary" data-fin-v5-action="cerrar">Cancelar</button><button type="submit" class="primary">${plantilla ? 'Guardar cambios' : 'Crear plantilla'}</button></div></form>`;
+    const form = dialog.querySelector('#finV5TemplateForm');
+    form.querySelector('[name="category_root"]').addEventListener('change', (event) => {
+      form.querySelector('[name="category_child"]').innerHTML = opcionesSubcategorias(event.target.value, '');
+    });
+    form.addEventListener('submit', guardarPlantilla);
+    if (typeof dialog.showModal === 'function') dialog.showModal();
+    else dialog.setAttribute('open', '');
+  }
+
+  async function guardarPlantilla(event) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!form.reportValidity()) return;
+    const valores = new FormData(form);
+    const categoryId = String(valores.get('category_child') || valores.get('category_root') || '');
+    const startMonth = normalizarPeriodoMes(valores.get('start_month'));
+    const endMonth = normalizarPeriodoMes(valores.get('end_month')) || null;
+    const defaultAmountRaw = String(valores.get('default_amount') || '').trim();
+    const dueDayRaw = String(valores.get('due_day') || '').trim();
+    if (!categoryId || !startMonth || (endMonth && endMonth < startMonth)) {
+      estadoUI.mensaje = 'Completá la categoría y revisá que el mes de fin no sea anterior al inicio.';
+      estadoUI.tipoMensaje = 'error';
+      renderInterfaz();
+      return;
+    }
+    const payload = {
+      category_id: categoryId,
+      concept: String(valores.get('concept') || '').trim(),
+      default_amount: defaultAmountRaw ? Number(defaultAmountRaw) : null,
+      beneficiary: textoONull(valores.get('beneficiary')),
+      payment_method: textoONull(valores.get('payment_method')),
+      notes: textoONull(valores.get('notes')),
+      professional_id: textoONull(valores.get('professional_id')),
+      due_day: dueDayRaw ? Number(dueDayRaw) : null,
+      start_month: startMonth,
+      end_month: endMonth,
+      active: String(valores.get('active')) !== 'false'
+    };
+    estadoUI.cargando = true;
+    renderInterfaz();
+    try {
+      if (estadoUI.edicionPlantilla) {
+        const { data, error } = await estadoUI.client.from(TABLAS.plantillas).update(payload)
+          .eq('id', estadoUI.edicionPlantilla.id).eq('revision', estadoUI.edicionPlantilla.revision).select('id,revision');
+        if (error) throw error;
+        if (!Array.isArray(data) || data.length === 0) throw Object.assign(new Error(TEMPLATE_CONFLICT_MESSAGE), { conflict: true });
+        estadoUI.mensaje = payload.active ? 'Plantilla actualizada correctamente.' : 'Plantilla desactivada correctamente.';
+      } else {
+        const { error } = await estadoUI.client.from(TABLAS.plantillas).insert(payload).select('id,revision').single();
+        if (error) throw error;
+        estadoUI.mensaje = 'Plantilla creada. No se registró ningún egreso.';
+      }
+      estadoUI.tipoMensaje = 'ok';
+      cerrarFormulario();
+      estadoUI.cargando = false;
+      await cargarDatos();
+    } catch (error) {
+      if (esErrorAcceso(error)) return negarAcceso(error);
+      estadoUI.mensaje = error?.conflict ? TEMPLATE_CONFLICT_MESSAGE
+        : esErrorDuplicado(error) ? DUPLICATE_TEMPLATE_MESSAGE
+          : mensajeError(error, 'No se pudo guardar la plantilla.');
+      estadoUI.tipoMensaje = 'error';
+    } finally {
+      estadoUI.cargando = false;
+      renderInterfaz();
+    }
+  }
+
+  async function desactivarPlantilla(plantilla) {
+    if (!plantilla?.active || !window.confirm(`¿Desactivar la plantilla “${plantilla.concept}”?\n\nSe conserva el historial y no se elimina ningún egreso.`)) return;
+    estadoUI.cargando = true;
+    renderInterfaz();
+    try {
+      const { data, error } = await estadoUI.client.from(TABLAS.plantillas).update({ active: false })
+        .eq('id', plantilla.id).eq('revision', plantilla.revision).select('id,revision,active');
+      if (error) throw error;
+      if (!Array.isArray(data) || data.length === 0) throw Object.assign(new Error(TEMPLATE_CONFLICT_MESSAGE), { conflict: true });
+      estadoUI.mensaje = 'Plantilla desactivada. Su historial permanece disponible en auditoría.';
+      estadoUI.tipoMensaje = 'ok';
+      estadoUI.cargando = false;
+      await cargarDatos();
+    } catch (error) {
+      if (esErrorAcceso(error)) return negarAcceso(error);
+      estadoUI.mensaje = error?.conflict ? TEMPLATE_CONFLICT_MESSAGE : mensajeError(error, 'No se pudo desactivar la plantilla.');
+      estadoUI.tipoMensaje = 'error';
+    } finally {
+      estadoUI.cargando = false;
+      renderInterfaz();
+    }
+  }
+
+  function abrirGeneracionRecurrente(plantilla) {
+    if (!plantilla?.active) return;
+    const dialog = estadoUI.root?.querySelector('#finV5Dialog');
+    if (!dialog) return;
+    const actual = normalizarPeriodoMes(fechaISO());
+    const periodo = plantillaAplicaAlPeriodo(plantilla, actual)
+      ? actual
+      : (normalizarPeriodoMes(plantilla.start_month) || actual);
+    const fecha = fechaSugeridaPeriodo(periodo, plantilla.due_day);
+    estadoUI.generacion = { tipo: 'recurring', id: plantilla.id };
+    dialog.innerHTML = `<form id="finV5RecurringExpenseForm" method="dialog" class="fin-v5-form"><div class="fin-v5-form-head"><div><h3>Registrar gasto recurrente</h3><p>Snapshot editable de “${escapar(plantilla.concept)}”. Recién al confirmar se crea el egreso.</p></div><button type="button" class="fin-v5-cerrar" data-fin-v5-action="cerrar" aria-label="Cerrar">×</button></div>
+      <div class="fin-v5-form-grid">
+        <label>Período<input name="period_month" type="month" value="${escapar(periodo.slice(0, 7))}" required></label>
+        <label>Fecha del egreso<input name="expense_date" type="date" value="${escapar(fecha)}" required></label>
+        <label class="fin-v5-span-2">Categoría<input value="${escapar(rutaCategoria(plantilla.category_id))}" readonly></label>
+        <label class="fin-v5-span-2">Concepto<input name="concept" maxlength="240" value="${escapar(plantilla.concept)}" required></label>
+        <label>Monto<input name="amount" type="number" min="0.01" step="0.01" value="${plantilla.default_amount == null ? '' : escapar(plantilla.default_amount)}" required></label>
+        <label>Beneficiario (opcional)<input name="beneficiary" maxlength="240" value="${escapar(plantilla.beneficiary || '')}"></label>
+        <label>Forma de pago (opcional)<select name="payment_method"><option value="">Sin informar</option>${['Efectivo', 'Transferencia', 'Débito', 'Crédito', 'Otro'].map((valor) => `<option value="${valor}"${plantilla.payment_method === valor ? ' selected' : ''}>${valor}</option>`).join('')}</select></label>
+        <label>Estado<select name="status"><option value="pending">Pendiente</option><option value="paid">Pagado</option></select></label>
+        <label>Fecha de pago<input name="paid_on" type="date" disabled></label>
+        <label>Profesional (opcional)<select name="professional_id">${opcionesProfesional(plantilla.professional_id || '')}</select></label>
+        <label class="fin-v5-span-2">Notas (opcional)<textarea name="notes" rows="3" maxlength="2000">${escapar(plantilla.notes || '')}</textarea></label>
+      </div><div class="fin-v5-form-actions"><button type="button" class="secondary" data-fin-v5-action="cerrar">Cancelar</button><button type="submit" class="primary">Confirmar y registrar</button></div></form>`;
+    const form = dialog.querySelector('#finV5RecurringExpenseForm');
+    form.querySelector('[name="period_month"]').addEventListener('change', (event) => {
+      form.querySelector('[name="expense_date"]').value = fechaSugeridaPeriodo(event.target.value, plantilla.due_day);
+    });
+    form.querySelector('[name="status"]').addEventListener('change', (event) => {
+      const paidOn = form.querySelector('[name="paid_on"]');
+      const pagado = event.target.value === 'paid';
+      paidOn.disabled = !pagado;
+      paidOn.required = pagado;
+      paidOn.value = pagado ? form.querySelector('[name="expense_date"]').value : '';
+    });
+    form.addEventListener('submit', (event) => guardarEgresoRecurrente(event, plantilla));
+    if (typeof dialog.showModal === 'function') dialog.showModal();
+    else dialog.setAttribute('open', '');
+  }
+
+  async function consultarDuplicadoActivo(identidad) {
+    let consulta = estadoUI.client.from(TABLAS.egresos).select('id,status,revision').neq('status', 'voided');
+    if (identidad.recurringTemplateId) {
+      consulta = consulta.eq('recurring_template_id', identidad.recurringTemplateId)
+        .eq('period_month', normalizarPeriodoMes(identidad.periodMonth));
+    } else {
+      consulta = consulta.eq('source_type', identidad.sourceType).eq('source_ref', identidad.sourceRef);
+    }
+    const { data, error } = await consulta.limit(1);
+    if (error) throw error;
+    return Array.isArray(data) && data.length > 0;
+  }
+
+  async function guardarEgresoRecurrente(event, plantilla) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!form.reportValidity()) return;
+    const valores = new FormData(form);
+    const periodMonth = normalizarPeriodoMes(valores.get('period_month'));
+    const status = String(valores.get('status') || 'pending');
+    const datos = {
+      period_month: periodMonth,
+      expense_date: String(valores.get('expense_date') || ''),
+      concept: String(valores.get('concept') || '').trim(),
+      amount: Number(valores.get('amount')),
+      beneficiary: textoONull(valores.get('beneficiary')),
+      payment_method: textoONull(valores.get('payment_method')),
+      notes: textoONull(valores.get('notes')),
+      professional_id: textoONull(valores.get('professional_id')),
+      status,
+      paid_on: status === 'paid' ? String(valores.get('paid_on') || '') : null
+    };
+    if (!plantillaAplicaAlPeriodo(plantilla, periodMonth)) {
+      estadoUI.mensaje = 'El período elegido queda fuera de la vigencia de esta plantilla activa.';
+      estadoUI.tipoMensaje = 'error';
+      renderInterfaz();
+      return;
+    }
+    estadoUI.cargando = true;
+    renderInterfaz();
+    try {
+      const identidad = { recurringTemplateId: plantilla.id, periodMonth };
+      if (await consultarDuplicadoActivo(identidad)) throw Object.assign(new Error(DUPLICATE_EXPENSE_MESSAGE), { duplicate: true });
+      const payload = construirEgresoRecurrente(plantilla, datos);
+      const { error } = await estadoUI.client.from(TABLAS.egresos).insert(payload).select('id,revision').single();
+      if (error) throw error;
+      estadoUI.mensaje = 'Gasto recurrente registrado. Ahora sí impacta en los KPI según su fecha y estado.';
+      estadoUI.tipoMensaje = 'ok';
+      cerrarFormulario();
+      estadoUI.cargando = false;
+      await cargarDatos();
+    } catch (error) {
+      if (esErrorAcceso(error)) return negarAcceso(error);
+      estadoUI.mensaje = error?.duplicate || esErrorDuplicado(error) ? DUPLICATE_EXPENSE_MESSAGE : mensajeError(error, 'No se pudo registrar el gasto recurrente.');
+      estadoUI.tipoMensaje = 'error';
+    } finally {
+      estadoUI.cargando = false;
+      renderInterfaz();
+    }
+  }
+
+  function abrirRegistroObligacion(obligacion) {
+    if (!obligacion?.category_available || !(numero(obligacion.amount) > 0)) return;
+    const dialog = estadoUI.root?.querySelector('#finV5Dialog');
+    if (!dialog) return;
+    const fecha = fechaSugeridaPeriodo(obligacion.period_month);
+    estadoUI.generacion = { tipo: 'obligation', key: obligacion.key };
+    dialog.innerHTML = `<form id="finV5ObligationForm" method="dialog" class="fin-v5-form"><div class="fin-v5-form-head"><div><h3>Registrar pago</h3><p>${escapar(obligacion.title)} calculado desde Finanzas 4. No se registra hasta confirmar.</p></div><button type="button" class="fin-v5-cerrar" data-fin-v5-action="cerrar" aria-label="Cerrar">×</button></div>
+      <div class="fin-v5-form-grid">
+        <label>Período<input value="${escapar(obligacion.period_month.slice(0, 7))}" readonly></label>
+        <label>Monto calculado<input value="${escapar(obligacion.amount)}" readonly></label>
+        <label class="fin-v5-span-2">Categoría<input value="${escapar(rutaCategoria(obligacion.category_id))}" readonly></label>
+        <label class="fin-v5-span-2">Concepto<input name="concept" maxlength="240" value="${escapar(obligacion.concept)}" required></label>
+        <label>Fecha del egreso<input name="expense_date" type="date" value="${escapar(fecha)}" required></label>
+        <label>Fecha de pago<input name="paid_on" type="date" value="${escapar(fecha)}" required></label>
+        <label>Beneficiario (opcional)<input name="beneficiary" maxlength="240" value="${escapar(obligacion.beneficiary || '')}"></label>
+        <label>Forma de pago (opcional)<select name="payment_method"><option value="">Sin informar</option>${['Efectivo', 'Transferencia', 'Débito', 'Crédito', 'Otro'].map((valor) => `<option value="${valor}">${valor}</option>`).join('')}</select></label>
+        <label class="fin-v5-span-2">Notas (opcional)<textarea name="notes" rows="3" maxlength="2000"></textarea></label>
+      </div><div class="fin-v5-form-actions"><button type="button" class="secondary" data-fin-v5-action="cerrar">Cancelar</button><button type="submit" class="primary">Confirmar pago</button></div></form>`;
+    dialog.querySelector('#finV5ObligationForm').addEventListener('submit', (event) => guardarObligacion(event, obligacion));
+    if (typeof dialog.showModal === 'function') dialog.showModal();
+    else dialog.setAttribute('open', '');
+  }
+
+  async function guardarObligacion(event, obligacion) {
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!form.reportValidity()) return;
+    const valores = new FormData(form);
+    const datos = {
+      expense_date: String(valores.get('expense_date') || ''),
+      concept: String(valores.get('concept') || '').trim(),
+      beneficiary: textoONull(valores.get('beneficiary')),
+      payment_method: textoONull(valores.get('payment_method')),
+      notes: textoONull(valores.get('notes')),
+      status: 'paid',
+      paid_on: String(valores.get('paid_on') || '')
+    };
+    estadoUI.cargando = true;
+    renderInterfaz();
+    try {
+      const identidad = { sourceType: obligacion.source_type, sourceRef: obligacion.source_ref };
+      if (await consultarDuplicadoActivo(identidad)) throw Object.assign(new Error(DUPLICATE_EXPENSE_MESSAGE), { duplicate: true });
+      const payload = construirEgresoObligacion(obligacion, datos);
+      const { error } = await estadoUI.client.from(TABLAS.egresos).insert(payload).select('id,revision').single();
+      if (error) throw error;
+      estadoUI.mensaje = `${obligacion.title} registrado como egreso real.`;
+      estadoUI.tipoMensaje = 'ok';
+      cerrarFormulario();
+      estadoUI.cargando = false;
+      await cargarDatos();
+      await cargarObligacionesF4(obligacion.period_month);
+    } catch (error) {
+      if (esErrorAcceso(error)) return negarAcceso(error);
+      estadoUI.mensaje = error?.duplicate || esErrorDuplicado(error) ? DUPLICATE_EXPENSE_MESSAGE : mensajeError(error, 'No se pudo registrar la obligación.');
+      estadoUI.tipoMensaje = 'error';
+    } finally {
+      estadoUI.cargando = false;
+      renderInterfaz();
+    }
+  }
+
   function cerrarFormulario() {
     const dialog = estadoUI.root?.querySelector('#finV5Dialog');
     if (!dialog) return;
     if (typeof dialog.close === 'function') dialog.close();
     else dialog.removeAttribute('open');
     estadoUI.edicion = null;
+    estadoUI.edicionPlantilla = null;
+    estadoUI.generacion = null;
   }
 
   function textoONull(valor) {
@@ -972,16 +1570,28 @@
         estadoUI.vista = vista;
         renderInterfaz();
         if (vista === 'historial') cargarAuditoria();
+        if (vista === 'obligaciones') cargarObligacionesF4();
         return;
       }
       const boton = event.target.closest?.('[data-fin-v5-action]');
       if (!boton) return;
       const accion = boton.dataset.finV5Action;
-      if (accion === 'aplicar' || accion === 'actualizar') return estadoUI.vista === 'historial' ? cargarAuditoria() : cargarDatos();
+      if (accion === 'aplicar') return cargarDatos();
+      if (accion === 'actualizar') {
+        if (estadoUI.vista === 'historial') return cargarAuditoria();
+        if (estadoUI.vista === 'obligaciones') return cargarObligacionesF4();
+        return cargarDatos();
+      }
       if (accion === 'nuevo') return abrirFormulario();
+      if (accion === 'nueva-plantilla') return abrirFormularioPlantilla();
       if (accion === 'cerrar') return cerrarFormulario();
       if (accion === 'editar') return abrirFormulario(estadoUI.egresos.find((item) => item.id === boton.dataset.id));
       if (accion === 'anular') return anularEgreso(estadoUI.egresos.find((item) => item.id === boton.dataset.id));
+      if (accion === 'editar-plantilla') return abrirFormularioPlantilla(estadoUI.plantillas.find((item) => item.id === boton.dataset.id));
+      if (accion === 'desactivar-plantilla') return desactivarPlantilla(estadoUI.plantillas.find((item) => item.id === boton.dataset.id));
+      if (accion === 'registrar-recurrente') return abrirGeneracionRecurrente(estadoUI.plantillas.find((item) => item.id === boton.dataset.id));
+      if (accion === 'cargar-obligaciones') return cargarObligacionesF4();
+      if (accion === 'registrar-obligacion') return abrirRegistroObligacion(estadoUI.obligacionesF4.find((item) => item.key === boton.dataset.key));
       if (accion === 'salir') {
         estadoUI.cargando = true;
         renderInterfaz();
@@ -1009,10 +1619,11 @@
   }
 
   const api = Object.freeze({
-    version: '5.0.0-etapa-3a',
+    version: '5.0.0-etapa-3b',
     calcularIngresosCanonicos,
     calcularResumenEgresos,
     conectarProveedor,
+    conectarProveedorObligacionesF4,
     puedeAcceder,
     obtenerIngresos,
     diagnostico,
@@ -1020,7 +1631,8 @@
     desactivarStagingLocal,
     estadoStagingLocal,
     refrescarInterfaz: montarInterfaz,
-    CONFLICT_MESSAGE
+    CONFLICT_MESSAGE,
+    DUPLICATE_EXPENSE_MESSAGE
   });
 
   if (hayNavegador()) {
