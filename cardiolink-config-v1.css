@@ -1,0 +1,196 @@
+/* Configuración V1A: capa visual sobre los editores existentes. */
+#config .config-v1a-shell{
+  overflow:hidden;
+  padding:clamp(18px,2.5vw,30px);
+}
+.config-v1a-heading{
+  display:flex;
+  justify-content:space-between;
+  gap:20px;
+  align-items:flex-start;
+  padding-bottom:18px;
+  border-bottom:1px solid var(--line,#e5e7eb);
+}
+.config-v1a-heading h2{margin:2px 0 7px;font-size:clamp(25px,3vw,34px)}
+.config-v1a-heading p{margin:0;max-width:760px}
+.config-v1a-eyebrow{
+  color:#0f6b85!important;
+  font-size:12px;
+  font-weight:900;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+}
+
+#config .config-tabs-360{
+  display:grid;
+  grid-template-columns:repeat(auto-fit,minmax(165px,1fr));
+  gap:9px;
+  margin:20px 0 26px;
+  overflow:visible;
+}
+#config .config-tabs-360 button{
+  min-height:48px;
+  padding:11px 14px;
+  border:1px solid var(--line,#dbe3ea);
+  border-radius:12px;
+  background:rgba(148,163,184,.09);
+  color:var(--text,#111827);
+  text-align:left;
+  line-height:1.2;
+  touch-action:manipulation;
+}
+#config .config-tabs-360 button:hover{border-color:#3482a2;background:rgba(14,116,144,.08)}
+#config .config-tabs-360 button:focus-visible{outline:3px solid rgba(37,99,235,.25);outline-offset:2px}
+#config .config-tabs-360 button.active{border-color:#123f56;background:#123f56;color:#fff;box-shadow:0 7px 18px rgba(18,63,86,.18)}
+#config .config-tabs-360 .config-v1a-security-tab{border-color:#e6b9b9;color:#9b1c1c;background:#fff6f6}
+#config .config-tabs-360 .config-v1a-security-tab.active{border-color:#9b1c1c;background:#9b1c1c;color:#fff}
+
+#config .config-v1a-grid{display:block!important}
+.config-v1a-region{grid-column:1/-1}
+.config-v1a-region[hidden]{display:none!important}
+.config-v1a-region-heading{
+  display:flex;
+  justify-content:space-between;
+  align-items:flex-end;
+  gap:24px;
+  margin-bottom:17px;
+  padding:0 2px 13px;
+  border-bottom:1px solid var(--line,#e5e7eb);
+}
+.config-v1a-region-heading h3{margin:0;font-size:23px;color:var(--text,#111827)}
+.config-v1a-region-heading p{margin:0;max-width:630px;text-align:right}
+.config-v1a-region-grid{
+  display:grid;
+  grid-template-columns:repeat(2,minmax(0,1fr));
+  gap:18px;
+  align-items:start;
+}
+.config-v1a-region-grid > *{
+  min-width:0;
+  padding:18px;
+  border:1px solid var(--line,#dbe3ee);
+  border-radius:16px;
+  background:var(--card,#fff);
+}
+.config-v1a-region-grid > .full-config-card,
+.config-v1a-region-grid > .config-v1a-summary-card,
+.config-v1a-region-grid > .config-v1a-help-card,
+.config-v1a-region-grid > .config-v1a-identity-card,
+.config-v1a-region-grid > .config-v1a-definition-note,
+.config-v1a-region-grid > .config-v1a-security-notice{
+  grid-column:1/-1;
+}
+.config-v1a-region-grid h3:first-of-type,
+.config-v1a-region-grid h4:first-of-type{margin-top:0}
+
+.config-v1a-editor-kind{
+  display:inline-flex;
+  align-items:center;
+  width:max-content;
+  margin:0 0 10px;
+  padding:5px 9px;
+  border-radius:999px;
+  background:#e8f4f8;
+  color:#0f5d75;
+  font-size:11px;
+  font-weight:900;
+  letter-spacing:.025em;
+  text-transform:uppercase;
+}
+.config-v1a-editor-kind[data-kind="advanced"]{background:#fff4dd;color:#895300}
+.config-v1a-editor-kind[data-kind="legacy"]{background:#f1f3f5;color:#59636d}
+.config-v1a-editor-kind[data-kind="catalog"]{background:#edf7ed;color:#27632d}
+
+.config-v1a-summary-card{background:linear-gradient(135deg,rgba(14,116,144,.08),rgba(37,99,235,.035))!important}
+.config-v1a-summary-head{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:13px}
+.config-v1a-summary-head h4{margin:0;font-size:18px}
+.config-v1a-count{padding:5px 9px;border-radius:999px;background:var(--card,#fff);font-size:12px;font-weight:800}
+.config-v1a-team-list{display:grid;gap:9px}
+.config-v1a-team-row{
+  display:grid;
+  grid-template-columns:minmax(210px,1.5fr) auto minmax(145px,.8fr) minmax(170px,1fr);
+  align-items:center;
+  gap:13px;
+  padding:12px 14px;
+  border:1px solid rgba(148,163,184,.3);
+  border-radius:12px;
+  background:var(--card,#fff);
+}
+.config-v1a-summary-card.without-user-access .config-v1a-team-row{grid-template-columns:minmax(210px,1.5fr) auto minmax(170px,1fr)}
+.config-v1a-team-identity,.config-v1a-team-detail{display:flex;flex-direction:column;gap:3px;min-width:0}
+.config-v1a-team-identity span,.config-v1a-team-detail span{overflow-wrap:anywhere}
+.config-v1a-team-detail small{color:var(--muted,#64748b);font-weight:800}
+.config-v1a-status{padding:5px 9px;border-radius:999px;font-size:12px;font-weight:900;white-space:nowrap}
+.config-v1a-status.is-active{background:#dcfce7;color:#166534}
+.config-v1a-status.is-inactive{background:#f1f5f9;color:#64748b}
+
+.config-v1a-context-note,.config-v1a-definition-note{
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:18px;
+  background:rgba(14,116,144,.07)!important;
+}
+.config-v1a-context-note p,.config-v1a-definition-note p{margin:4px 0}
+.config-v1a-definition-note{justify-content:flex-start;gap:30px;padding:14px 18px!important}
+.config-v1a-identity-card{padding:0!important;overflow:hidden}
+.config-v1a-identity-card > .config-v1a-context-note{border:0;border-bottom:1px solid var(--line,#dbe3ee);border-radius:0;padding:15px 18px}
+.config-v1a-identity-host{padding:18px}
+.config-v1a-identity-host #docProfFields402{margin:0}
+
+.config-v1a-help-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:14px 0 16px}
+.config-v1a-help-list details{padding:13px 14px;border:1px solid var(--line,#dbe3ee);border-radius:12px;background:rgba(148,163,184,.055)}
+.config-v1a-help-list summary{font-weight:850;cursor:pointer;min-height:24px}
+.config-v1a-help-list p{margin:10px 0 0;line-height:1.45}
+
+.config-v1a-region-sensitive .config-v1a-region-heading{border-bottom-color:#edc9c9}
+.config-v1a-region-sensitive .config-v1a-region-heading h3{color:#8f1d1d}
+.config-v1a-security-notice{border-color:#efb8b8!important;background:#fff4f4!important;color:#7f1d1d}
+.config-v1a-security-notice p{margin:5px 0 0;color:#8f3232}
+#cfgMantenimientoTecnicoV1A{border-color:#e9baba;background:rgba(254,242,242,.7)}
+
+body.dark .config-v1a-eyebrow{color:#72c5dd!important}
+body.dark .config-v1a-editor-kind{background:rgba(14,116,144,.28);color:#b9e9f6}
+body.dark .config-v1a-editor-kind[data-kind="advanced"]{background:rgba(180,110,0,.22);color:#ffd68a}
+body.dark .config-v1a-editor-kind[data-kind="legacy"]{background:rgba(148,163,184,.16);color:#cbd5e1}
+body.dark .config-v1a-editor-kind[data-kind="catalog"]{background:rgba(22,101,52,.28);color:#bbf7d0}
+body.dark .config-v1a-security-notice,
+body.dark #cfgMantenimientoTecnicoV1A{background:rgba(127,29,29,.22)!important;color:#fecaca}
+body.dark .config-v1a-security-notice p{color:#fca5a5}
+body.dark #config .config-tabs-360 .config-v1a-security-tab{background:rgba(127,29,29,.18);color:#fecaca;border-color:#7f1d1d}
+
+@media(max-width:1100px){
+  #config .config-tabs-360{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .config-v1a-region-grid{grid-template-columns:1fr}
+  .config-v1a-region-grid > *{grid-column:1!important}
+  .config-v1a-team-row{grid-template-columns:minmax(220px,1.5fr) auto minmax(150px,1fr)}
+  .config-v1a-summary-card.without-user-access .config-v1a-team-row{grid-template-columns:minmax(220px,1.5fr) auto minmax(170px,1fr)}
+  .config-v1a-team-row .config-v1a-team-detail:last-child{grid-column:1/-1}
+}
+
+@media(max-width:700px){
+  #config .config-v1a-shell{padding:16px!important}
+  #config .config-tabs-360{
+    display:flex;
+    gap:8px;
+    overflow-x:auto;
+    margin:16px -4px 22px;
+    padding:2px 4px 8px;
+    scroll-snap-type:x proximity;
+    -webkit-overflow-scrolling:touch;
+  }
+  #config .config-tabs-360 button{flex:0 0 min(78vw,245px);text-align:center;scroll-snap-align:start;white-space:normal}
+  .config-v1a-region-heading{display:block}
+  .config-v1a-region-heading h3{font-size:21px}
+  .config-v1a-region-heading p{margin-top:7px;text-align:left}
+  .config-v1a-region-grid{gap:13px}
+  .config-v1a-region-grid > *{padding:15px}
+  .config-v1a-team-row{grid-template-columns:1fr;align-items:start}
+  .config-v1a-summary-card.without-user-access .config-v1a-team-row{grid-template-columns:1fr}
+  .config-v1a-team-row .config-v1a-team-detail:last-child{grid-column:auto}
+  .config-v1a-status{width:max-content}
+  .config-v1a-help-list{grid-template-columns:1fr}
+  .config-v1a-context-note,.config-v1a-definition-note{align-items:stretch;flex-direction:column;gap:8px}
+  .config-v1a-context-note button{width:100%}
+  .config-v1a-summary-head{align-items:flex-start;flex-direction:column}
+}

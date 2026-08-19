@@ -15,6 +15,7 @@
 <link rel="stylesheet" href="cardiolink-ui.css?v=1">
 <link rel="stylesheet" href="cardiolink-dashboard-v1.css?v=1">
 <link rel="stylesheet" href="cardiolink-finanzas-v5.css?v=4a">
+<link rel="stylesheet" href="cardiolink-config-v1.css?v=1a">
 <script>
 window.CARDIOLINK_BUILD="4.0.9.6";
 if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.update())).catch(()=>{});});}
@@ -731,19 +732,31 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
   </section>
 
   <section id="config" class="section">
-    <div class="card">
-      <h2>Configuración</h2>
+    <div class="card config-v1a-shell">
+      <div class="config-v1a-heading">
+        <div>
+          <p class="config-v1a-eyebrow">CardioLink Admin</p>
+          <h2>Configuración</h2>
+          <p class="muted">Organizá el equipo, la atención y los datos del consultorio sin cambiar los circuitos actuales.</p>
+        </div>
+      </div>
       <div class="config-tabs-360" id="configTabs360">
-        <button type="button" data-config-group="todos" class="active">Todo</button>
-        <button type="button" data-config-group="profesionales">Profesionales</button>
-        <button type="button" data-config-group="prestaciones">Prestaciones</button>
-        <button type="button" data-config-group="coberturas">Coberturas y valores</button>
-        <button type="button" data-config-group="usuarios">Usuarios y permisos</button>
-        <button type="button" data-config-group="mantenimiento">Mantenimiento y backup</button>
-        <button type="button" data-config-group="sistema">App y preparación HC</button>
+        <button type="button" data-config-v1-section="profesionales" class="active">Profesionales y equipo</button>
+        <button type="button" data-config-v1-section="prestaciones">Prestaciones</button>
+        <button type="button" data-config-v1-section="coberturas">Coberturas y valores</button>
+        <button type="button" data-config-v1-section="documentos">Documentos e identidad</button>
+        <button type="button" data-config-v1-section="usuarios">Usuarios y accesos</button>
+        <button type="button" data-config-v1-section="administracion">Administración</button>
+        <button type="button" data-config-v1-section="datos">Datos y backups</button>
+        <button type="button" data-config-v1-section="ayuda">Ayuda</button>
+        <button type="button" class="config-v1a-security-tab" data-config-v1-section="seguridad">Mantenimiento / Seguridad</button>
+      </div>
+      <div id="configLegacyTriggersV1A" hidden aria-hidden="true">
+        <button type="button" data-config-group="mantenimiento" data-config-v1-legacy-trigger="mantenimiento" tabindex="-1">Actualizar mantenimiento</button>
+        <button type="button" data-config-group="sistema" data-config-v1-legacy-trigger="sistema" tabindex="-1">Actualizar sistema</button>
       </div>
       <div class="config-grid">
-        <div data-config-group-card="coberturas" data-config-access="commercial">
+        <div id="cfgValoresProfesionalV1A" data-config-group-card="coberturas" data-config-access="commercial">
           <h3>Valores por profesional</h3>
           <label>Profesional</label><select id="cfgProfesionalValores"></select>
           <label>Consulta particular</label><input type="number" id="cfgConsultaParticular">
@@ -756,7 +769,7 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
           <button class="primary" id="btnGuardarValores">Guardar valores</button>
         </div>
 
-        <div data-config-group-card="coberturas" data-config-access="commercial">
+        <div id="cfgReglasObraSocialV1A" data-config-group-card="coberturas" data-config-access="commercial">
           <h3>Reglas por obra social</h3>
           <p class="muted">Reglas especiales aplicadas solo al perfil Matías. Los demás profesionales facturan para sí mismos.</p>
           <label>Obra social</label><select id="cfgReglaOS"></select>
@@ -773,7 +786,7 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
           <button class="primary" id="btnGuardarReglaOS">Guardar regla</button>
         </div>
 
-        <div data-config-group-card="profesionales" data-config-access="operational">
+        <div id="cfgProfesionalesBasicoV1A" data-config-group-card="profesionales" data-config-access="operational">
           <h3>Profesionales</h3>
           <div class="inline-form">
             <input id="nuevoProfesional" placeholder="Nuevo profesional">
@@ -783,7 +796,7 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
           <ul id="listaProfesionales"></ul>
         </div>
 
-        <div data-config-group-card="coberturas" data-config-access="commercial">
+        <div id="cfgObrasSocialesV1A" data-config-group-card="coberturas" data-config-access="commercial">
           <h3>Obras sociales</h3>
           <div class="inline-form">
             <input id="nuevaOS" placeholder="Nueva OS">
@@ -792,7 +805,7 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
           <ul id="listaOS"></ul>
         </div>
 
-        <div data-config-group-card="prestaciones" data-config-access="commercial">
+        <div id="cfgPrestacionesLegacyV1A" data-config-group-card="prestaciones" data-config-access="commercial">
           <h3>Prestaciones</h3>
           <div class="inline-form">
             <input id="nuevaPrestacion" placeholder="Nueva prestación">
@@ -802,7 +815,7 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
           <ul id="listaPrestaciones"></ul>
         </div>
 
-        <div class="maintenance-card" data-config-group-card="mantenimiento" data-config-access="admin">
+        <div id="cfgMantenimientoPacientesV1A" class="maintenance-card" data-config-group-card="mantenimiento" data-config-access="admin">
           <h3>Mantenimiento de pacientes</h3>
           <p class="muted">Busca posibles pacientes duplicados y permite fusionarlos sin borrar consultas, estudios, caja ni estadísticas.</p>
           <button class="primary" id="btnBuscarDuplicadosPacientes" type="button">Buscar duplicados de pacientes</button>
@@ -810,7 +823,7 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
           <p class="muted">La fusión conserva un paciente principal y reasigna las atenciones del duplicado. El duplicado queda inactivo para auditoría.</p>
         </div>
 
-        <div class="solo-config" data-config-group-card="usuarios" data-config-access="admin">
+        <div id="cfgUsuariosSistemaV1A" class="solo-config" data-config-group-card="usuarios" data-config-access="admin">
           <h3>Usuarios, roles y permisos</h3>
           <p class="muted">Usuarios de acceso de CardioLink. El login de Supabase debe coincidir con el campo Usuario. El profesional asociado define qué turnos ve ese usuario.</p>
           <label>Nombre real</label><input id="usrNombre" placeholder="Ej: Dr. Fernández Drago">
@@ -828,20 +841,26 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
           <ul id="listaUsuariosSistema"></ul>
         </div>
 
-        <div data-config-group-card="mantenimiento" data-config-access="restore">
-          <h3>Backup / traslado</h3>
-          <button class="primary" id="btnExportBackup" data-config-access="admin">Exportar backup completo</button>
-          <label>Importar backup JSON</label>
+        <div id="cfgBackupDatosV1A" data-config-group-card="mantenimiento" data-config-access="restore">
+          <h3>Backup de configuración y atenciones</h3>
+          <p class="muted">Incluye la configuración general y las atenciones del formato actual. No incluye los datos relacionales de Finanzas 5.</p>
+          <button class="primary" id="btnExportBackup" data-config-access="admin">Exportar configuración y atenciones</button>
+          <label>Restaurar desde backup JSON</label>
           <input type="file" id="inputImportBackup" accept=".json,application/json">
-          <button class="secondary" id="btnImportBackup">Importar backup</button>
-          <p class="danger-text">Importar reemplaza la base de esta computadora.</p>
+          <button class="secondary" id="btnImportBackup">Importar / restaurar backup</button>
+          <p class="danger-text">Restaurar reemplaza la configuración y las atenciones de esta computadora.</p>
+        </div>
+
+        <div id="cfgMantenimientoTecnicoV1A" class="maintenance-card" data-config-group-card="mantenimiento" data-config-access="admin">
+          <h3>Mantenimiento técnico</h3>
+          <p class="danger-text">Zona sensible. Estas acciones pueden modificar o eliminar información local.</p>
           <button class="danger" id="btnBorrarDatos" data-config-access="admin">Borrar atenciones de prueba</button>
           <button class="secondary" data-config-access="admin" type="button" onclick="limpiarRegistrosCorruptosManual()">Limpiar registros corruptos / undefined</button>
           <button class="secondary" data-config-access="admin" type="button" onclick="repararReglasValoresBaseManual()">Reparar reglas y valores base</button>
           <p class="muted" data-config-access="admin">Usar solo si aparecen filas vacías o con “undefined”. No borra atenciones reales con paciente cargado.</p>
         </div>
 
-        <div class="config-system-380" data-config-group-card="sistema" data-config-access="operational">
+        <div id="cfgInstalacionAppV1A" class="config-system-380" data-config-group-card="sistema" data-config-access="operational">
           <h3>Instalación como app</h3>
           <p class="muted">Instalá CardioLink en iPhone, iPad, Android, Windows o Mac para abrirlo como una aplicación.</p>
           <button class="primary" type="button" id="btnInstalarApp380">Instalar CardioLink</button>
@@ -851,7 +870,7 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
 
 
 
-        <div class="config-system-380 system-health-card-382" data-config-group-card="sistema" data-config-access="admin">
+        <div id="cfgEstadoSistemaV1A" class="config-system-380 system-health-card-382" data-config-group-card="sistema" data-config-access="admin">
           <h3>Estado del sistema</h3>
           <p class="muted">Diagnóstico rápido de conexión, sesión, sincronización, backup y preparación para HC.</p>
           <div id="systemHealth382" class="system-health-grid-382"></div>
@@ -861,7 +880,7 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
           </div>
         </div>
 
-        <div class="maintenance-card data-quality-card-382" data-config-group-card="mantenimiento" data-config-access="operational">
+        <div id="cfgCalidadDatosV1A" class="maintenance-card data-quality-card-382" data-config-group-card="mantenimiento" data-config-access="operational">
           <h3>Calidad de datos</h3>
           <p class="muted">Detecta fichas incompletas, duplicados probables y registros que conviene corregir antes de comenzar CardioLink HC.</p>
           <div id="dataQuality382" class="data-quality-grid-382"></div>
@@ -871,13 +890,13 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
           </div>
         </div>
 
-        <div class="maintenance-card audit-card-382" data-config-group-card="mantenimiento" data-config-access="admin">
+        <div id="cfgAuditoriaResumenV1A" class="maintenance-card audit-card-382" data-config-group-card="mantenimiento" data-config-access="admin">
           <h3>Auditoría resumida</h3>
           <p class="muted">Resumen de altas, ediciones, fusiones y usuarios que realizaron cambios.</p>
           <div id="auditSummary382" class="audit-summary-382"></div>
           <button class="secondary" type="button" id="btnExportAudit382">Exportar auditoría JSON</button>
         </div>
-        <div class="config-system-380" data-config-group-card="sistema" data-config-access="admin">
+        <div id="cfgPreparacionHCV1A" class="config-system-380" data-config-group-card="sistema" data-config-access="admin">
           <h3>Preparación para CardioLink HC 4.0</h3>
           <p class="muted">Verifica que pacientes y atenciones tengan identificadores estables para vincular futuras evoluciones, informes y adjuntos.</p>
           <button class="primary" type="button" id="btnRevisarHC380">Revisar estructura</button>
@@ -937,6 +956,8 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
 <script src="cardiolink-arancel-monto.js?v=1"></script>
 <script src="cardiolink-hc-referidos.js?v=3"></script>
 <script src="cardiolink-prestaciones-perfil.js?v=1"></script>
+<!-- Configuración V1A se carga después de los editores existentes para reorganizar su presentación sin reemplazar handlers. -->
+<script src="cardiolink-config-v1.js?v=1a"></script>
 <script src="cardiolink-dashboard-v1.js?v=1"></script>
 </body>
 </html>
