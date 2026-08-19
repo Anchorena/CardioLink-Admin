@@ -107,16 +107,18 @@
         return;
       }
 
-      const montoConsulta = numero(atencion.montoConsulta);
-      const montoEstudio = numero(atencion.montoEstudio);
+      const noCobrarParticular = atencion.noCobrar === true
+        && normalizar(atencion.obraSocial || atencion.coberturaAtencion) === 'particular';
+      const montoConsulta = noCobrarParticular ? 0 : numero(atencion.montoConsulta);
+      const montoEstudio = noCobrarParticular ? 0 : numero(atencion.montoEstudio);
       const particular = montoConsulta + montoEstudio;
-      const copago = numero(atencion.montoCopago);
+      const copago = noCobrarParticular ? 0 : numero(atencion.montoCopago);
       const formaPago = atencion.formaPago || 'Otro';
       const tipo = String(tipoPrestacion(atencion.prestacion) || 'ESTUDIO');
 
       ingresos.particular += particular;
       ingresos.copago += copago;
-      agregarMedio(formaPago, particular + copago);
+      if (!noCobrarParticular) agregarMedio(formaPago, particular + copago);
 
       detalle.cantidadRealizadas += 1;
       detalle.particulares += particular;

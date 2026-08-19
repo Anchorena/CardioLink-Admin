@@ -379,6 +379,19 @@ input[type="checkbox"]{
   white-space:nowrap;
   width:auto!important;
 }
+.no-cobrar-box{
+  display:flex;
+  align-items:center;
+  gap:14px;
+  padding:14px 16px;
+  border:1px solid #fecaca;
+  border-radius:14px;
+  background:#fff7f7;
+}
+.no-cobrar-box.hidden{display:none!important}
+.no-cobrar-box small{color:#7f1d1d;font-weight:700}
+.no-cobrar-box.is-active{border-color:#f87171;background:#fee2e2}
+.no-cobrar-box.is-active small{color:#991b1b}
 .instructivos-hero h2,.instructivo-card h2{margin-top:0;}
 .instructivo-indice{
   display:flex;

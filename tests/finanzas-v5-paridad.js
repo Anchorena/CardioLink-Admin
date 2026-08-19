@@ -187,6 +187,71 @@ assert.deepStrictEqual(agostoTodos.produccionAFacturar, {
 assert.equal(agostoTodos.ingresosOperativosEstimados.total, 426000, 'Total conocido de ingresos');
 assert.equal(agostoTodos.alertas.atencionesSinArancel, 1, 'Detecta OS sin arancel');
 
+function calcularCasoNoCobrar(lista) {
+  return finanzasV5.calcularIngresosCanonicos({
+    atenciones: lista,
+    obtenerEstado,
+    obtenerArancel,
+    esFacturaTercero,
+    normalizar,
+    tipoPrestacion
+  });
+}
+
+const particularNormal = {
+  id: 'particular-normal', fecha: '2026-08-15', profesionalId: 'matias', obraSocial: 'Particular',
+  prestacion: 'Consulta', montoConsulta: 35000, montoTotal: 35000, formaPago: 'Efectivo', noCobrar: false, estado: 'atendido'
+};
+const normalCobrado = calcularCasoNoCobrar([particularNormal]);
+assert.equal(normalCobrado.cajaCobrada.particulares, 35000, 'A: un particular normal suma $35.000 a Caja');
+
+const consultaNoCobrar = { ...particularNormal, id: 'consulta-no-cobrar', noCobrar: true, montoTotal: 0 };
+const consultaSinCobro = calcularCasoNoCobrar([consultaNoCobrar]);
+assert.equal(consultaSinCobro.cajaCobrada.total, 0, 'B: una consulta No cobrar no suma a Caja');
+assert.equal(consultaSinCobro.cajaCobrada.particulares, 0, 'B: una consulta No cobrar no suma a particulares');
+assert.equal(consultaSinCobro.desglose.consultas.cantidad, 1, 'B: una consulta No cobrar sigue contando como actividad');
+assert.equal(consultaSinCobro.mediosPago.Efectivo, 0, 'B: una consulta No cobrar no entra por medio de pago');
+assert.equal(consultaNoCobrar.montoConsulta, 35000, 'B: No cobrar conserva el valor de referencia');
+
+const estudioNoCobrar = {
+  id: 'estudio-no-cobrar', fecha: '2026-08-15', profesionalId: 'matias', obraSocial: 'Particular',
+  prestacion: 'Ecocardiograma Doppler', montoEstudio: 60000, montoTotal: 0,
+  formaPago: 'Transferencia', noCobrar: true, estado: 'atendido'
+};
+const estudioSinCobro = calcularCasoNoCobrar([estudioNoCobrar]);
+assert.equal(estudioSinCobro.cajaCobrada.total, 0, 'C: un estudio No cobrar no suma a Caja');
+assert.equal(estudioSinCobro.desglose.estudiosPrestaciones.cantidad, 1, 'C: un estudio No cobrar sigue contando como realizado');
+assert.equal(estudioSinCobro.mediosPago.Transferencia, 0, 'C: un estudio No cobrar no entra por transferencia');
+assert.equal(estudioNoCobrar.montoEstudio, 60000, 'C: el estudio conserva el valor de referencia');
+
+const historicaSinFlag = { ...particularNormal, id: 'historica-sin-flag' };
+delete historicaSinFlag.noCobrar;
+assert.equal(
+  calcularCasoNoCobrar([historicaSinFlag]).cajaCobrada.particulares,
+  35000,
+  'D: una atención histórica sin flag conserva el comportamiento anterior'
+);
+
+const alternable = { ...particularNormal };
+alternable.noCobrar = true;
+assert.equal(calcularCasoNoCobrar([alternable]).cajaCobrada.total, 0, 'E: marcar No cobrar lleva el cobro efectivo a cero');
+alternable.noCobrar = false;
+assert.equal(calcularCasoNoCobrar([alternable]).cajaCobrada.total, 35000, 'E: desmarcar No cobrar restaura el cobro normal');
+
+const prepagaSinCambios = {
+  id: 'prepaga-sin-cambios', fecha: '2026-08-15', profesionalId: 'matias', obraSocial: 'OSDE',
+  prestacion: 'Consulta', montoCopago: 12000, valorArancelEstimado: 50000,
+  formaPago: 'Débito', noCobrar: true, estado: 'atendido'
+};
+const prepagaCalculada = calcularCasoNoCobrar([prepagaSinCambios]);
+assert.equal(prepagaCalculada.cajaCobrada.copagos, 12000, 'F: el flag no altera copagos de una prepaga');
+assert.equal(prepagaCalculada.produccionAFacturar.obrasSocialesPrepagas, 50000, 'F: el flag no altera producción de OS/prepagas');
+assert.equal(
+  calcularCasoNoCobrar([consultaNoCobrar]).ingresosOperativosEstimados.total,
+  0,
+  'G: Finanzas 5 recibe la exclusión directamente del proveedor canónico'
+);
+
 let accesoPermitido = false;
 let lecturasProveedor = 0;
 assert.equal(finanzasV5.puedeAcceder(), false, 'El shell inicia sin acceso financiero');

@@ -1030,6 +1030,7 @@ function init(){
 
   ['profesional','obraSocial','prestacion'].forEach(id=>on(id,'change',()=>{if(id==='profesional')actualizarPrestaciones();actualizarExtrasPrestaciones();aplicarRegla();calcularCajaCarga()}));
   ['tipoCobro','formaPago','montoConsulta','montoEstudio','montoCopago'].forEach(id=>on(id,'input',calcularCajaCarga));
+  on('noCobrar','change',calcularCajaCarga);
 
   on('formAtencion','submit',guardarAtencion);
   on('btnGuardarNuevo','click',()=>{guardarYContinuar=true;$('formAtencion')?.requestSubmit()});
@@ -1399,7 +1400,45 @@ function aplicarRegla(){
  }
  $('reglaInfo').textContent=info; calcularCajaCarga();
 }
-function calcularCajaCarga(){const tipo=$('tipoCobro').value;let total=0;if(tipo==='No cobrar'){ $('montoConsulta').value=0;$('montoEstudio').value=0;$('montoCopago').value=0;$('montoTotal').value=0;return;}const part=Number($('montoConsulta').value||0)+Number($('montoEstudio').value||0);const cop=Number($('montoCopago').value||0);if(tipo.includes('Particular'))total+=part;if(tipo.includes('Copago')||tipo.includes('copago'))total+=cop;$('montoTotal').value=total}
+function esCoberturaParticularNoCobrar(valor){return String(valor||'').trim().toLowerCase()==='particular'}
+function esNoCobrarParticular(a){return a?.noCobrar===true&&esCoberturaParticularNoCobrar(a.obraSocial||a.coberturaAtencion)}
+function cobroEfectivoAtencion(a){
+ const sinCobro=esNoCobrarParticular(a);
+ const particular=sinCobro?0:Number(a?.montoConsulta||0)+Number(a?.montoEstudio||0);
+ const copago=sinCobro?0:Number(a?.montoCopago||0);
+ return {particular,copago,total:particular+copago};
+}
+function actualizarNoCobrarCarga(){
+ const box=$('noCobrarBox'),check=$('noCobrar');
+ const particular=esCoberturaParticularNoCobrar($('obraSocial')?.value);
+ document.querySelectorAll('#formAtencion .no-cobrar-inline').forEach(control=>{
+  control.classList.toggle('hidden',!particular);
+  if(!particular){const input=control.querySelector('input[type="checkbox"]');if(input)input.checked=false;}
+ });
+ if(box)box.classList.toggle('hidden',!particular);
+ if(check&&!particular)check.checked=false;
+ const activo=particular&&!!check?.checked;
+ box?.classList.toggle('is-active',activo);
+ if($('tipoCobro'))$('tipoCobro').disabled=activo;
+ if($('formaPago'))$('formaPago').disabled=activo;
+ const referencia=Number($('montoConsulta')?.value||0)+Number($('montoEstudio')?.value||0);
+ if($('noCobrarAyuda'))$('noCobrarAyuda').textContent=activo
+   ? `Valor de referencia: ${money(referencia)} · Cobro efectivo: ${money(0)}.`
+   : 'La atención se registra normalmente y el cobro efectivo será $0.';
+ return activo;
+}
+function calcularCajaCarga(){
+ const tipo=$('tipoCobro').value;
+ const noCobrar=actualizarNoCobrarCarga();
+ let total=0;
+ const part=Number($('montoConsulta').value||0)+Number($('montoEstudio').value||0);
+ const cop=Number($('montoCopago').value||0);
+ if(!noCobrar){
+  if(tipo.includes('Particular'))total+=part;
+  if(tipo.includes('Copago')||tipo.includes('copago'))total+=cop;
+ }
+ $('montoTotal').value=total;
+}
 function limpiarForm(){
  $('formAtencion').reset();
  $('fecha').value=todayISO();
@@ -1444,7 +1483,6 @@ function copagoDePrestacion(profId, prestacion){
  return v.copagoEstudio;
 }
 function calcularMontosParaRegistro(prestacion,{adicional=false,noCobrar=false}={}){
- if(noCobrar)return {montoConsulta:0,montoEstudio:0,montoCopago:0,montoTotal:0,tipoCobro:'No cobrar',formaPago:'No aplica',noCobrar:true};
  const tipo=$('tipoCobro').value;
  const os=$('obraSocial').value;
  const profId=$('profesional').value;
@@ -1453,6 +1491,15 @@ function calcularMontosParaRegistro(prestacion,{adicional=false,noCobrar=false}=
  let montoConsulta=0,montoEstudio=0,montoCopago=0,montoTotal=0;
  let tipoCobro=tipo;
  let formaPago=$('formaPago').value;
+ if(noCobrar&&esCoberturaParticularNoCobrar(os)){
+   if(adicional)montoEstudio=valorDePrestacion(profId,prestacion);
+   else {
+     montoConsulta=Number($('montoConsulta').value||0);
+     montoEstudio=Number($('montoEstudio').value||0);
+     montoCopago=Number($('montoCopago').value||0);
+   }
+   return {montoConsulta,montoEstudio,montoCopago,montoTotal:0,tipoCobro:'No cobrar',formaPago:'No aplica',noCobrar:true};
+ }
  if(adicional){
    // En estudios adicionales se cobra por prestación, pero la consulta no se duplica.
    if(os==='Particular' || tipo.includes('Particular')){
@@ -1479,7 +1526,7 @@ function crearAtencionDesdeFormulario(prestacion, opciones={}){
  const prestValor=String(prestacion || $('prestacion')?.value || '').trim();
  const prof=data.profesionales.find(x=>x.id===profId)||profesionalCarga()||data.profesionales.find(x=>x.id==='matias');
  const esAdicional=!!opciones.adicional;
- const noCobrar=!!opciones.noCobrar;
+ const noCobrar=!!opciones.noCobrar&&esCoberturaParticularNoCobrar(osValor);
  const grupoTurnoId=opciones.grupoTurnoId || ('turno_'+Date.now());
  const estadoInforme=tomarEstadoInformeDesdeCarga();
  const observacionesBase=$('observaciones')?.value.trim()||'';
@@ -1568,7 +1615,7 @@ function guardarAtencion(e){
   const registros=[];
   const grupoTurnoId='turno_'+Date.now();
   const prestPrincipal=$('prestacion').value;
-  const noCobrarPrincipal=$('tipoCobro').value==='No cobrar';
+  const noCobrarPrincipal=!!$('noCobrar')?.checked&&esCoberturaParticularNoCobrar($('obraSocial')?.value);
   registros.push(crearAtencionDesdeFormulario(prestPrincipal,{grupoTurnoId,noCobrar:noCobrarPrincipal}));
   prestacionesAdicionalesSeleccionadas(prestPrincipal).forEach(extra=>{
     const r=crearAtencionDesdeFormulario(extra.prestacion,{grupoTurnoId,adicional:true,noCobrar:extra.noCobrar});
@@ -1944,16 +1991,14 @@ function activarFiltroPendientesGlobal(){
 }
 function filtrar(){const desde=$('fDesde').value,hasta=$('fHasta').value,os=$('fOS').value,prof=$('fProfesional').value,prest=$('fPrestacion').value,pac=$('fPaciente').value.toLowerCase().trim(),dest=$('fDestino').value;return atencionesPerfil().filter(a=>{if(modoPendientesGlobal&&!esPendienteAdministrativo(a))return false;if(!modoPendientesGlobal){if(desde&&a.fecha<desde)return false;if(hasta&&a.fecha>hasta)return false;}if(os===FILTRO_FACTURA_ROGELIO){ if(!puedeVerFacturaRogelio()) return false; if(!esRegistroFacturaRogelio(a))return false;}if(os&&os!==FILTRO_FACTURA_ROGELIO&&a.obraSocial!==os)return false;if(prof&&a.profesional!==prof)return false;if(prest&&a.prestacion!==prest)return false;if(pac&&!String(a.paciente||'').toLowerCase().includes(pac))return false;if(dest&&a.consultaA!==dest&&a.prestacionA!==dest)return false;return true}).sort((a,b)=>(b.fecha||'').localeCompare(a.fecha||''))}
 function consultaComputada(a){if(a.cuentaConsulta===false)return false;const t=tipoPrest(a.prestacion),r=a.reglaOS||getRegla(a.obraSocial);if(t==='CONSULTA'||t==='CONSULTA_ECG')return true;if(t==='ECG'&&r==='IOMA_OSPRERA')return true;if(t!=='CONSULTA'){return ['GENERAL_CONSULTA_EXTRA','SANCOR_PREVENCION','IOMA_OSPRERA','OSDE'].includes(r)}return !!a.bonoConsulta}
-function resumen(datos){return datos.reduce((r,a)=>{if(consultaComputada(a))r.consultas++;if(tipoPrest(a.prestacion)!=='CONSULTA')r.estudios++;if(a.bonoConsulta||consultaComputada(a))r.bonoConsulta++;if(a.bonoEstudio||tipoPrest(a.prestacion)!=='CONSULTA')r.bonoEstudio++;const particular=Number(a.montoConsulta||0)+Number(a.montoEstudio||0);const copago=Number(a.montoCopago||0);r.particular+=particular;r.copago+=copago;r.total+=particular+copago;return r},{consultas:0,estudios:0,bonoConsulta:0,bonoEstudio:0,particular:0,copago:0,total:0})}
+function resumen(datos){return datos.reduce((r,a)=>{if(consultaComputada(a))r.consultas++;if(tipoPrest(a.prestacion)!=='CONSULTA')r.estudios++;if(a.bonoConsulta||consultaComputada(a))r.bonoConsulta++;if(a.bonoEstudio||tipoPrest(a.prestacion)!=='CONSULTA')r.bonoEstudio++;const cobro=cobroEfectivoAtencion(a);r.particular+=cobro.particular;r.copago+=cobro.copago;r.total+=cobro.total;return r},{consultas:0,estudios:0,bonoConsulta:0,bonoEstudio:0,particular:0,copago:0,total:0})}
 function dineroVisible(a){
  const cp=a.cajaPerfil||a.profesionalId;
  let perfilCaja=perfilObj().id;
  if(esMedico()) perfilCaja=profesionalIdUsuarioActual();
  if(perfilCaja==='general')return {particular:0,copago:0,total:0};
  if(cp!==perfilCaja)return {particular:0,copago:0,total:0};
- const particular=Number(a.montoConsulta||0)+Number(a.montoEstudio||0);
- const copago=Number(a.montoCopago||0);
- return {particular,copago,total:particular+copago};
+ return cobroEfectivoAtencion(a);
 }
 function atencionesCajaDelPerfil(datos = atencionesOperativas()) {
   const p = perfilObj();
@@ -1975,8 +2020,7 @@ function cajaHoy(datos = atencionesOperativas()) {
   return datosCaja
     .filter(a => a.fecha === todayISO())
     .reduce((r, a) => {
-      const particular = Number(a.montoConsulta || 0) + Number(a.montoEstudio || 0);
-      const copago = Number(a.montoCopago || 0);
+      const { particular, copago } = cobroEfectivoAtencion(a);
 
       r.particular += particular;
       r.copago += copago;
@@ -2012,7 +2056,7 @@ function nivelPendiente411C(a){
   if(d>14)return {dias:d,cls:'critical',label:'Crítico'};if(d>7)return {dias:d,cls:'overdue',label:'Vencido'};if(d>=4)return {dias:d,cls:'delayed',label:'Demorado'};return {dias:d,cls:'normal',label:'En término'};
 }
 function badgeAntiguedadPendiente411C(a){const n=nivelPendiente411C(a);if(!n||n.cls==='normal')return '';const icon=n.cls==='critical'?'⚠️ ':'';return `<span class="badge pending-age-411c ${n.cls}" title="Pendiente desde hace ${n.dias} días">${icon}${n.label} · ${n.dias} d</span>`;}
-function estadoHTML(a,e){const nc=a.noCobrar?'<span class="badge neutral informe-badge">No cobrado</span>':'';return `<span class="badge ${e.cls}">${e.txt}</span>${nc}${badgesInforme(a)}${badgeAntiguedadPendiente411C(a)}`;}
+function estadoHTML(a,e){const nc=esNoCobrarParticular(a)?'<span class="badge neutral informe-badge">No cobrar</span>':'';return `<span class="badge ${e.cls}">${e.txt}</span>${nc}${badgesInforme(a)}${badgeAntiguedadPendiente411C(a)}`;}
 
 function prestacionContable(a){
   const r=a.reglaOS||getRegla(a.obraSocial);
@@ -2183,6 +2227,9 @@ function abrirModalEdicion(id){
   overlay.id='modalEdicionAtencion';
   const particular=Number(a.montoConsulta||0)+Number(a.montoEstudio||0);
   const copago=Number(a.montoCopago||0);
+  const noCobrar=esNoCobrarParticular(a);
+  const tipoCobroEdicion=noCobrar?'Particular':(a.tipoCobro==='No cobrar'?'Particular':(a.tipoCobro||'Sin cobro en caja'));
+  const formaPagoEdicion=noCobrar&&a.formaPago==='No aplica'?'Efectivo':(a.formaPago||'No aplica');
   overlay.innerHTML=`
     <div class="modal-edit-card">
       <div class="modal-edit-header">
@@ -2201,8 +2248,12 @@ function abrirModalEdicion(id){
         <div><label>Prestación</label>${selectPrestacionesHTML('m_prest',a.profesionalId,a.prestacion)}</div>
         <div><label>Consulta a</label>${selectHTML('m_consultaA',opcionesDestinos(a.consultaA),a.consultaA)}</div>
         <div><label>Estudio/prestación a</label>${selectHTML('m_prestacionA',opcionesDestinos(a.prestacionA),a.prestacionA)}</div>
-        <div><label>Tipo de cobro</label>${selectHTML('m_tipoCobro',['Sin cobro en caja','No cobrar','Copago','Particular','Particular + copago'],a.tipoCobro||'Sin cobro en caja')}</div>
-        <div><label>Forma de pago</label>${selectHTML('m_formaPago',['No aplica','Efectivo','Transferencia','Débito','Mixto'],a.formaPago||'No aplica')}</div>
+        <div><label>Tipo de cobro</label>${selectHTML('m_tipoCobro',['Sin cobro en caja','Copago','Particular','Particular + copago'],tipoCobroEdicion)}</div>
+        <div><label>Forma de pago</label>${selectHTML('m_formaPago',['No aplica','Efectivo','Transferencia','Débito','Mixto'],formaPagoEdicion)}</div>
+        <div class="full no-cobrar-box${noCobrar?' is-active':''}" id="m_noCobrarBox">
+          <label class="check-line"><input type="checkbox" id="m_noCobrar" ${noCobrar?'checked':''}> No cobrar</label>
+          <small id="m_noCobrarAyuda">La atención se registra normalmente y el cobro efectivo será $0.</small>
+        </div>
         <div><label>Particular</label><input type="number" id="m_particular" value="${particular}"></div>
         <div><label>Copago</label><input type="number" id="m_copago" value="${copago}"></div>
         <div class="checks modal-checks">
@@ -2230,6 +2281,30 @@ function abrirModalEdicion(id){
     </div>
   `;
   document.body.appendChild(overlay);
+  $('m_noCobrar')?.addEventListener('change',actualizarNoCobrarEdicion);
+  $('m_os')?.addEventListener('change',actualizarNoCobrarEdicion);
+  $('m_particular')?.addEventListener('input',actualizarNoCobrarEdicion);
+  actualizarNoCobrarEdicion();
+}
+
+function actualizarNoCobrarEdicion(){
+  const box=$('m_noCobrarBox'),check=$('m_noCobrar');
+  const particular=esCoberturaParticularNoCobrar($('m_os')?.value);
+  document.querySelectorAll('#modalEdicionAtencion .no-cobrar-inline').forEach(control=>{
+    control.classList.toggle('hidden',!particular);
+    if(!particular){const input=control.querySelector('input[type="checkbox"]');if(input)input.checked=false;}
+  });
+  box?.classList.toggle('hidden',!particular);
+  if(check&&!particular)check.checked=false;
+  const activo=particular&&!!check?.checked;
+  box?.classList.toggle('is-active',activo);
+  if($('m_tipoCobro'))$('m_tipoCobro').disabled=activo;
+  if($('m_formaPago'))$('m_formaPago').disabled=activo;
+  const referencia=Number($('m_particular')?.value||0);
+  if($('m_noCobrarAyuda'))$('m_noCobrarAyuda').textContent=activo
+    ? `Valor de referencia: ${money(referencia)} · Cobro efectivo: ${money(0)}.`
+    : 'La atención se registra normalmente y el cobro efectivo será $0.';
+  return activo;
 }
 
 function cerrarModalEdicion(){
@@ -2247,8 +2322,9 @@ function guardarEdicionModal(id){
   const tipo=$('m_tipoCobro').value;
   const part=Number($('m_particular').value||0);
   const cop=Number($('m_copago').value||0);
+  const noCobrar=!!$('m_noCobrar')?.checked&&esCoberturaParticularNoCobrar($('m_os').value);
   let total=0;
-  if(tipo==='No cobrar'){total=0;} else {if(tipo.includes('Particular'))total+=part;if(tipo.includes('Copago')||tipo.includes('copago'))total+=cop;}
+  if(!noCobrar){if(tipo.includes('Particular'))total+=part;if(tipo.includes('Copago')||tipo.includes('copago'))total+=cop;}
   a.fecha=$('m_fecha').value;
   a.paciente=$('m_paciente').value.trim();
   a.dni=$('m_dni').value.trim();
@@ -2259,13 +2335,13 @@ function guardarEdicionModal(id){
   a.prestacion=prest;
   a.consultaA=$('m_consultaA').value;
   a.prestacionA=$('m_prestacionA').value;
-  a.tipoCobro=tipo;
-  a.formaPago=$('m_formaPago').value;
+  a.tipoCobro=noCobrar?'No cobrar':tipo;
+  a.formaPago=noCobrar?'No aplica':$('m_formaPago').value;
   a.cajaPerfil=profId;
-  a.noCobrar=tipo==='No cobrar';
-  a.montoConsulta=a.noCobrar?0:(esConsulta(prest)?part:0);
-  a.montoEstudio=a.noCobrar?0:(esConsulta(prest)?0:part);
-  a.montoCopago=a.noCobrar?0:cop;
+  a.noCobrar=noCobrar;
+  a.montoConsulta=esConsulta(prest)?part:0;
+  a.montoEstudio=esConsulta(prest)?0:part;
+  a.montoCopago=cop;
   a.montoTotal=total;
   a.bonoConsulta=$('m_bonoConsulta').checked;
   a.bonoEstudio=$('m_bonoEstudio').checked;
@@ -4022,9 +4098,11 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const os=$id('m_os')?.value || base.obraSocial || 'Particular';
     const formaBase=$id('m_formaPago')?.value || base.formaPago || 'No aplica';
     const regla=getRegla(os);
+    const noCobrarParticular=!!noCobrar&&esCoberturaParticularNoCobrar(os);
     let tipoCobro=tipo, formaPago=formaBase, montoConsulta=0, montoEstudio=0, montoCopago=0, montoTotal=0;
-    if(noCobrar || tipo==='No cobrar'){
+    if(noCobrarParticular){
       tipoCobro='No cobrar'; formaPago='No aplica';
+      montoEstudio=valorDePrestacion(profId, prest);
     }else if(os==='Particular' || regla==='COBERTURA_COBRA_PARTICULAR' || tipo.includes('Particular')){
       tipoCobro='Particular'; formaPago=formaPago==='No aplica'?'Efectivo':formaPago;
       montoEstudio=valorDePrestacion(profId, prest);
@@ -4054,7 +4132,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       prestacionA:$id('m_prestacionA')?.value || base.prestacionA || 'Matías',
       cajaPerfil:profId,
       reglaOS:getRegla(os),
-      tipoCobro,formaPago,noCobrar:tipoCobro==='No cobrar',montoConsulta,montoEstudio,montoCopago,montoTotal,
+      tipoCobro,formaPago,noCobrar:noCobrarParticular,montoConsulta,montoEstudio,montoCopago,montoTotal,
       cuentaConsulta:false,
       bonoConsulta:false,
       bonoEstudio:tipoPrest(prest)!=='CONSULTA',
@@ -4264,8 +4342,9 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const regla=typeof getRegla==='function'?getRegla(os):'';
     const tipoPrestacion=typeof tipoPrest==='function'?tipoPrest(prestacion):'ESTUDIO';
     let tipoCobro=tipoBase||'Sin cobro en caja', formaPago=formaBase||'No aplica', montoConsulta=0, montoEstudio=0, montoCopago=0, montoTotal=0;
-    if(noCobrar || tipoCobro==='No cobrar'){
-      return {tipoCobro:'No cobrar',formaPago:'No aplica',montoConsulta:0,montoEstudio:0,montoCopago:0,montoTotal:0,noCobrar:true};
+    if(noCobrar && esCoberturaParticularNoCobrar(os)){
+      montoEstudio=tipoPrestacion==='CONSULTA' ? 0 : (valorDePrestacion?.(profId,prestacion)||0);
+      return {tipoCobro:'No cobrar',formaPago:'No aplica',montoConsulta:0,montoEstudio,montoCopago:0,montoTotal:0,noCobrar:true};
     }
     if(os==='Particular' || regla==='COBERTURA_COBRA_PARTICULAR' || String(tipoCobro).includes('Particular')){
       tipoCobro='Particular'; formaPago=formaPago==='No aplica'?'Efectivo':formaPago;
@@ -4667,9 +4746,11 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         const items=prestacionesDePerfil296($id('m_prof').value);
         if(prest){ prest.innerHTML=items.map(x=>`<option>${esc(x)}</option>`).join(''); }
         actualizarExtrasModal296();
+        actualizarNoCobrarEdicion?.();
       });
       $id('m_prest')?.addEventListener('change',actualizarExtrasModal296);
       actualizarExtrasModal296();
+      actualizarNoCobrarEdicion?.();
     };
   }
 
@@ -10268,7 +10349,7 @@ function patientInfoTextHC(p,coverage){
       if(['ausente','cancelado'].includes(estado411(a))){
         const s=Number(a.seniaMonto||0);r.particular+=s;r.total+=s;return r;
       }
-      const part=Number(a.montoConsulta||0)+Number(a.montoEstudio||0),cop=Number(a.montoCopago||0);
+      const {particular:part,copago:cop}=cobroEfectivoAtencion(a);
       r.particular+=part;r.copago+=cop;r.total+=part+cop;return r;
     },{particular:0,copago:0,total:0});
   };

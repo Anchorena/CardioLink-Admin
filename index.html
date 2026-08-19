@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.webmanifest?v=40096">
 <link rel="apple-touch-icon" href="icons/icon-192.png?v=40096">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png?v=40096">
-<link rel="stylesheet" href="styles.css?v=40096">
+<link rel="stylesheet" href="styles.css?v=40097">
 <link rel="stylesheet" href="cardiolink-ui.css?v=1">
 <link rel="stylesheet" href="cardiolink-dashboard-v1.css?v=1">
 <link rel="stylesheet" href="cardiolink-finanzas-v5.css?v=4a">
@@ -205,12 +205,17 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
         </select></div>
 
         <div><label>Tipo de cobro</label><select id="tipoCobro">
-          <option>Sin cobro en caja</option><option>No cobrar</option><option>Copago</option><option>Particular</option><option>Particular + copago</option>
+          <option>Sin cobro en caja</option><option>Copago</option><option>Particular</option><option>Particular + copago</option>
         </select></div>
 
         <div><label>Forma de pago</label><select id="formaPago">
           <option>No aplica</option><option>Efectivo</option><option>Transferencia</option><option>Mixto</option>
         </select></div>
+
+        <div class="full no-cobrar-box hidden" id="noCobrarBox">
+          <label class="check-line"><input type="checkbox" id="noCobrar"> No cobrar</label>
+          <small id="noCobrarAyuda">La atención se registra normalmente y el cobro efectivo será $0.</small>
+        </div>
 
         <div><label>Monto consulta particular</label><input type="number" id="montoConsulta" min="0"></div>
         <div><label>Monto estudio particular</label><input type="number" id="montoEstudio" min="0"></div>
@@ -921,8 +926,8 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-<script src="cardiolink-finanzas-v5.js?v=4b1"></script>
-<script src="app.js?v=40096-fin5prodro1"></script>
+<script src="cardiolink-finanzas-v5.js?v=4b2"></script>
+<script src="app.js?v=40097-no-cobrar1"></script>
 <script src="cardiolink-auth-guard.js?v=2"></script>
 <script src="cardiolink-clear-patient-fix.js?v=1"></script>
 <script src="cardiolink-pendientes-alertas.js?v=1"></script>
