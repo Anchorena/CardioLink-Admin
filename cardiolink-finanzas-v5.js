@@ -1406,8 +1406,8 @@
 
   async function guardarPlantilla(event) {
     event.preventDefault();
-    if (!await exigirMutacionBackend()) return;
     const form = event.currentTarget;
+    if (!await exigirMutacionBackend()) return;
     if (!form.reportValidity()) return;
     const valores = new FormData(form);
     const categoryId = String(valores.get('category_child') || valores.get('category_root') || '');
@@ -1545,8 +1545,8 @@
 
   async function guardarEgresoRecurrente(event, plantilla) {
     event.preventDefault();
-    if (!await exigirMutacionBackend()) return;
     const form = event.currentTarget;
+    if (!await exigirMutacionBackend()) return;
     if (!form.reportValidity()) return;
     const valores = new FormData(form);
     const periodMonth = normalizarPeriodoMes(valores.get('period_month'));
@@ -1618,8 +1618,8 @@
 
   async function guardarObligacion(event, obligacion) {
     event.preventDefault();
-    if (!await exigirMutacionBackend()) return;
     const form = event.currentTarget;
+    if (!await exigirMutacionBackend()) return;
     if (!form.reportValidity()) return;
     const valores = new FormData(form);
     const datos = {
@@ -1672,8 +1672,8 @@
 
   async function guardarFormulario(event) {
     event.preventDefault();
-    if (!await exigirMutacionBackend()) return;
     const form = event.currentTarget;
+    if (!await exigirMutacionBackend()) return;
     if (!form.reportValidity()) return;
     const valores = new FormData(form);
     const status = String(valores.get('status') || 'pending');

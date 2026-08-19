@@ -18,6 +18,10 @@ const instrumentedSource = originalSource.replace(injectionMarker, `
     modoPermiteMutaciones,
     autorizarYEjecutarProduccion,
     exigirMutacionBackend,
+    guardarPlantilla,
+    guardarEgresoRecurrente,
+    guardarObligacion,
+    guardarFormulario,
     clientePrincipalInyectado: () => clientePrincipalAutorizado,
     prepararGuardProduccion: ({ session, accesoBackend }) => {
       estadoUI.root = null;
@@ -79,6 +83,10 @@ const {
   modoPermiteMutaciones,
   autorizarYEjecutarProduccion,
   exigirMutacionBackend,
+  guardarPlantilla,
+  guardarEgresoRecurrente,
+  guardarObligacion,
+  guardarFormulario,
   clientePrincipalInyectado,
   prepararGuardProduccion,
   renderFixtureProduccion,
@@ -212,6 +220,51 @@ async function probarGuardMutaciones() {
   assert.equal(llamadasRpc, 1, 'La mutación revalida el permiso backend vigente');
 }
 
+async function probarFormulariosTrasAwait() {
+  const handlers = [
+    ['egreso manual', (event) => guardarFormulario(event)],
+    ['plantilla', (event) => guardarPlantilla(event)],
+    ['gasto recurrente', (event) => guardarEgresoRecurrente(event, {})],
+    ['obligación F4', (event) => guardarObligacion(event, {})]
+  ];
+  for (const [nombre, ejecutar] of handlers) {
+    testWindow.frontendRole = 'owner';
+    sesionPrincipal = { user: { id: 'owner' } };
+    accesoRpc = true;
+    llamadasRpc = 0;
+    prepararGuardProduccion({ session: sesionPrincipal, accesoBackend: true });
+
+    let validaciones = 0;
+    let preventDefault = 0;
+    const modal = { nodeName: 'DIALOG', contains: (node) => node === form };
+    const form = {
+      nodeName: 'FORM',
+      isConnected: true,
+      parentElement: modal,
+      reportValidity() {
+        validaciones += 1;
+        assert.equal(this, form, `${nombre}: reportValidity conserva el form real`);
+        assert.equal(modal.contains(this), true, `${nombre}: el form sigue montado en el modal`);
+        return false;
+      }
+    };
+    const event = {
+      currentTarget: form,
+      preventDefault() { preventDefault += 1; }
+    };
+
+    const resultado = ejecutar(event);
+    // El navegador limpia currentTarget al salir del tramo síncrono del listener.
+    // El handler debe haber conservado antes la referencia al formulario montado.
+    event.currentTarget = null;
+    await resultado;
+
+    assert.equal(preventDefault, 1, `${nombre}: procesa el submit`);
+    assert.equal(llamadasRpc, 1, `${nombre}: mantiene exigirMutacionBackend`);
+    assert.equal(validaciones, 1, `${nombre}: ejecuta reportValidity sobre el form real`);
+  }
+}
+
 function cuerpoFuncion(nombre) {
   const inicio = originalSource.search(new RegExp(`(?:async )?function ${nombre}\\(`));
   assert.notEqual(inicio, -1, `Existe ${nombre}`);
@@ -224,6 +277,14 @@ function cuerpoFuncion(nombre) {
   .forEach((nombre) => assert.match(cuerpoFuncion(nombre), /exigirMutacionPermitida\(\)/, `${nombre} exige contexto autorizado`));
 ['guardarPlantilla', 'desactivarPlantilla', 'guardarEgresoRecurrente', 'guardarObligacion', 'guardarFormulario', 'anularEgreso']
   .forEach((nombre) => assert.match(cuerpoFuncion(nombre), /await exigirMutacionBackend\(\)/, `${nombre} revalida sesión + RPC antes de escribir`));
+['guardarPlantilla', 'guardarEgresoRecurrente', 'guardarObligacion', 'guardarFormulario']
+  .forEach((nombre) => {
+    const cuerpo = cuerpoFuncion(nombre);
+    assert.ok(
+      cuerpo.indexOf('const form = event.currentTarget') < cuerpo.indexOf('await exigirMutacionBackend()'),
+      `${nombre} captura el formulario antes del primer await`
+    );
+  });
 ['guardarPlantilla', 'desactivarPlantilla', 'guardarFormulario', 'anularEgreso']
   .forEach((nombre) => assert.match(cuerpoFuncion(nombre), /\.eq\('revision'/, `${nombre} mantiene concurrencia id + revision`));
 
@@ -242,7 +303,8 @@ assert.doesNotMatch(originalSource, /https:\/\/[^\s'"`]+\.supabase\.co/i, 'El m�
 assert.doesNotMatch(originalSource, /sb_(?:publishable|secret)_[A-Za-z0-9_-]{20,}/i, 'El módulo no contiene una key literal');
 
 Promise.all([probarAutorizacionBackend(), probarGuardMutaciones()])
-  .then(() => console.log('Producción Finanzas 5 OK: CRUD autorizado, RPC previo, RLS, revisión y bloqueo sin bypass.'))
+  .then(probarFormulariosTrasAwait)
+  .then(() => console.log('Producción Finanzas 5 OK: CRUD autorizado y formularios reales preservados tras await.'))
   .catch((error) => {
     console.error(error);
     process.exitCode = 1;
