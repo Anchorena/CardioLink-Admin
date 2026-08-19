@@ -1,6 +1,6 @@
 /* =====================================================================
-   CardioLink Admin — Finanzas 5 · Etapa 4A
-   Staging local con CRUD + producción conectada en modo solo lectura.
+   CardioLink Admin — Finanzas 5 · Etapa 4B
+   CRUD financiero autorizado en Staging local y Producción.
 
    Orden de carga: antes de app.js. app.js conecta las dependencias y expone
    el proveedor autorizado de solo lectura para los consumidores futuros.
@@ -331,7 +331,7 @@
   }
 
   // -----------------------------------------------------------------------
-  // Etapa 4A: Staging aislado en local y cliente principal inyectado en producción
+  // Etapa 4B: Staging aislado en local y cliente principal inyectado en producción
   // -----------------------------------------------------------------------
 
   const CONFIG_STORAGE_KEY = 'cardiolink_finanzas_v5_staging_config_v1';
@@ -385,22 +385,40 @@
 
   function resolverModoEjecucion({ local = false, stagingConfigurado = false, clientePrincipalDisponible = false } = {}) {
     if (local) return stagingConfigurado ? 'staging-local' : 'local-desactivado';
-    return clientePrincipalDisponible ? 'produccion-solo-lectura' : 'produccion-sin-cliente';
+    return clientePrincipalDisponible ? 'produccion' : 'produccion-sin-cliente';
   }
 
-  function modoPermiteMutaciones(modo = estadoUI.modo) {
-    return modo === 'staging-local';
+  function modoPermiteMutaciones(modo = estadoUI.modo, contexto = null) {
+    const actual = contexto || {
+      tieneSesion: !!estadoUI.session?.user,
+      accesoBackend: estadoUI.accesoBackend === true,
+      frontendAutorizado: frontendPuedeAcceder(),
+      clienteAutorizado: modo === 'staging-local'
+        ? !!estadoUI.clientOwned
+        : estadoUI.client === clientePrincipalAutorizado
+    };
+    return ['staging-local', 'produccion'].includes(modo)
+      && actual.tieneSesion === true
+      && actual.accesoBackend === true
+      && actual.frontendAutorizado === true
+      && actual.clienteAutorizado === true;
   }
 
-  function esProduccionSoloLectura() {
-    return estadoUI.modo === 'produccion-solo-lectura';
+  function esProduccion() {
+    return estadoUI.modo === 'produccion';
   }
 
   function exigirMutacionPermitida() {
     if (modoPermiteMutaciones()) return true;
-    estadoUI.mensaje = esProduccionSoloLectura()
-      ? 'Finanzas 5 está conectado a Producción en modo solo lectura.'
-      : 'Las modificaciones sólo están habilitadas en Staging Local.';
+    if (hayNavegador() && !frontendPuedeAcceder()) {
+      destruirCliente();
+      limpiarDatosFinancieros();
+      desmontarInterfaz();
+      return false;
+    }
+    estadoUI.mensaje = esProduccion()
+      ? 'La sesión principal no tiene autorización vigente para modificar Finanzas 5.'
+      : 'La sesión de Staging no tiene autorización vigente para modificar Finanzas 5.';
     estadoUI.tipoMensaje = 'error';
     renderInterfaz();
     return false;
@@ -583,7 +601,7 @@
   }
 
   function mensajeError(error, fallback) {
-    if (esErrorAcceso(error)) return esProduccionSoloLectura()
+    if (esErrorAcceso(error)) return esProduccion()
       ? 'Acceso financiero denegado por el backend.'
       : 'Acceso denegado por Finanzas 5 en Staging. Verificá la sesión y el rol backend owner/admin.';
     return String(error?.message || fallback || 'No se pudo completar la operación.');
@@ -598,7 +616,7 @@
   function negarAcceso(error) {
     estadoUI.accesoBackend = false;
     limpiarDatosFinancieros();
-    if (esProduccionSoloLectura()) {
+    if (esProduccion()) {
       estadoUI.accesoDenegadoProduccion = true;
       estadoUI.mensaje = '';
       estadoUI.tipoMensaje = '';
@@ -700,7 +718,7 @@
     return true;
   }
 
-  async function autorizarYEjecutarLecturaProduccion(client, lecturaAutorizada) {
+  async function autorizarYEjecutarProduccion(client, operacionAutorizada) {
     if (!client?.auth || typeof client.auth.getSession !== 'function' || typeof client.rpc !== 'function') {
       return { autorizado: false, motivo: 'cliente' };
     }
@@ -711,8 +729,41 @@
     const { data, error } = await client.rpc('cardiolink_has_finance_access');
     if (error) throw error;
     if (data !== true) return { autorizado: false, motivo: 'acceso', session };
-    if (typeof lecturaAutorizada === 'function') await lecturaAutorizada(session);
+    if (typeof operacionAutorizada === 'function') await operacionAutorizada(session);
     return { autorizado: true, motivo: '', session };
+  }
+
+  async function exigirMutacionBackend() {
+    if (!exigirMutacionPermitida()) return false;
+    if (!esProduccion()) return true;
+    try {
+      const resultado = await autorizarYEjecutarProduccion(estadoUI.client);
+      if (resultado.autorizado
+        && estadoUI.client === clientePrincipalAutorizado
+        && frontendPuedeAcceder()) {
+        estadoUI.session = resultado.session;
+        estadoUI.accesoBackend = true;
+        return true;
+      }
+      estadoUI.session = resultado.session || null;
+      estadoUI.accesoBackend = false;
+      limpiarDatosFinancieros();
+      if (resultado.motivo === 'acceso') {
+        const denegado = new Error('La sesión principal no tiene finance_access.');
+        denegado.status = 403;
+        negarAcceso(denegado);
+      } else {
+        desmontarInterfaz();
+      }
+    } catch (error) {
+      if (esErrorAcceso(error)) negarAcceso(error);
+      else {
+        estadoUI.mensaje = mensajeError(error, 'No se pudo revalidar el acceso financiero antes de guardar.');
+        estadoUI.tipoMensaje = 'error';
+        renderInterfaz();
+      }
+    }
+    return false;
   }
 
   function aplicarFiltroProfesional(consulta, perfil) {
@@ -992,9 +1043,7 @@
         <td data-label="Estado"><span class="fin-v5-chip fin-v5-chip-${escapar(item.status)}">${escapar(estadoEtiqueta(item.status))}</span>${item.paid_on ? `<small>Pago: ${fechaVisible(item.paid_on)}</small>` : ''}</td>
         <td data-label="Profesional">${escapar(nombreProfesional(item.professional_id))}</td>
         <td data-label="Monto" class="fin-v5-monto">${dinero(item.amount)}</td>
-        <td data-label="Acciones" class="fin-v5-acciones">${esProduccionSoloLectura()
-          ? '<span class="fin-v5-inmutable">Solo lectura</span>'
-          : anulado
+        <td data-label="Acciones" class="fin-v5-acciones">${anulado
           ? '<span class="fin-v5-inmutable">Sin edición</span>'
           : `<button type="button" class="secondary small-btn" data-fin-v5-action="editar" data-id="${escapar(item.id)}">Editar</button><button type="button" class="small-btn fin-v5-btn-anular" data-fin-v5-action="anular" data-id="${escapar(item.id)}">Anular</button>`}</td>
       </tr>`;
@@ -1003,21 +1052,16 @@
   }
 
   function renderPlantillas() {
-    if (!estadoUI.plantillas.length) return `<div class="fin-v5-vacio">No hay plantillas recurrentes activas.${esProduccionSoloLectura() ? '' : ' Crear una plantilla no registra ningún egreso automáticamente.'}</div>`;
+    if (!estadoUI.plantillas.length) return '<div class="fin-v5-vacio">No hay plantillas recurrentes activas. Crear una plantilla no registra ningún egreso automáticamente.</div>';
     const filas = estadoUI.plantillas.map((plantilla) => `<tr>
       <td data-label="Categoría">${escapar(rutaCategoria(plantilla.category_id))}</td>
       <td data-label="Concepto"><strong>${escapar(plantilla.concept)}</strong><small>${escapar(plantilla.beneficiary || 'Sin beneficiario')}</small></td>
       <td data-label="Monto" class="fin-v5-monto">${plantilla.default_amount == null ? 'A completar' : dinero(plantilla.default_amount)}</td>
       <td data-label="Vencimiento">${plantilla.due_day ? `Día ${escapar(plantilla.due_day)}` : 'Sin día fijo'}<small>Desde ${fechaVisible(plantilla.start_month)}${plantilla.end_month ? ` hasta ${fechaVisible(plantilla.end_month)}` : ''}</small></td>
       <td data-label="Profesional">${escapar(nombreProfesional(plantilla.professional_id))}</td>
-      <td data-label="Acciones" class="fin-v5-acciones">${esProduccionSoloLectura()
-        ? '<span class="fin-v5-inmutable">Solo lectura</span>'
-        : `<button type="button" class="primary small-btn" data-fin-v5-action="registrar-recurrente" data-id="${escapar(plantilla.id)}">Registrar gasto</button><button type="button" class="secondary small-btn" data-fin-v5-action="editar-plantilla" data-id="${escapar(plantilla.id)}">Editar</button><button type="button" class="small-btn fin-v5-btn-anular" data-fin-v5-action="desactivar-plantilla" data-id="${escapar(plantilla.id)}">Desactivar</button>`}</td>
+      <td data-label="Acciones" class="fin-v5-acciones"><button type="button" class="primary small-btn" data-fin-v5-action="registrar-recurrente" data-id="${escapar(plantilla.id)}">Registrar gasto</button><button type="button" class="secondary small-btn" data-fin-v5-action="editar-plantilla" data-id="${escapar(plantilla.id)}">Editar</button><button type="button" class="small-btn fin-v5-btn-anular" data-fin-v5-action="desactivar-plantilla" data-id="${escapar(plantilla.id)}">Desactivar</button></td>
     </tr>`).join('');
-    const aviso = esProduccionSoloLectura()
-      ? '<strong>Solo lectura.</strong> Se muestran las plantillas activas sin habilitar generación ni edición.'
-      : '<strong>Precarga manual.</strong> Las plantillas nunca generan egresos por sí solas. “Registrar gasto” abre un snapshot editable y requiere confirmación. Para otros empleados, usar una plantilla bajo PERSONAL.';
-    return `<div class="fin-v5-aviso fin-v5-aviso-info">${aviso}</div><div class="fin-v5-tabla-wrap"><table class="fin-v5-tabla"><thead><tr><th>Categoría / subcategoría</th><th>Concepto</th><th>Monto sugerido</th><th>Vigencia</th><th>Profesional</th><th>Acciones</th></tr></thead><tbody>${filas}</tbody></table></div>`;
+    return `<div class="fin-v5-aviso fin-v5-aviso-info"><strong>Precarga manual.</strong> Las plantillas nunca generan egresos por sí solas. “Registrar gasto” abre un snapshot editable y requiere confirmación. Para otros empleados, usar una plantilla bajo PERSONAL.</div><div class="fin-v5-tabla-wrap"><table class="fin-v5-tabla"><thead><tr><th>Categoría / subcategoría</th><th>Concepto</th><th>Monto sugerido</th><th>Vigencia</th><th>Profesional</th><th>Acciones</th></tr></thead><tbody>${filas}</tbody></table></div>`;
   }
 
   function estadoObligacion(obligacion) {
@@ -1045,17 +1089,12 @@
       const faltaCategoria = !obligacion.category_available;
       const noRegistrable = faltaCategoria || !(numero(obligacion.amount) > 0) || estado === 'registrada';
       const etiqueta = estado === 'registrada' ? 'Registrado' : estado === 'reemplazable' ? 'Anulado · reemplazable' : 'Pendiente de registrar';
-      const accion = esProduccionSoloLectura()
-        ? `<button type="button" class="secondary" disabled aria-disabled="true">${estado === 'registrada' ? 'Ya registrado' : 'Solo lectura'}</button>`
-        : estado === 'registrada'
+      const accion = estado === 'registrada'
         ? '<button type="button" class="secondary" disabled aria-disabled="true">Ya registrado</button>'
         : `<button type="button" class="primary" data-fin-v5-action="registrar-obligacion" data-key="${escapar(obligacion.key)}"${noRegistrable ? ' disabled' : ''}>Registrar pago</button>`;
-      return `<article class="fin-v5-obligacion"><div class="fin-v5-obligacion-head"><div><span class="fin-v5-chip fin-v5-chip-calculated">Calculado</span><h3>${escapar(obligacion.title)}</h3><p>${escapar(detalle)}</p></div><strong>${dinero(obligacion.amount)}</strong></div><div class="fin-v5-obligacion-foot"><span class="fin-v5-chip fin-v5-chip-${estado === 'registrada' ? 'paid' : 'pending'}">${etiqueta}</span>${faltaCategoria ? `<small>Falta la categoría de sistema requerida${esProduccionSoloLectura() ? '.' : ' en Staging.'}</small>` : ''}${!(numero(obligacion.amount) > 0) ? '<small>El total calculado es cero: no hay un egreso registrable.</small>' : ''}${accion}</div></article>`;
+      return `<article class="fin-v5-obligacion"><div class="fin-v5-obligacion-head"><div><span class="fin-v5-chip fin-v5-chip-calculated">Calculado</span><h3>${escapar(obligacion.title)}</h3><p>${escapar(detalle)}</p></div><strong>${dinero(obligacion.amount)}</strong></div><div class="fin-v5-obligacion-foot"><span class="fin-v5-chip fin-v5-chip-${estado === 'registrada' ? 'paid' : 'pending'}">${etiqueta}</span>${faltaCategoria ? `<small>Falta la categoría de sistema requerida${esProduccion() ? '.' : ' en Staging.'}</small>` : ''}${!(numero(obligacion.amount) > 0) ? '<small>El total calculado es cero: no hay un egreso registrable.</small>' : ''}${accion}</div></article>`;
     }).join('');
-    const aviso = esProduccionSoloLectura()
-      ? 'Vista calculada desde Finanzas 4. Producción no permite registrar pagos ni reemplazos.'
-      : 'Los importes calculados no afectan los KPI hasta que se confirme un egreso real. Si se anula, puede registrarse un reemplazo.';
-    return `${control}<div class="fin-v5-aviso fin-v5-aviso-info">${aviso}</div><div class="fin-v5-obligaciones">${tarjetas}</div>`;
+    return `${control}<div class="fin-v5-aviso fin-v5-aviso-info">Los importes calculados no afectan los KPI hasta que se confirme un egreso real. Si se anula, puede registrarse un reemplazo.</div><div class="fin-v5-obligaciones">${tarjetas}</div>`;
   }
 
   function descripcionAuditoria(evento) {
@@ -1093,9 +1132,7 @@
       obligaciones: renderObligacionesF4(),
       historial: renderAuditoria()
     };
-    const acciones = esProduccionSoloLectura()
-      ? '<button type="button" class="secondary" data-fin-v5-action="actualizar">Actualizar</button>'
-      : estadoUI.vista === 'egresos'
+    const acciones = estadoUI.vista === 'egresos'
       ? '<button type="button" class="secondary" data-fin-v5-action="actualizar">Actualizar</button><button type="button" class="primary" data-fin-v5-action="nuevo">Nuevo egreso</button>'
       : estadoUI.vista === 'recurrentes'
         ? '<button type="button" class="secondary" data-fin-v5-action="actualizar">Actualizar</button><button type="button" class="primary" data-fin-v5-action="nueva-plantilla">Nueva plantilla</button>'
@@ -1109,20 +1146,20 @@
     const root = estadoUI.root;
     if (!root || !root.isConnected) return;
     const local = esEntornoLocal();
-    const produccion = esProduccionSoloLectura();
+    const produccion = esProduccion();
     const config = local ? (estadoUI.config || leerConfigLocal()) : null;
     const host = config ? new URL(config.url).host : '';
     const mensaje = estadoUI.mensaje ? `<div class="fin-v5-aviso fin-v5-aviso-${escapar(estadoUI.tipoMensaje || 'info')}" role="status">${escapar(estadoUI.mensaje)}</div>` : '';
     const sesionEmail = estadoUI.session?.user?.email || '';
     const badge = produccion
-      ? '<span class="fin-v5-production-badge">PRODUCCIÓN · SOLO LECTURA</span>'
+      ? '<span class="fin-v5-production-badge">PRODUCCIÓN</span>'
       : config ? '<span class="fin-v5-staging-badge">STAGING LOCAL</span>' : '<span class="fin-v5-inactivo-badge">DESACTIVADO</span>';
     root.innerHTML = `<div class="fin-v5-encabezado"><div><div class="fin-v5-titulo-linea"><h2>Finanzas 5</h2>${badge}</div><p>Ingresos canónicos de Finanzas 4 y egresos auditables de Finanzas 5.</p></div>${config ? `<div class="fin-v5-destino"><span>Proyecto aislado</span><strong>${escapar(host)}</strong></div>` : ''}</div>
       ${mensaje}
       ${local && !config ? '<div class="fin-v5-desactivado"><strong>Finanzas 5 no está conectado.</strong><p>No se creó ningún cliente ni se realizó ninguna consulta. La activación local está documentada en <code>docs/FINANZAS_V5_STAGING.md</code>.</p></div>' : ''}
       ${local && config && !estadoUI.session ? `<form id="finV5Login" class="fin-v5-login"><div><strong>Sesión independiente de Staging</strong><p>Ingresá con una cuenta Auth del proyecto de Staging. La contraseña no se guarda en el módulo.</p></div><label>Email<input name="email" type="email" autocomplete="username" required></label><label>Contraseña<input name="password" type="password" autocomplete="current-password" required></label><button class="primary" type="submit">Ingresar a Staging</button></form>` : ''}
       ${local && config && estadoUI.session ? `<div class="fin-v5-sesion"><span>Sesión Staging: <strong>${escapar(sesionEmail)}</strong></span><button type="button" class="secondary" data-fin-v5-action="salir">Cerrar sesión Staging</button></div>` : ''}
-      ${produccion && estadoUI.session ? `<div class="fin-v5-sesion fin-v5-sesion-produccion"><span>Sesión principal: <strong>${escapar(sesionEmail)}</strong></span><span>Consultas protegidas por RLS</span></div>` : ''}
+      ${produccion && estadoUI.session ? `<div class="fin-v5-sesion fin-v5-sesion-produccion"><span>Sesión principal: <strong>${escapar(sesionEmail)}</strong></span><span>Operaciones protegidas por RLS</span></div>` : ''}
       ${(local && config && estadoUI.session && !estadoUI.accesoBackend && !estadoUI.mensaje) || (produccion && !estadoUI.accesoBackend)
         ? '<div class="fin-v5-desactivado"><strong>Validando acceso financiero backend…</strong></div>' : ''}
       ${((local && config) || produccion) && estadoUI.session && estadoUI.accesoBackend ? renderContenidoAutenticado() : ''}
@@ -1183,10 +1220,10 @@
     estadoUI.inicializandoCliente = true;
     estadoUI.client = clientePrincipalAutorizado;
     estadoUI.clientOwned = false;
-    estadoUI.modo = 'produccion-solo-lectura';
+    estadoUI.modo = 'produccion';
     renderInterfaz();
     try {
-      const resultado = await autorizarYEjecutarLecturaProduccion(clientePrincipalAutorizado, async (session) => {
+      const resultado = await autorizarYEjecutarProduccion(clientePrincipalAutorizado, async (session) => {
         if (estadoUI.client !== clientePrincipalAutorizado || !frontendPuedeAcceder()) return;
         estadoUI.session = session;
         estadoUI.accesoBackend = true;
@@ -1369,7 +1406,7 @@
 
   async function guardarPlantilla(event) {
     event.preventDefault();
-    if (!exigirMutacionPermitida()) return;
+    if (!await exigirMutacionBackend()) return;
     const form = event.currentTarget;
     if (!form.reportValidity()) return;
     const valores = new FormData(form);
@@ -1430,6 +1467,7 @@
   async function desactivarPlantilla(plantilla) {
     if (!exigirMutacionPermitida()) return;
     if (!plantilla?.active || !window.confirm(`¿Desactivar la plantilla “${plantilla.concept}”?\n\nSe conserva el historial y no se elimina ningún egreso.`)) return;
+    if (!await exigirMutacionBackend()) return;
     estadoUI.cargando = true;
     renderInterfaz();
     try {
@@ -1507,7 +1545,7 @@
 
   async function guardarEgresoRecurrente(event, plantilla) {
     event.preventDefault();
-    if (!exigirMutacionPermitida()) return;
+    if (!await exigirMutacionBackend()) return;
     const form = event.currentTarget;
     if (!form.reportValidity()) return;
     const valores = new FormData(form);
@@ -1580,7 +1618,7 @@
 
   async function guardarObligacion(event, obligacion) {
     event.preventDefault();
-    if (!exigirMutacionPermitida()) return;
+    if (!await exigirMutacionBackend()) return;
     const form = event.currentTarget;
     if (!form.reportValidity()) return;
     const valores = new FormData(form);
@@ -1634,7 +1672,7 @@
 
   async function guardarFormulario(event) {
     event.preventDefault();
-    if (!exigirMutacionPermitida()) return;
+    if (!await exigirMutacionBackend()) return;
     const form = event.currentTarget;
     if (!form.reportValidity()) return;
     const valores = new FormData(form);
@@ -1694,6 +1732,7 @@
     if (!exigirMutacionPermitida()) return;
     if (!item || item.status === 'voided') return;
     if (!window.confirm(`¿Anular el egreso “${item.concept}” por ${dinero(item.amount)}?\n\nLa anulación es permanente, conserva la fecha de pago histórica y queda auditada.`)) return;
+    if (!await exigirMutacionBackend()) return;
     estadoUI.cargando = true;
     estadoUI.mensaje = '';
     renderInterfaz();
@@ -1778,7 +1817,7 @@
   }
 
   const api = Object.freeze({
-    version: '5.0.0-etapa-4a',
+    version: '5.0.0-etapa-4b',
     calcularIngresosCanonicos,
     calcularResumenEgresos,
     conectarProveedor,

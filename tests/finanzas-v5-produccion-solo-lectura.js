@@ -16,10 +16,22 @@ const instrumentedSource = originalSource.replace(injectionMarker, `
   globalThis.__finanzasV5ProduccionTest = Object.freeze({
     resolverModoEjecucion,
     modoPermiteMutaciones,
-    autorizarYEjecutarLecturaProduccion,
+    autorizarYEjecutarProduccion,
+    exigirMutacionBackend,
     clientePrincipalInyectado: () => clientePrincipalAutorizado,
-    renderFixtureSoloLectura: () => {
-      estadoUI.modo = 'produccion-solo-lectura';
+    prepararGuardProduccion: ({ session, accesoBackend }) => {
+      estadoUI.root = null;
+      estadoUI.modo = 'produccion';
+      estadoUI.client = clientePrincipalAutorizado;
+      estadoUI.clientOwned = false;
+      estadoUI.session = session || null;
+      estadoUI.accesoBackend = accesoBackend === true;
+      estadoUI.accesoDenegadoProduccion = false;
+      estadoUI.mensaje = '';
+      estadoUI.tipoMensaje = '';
+    },
+    renderFixtureProduccion: () => {
+      estadoUI.modo = 'produccion';
       estadoUI.categorias = [{ id: 'cat', parent_id: null, name: 'Categoría', active: true }];
       estadoUI.egresos = [{ id: 'e1', expense_date: '2026-08-01', category_id: 'cat', concept: 'Prueba', amount: 1, status: 'paid', source_type: 'manual', revision: 1 }];
       estadoUI.plantillas = [{ id: 'p1', category_id: 'cat', concept: 'Plantilla', active: true, revision: 1 }];
@@ -33,7 +45,7 @@ const instrumentedSource = originalSource.replace(injectionMarker, `
     },
     renderShellProduccion: (rootFixture) => {
       estadoUI.root = rootFixture;
-      estadoUI.modo = 'produccion-solo-lectura';
+      estadoUI.modo = 'produccion';
       estadoUI.session = { user: { email: 'owner@example.com' } };
       estadoUI.accesoBackend = true;
       estadoUI.vista = 'egresos';
@@ -47,7 +59,12 @@ const instrumentedSource = originalSource.replace(injectionMarker, `
 
 ${injectionMarker}`);
 
-const testWindow = { data: { profesionales: [] } };
+const testWindow = {
+  data: { profesionales: [] },
+  frontendRole: 'owner',
+  esMatiasDuenio() { return this.frontendRole === 'owner'; },
+  esAdminComun() { return this.frontendRole === 'admin'; }
+};
 const context = vm.createContext({
   module: { exports: {} },
   exports: {},
@@ -60,16 +77,25 @@ vm.runInContext(instrumentedSource, context, { filename: 'cardiolink-finanzas-v5
 const {
   resolverModoEjecucion,
   modoPermiteMutaciones,
-  autorizarYEjecutarLecturaProduccion,
+  autorizarYEjecutarProduccion,
+  exigirMutacionBackend,
   clientePrincipalInyectado,
-  renderFixtureSoloLectura,
+  prepararGuardProduccion,
+  renderFixtureProduccion,
   renderShellProduccion
 } = context.__finanzasV5ProduccionTest;
 
+const contextoAutorizado = {
+  tieneSesion: true,
+  accesoBackend: true,
+  frontendAutorizado: true,
+  clienteAutorizado: true
+};
+
 assert.equal(
   resolverModoEjecucion({ local: false, clientePrincipalDisponible: true }),
-  'produccion-solo-lectura',
-  'Fuera de local usa el cliente principal en modo solo lectura'
+  'produccion',
+  'Fuera de local usa el cliente principal en Producción'
 );
 assert.equal(
   resolverModoEjecucion({ local: true, stagingConfigurado: true, clientePrincipalDisponible: true }),
@@ -81,27 +107,40 @@ assert.equal(
   'local-desactivado',
   'Localhost sin configuración no obtiene un bypass hacia Producción'
 );
-assert.equal(modoPermiteMutaciones('produccion-solo-lectura'), false, 'Producción bloquea mutaciones');
-assert.equal(modoPermiteMutaciones('staging-local'), true, 'Staging Local conserva CRUD');
+assert.equal(modoPermiteMutaciones('produccion', contextoAutorizado), true, 'Owner/Admin autorizado puede mutar en Producción');
+assert.equal(modoPermiteMutaciones('staging-local', contextoAutorizado), true, 'Staging Local conserva CRUD');
+['tieneSesion', 'accesoBackend', 'frontendAutorizado', 'clienteAutorizado'].forEach((propiedad) => {
+  assert.equal(
+    modoPermiteMutaciones('produccion', { ...contextoAutorizado, [propiedad]: false }),
+    false,
+    `Producción rechaza mutaciones sin ${propiedad}`
+  );
+});
 
+let sesionPrincipal = { user: { id: 'owner' } };
+let accesoRpc = true;
+let llamadasRpc = 0;
 const clienteInyectado = {
   marker: 'principal',
-  auth: { getSession: async () => ({ data: { session: null }, error: null }) },
-  rpc: async () => ({ data: false, error: null }),
+  auth: { getSession: async () => ({ data: { session: sesionPrincipal }, error: null }) },
+  rpc: async (nombre) => {
+    llamadasRpc += 1;
+    assert.equal(nombre, 'cardiolink_has_finance_access');
+    return { data: accesoRpc, error: null };
+  },
   from: () => ({})
 };
 assert.equal(context.module.exports.conectarClientePrincipal(clienteInyectado), true, 'Acepta el cliente principal válido');
 assert.equal(clientePrincipalInyectado().marker, 'principal', 'Conserva exactamente el cliente inyectado por app.js');
 assert.equal(context.module.exports.conectarClientePrincipal({}), false, 'No permite reemplazar el cliente principal');
 
-const markupSoloLectura = renderFixtureSoloLectura();
-Object.entries(markupSoloLectura).forEach(([vista, markup]) => {
-  assert.match(markup, /Solo lectura/, `${vista}: comunica el modo solo lectura`);
-  assert.doesNotMatch(markup, /data-fin-v5-action="(?:editar|anular|editar-plantilla|desactivar-plantilla|registrar-recurrente|registrar-obligacion)"/,
-    `${vista}: no renderiza acciones mutantes`);
-});
-assert.match(originalSource, /PRODUCCIÓN · SOLO LECTURA/, 'La UI identifica inequívocamente Producción solo lectura');
-assert.match(originalSource, /produccion && estadoUI\.session \? `<div class="fin-v5-sesion/, 'Producción muestra sólo la sesión principal');
+const markupProduccion = renderFixtureProduccion();
+assert.match(markupProduccion.egresos, /data-fin-v5-action="editar"/);
+assert.match(markupProduccion.egresos, /data-fin-v5-action="anular"/);
+assert.match(markupProduccion.plantillas, /data-fin-v5-action="registrar-recurrente"/);
+assert.match(markupProduccion.plantillas, /data-fin-v5-action="editar-plantilla"/);
+assert.match(markupProduccion.plantillas, /data-fin-v5-action="desactivar-plantilla"/);
+assert.match(markupProduccion.obligaciones, /data-fin-v5-action="registrar-obligacion"/);
 
 testWindow.location = { protocol: 'https:', hostname: 'app.example.com' };
 context.document = { getElementById: () => null };
@@ -110,72 +149,86 @@ const shellProduccion = renderShellProduccion({
   innerHTML: '',
   querySelector: () => null
 });
-assert.match(shellProduccion, /PRODUCCIÓN · SOLO LECTURA/);
+assert.match(shellProduccion, />PRODUCCIÓN</);
+assert.doesNotMatch(shellProduccion, /PRODUCCIÓN · SOLO LECTURA/);
 assert.match(shellProduccion, /Sesión principal:/);
+assert.match(shellProduccion, /data-fin-v5-action="nuevo"/, 'Producción muestra Nuevo egreso');
 assert.doesNotMatch(shellProduccion, /STAGING LOCAL|finV5Login|FINANZAS_V5_STAGING/, 'Producción no muestra login ni configuración de Staging');
 
 async function probarAutorizacionBackend() {
-  let rpcDenegado = 0;
-  let lecturasDenegadas = 0;
-  const clienteDenegado = {
+  let operacionesDenegadas = 0;
+  const denegado = await autorizarYEjecutarProduccion({
     auth: { getSession: async () => ({ data: { session: { user: { id: 'secretaria' } } }, error: null }) },
-    rpc: async (nombre) => {
-      rpcDenegado += 1;
-      assert.equal(nombre, 'cardiolink_has_finance_access');
-      return { data: false, error: null };
-    }
-  };
-  const denegado = await autorizarYEjecutarLecturaProduccion(clienteDenegado, async () => {
-    lecturasDenegadas += 1;
-  });
-  assert.equal(denegado.autorizado, false, 'finance_access=false deniega la carga');
+    rpc: async () => ({ data: false, error: null })
+  }, async () => { operacionesDenegadas += 1; });
+  assert.equal(denegado.autorizado, false, 'finance_access=false deniega la operación');
   assert.equal(denegado.motivo, 'acceso');
-  assert.equal(rpcDenegado, 1, 'Evalúa el RPC una vez');
-  assert.equal(lecturasDenegadas, 0, 'No ejecuta lecturas de tablas si el RPC devuelve false');
+  assert.equal(operacionesDenegadas, 0, 'No ejecuta la operación si el RPC devuelve false');
 
   let rpcSinSesion = 0;
-  let lecturasSinSesion = 0;
-  const sinSesion = await autorizarYEjecutarLecturaProduccion({
+  const sinSesion = await autorizarYEjecutarProduccion({
     auth: { getSession: async () => ({ data: { session: null }, error: null }) },
     rpc: async () => { rpcSinSesion += 1; return { data: true, error: null }; }
-  }, async () => { lecturasSinSesion += 1; });
+  });
   assert.equal(sinSesion.motivo, 'sesion');
   assert.equal(rpcSinSesion, 0, 'Sin sesión principal no llama siquiera al RPC');
-  assert.equal(lecturasSinSesion, 0, 'Sin sesión no carga tablas');
 
-  let lecturasAutorizadas = 0;
-  const clienteOwner = {
+  let operacionesAutorizadas = 0;
+  const autorizado = await autorizarYEjecutarProduccion({
     auth: { getSession: async () => ({ data: { session: { user: { id: 'owner' } } }, error: null }) },
     rpc: async () => ({ data: true, error: null })
-  };
-  const autorizado = await autorizarYEjecutarLecturaProduccion(clienteOwner, async (session) => {
-    assert.equal(session.user.id, 'owner');
-    lecturasAutorizadas += 1;
-  });
-  assert.equal(autorizado.autorizado, true, 'finance_access=true habilita las lecturas');
-  assert.equal(lecturasAutorizadas, 1, 'Ejecuta la carga sólo después de autorizar');
+  }, async () => { operacionesAutorizadas += 1; });
+  assert.equal(autorizado.autorizado, true, 'finance_access=true habilita la operación');
+  assert.equal(operacionesAutorizadas, 1, 'Ejecuta la operación sólo después de autorizar');
 }
 
-function cuerpoInicial(nombre) {
+async function probarGuardMutaciones() {
+  testWindow.frontendRole = 'owner';
+  sesionPrincipal = { user: { id: 'owner' } };
+  accesoRpc = true;
+  llamadasRpc = 0;
+  prepararGuardProduccion({ session: sesionPrincipal, accesoBackend: true });
+  assert.equal(await exigirMutacionBackend(), true, 'Owner revalida sesión y backend antes de mutar');
+  assert.equal(llamadasRpc, 1, 'Owner autorizado revalida el RPC');
+
+  testWindow.frontendRole = 'admin';
+  sesionPrincipal = { user: { id: 'admin' } };
+  llamadasRpc = 0;
+  prepararGuardProduccion({ session: sesionPrincipal, accesoBackend: true });
+  assert.equal(await exigirMutacionBackend(), true, 'Admin revalida sesión y backend antes de mutar');
+  assert.equal(llamadasRpc, 1, 'Admin autorizado revalida el RPC');
+
+  testWindow.frontendRole = 'secretaria';
+  llamadasRpc = 0;
+  prepararGuardProduccion({ session: { user: { id: 'secretaria' } }, accesoBackend: true });
+  assert.equal(await exigirMutacionBackend(), false, 'Manipular la UI no evita el guard frontend');
+  assert.equal(llamadasRpc, 0, 'El rol frontend no autorizado se frena antes del RPC');
+
+  testWindow.frontendRole = 'owner';
+  accesoRpc = false;
+  llamadasRpc = 0;
+  prepararGuardProduccion({ session: { user: { id: 'owner' } }, accesoBackend: true });
+  assert.equal(await exigirMutacionBackend(), false, 'Un permiso backend revocado bloquea la mutación');
+  assert.equal(llamadasRpc, 1, 'La mutación revalida el permiso backend vigente');
+}
+
+function cuerpoFuncion(nombre) {
   const inicio = originalSource.search(new RegExp(`(?:async )?function ${nombre}\\(`));
   assert.notEqual(inicio, -1, `Existe ${nombre}`);
-  return originalSource.slice(inicio, inicio + 220);
+  const resto = originalSource.slice(inicio + 1);
+  const siguiente = resto.search(/\n  (?:async )?function [A-Za-z0-9_]+\(/);
+  return originalSource.slice(inicio, siguiente === -1 ? originalSource.length : inicio + 1 + siguiente);
 }
 
-[
-  'abrirFormulario',
-  'abrirFormularioPlantilla',
-  'guardarPlantilla',
-  'desactivarPlantilla',
-  'abrirGeneracionRecurrente',
-  'guardarEgresoRecurrente',
-  'abrirRegistroObligacion',
-  'guardarObligacion',
-  'guardarFormulario',
-  'anularEgreso'
-].forEach((nombre) => {
-  assert.match(cuerpoInicial(nombre), /exigirMutacionPermitida\(\)/, `${nombre} rechaza ejecución en solo lectura`);
-});
+['abrirFormulario', 'abrirFormularioPlantilla', 'abrirGeneracionRecurrente', 'abrirRegistroObligacion']
+  .forEach((nombre) => assert.match(cuerpoFuncion(nombre), /exigirMutacionPermitida\(\)/, `${nombre} exige contexto autorizado`));
+['guardarPlantilla', 'desactivarPlantilla', 'guardarEgresoRecurrente', 'guardarObligacion', 'guardarFormulario', 'anularEgreso']
+  .forEach((nombre) => assert.match(cuerpoFuncion(nombre), /await exigirMutacionBackend\(\)/, `${nombre} revalida sesión + RPC antes de escribir`));
+['guardarPlantilla', 'desactivarPlantilla', 'guardarFormulario', 'anularEgreso']
+  .forEach((nombre) => assert.match(cuerpoFuncion(nombre), /\.eq\('revision'/, `${nombre} mantiene concurrencia id + revision`));
+
+assert.doesNotMatch(originalSource, /\.delete\s*\(/, 'Finanzas 5 no ejecuta DELETE');
+assert.match(originalSource, /consultarDuplicadoActivo/, 'Mantiene la prevención de duplicados');
 
 const indiceCrearStaging = originalSource.indexOf('function crearClienteStaging');
 const indiceCreateClient = originalSource.indexOf('window.supabase.createClient');
@@ -188,8 +241,8 @@ assert.equal(originalSource.split('window.supabase.createClient').length - 1, 1,
 assert.doesNotMatch(originalSource, /https:\/\/[^\s'"`]+\.supabase\.co/i, 'El módulo no hardcodea una URL Supabase');
 assert.doesNotMatch(originalSource, /sb_(?:publishable|secret)_[A-Za-z0-9_-]{20,}/i, 'El módulo no contiene una key literal');
 
-probarAutorizacionBackend()
-  .then(() => console.log('Producción solo lectura Finanzas 5 OK: cliente principal, RPC previo, lecturas y mutaciones.'))
+Promise.all([probarAutorizacionBackend(), probarGuardMutaciones()])
+  .then(() => console.log('Producción Finanzas 5 OK: CRUD autorizado, RPC previo, RLS, revisión y bloqueo sin bypass.'))
   .catch((error) => {
     console.error(error);
     process.exitCode = 1;
