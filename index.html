@@ -16,6 +16,7 @@
 <link rel="stylesheet" href="cardiolink-dashboard-v1.css?v=1">
 <link rel="stylesheet" href="cardiolink-finanzas-v5.css?v=4a">
 <link rel="stylesheet" href="cardiolink-config-v1.css?v=1a">
+<link rel="stylesheet" href="cardiolink-solicitudes-turno.css?v=1">
 <script>
 window.CARDIOLINK_BUILD="4.0.9.6";
 if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.update())).catch(()=>{});});}
@@ -45,6 +46,7 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
 
   <div class="nav-group-label">Administrativo</div>
   <button class="nav" data-section="mensajes">Mensajes</button>
+  <button class="nav" data-section="solicitudesTurno">Solicitudes de turno</button>
   <button class="nav" data-section="listado">Listado / filtros</button>
   <button class="nav solo-matias" data-section="caja">Caja / reportes</button>
   <button class="nav" data-section="estadisticas">Estadísticas</button>
@@ -392,6 +394,14 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
           <div id="mensajesLista" class="mensajes-items"></div>
         </div>
       </div>
+    </div>
+  </section>
+
+  <section id="solicitudesTurno" class="section">
+    <div class="card">
+      <h2>Solicitudes de turno</h2>
+      <p class="muted">Bandeja interna. No hay portal público todavía: estas solicitudes se cargan desde adentro de CardioLink.</p>
+      <div id="solicitudesTurnoRoot"></div>
     </div>
   </section>
 
@@ -946,7 +956,9 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <script src="cardiolink-finanzas-v5.js?v=4b2"></script>
-<script src="app.js?v=40097-no-cobrar1"></script>
+<!-- Solicitudes de turno se carga antes de app.js: app.js conecta el cliente Supabase principal, igual que con Finanzas 5. -->
+<script src="cardiolink-solicitudes-turno.js?v=solicitudes-turno-2"></script>
+<script src="app.js?v=40097-solicitudes-turno1"></script>
 <script src="cardiolink-auth-guard.js?v=2"></script>
 <script src="cardiolink-clear-patient-fix.js?v=1"></script>
 <script src="cardiolink-pendientes-alertas.js?v=1"></script>

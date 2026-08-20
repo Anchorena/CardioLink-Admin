@@ -1,0 +1,160 @@
+/* CardioLink Admin — Solicitudes de turno (bandeja interna).
+   Todo el alcance visual queda aislado bajo .sol-turno-*. */
+
+.sol-turno-shell {
+  --sol-ink: #173042;
+  --sol-muted: #64748b;
+  --sol-line: #d9e3e8;
+  --sol-soft: #f6fafb;
+  --sol-accent: #0f6578;
+  margin-top: 10px;
+}
+
+.sol-turno-shell *,
+.sol-turno-shell *::before,
+.sol-turno-shell *::after { box-sizing: border-box; }
+
+.sol-turno-barra {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.sol-turno-barra h3 { margin: 0; color: var(--sol-ink); }
+.sol-turno-barra p { margin: 3px 0 0; color: var(--sol-muted); font-size: 13px; }
+.sol-turno-titulo-linea { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+.sol-turno-staging-badge,
+.sol-turno-production-badge,
+.sol-turno-inactivo-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .07em;
+}
+.sol-turno-staging-badge { color: #7c2d12; background: #ffedd5; border: 1px solid #fb923c; }
+.sol-turno-production-badge { color: #14532d; background: #dcfce7; border: 1px solid #4ade80; }
+.sol-turno-inactivo-badge { color: #475569; background: #f1f5f9; border: 1px solid #cbd5e1; }
+
+.sol-turno-destino {
+  min-width: 190px;
+  padding: 8px 12px;
+  border: 1px solid #fb923c;
+  border-radius: 12px;
+  background: #fff7ed;
+}
+.sol-turno-destino span { display: block; color: #9a3412; font-size: 11px; font-weight: 800; text-transform: uppercase; }
+.sol-turno-destino strong { display: block; overflow: hidden; color: #7c2d12; text-overflow: ellipsis; white-space: nowrap; }
+
+.sol-turno-login {
+  display: grid;
+  grid-template-columns: minmax(220px, 1.4fr) minmax(180px, 1fr) minmax(180px, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  margin: 0 0 14px;
+  padding: 14px;
+  border: 1px solid var(--sol-line);
+  border-radius: 13px;
+  background: var(--sol-soft);
+}
+.sol-turno-login p { margin: 4px 0 0; color: var(--sol-muted); }
+.sol-turno-login label { display: grid; gap: 5px; min-width: 0; color: #475569; font-size: 12px; font-weight: 800; }
+.sol-turno-login input { width: 100%; min-width: 0; }
+
+.sol-turno-sesion {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0 0 14px;
+  padding: 9px 12px;
+  border: 1px solid #fed7aa;
+  border-radius: 10px;
+  color: #7c2d12;
+  background: #fff7ed;
+}
+.sol-turno-sesion-produccion { color: #14532d; border-color: #86efac; background: #f0fdf4; }
+.sol-turno-toolbar { display: flex; justify-content: flex-end; margin-bottom: 10px; }
+
+.sol-turno-aviso {
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid var(--sol-line);
+  border-radius: 12px;
+  background: var(--sol-soft);
+  color: var(--sol-ink);
+}
+.sol-turno-aviso-error { color: #991b1b; border-color: #fca5a5; background: #fef2f2; }
+.sol-turno-aviso-ok { color: #14532d; border-color: #86efac; background: #f0fdf4; }
+
+.sol-turno-vacio {
+  padding: 26px 16px;
+  border: 1px dashed #b8c7ce;
+  border-radius: 13px;
+  color: var(--sol-muted);
+  text-align: center;
+}
+
+.sol-turno-tabla-wrap { width: 100%; overflow-x: auto; border: 1px solid var(--sol-line); border-radius: 13px; }
+.sol-turno-tabla { width: 100%; border-collapse: collapse; font-size: 13px; }
+.sol-turno-tabla th {
+  padding: 10px;
+  color: #475569;
+  background: #eef4f6;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .025em;
+  text-align: left;
+}
+.sol-turno-tabla td {
+  padding: 10px;
+  border-bottom: 1px solid #e7eef1;
+  vertical-align: top;
+}
+.sol-turno-tabla tbody tr:last-child td { border-bottom: 0; }
+.sol-turno-tabla td small { display: block; margin-top: 4px; color: var(--sol-muted); }
+
+.sol-turno-chip { display: inline-flex; padding: 4px 9px; border-radius: 999px; font-size: 11px; font-weight: 900; white-space: nowrap; }
+.sol-turno-chip-new { color: #075985; background: #e0f2fe; }
+.sol-turno-chip-in_progress { color: #854d0e; background: #fef9c3; }
+.sol-turno-chip-appointment_assigned { color: #166534; background: #dcfce7; }
+.sol-turno-chip-closed { color: #475569; background: #e2e8f0; }
+.sol-turno-chip-cancelled { color: #7f1d1d; background: #fee2e2; }
+
+.sol-turno-acciones { display: flex; flex-wrap: wrap; gap: 6px; white-space: nowrap; }
+.sol-turno-acciones button { padding: 6px 10px; font-size: 12px; }
+
+@media (max-width: 900px) {
+  .sol-turno-tabla-wrap { overflow: visible; border: 0; }
+  .sol-turno-tabla, .sol-turno-tabla tbody, .sol-turno-tabla tr, .sol-turno-tabla td { display: block; width: 100%; }
+  .sol-turno-tabla thead { display: none; }
+  .sol-turno-tabla tr { margin-bottom: 12px; overflow: hidden; border: 1px solid var(--sol-line); border-radius: 13px; background: #fff; }
+  .sol-turno-tabla td {
+    display: grid;
+    grid-template-columns: minmax(96px, .42fr) minmax(0, 1fr);
+    gap: 10px;
+    padding: 9px 11px;
+    border-bottom: 1px solid #edf2f4;
+    overflow-wrap: anywhere;
+  }
+  .sol-turno-tabla td::before { content: attr(data-label); color: #64748b; font-size: 11px; font-weight: 900; text-transform: uppercase; }
+  .sol-turno-acciones { white-space: normal; }
+  .sol-turno-acciones button { width: auto; }
+  .sol-turno-login { grid-template-columns: 1fr 1fr; }
+  .sol-turno-login > div { grid-column: 1 / -1; }
+  .sol-turno-barra, .sol-turno-sesion, .sol-turno-destino { width: 100%; min-width: 0; }
+}
+
+body.dark .sol-turno-tabla th { background: rgba(15, 23, 42, .4); color: #cbd5e1; }
+body.dark .sol-turno-tabla td { border-color: #334155; }
+body.dark .sol-turno-tabla tr { background: #172033; }
+body.dark .sol-turno-aviso { background: rgba(15, 23, 42, .45); border-color: #334155; }
+body.dark .sol-turno-login { background: rgba(15, 23, 42, .45); border-color: #334155; }
+body.dark .sol-turno-login label { color: #cbd5e1; }

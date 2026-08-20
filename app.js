@@ -226,7 +226,7 @@ function seccionPermitida(section){
   if(section==='hc') return puedeAccederInformacionClinica();
   if(esMatiasDuenio()) return true;
   if(esAdminComun()) return true;
-  if(esSecretaria()) return ['dashboard','pendientes383','carga','agenda','mensajes','pacientes','listado','estadisticas','instructivos'].includes(section);
+  if(esSecretaria()) return ['dashboard','pendientes383','carga','agenda','mensajes','pacientes','listado','estadisticas','instructivos','solicitudesTurno'].includes(section);
   if(esMedico()) return ['dashboard','carga','agenda','mensajes','pacientes','hc','listado','estadisticas','instructivos'].includes(section);
   return section==='dashboard';
 }
@@ -10562,6 +10562,9 @@ function patientInfoTextHC(p,coverage){
   // Inyección explícita: en Producción Finanzas 5 reutiliza la sesión principal
   // sin crear otro cliente ni depender de un global lexicalmente inaccesible.
   window.CardioLinkFinanzasV5?.conectarClientePrincipal?.(supabaseClient);
+  // Misma inyección explícita para la bandeja de Solicitudes de turno: un
+  // cliente compartido, sin credenciales ni conexión propia en el módulo.
+  window.CardioLinkSolicitudesTurno?.conectarClientePrincipal?.(supabaseClient);
 
   // Adaptador de solo lectura para Finanzas 5. Conserva como fuente única las
   // funciones privadas ya usadas por Finanzas 4; no crea ni guarda movimientos.
