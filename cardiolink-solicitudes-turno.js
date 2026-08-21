@@ -405,7 +405,7 @@
     renderInterfaz();
     try {
       const { data: filas, error } = await estadoUI.client.from(TABLA)
-        .select('id,patient_id,requested_professional_id,requested_professional_name,requested_service,message,contact_phone,contact_email,source,status,assigned_attention_id,revision,created_at,updated_at,managed_by,managed_at')
+        .select('id,patient_id,requested_professional_id,requested_professional_name,requested_service,requested_coverage,message,contact_phone,contact_email,source,status,assigned_attention_id,revision,created_at,updated_at,managed_by,managed_at')
         .order('created_at', { ascending: false });
       if (error) throw error;
       const lista = Array.isArray(filas) ? filas.slice() : [];
@@ -573,6 +573,22 @@
     renderInterfaz();
   }
 
+  // Cobertura de ESTA solicitud (requested_coverage), no la habitual del
+  // paciente: sólo prellena #obraSocial para el turno que se está cargando,
+  // nunca escribe cardiolink_pacientes.cobertura_habitual. "No sé /
+  // consultar" no es una obra social real: se deja #obraSocial como esté
+  // (por ejemplo, ya prellenado con la cobertura habitual del paciente) en
+  // vez de forzar una opción sin sentido para facturación.
+  function seleccionarCoberturaSolicitada(solicitud) {
+    const cobertura = solicitud.requested_coverage;
+    if (!cobertura || cobertura === 'No sé / consultar') return;
+    const selectObraSocial = document.getElementById('obraSocial');
+    if (!selectObraSocial) return;
+    try { window.ensureSelectOption?.(selectObraSocial, cobertura); } catch (_) {}
+    selectObraSocial.value = cobertura;
+    try { window.aplicarRegla?.(); } catch (_) {}
+  }
+
   // Reutiliza el flujo existente de Carga: no crea una segunda agenda, no
   // genera la atención sola y no marca la solicitud como asignada. La
   // asociación definitiva queda manual, tal como pide esta etapa.
@@ -596,6 +612,7 @@
       try {
         seleccionarProfesionalSolicitado(solicitud);
         seleccionarPrestacionSolicitada(solicitud);
+        seleccionarCoberturaSolicitada(solicitud);
       } catch (_) {}
     }, 60);
   }

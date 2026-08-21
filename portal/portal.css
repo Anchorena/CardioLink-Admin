@@ -1,0 +1,290 @@
+/* CardioLink — Portal Público V1. Mobile-first, aislado del Admin (no
+   reutiliza styles.css). Colores tomados de la identidad real que ya usa
+   el Admin (styles.css --primary, manifest.webmanifest theme_color /
+   background_color: #123f56 / #f4f7f9). */
+
+:root {
+  --portal-primary: #123f56;
+  --portal-primary-dark: #0b2c3d;
+  --portal-ink: #16222b;
+  --portal-muted: #5b6b74;
+  --portal-line: #d7e0e4;
+  --portal-soft: #f4f7f9;
+  --portal-card-bg: #ffffff;
+  color-scheme: light;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+  background: var(--portal-soft);
+  color: var(--portal-ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+
+#portalRoot {
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 0 0 40px;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+}
+
+.portal-staging-badge {
+  order: -1;
+  margin-bottom: -20px;
+  padding: 5px 10px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  color: #7c2d12;
+  background: #ffedd5;
+  border-bottom: 1px solid #fb923c;
+}
+
+/* --- Hero / header ---------------------------------------------------- */
+
+.portal-hero {
+  text-align: center;
+  padding: 32px 18px 26px;
+  background: var(--portal-primary);
+  color: #fff;
+  border-radius: 0 0 22px 22px;
+}
+.portal-logo {
+  width: 76px;
+  height: 76px;
+  border-radius: 18px;
+  object-fit: cover;
+  background: #fff;
+  padding: 6px;
+}
+.portal-logo-placeholder {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+  color: var(--portal-primary);
+  font-size: 32px;
+  font-weight: 900;
+}
+.portal-hero h1 {
+  margin: 14px 0 0;
+  font-size: 24px;
+  font-weight: 900;
+  letter-spacing: .01em;
+}
+.portal-hero-desc {
+  margin: 6px 0 0;
+  font-size: 14px;
+  color: #d7e3ea;
+}
+.portal-hero .portal-btn-primario {
+  margin-top: 20px;
+  background: #fff;
+  color: var(--portal-primary-dark);
+}
+.portal-hero .portal-btn-primario:active { background: #e2edf1; }
+
+/* --- Secciones informativas -------------------------------------------- */
+
+.portal-section {
+  padding: 0 18px;
+}
+.portal-section h2 {
+  margin: 0 0 12px;
+  font-size: 18px;
+  color: var(--portal-primary-dark);
+}
+
+.portal-grid-cards {
+  display: grid;
+  gap: 12px;
+}
+@media (min-width: 460px) {
+  .portal-grid-cards { grid-template-columns: 1fr 1fr; }
+}
+
+.portal-item-card {
+  background: var(--portal-card-bg);
+  border: 1px solid var(--portal-line);
+  border-radius: 14px;
+  padding: 14px 16px;
+}
+.portal-item-card h3 {
+  margin: 0 0 4px;
+  font-size: 15px;
+  color: var(--portal-ink);
+}
+.portal-item-card p {
+  margin: 4px 0 0;
+  font-size: 13px;
+  color: var(--portal-muted);
+  line-height: 1.45;
+}
+.portal-item-meta { font-weight: 600; color: var(--portal-primary-dark) !important; }
+
+.portal-profesional-card { text-align: center; }
+.portal-profesional-foto,
+.portal-profesional-avatar {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  margin: 0 auto 8px;
+  object-fit: cover;
+}
+.portal-profesional-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--portal-soft);
+  color: var(--portal-primary);
+  font-size: 24px;
+  font-weight: 900;
+  border: 1px solid var(--portal-line);
+}
+
+.portal-modalidad-list {
+  margin: 0;
+  padding-left: 20px;
+  display: grid;
+  gap: 8px;
+  color: var(--portal-ink);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.portal-contacto-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 8px;
+  font-size: 14px;
+}
+.portal-contacto-list strong { color: var(--portal-primary-dark); }
+
+.portal-cta-final { text-align: center; padding-bottom: 8px; }
+
+/* --- Flujo de solicitud (tarjeta) --------------------------------------- */
+
+.portal-volver {
+  margin: 18px 18px 0;
+  align-self: flex-start;
+  background: none;
+  border: none;
+  color: var(--portal-primary);
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  padding: 6px 0;
+}
+
+.portal-card {
+  margin: 0 18px;
+  background: var(--portal-card-bg);
+  border: 1px solid var(--portal-line);
+  border-radius: 18px;
+  padding: 22px 18px;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, .06);
+}
+.portal-card h2 {
+  margin: 0 0 6px;
+  font-size: 20px;
+  color: var(--portal-ink);
+}
+.portal-muted {
+  margin: 0 0 18px;
+  color: var(--portal-muted);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+form { display: grid; gap: 14px; }
+label {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #334155;
+}
+input, select, textarea {
+  width: 100%;
+  padding: 13px 14px;
+  border: 1px solid var(--portal-line);
+  border-radius: 12px;
+  font-size: 16px; /* evita zoom automático en iOS */
+  background: #fff;
+  color: var(--portal-ink);
+  font-family: inherit;
+}
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--portal-primary);
+  box-shadow: 0 0 0 3px rgba(18, 63, 86, .15);
+}
+textarea { resize: vertical; }
+
+.portal-btn-primario {
+  margin-top: 4px;
+  padding: 16px 18px;
+  border: none;
+  border-radius: 14px;
+  background: var(--portal-primary);
+  color: #fff;
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: .03em;
+  cursor: pointer;
+  min-height: 52px;
+}
+.portal-btn-primario:active { background: var(--portal-primary-dark); }
+.portal-btn-primario:disabled { opacity: .6; cursor: default; }
+
+.portal-btn-secundario {
+  margin-top: 4px;
+  padding: 16px 18px;
+  border: 1px solid var(--portal-primary);
+  border-radius: 14px;
+  background: #fff;
+  color: var(--portal-primary);
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: .03em;
+  cursor: pointer;
+  min-height: 52px;
+}
+.portal-btn-secundario:active { background: var(--portal-soft); }
+
+.portal-acciones-finales {
+  display: grid;
+  gap: 10px;
+}
+
+.portal-aviso {
+  margin: 0 18px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  border: 1px solid var(--portal-line);
+  background: #eef4f6;
+  color: var(--portal-ink);
+  font-size: 14px;
+}
+.portal-aviso-error { color: #991b1b; border-color: #fca5a5; background: #fef2f2; }
+.portal-aviso-ok { color: #14532d; border-color: #86efac; background: #f0fdf4; }
+
+.portal-cargando {
+  text-align: center;
+  color: var(--portal-muted);
+  font-size: 13px;
+}
+
+@media (min-width: 540px) {
+  .portal-card { padding: 30px 32px; }
+}

@@ -425,6 +425,36 @@ test('normalizarTexto ignora mayúsculas/minúsculas y acentos (coincidencia tol
   assert.match(cuerpo, /normalize\('NFD'\)/);
 });
 
+test('cargarSolicitudes trae requested_coverage de la tabla', () => {
+  const inicio = moduleSource.indexOf('async function cargarSolicitudes');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  assert.match(cuerpo, /\.select\('id,patient_id,requested_professional_id,requested_professional_name,requested_service,requested_coverage,message,contact_phone,contact_email,source,status,assigned_attention_id,revision,created_at,updated_at,managed_by,managed_at'\)/);
+});
+
+test('seleccionarCoberturaSolicitada prellena #obraSocial con la cobertura de la solicitud, nunca cardiolink_pacientes.cobertura_habitual', () => {
+  const inicio = moduleSource.indexOf('function seleccionarCoberturaSolicitada');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  assert.match(cuerpo, /solicitud\.requested_coverage/);
+  assert.match(cuerpo, /document\.getElementById\('obraSocial'\)/);
+  assert.match(cuerpo, /selectObraSocial\.value = cobertura/);
+  assert.doesNotMatch(cuerpo, /cobertura_habitual|cardiolink_pacientes|\.update\s*\(|\.insert\s*\(/, 'sólo toca el select del formulario de Carga, nunca escribe en Supabase');
+});
+
+test('seleccionarCoberturaSolicitada no fuerza "No sé / consultar" como obra social', () => {
+  const inicio = moduleSource.indexOf('function seleccionarCoberturaSolicitada');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  assert.match(cuerpo, /cobertura === 'No sé \/ consultar'/);
+});
+
+test('abrirCargaDeTurno llama a seleccionarCoberturaSolicitada después de profesional/prestación', () => {
+  const inicio = moduleSource.indexOf('async function abrirCargaDeTurno');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  const posPrestacion = cuerpo.indexOf('seleccionarPrestacionSolicitada(solicitud)');
+  const posCobertura = cuerpo.indexOf('seleccionarCoberturaSolicitada(solicitud)');
+  assert.notEqual(posCobertura, -1);
+  assert.ok(posPrestacion < posCobertura);
+});
+
 test('el bloque de integración Solicitud -> Carga no crea atención ni marca appointment_assigned', () => {
   const cuerpo = bloqueIntegracionCarga();
   assert.doesNotMatch(cuerpo, /\.insert\s*\(/);
