@@ -217,22 +217,86 @@ el dominio real del portal publicado.
    dedup de doble envío, etc.) para confirmar que el flujo funcional no
    cambió.
 
+## Preparación final para Producción
+
+Producción ya tiene configurados server-side (según lo informado; no
+verificado desde acá, sin acceso a Supabase): `TURNSTILE_SECRET_KEY` y
+`PORTAL_ALLOWED_ORIGINS=https://anchorena.github.io`. Esta etapa completó
+el lado frontend correspondiente:
+
+- **Gateway productivo real**: `GATEWAY_URL_PRODUCCION_DEFAULT` en
+  `portal.js` ahora es
+  `https://tupacclmhaqiahhlttyz.supabase.co/functions/v1/portal-gateway`
+  (antes, un placeholder). `esEntornoLocal()` sigue siendo el único lugar
+  que decide local vs. no-local: cualquier origen que no sea
+  localhost/127.0.0.1/::1 (incluido `anchorena.github.io`, sin necesitar
+  reconocerlo por nombre) usa este gateway automáticamente.
+- **Sitekey real de Turnstile**: `TURNSTILE_SITEKEY_PRODUCCION_DEFAULT`
+  ahora es `0x4AAAAAAEYiWSCxfjAQOp3P` (antes, un placeholder), con el
+  mismo criterio de `esEntornoLocal()`. La sitekey de test invisible
+  (`1x00000000000000000000BB`) sigue siendo exclusiva de local.
+- **La secret key real nunca vive en el frontend**: `TURNSTILE_SECRET_KEY`
+  no existe en ningún archivo de `portal/`; sólo se la nombra en un
+  comentario de `portal.js` explicando que vive server-side.
+- **Configuración centralizada**: gateway y sitekey siguen decidiéndose
+  juntos, con el mismo `esEntornoLocal()`, en un único bloque al principio
+  de `portal.js` (marcado explícitamente como el lugar centralizado de
+  configuración de entorno).
+- **Badge STAGING LOCAL**: sin cambios de lógica — sigue condicionado
+  exclusivamente a `esEntornoLocal()`, así que en `anchorena.github.io`
+  nunca aparece.
+- **Privacidad de Turnstile**: nuevo link "Privacidad" en el footer de la
+  landing (`portal/privacidad.html`), página estática separada (sin JS
+  propio, no toca el flujo ni el estado del portal) que explica en tres
+  puntos simples que CardioLink usa Cloudflare Turnstile para prevenir
+  bots/abuso, que Turnstile puede procesar información técnica del
+  navegador necesaria para esa verificación, y enlaza el
+  [Turnstile Privacy Addendum](https://www.cloudflare.com/turnstile-privacy-policy/)
+  oficial de Cloudflare (URL verificada con `WebFetch` antes de
+  incluirla, no adivinada). Sin políticas legales inventadas ni datos
+  sensibles.
+
+### Cómo hacer QA contra Producción ya desplegada
+
+1. Servir `portal/` desde `anchorena.github.io` (o simular el hostname
+   localmente — ver nota abajo) y confirmar en DevTools → Network que las
+   llamadas al gateway van a `tupacclmhaqiahhlttyz.supabase.co`, nunca a
+   `yslhwdlzdknhskawqrtv.supabase.co` (Staging).
+2. Confirmar que el badge **STAGING LOCAL** no aparece en ningún momento.
+3. Confirmar que el widget de Turnstile carga con la sitekey real
+   (`0x4AAAAAAEYiWSCxfjAQOp3P` en el HTML renderizado del widget, visible
+   en DevTools) y que el flujo se completa normalmente.
+4. Abrir `/privacidad.html` desde el link del footer y confirmar que el
+   link al Turnstile Privacy Addendum de Cloudflare abre correctamente.
+5. Repetir el QA funcional completo (DNI nuevo/existente, dedup,
+   cobertura, etc.) ya documentado en
+   [PORTAL_PUBLICO_V1.md](PORTAL_PUBLICO_V1.md).
+
+Nota: sin poder desplegar ni servir el sitio desde el dominio real en
+este entorno, no fue posible ejecutar este QA — queda documentado para
+cuando el portal esté publicado.
+
 ## Qué falta antes de Producción
 
-1. Registrar un sitio real en Cloudflare Turnstile, obtener sitekey +
-   secret reales; configurar `CARDIOLINK_TURNSTILE_SITEKEY` (o reemplazar
-   `TURNSTILE_SITEKEY_PRODUCCION_DEFAULT`) y `TURNSTILE_SECRET_KEY` (real)
-   como secret de la Edge Function de Producción.
-2. Decidir e implementar el rate limit (sección 3) — sigue pendiente,
+**Ya resuelto** (ver "Preparación final para Producción" más arriba):
+sitekey real de Turnstile (`0x4AAAAAAEYiWSCxfjAQOp3P`), gateway productivo
+real (`https://tupacclmhaqiahhlttyz.supabase.co/functions/v1/portal-gateway`),
+`TURNSTILE_SECRET_KEY` y `PORTAL_ALLOWED_ORIGINS` ya configurados
+server-side (según lo informado — no se verificó desde acá, sin acceso a
+Supabase), página de Privacidad agregada.
+
+Pendiente:
+
+1. Decidir e implementar el rate limit (sección 3) — sigue pendiente,
    documentado pero no construido.
-3. Configurar `PORTAL_ALLOWED_ORIGINS` con el dominio real publicado.
-4. Todo lo que ya listaba [PORTAL_PUBLICO_V1.md](PORTAL_PUBLICO_V1.md):
+2. Todo lo que ya listaba [PORTAL_PUBLICO_V1.md](PORTAL_PUBLICO_V1.md):
    revisar `index.ts` con Deno/TypeScript real (este entorno no los
    tiene), confirmar columnas reales de `cardiolink_pacientes`, aplicar
    (con aprobación) la migración pendiente de `requested_coverage`,
-   `supabase functions deploy`, reemplazar `GATEWAY_URL_PRODUCCION_DEFAULT`.
-5. QA manual completo en Staging con Turnstile real (no las claves de
-   test) antes del primer despliegue a Producción.
+   `supabase functions deploy`.
+3. QA manual completo en Staging con Turnstile real (no las claves de
+   test) antes del primer despliegue a Producción, y luego un QA final
+   contra Producción ya desplegada (ver sección siguiente).
 
 ## Tests y validación en este entorno
 

@@ -13,6 +13,8 @@ const contenidoPath = path.join(root, 'portal', 'contenido-publico.js');
 const contenidoSource = fs.readFileSync(contenidoPath, 'utf8');
 const portalCssPath = path.join(root, 'portal', 'portal.css');
 const portalCssSource = fs.readFileSync(portalCssPath, 'utf8');
+const privacidadPath = path.join(root, 'portal', 'privacidad.html');
+const privacidadSource = fs.readFileSync(privacidadPath, 'utf8');
 
 function test(name, run) {
   try {
@@ -153,6 +155,49 @@ test('turnstileSitekey nunca usa la sitekey de QA fuera de un origen local; el o
     delete global.window;
     delete global.document;
   }
+});
+
+// -----------------------------------------------------------------------
+// Preparación final para Producción: anchorena.github.io (el portal
+// publicado real) debe usar el gateway y la sitekey reales, nunca los de
+// Staging/QA — sin necesidad de reconocer ese hostname en particular: cae
+// ahí por ser "no local", igual que cualquier otro dominio publicado.
+// -----------------------------------------------------------------------
+
+test('localhost usa sitekey de test + gateway de Staging', () => {
+  conVentanaFalsa('localhost', (mod) => {
+    assert.equal(mod.gatewayUrl(), 'https://yslhwdlzdknhskawqrtv.supabase.co/functions/v1/portal-gateway');
+    assert.equal(mod.turnstileSitekey(), '1x00000000000000000000BB');
+  });
+});
+
+test('anchorena.github.io (portal publicado real) usa la sitekey real y el gateway productivo real, sin configuración manual', () => {
+  conVentanaFalsa('anchorena.github.io', (mod) => {
+    assert.equal(mod.gatewayUrl(), 'https://tupacclmhaqiahhlttyz.supabase.co/functions/v1/portal-gateway');
+    assert.equal(mod.turnstileSitekey(), '0x4AAAAAAEYiWSCxfjAQOp3P');
+    assert.equal(mod.esEntornoLocal(), false);
+  });
+});
+
+test('un portal publicado nunca usa Staging: ni el gateway ni la sitekey de Staging aparecen fuera de local', () => {
+  ['anchorena.github.io', 'www.consultoriomedicorm.com.ar', 'algunotrodominio.com'].forEach((hostname) => {
+    conVentanaFalsa(hostname, (mod) => {
+      assert.notEqual(mod.gatewayUrl(), 'https://yslhwdlzdknhskawqrtv.supabase.co/functions/v1/portal-gateway', `${hostname} no debe usar el gateway de Staging`);
+      assert.notEqual(mod.turnstileSitekey(), '1x00000000000000000000BB', `${hostname} no debe usar la sitekey de QA`);
+    });
+  });
+});
+
+test('la secret key real de Turnstile no existe en ningún archivo del frontend', () => {
+  // El NOMBRE de la env var puede aparecer en un comentario explicando que
+  // vive server-side (portal.js ya lo hace, a propósito, como
+  // documentación) — lo que nunca debe aparecer es un valor asignado a
+  // ella, ni sintaxis de Edge Function (Deno.env.get) en un archivo que se
+  // sirve al navegador.
+  [moduleSource, contenidoSource, indexSource].forEach((fuente) => {
+    assert.doesNotMatch(fuente, /TURNSTILE_SECRET_KEY\s*[:=]/, 'la env var nunca se asigna en el frontend, sólo puede nombrarse en prosa');
+    assert.doesNotMatch(fuente, /Deno\.env\.get/, 'ningún archivo de frontend usa sintaxis de Edge Function');
+  });
 });
 
 test('render() muestra el badge STAGING LOCAL sólo cuando esEntornoLocal() es true', () => {
@@ -558,6 +603,36 @@ test('portal/index.html es una página separada del Admin, mobile-first, sin dat
   const posContenido = indexSource.indexOf('<script src="contenido-publico.js');
   const posPortal = indexSource.indexOf('<script src="portal.js');
   assert.ok(posContenido >= 0 && posContenido < posPortal, 'contenido-publico.js se carga antes que portal.js');
+});
+
+// -----------------------------------------------------------------------
+// Privacidad: link discreto en el footer + página estática simple sobre
+// Turnstile, sin tocar el flujo DNI/alta/solicitud ni el diseño general.
+// -----------------------------------------------------------------------
+
+test('la landing tiene un footer con un link a Privacidad, sin tocar el resto del diseño', () => {
+  assert.match(moduleSource, /function renderFooter\(\) \{/);
+  assert.match(moduleSource, /<footer class="portal-footer">/);
+  assert.match(moduleSource, /<a href="privacidad\.html">Privacidad<\/a>/);
+  assert.match(moduleSource, /\$\{renderCtaFinal\(\)\}\s*\n\s*\$\{renderFooter\(\)\}/, 'el footer se agrega después del CTA final, sin reemplazar nada existente');
+});
+
+test('privacidad.html existe, es una página separada (no toca portal.js) y no requiere el gateway ni Turnstile para mostrarse', () => {
+  assert.doesNotMatch(privacidadSource, /<script/, 'página puramente estática, sin JS propio');
+  assert.match(privacidadSource, /<link rel="stylesheet" href="portal\.css/, 'reutiliza los estilos del portal para consistencia visual');
+  assert.match(privacidadSource, /<a href="index\.html">/, 'permite volver al portal');
+});
+
+test('privacidad.html explica Turnstile en los tres puntos pedidos, con el link oficial correcto, sin secrets ni PII', () => {
+  assert.match(privacidadSource, /Cloudflare Turnstile/);
+  assert.match(privacidadSource, /prevenir bots/i);
+  assert.match(privacidadSource, /procesar información técnica/i, 'explica que Turnstile puede procesar información técnica necesaria para la verificación');
+  assert.match(privacidadSource, /href="https:\/\/www\.cloudflare\.com\/turnstile-privacy-policy\/"/, 'enlaza el Turnstile Privacy Addendum oficial verificado');
+  assert.doesNotMatch(privacidadSource, /TURNSTILE_SECRET_KEY|service_role|SUPABASE_SERVICE_ROLE_KEY/);
+  assert.doesNotMatch(privacidadSource, /\bdni\b|patient_id/i, 'no incluye datos de pacientes ni PII');
+  // No inventar políticas jurídicas complejas ni términos adicionales: nada
+  // de GDPR/CCPA/leyes locales de protección de datos que nadie pidió.
+  assert.doesNotMatch(privacidadSource, /GDPR|CCPA|RGPD|ley de protecci[oó]n de datos|responsable del tratamiento/i);
 });
 
 console.log('Portal público — frontend: OK');

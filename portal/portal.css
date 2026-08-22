@@ -172,6 +172,16 @@ html, body {
 
 .portal-cta-final { text-align: center; padding-bottom: 8px; }
 
+.portal-footer {
+  padding: 4px 18px 20px;
+  text-align: center;
+}
+.portal-footer a {
+  color: var(--portal-muted);
+  font-size: 13px;
+  text-decoration: underline;
+}
+
 /* --- Flujo de solicitud (tarjeta) --------------------------------------- */
 
 .portal-volver {

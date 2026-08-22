@@ -33,6 +33,23 @@
 
   const FUENTES_VALIDAS = ['qr', 'whatsapp', 'web'];
 
+  // =========================================================================
+  // Configuración de entorno — CENTRALIZADA ACÁ, un único lugar: gateway y
+  // sitekey de Turnstile se deciden los dos con el mismo criterio
+  // (esEntornoLocal), nunca por separado. No hay ninguna otra parte del
+  // código que decida "¿local o producción?" por su cuenta.
+  //
+  // localhost/127.0.0.1/::1  → Staging (gateway de Staging + sitekey de
+  //                            test invisible de Cloudflare).
+  // cualquier otro origen    → Producción (gateway real + sitekey real),
+  // (ej. anchorena.github.io)  incluida cualquier copia publicada de este
+  //                            portal que no sea local: nunca cae en
+  //                            Staging por accidente, porque no depende de
+  //                            reconocer "anchorena.github.io" en una
+  //                            lista — cualquier hostname que no sea local
+  //                            ya usa Producción por default.
+  // =========================================================================
+
   // Sólo localhost/127.0.0.1/::1: mismo criterio que ya usan
   // cardiolink-finanzas-v5.js y cardiolink-solicitudes-turno.js. Fuera de un
   // origen local esto siempre da false, así que una versión publicada nunca
@@ -44,12 +61,11 @@
 
   // En local usa automáticamente el gateway de Staging (sin configuración
   // manual: portal.js no maneja ninguna clave/cliente Supabase propio, sólo
-  // llama a esta URL con fetch()). Fuera de local usa la URL de Producción,
-  // separada y configurable en tiempo de ejecución con
-  // window.CARDIOLINK_PORTAL_GATEWAY_URL — reemplazar
-  // GATEWAY_URL_PRODUCCION_DEFAULT por la URL real al desplegar.
+  // llama a esta URL con fetch()). Fuera de local usa el gateway productivo
+  // real, configurable en tiempo de ejecución con
+  // window.CARDIOLINK_PORTAL_GATEWAY_URL si hiciera falta apuntar a otro.
   const GATEWAY_URL_STAGING_LOCAL = 'https://yslhwdlzdknhskawqrtv.supabase.co/functions/v1/portal-gateway';
-  const GATEWAY_URL_PRODUCCION_DEFAULT = 'https://REEMPLAZAR-PROJECT-REF.functions.supabase.co/portal-gateway';
+  const GATEWAY_URL_PRODUCCION_DEFAULT = 'https://tupacclmhaqiahhlttyz.supabase.co/functions/v1/portal-gateway';
 
   function gatewayUrl() {
     if (esEntornoLocal()) return GATEWAY_URL_STAGING_LOCAL;
@@ -59,7 +75,8 @@
   // Turnstile (anti-bots): la sitekey es pública por diseño (viaja al
   // navegador para poder mostrar el widget) — no es un secreto. La clave
   // SECRETA de verificación (TURNSTILE_SECRET_KEY) vive únicamente
-  // server-side, en la Edge Function, y nunca se referencia acá.
+  // server-side, en la Edge Function, ya configurada en Producción — nunca
+  // se referencia ni existe en este archivo ni en ningún otro del frontend.
   //
   // En local siempre usa la sitekey de test pública que Cloudflare documenta
   // para el widget INVISIBLE (no es secreta ni exclusiva de este proyecto:
@@ -73,7 +90,7 @@
   // No hay que reemplazar esta sitekey por una clave real para probar en
   // localhost.
   const TURNSTILE_SITEKEY_QA_LOCAL = '1x00000000000000000000BB';
-  const TURNSTILE_SITEKEY_PRODUCCION_DEFAULT = 'REEMPLAZAR-CON-SITEKEY-REAL-DE-TURNSTILE';
+  const TURNSTILE_SITEKEY_PRODUCCION_DEFAULT = '0x4AAAAAAEYiWSCxfjAQOp3P';
 
   function turnstileSitekey() {
     if (esEntornoLocal()) return TURNSTILE_SITEKEY_QA_LOCAL;
@@ -240,6 +257,7 @@
       ${renderModalidad(contenido.modalidad)}
       ${renderContacto(contenido.contacto)}
       ${renderCtaFinal()}
+      ${renderFooter()}
     `;
   }
 
@@ -336,6 +354,18 @@
       <section class="portal-section portal-cta-final">
         <button type="button" class="portal-btn-primario" data-portal-accion="ir-solicitud">SOLICITAR TURNO</button>
       </section>
+    `;
+  }
+
+  // Link discreto al anexo de privacidad de Turnstile (widget invisible:
+  // Cloudflare pide que quede accesible). Página estática aparte
+  // (privacidad.html), no un paso más del flujo: no toca el estado ni la
+  // experiencia de DNI/alta/solicitud.
+  function renderFooter() {
+    return `
+      <footer class="portal-footer">
+        <a href="privacidad.html">Privacidad</a>
+      </footer>
     `;
   }
 
@@ -632,7 +662,7 @@
   }
 
   return Object.freeze({
-    version: '3.0.1-portal-publico-hardening-v1-turnstile-invisible',
+    version: '3.1.0-portal-publico-preparacion-produccion',
     obtenerSourceDesdeUrl,
     dniClienteValido,
     soloDigitos,
