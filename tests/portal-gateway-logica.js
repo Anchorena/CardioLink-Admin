@@ -149,7 +149,7 @@ test('index.ts guarda service_role sólo como variable de entorno server-side, n
 
 test('check-dni nunca devuelve datos del paciente: sólo { ok, existe }', () => {
   const cuerpo = cuerpoDe(gatewaySource, 'manejarCheckDni');
-  assert.match(cuerpo, /jsonResponse\(\{ ok: true, existe: !!existente \}\)/);
+  assert.match(cuerpo, /jsonResponse\(\{ ok: true, existe: !!existente \}, 200, corsHeaders\)/);
   assert.doesNotMatch(cuerpo, /nombre_completo|telefono|email|cobertura_habitual|fecha_nacimiento|patientId|patient_id/i);
 });
 
@@ -161,7 +161,7 @@ test('el registro busca por DNI antes de insertar y reutiliza el paciente existe
   assert.notEqual(posInsert, -1);
   assert.ok(posBusqueda < posInsert, 'se busca el paciente por DNI antes de insertar uno nuevo');
   assert.match(cuerpo, /insercion\.error\.code === '23505'/);
-  assert.match(cuerpo, /jsonResponse\(\{ ok: true, existente: true \}\)/);
+  assert.match(cuerpo, /jsonResponse\(\{ ok: true, existente: true \}, 200, corsHeaders\)/);
 });
 
 test('el alta crea el paciente directo en cardiolink_pacientes, sin tabla de pre-pacientes ni aprobación administrativa', () => {
@@ -178,7 +178,7 @@ test('el alta crea el paciente directo en cardiolink_pacientes, sin tabla de pre
 
 test('el alta nunca devuelve el id del paciente creado', () => {
   const cuerpo = cuerpoDe(gatewaySource, 'manejarRegistro');
-  assert.doesNotMatch(cuerpo, /jsonResponse\(\{[^}]*\bid\b[^}]*\}\)/);
+  assert.doesNotMatch(cuerpo, /jsonResponse\(\{[^}]*\bid\b[^}]*\},/);
 });
 
 test('la solicitud de turno crea una fila en cardiolink_appointment_requests con status new, source y la cobertura de la solicitud', () => {
@@ -290,6 +290,87 @@ test('COBERTURAS_VALIDAS (logica.js) coincide exactamente con portal/contenido-p
 
 test('el gateway sólo usa service_role: no expone anon/publishable a este archivo (no lo necesita, bypasea RLS por su cuenta)', () => {
   assert.doesNotMatch(gatewaySource, /publishableKey|anonKey|SUPABASE_ANON_KEY/);
+});
+
+// -----------------------------------------------------------------------
+// Hardening V1: Turnstile obligatorio, CORS configurable, logs sin PII.
+// -----------------------------------------------------------------------
+
+function cuerpoDenoServe() {
+  const inicio = gatewaySource.indexOf('Deno.serve(async function (req) {');
+  assert.notEqual(inicio, -1, 'existe el handler principal Deno.serve');
+  const fin = gatewaySource.indexOf('\n}', inicio);
+  return gatewaySource.slice(inicio, fin);
+}
+
+test('Turnstile es obligatorio para check-dni, registro y solicitud-turno (las tres únicas acciones)', () => {
+  assert.match(gatewaySource, /ACCIONES_PROTEGIDAS_TURNSTILE = \['check-dni', 'registro', 'solicitud-turno'\]/);
+  const cuerpo = cuerpoDenoServe();
+  const posVerificacion = cuerpo.indexOf('ACCIONES_PROTEGIDAS_TURNSTILE.includes(accion)');
+  const posDespacho = cuerpo.indexOf("accion === 'check-dni'");
+  assert.notEqual(posVerificacion, -1);
+  assert.notEqual(posDespacho, -1);
+  assert.ok(posVerificacion < posDespacho, 'Turnstile se verifica antes de despachar a cualquier acción');
+  assert.match(cuerpo, /if \(!verificacion\.ok\) \{\s*\n\s*return errorResponse\('No se pudo verificar que sos una persona\. Probá de nuevo\.', 403, corsHeaders\);/);
+});
+
+test('sin TURNSTILE_SECRET_KEY configurada, la verificación falla cerrada (rechaza, no deja pasar)', () => {
+  const cuerpo = cuerpoDe(gatewaySource, 'verificarTurnstile');
+  assert.match(cuerpo, /if \(!secret\) return \{ ok: false, motivo: 'sin-configurar' \};/);
+});
+
+test('un token vacío, no-string o demasiado largo se rechaza sin llamar a Cloudflare', () => {
+  const cuerpo = cuerpoDe(gatewaySource, 'verificarTurnstile');
+  const posValidacionToken = cuerpo.indexOf("token.length > 2048) return { ok: false, motivo: 'token-invalido' };");
+  const posFetch = cuerpo.indexOf('fetch(');
+  assert.notEqual(posValidacionToken, -1);
+  assert.notEqual(posFetch, -1);
+  assert.ok(posValidacionToken < posFetch, 'el token se valida antes de gastar una llamada a siteverify');
+});
+
+test('el modo QA de Turnstile es la MISMA verificación, sin una rama de código que la salte (sólo cambia la env var)', () => {
+  const cuerpoVerificar = cuerpoDe(gatewaySource, 'verificarTurnstile');
+  const cuerpoServe = cuerpoDenoServe();
+  assert.doesNotMatch(cuerpoVerificar, /esEntornoLocal|NODE_ENV|DEBUG|skip|omitir/i);
+  assert.doesNotMatch(cuerpoServe, /esEntornoLocal/);
+});
+
+test('ningún secret de Turnstile vive en el frontend ni como literal en el gateway', () => {
+  assert.doesNotMatch(fs.readFileSync(path.join(root, 'portal', 'portal.js'), 'utf8'), /TURNSTILE_SECRET_KEY/);
+  assert.match(gatewaySource, /Deno\.env\.get\('TURNSTILE_SECRET_KEY'\)/);
+  // Las claves de test públicas de Cloudflare quedan sólo documentadas en
+  // comentarios (no son secretas), nunca asignadas a una variable que se
+  // use como secret real.
+  assert.doesNotMatch(gatewaySource, /const secret = '1x0000000000000000000000000000000AA'/);
+});
+
+test('CORS nunca queda fijo en "*": se calcula por origen, localhost siempre permitido, configurable por env', () => {
+  assert.doesNotMatch(gatewaySource, /'Access-Control-Allow-Origin': '\*'/);
+  const cuerpo = cuerpoDe(gatewaySource, 'corsHeadersPara');
+  assert.match(cuerpo, /esOrigenLocal\(origen\) \|\| origenesPermitidosConfigurados\(\)\.includes\(origen\)/);
+  assert.match(cuerpo, /if \(permitido\) headers\['Access-Control-Allow-Origin'\] = origen;/);
+  const cuerpoConfig = cuerpoDe(gatewaySource, 'origenesPermitidosConfigurados');
+  assert.match(cuerpoConfig, /Deno\.env\.get\('PORTAL_ALLOWED_ORIGINS'\)/);
+  // http://localhost/127.0.0.1 están en la constante de arriba, no dentro
+  // del cuerpo de la función esOrigenLocal en sí.
+  assert.match(gatewaySource, /PREFIJOS_ORIGEN_LOCAL_SIEMPRE_PERMITIDO = \['http:\/\/localhost', 'http:\/\/127\.0\.0\.1', 'http:\/\/\[::1\]'\]/);
+  assert.match(gatewaySource, /function esOrigenLocal\(origen\) \{\s*\n\s*return PREFIJOS_ORIGEN_LOCAL_SIEMPRE_PERMITIDO\.some/);
+});
+
+test('el handler principal calcula CORS por request (no una constante fija) y lo usa incluso en OPTIONS', () => {
+  const cuerpo = cuerpoDenoServe();
+  assert.match(cuerpo, /const corsHeaders = corsHeadersPara\(origen\)/);
+  assert.match(cuerpo, /return new Response\('ok', \{ headers: corsHeaders \}\)/);
+});
+
+test('logs sin PII: sólo dos console.* en todo el gateway, ninguno loguea DNI/nombre/teléfono/email/mensaje ni error.message', () => {
+  const llamadasConsole = gatewaySource.match(/console\.(log|error|warn|info)\(/g) || [];
+  assert.equal(llamadasConsole.length, 2, 'exactamente dos llamadas a console.* en todo el archivo');
+  assert.doesNotMatch(gatewaySource, /console\.(log|error|warn|info)\([^)]*error\.message/);
+  assert.doesNotMatch(gatewaySource, /console\.(log|error|warn|info)\([^)]*\b(dni|nombre|apellido|telefono|email|cobertura)\b/i);
+  const cuerpo = cuerpoDe(gatewaySource, 'logErrorSeguro');
+  assert.match(cuerpo, /error && error\.code \? String\(error\.code\) : 'desconocido'/);
+  assert.doesNotMatch(cuerpo, /error\.message|error\.details/);
 });
 
 console.log('Portal público — lógica del gateway: OK');

@@ -25,21 +25,94 @@ import {
   generarIdPaciente
 } from './logica.js';
 
-const CORS_HEADERS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS'
-};
+// -----------------------------------------------------------------------
+// CORS: nunca queda fijo en "*" en Producción. El origen permitido se
+// arma en cada request a partir de PORTAL_ALLOWED_ORIGINS (env var, lista
+// separada por comas, con el/los dominio(s) publicados reales) más,
+// siempre, cualquier origen localhost/127.0.0.1/::1 (para poder probar
+// contra Staging desde acá, en cualquier puerto). Si el origen de la
+// request no queda permitido, no se devuelve Access-Control-Allow-Origin:
+// el navegador bloquea la respuesta del lado del cliente.
+// -----------------------------------------------------------------------
 
-function jsonResponse(cuerpo, status) {
+const PREFIJOS_ORIGEN_LOCAL_SIEMPRE_PERMITIDO = ['http://localhost', 'http://127.0.0.1', 'http://[::1]'];
+
+function esOrigenLocal(origen) {
+  return PREFIJOS_ORIGEN_LOCAL_SIEMPRE_PERMITIDO.some((prefijo) => origen === prefijo || origen.startsWith(prefijo + ':'));
+}
+
+function origenesPermitidosConfigurados() {
+  const valor = Deno.env.get('PORTAL_ALLOWED_ORIGINS') || '';
+  return valor.split(',').map((o) => o.trim()).filter(Boolean);
+}
+
+function corsHeadersPara(origen) {
+  const headers = {
+    'Access-Control-Allow-Headers': 'content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    Vary: 'Origin'
+  };
+  const permitido = !!origen && (esOrigenLocal(origen) || origenesPermitidosConfigurados().includes(origen));
+  if (permitido) headers['Access-Control-Allow-Origin'] = origen;
+  return headers;
+}
+
+function jsonResponse(cuerpo, status, corsHeaders) {
   return new Response(JSON.stringify(cuerpo), {
     status: status || 200,
-    headers: Object.assign({}, CORS_HEADERS, { 'Content-Type': 'application/json' })
+    headers: Object.assign({}, corsHeaders, { 'Content-Type': 'application/json' })
   });
 }
 
-function errorResponse(mensaje, status) {
-  return jsonResponse({ ok: false, error: mensaje }, status || 400);
+function errorResponse(mensaje, status, corsHeaders) {
+  return jsonResponse({ ok: false, error: mensaje }, status || 400, corsHeaders);
+}
+
+// -----------------------------------------------------------------------
+// Turnstile: verificación server-side obligatoria para check-dni, registro
+// y solicitud-turno. El secret vive únicamente acá, como
+// Deno.env.get('TURNSTILE_SECRET_KEY') — nunca en el frontend ni en el
+// repositorio. Sin secret configurado se rechaza (fail-closed): no existe
+// un modo "sin Turnstile" válido para estas tres acciones.
+//
+// Modo QA aislado en Staging: configurar TURNSTILE_SECRET_KEY en el
+// proyecto de Staging con la clave secreta de test pública que documenta
+// Cloudflare ("always passes": 1x0000000000000000000000000000000AA —
+// https://developers.cloudflare.com/turnstile/troubleshooting/testing/),
+// emparejada con la sitekey pública equivalente que ya usa portal.js en
+// local. Producción usa la clave secreta real de un sitio Turnstile
+// registrado. El código de verificación es el mismo en los dos casos: lo
+// que cambia es sólo la env var, nunca una rama de código que salte la
+// verificación.
+// -----------------------------------------------------------------------
+
+async function verificarTurnstile(token, ip) {
+  const secret = Deno.env.get('TURNSTILE_SECRET_KEY');
+  if (!secret) return { ok: false, motivo: 'sin-configurar' };
+  if (!token || typeof token !== 'string' || token.length > 2048) return { ok: false, motivo: 'token-invalido' };
+
+  try {
+    const cuerpo = new URLSearchParams();
+    cuerpo.append('secret', secret);
+    cuerpo.append('response', token);
+    if (ip) cuerpo.append('remoteip', ip);
+    const respuesta = await fetch('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      method: 'POST',
+      body: cuerpo
+    });
+    const resultado = await respuesta.json();
+    return { ok: !!(resultado && resultado.success === true), motivo: resultado && resultado.success ? '' : 'rechazado' };
+  } catch (_error) {
+    return { ok: false, motivo: 'error-verificacion' };
+  }
+}
+
+// Nunca loguea el error completo (error.message/details puede traer datos
+// reales — por ejemplo, un unique_violation de Postgres incluye el valor
+// duplicado en el texto). Sólo el código de error, si existe.
+function logErrorSeguro(accion, error) {
+  const codigo = error && error.code ? String(error.code) : 'desconocido';
+  console.error('portal-gateway error', accion, codigo);
 }
 
 // La solicitud de turno ya no permite elegir profesional (se asigna después
@@ -93,23 +166,23 @@ async function buscarPacienteParaSolicitud(admin, dniNormalizado) {
   return Array.isArray(filas) && filas.length ? filas[0] : null;
 }
 
-async function manejarCheckDni(admin, body) {
+async function manejarCheckDni(admin, body, corsHeaders) {
   const resultado = validarDni(body ? body.dni : null);
-  if (!resultado.valido) return errorResponse(resultado.error);
+  if (!resultado.valido) return errorResponse(resultado.error, 400, corsHeaders);
   const existente = await buscarPacientePorDni(admin, resultado.dni);
-  return jsonResponse({ ok: true, existe: !!existente });
+  return jsonResponse({ ok: true, existe: !!existente }, 200, corsHeaders);
 }
 
-async function manejarRegistro(admin, body) {
+async function manejarRegistro(admin, body, corsHeaders) {
   const validacion = validarAlta(body);
-  if (!validacion.valido) return errorResponse(validacion.errores.join(' '));
+  if (!validacion.valido) return errorResponse(validacion.errores.join(' '), 400, corsHeaders);
   const datos = validacion.datos;
 
   const existente = await buscarPacientePorDni(admin, datos.dni);
   if (existente) {
     // Ya existía (registrado antes, o alguien ganó una carrera contra este
     // mismo alta): no se crea un paciente nuevo, no se devuelve el id.
-    return jsonResponse({ ok: true, existente: true });
+    return jsonResponse({ ok: true, existente: true }, 200, corsHeaders);
   }
 
   const fila = {
@@ -140,21 +213,21 @@ async function manejarRegistro(admin, body) {
     // reutiliza el paciente que ganó la carrera, sin crear uno duplicado.
     if (insercion.error.code === '23505') {
       const idExistente = await buscarPacientePorDni(admin, datos.dni);
-      if (idExistente) return jsonResponse({ ok: true, existente: true });
+      if (idExistente) return jsonResponse({ ok: true, existente: true }, 200, corsHeaders);
     }
     throw insercion.error;
   }
 
-  return jsonResponse({ ok: true, existente: false });
+  return jsonResponse({ ok: true, existente: false }, 200, corsHeaders);
 }
 
-async function manejarSolicitud(admin, body) {
+async function manejarSolicitud(admin, body, corsHeaders) {
   const validacion = validarSolicitud(body);
-  if (!validacion.valido) return errorResponse(validacion.errores.join(' '));
+  if (!validacion.valido) return errorResponse(validacion.errores.join(' '), 400, corsHeaders);
   const datos = validacion.datos;
 
   if (!PRESTACIONES_PUBLICAS_V1.includes(datos.prestacion)) {
-    return errorResponse('La prestación seleccionada no es válida.');
+    return errorResponse('La prestación seleccionada no es válida.', 400, corsHeaders);
   }
 
   // El teléfono nunca viaja en la solicitud (se pidió una única vez en el
@@ -162,10 +235,10 @@ async function manejarSolicitud(admin, body) {
   // Tampoco se acepta un patient_id del cliente: siempre se busca por DNI.
   const paciente = await buscarPacienteParaSolicitud(admin, datos.dni);
   if (!paciente) {
-    return errorResponse('No encontramos tu registro. Volvé a darte de alta antes de solicitar un turno.', 404);
+    return errorResponse('No encontramos tu registro. Volvé a darte de alta antes de solicitar un turno.', 404, corsHeaders);
   }
   if (!paciente.telefono) {
-    return errorResponse('Tu registro no tiene un teléfono guardado. Contactá al consultorio directamente.', 409);
+    return errorResponse('Tu registro no tiene un teléfono guardado. Contactá al consultorio directamente.', 409, corsHeaders);
   }
 
   // Protección básica contra envíos repetidos (doble tap, reintento de red):
@@ -181,7 +254,7 @@ async function manejarSolicitud(admin, body) {
     .limit(1);
   if (recientes.error) throw recientes.error;
   if (Array.isArray(recientes.data) && recientes.data.length) {
-    return jsonResponse({ ok: true, duplicada: true });
+    return jsonResponse({ ok: true, duplicada: true }, 200, corsHeaders);
   }
 
   const insercion = await admin.from('cardiolink_appointment_requests').insert({
@@ -203,32 +276,49 @@ async function manejarSolicitud(admin, body) {
   });
   if (insercion.error) throw insercion.error;
 
-  return jsonResponse({ ok: true, duplicada: false });
+  return jsonResponse({ ok: true, duplicada: false }, 200, corsHeaders);
 }
 
+// Acciones protegidas por Turnstile: las tres únicas que escriben o
+// consultan datos de pacientes. "catalogo"/contenido público estático no
+// existe como acción de este gateway (vive en portal/contenido-publico.js,
+// sin red), así que no hay ninguna otra acción que proteger acá.
+const ACCIONES_PROTEGIDAS_TURNSTILE = ['check-dni', 'registro', 'solicitud-turno'];
+
 Deno.serve(async function (req) {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS_HEADERS });
-  if (req.method !== 'POST') return errorResponse('Método no permitido.', 405);
+  const origen = req.headers.get('origin') || '';
+  const corsHeaders = corsHeadersPara(origen);
+
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders });
+  if (req.method !== 'POST') return errorResponse('Método no permitido.', 405, corsHeaders);
 
   let body;
   try {
     body = await req.json();
   } catch (_error) {
-    return errorResponse('Cuerpo inválido.');
+    return errorResponse('Cuerpo inválido.', 400, corsHeaders);
   }
 
   const accion = String(body && body.action || '');
   // Log mínimo, sin PII: nunca DNI, nombre, teléfono, email ni mensaje.
   console.log('portal-gateway', accion);
 
+  if (ACCIONES_PROTEGIDAS_TURNSTILE.includes(accion)) {
+    const ip = req.headers.get('cf-connecting-ip') || req.headers.get('x-forwarded-for') || '';
+    const verificacion = await verificarTurnstile(body && body.turnstileToken, ip);
+    if (!verificacion.ok) {
+      return errorResponse('No se pudo verificar que sos una persona. Probá de nuevo.', 403, corsHeaders);
+    }
+  }
+
   try {
     const admin = clienteAdmin();
-    if (accion === 'check-dni') return await manejarCheckDni(admin, body);
-    if (accion === 'registro') return await manejarRegistro(admin, body);
-    if (accion === 'solicitud-turno') return await manejarSolicitud(admin, body);
-    return errorResponse('Acción no reconocida.', 400);
+    if (accion === 'check-dni') return await manejarCheckDni(admin, body, corsHeaders);
+    if (accion === 'registro') return await manejarRegistro(admin, body, corsHeaders);
+    if (accion === 'solicitud-turno') return await manejarSolicitud(admin, body, corsHeaders);
+    return errorResponse('Acción no reconocida.', 400, corsHeaders);
   } catch (error) {
-    console.error('portal-gateway error', accion, error && error.message || error);
-    return errorResponse('No se pudo completar la operación. Probá de nuevo en un momento.', 500);
+    logErrorSeguro(accion, error);
+    return errorResponse('No se pudo completar la operación. Probá de nuevo en un momento.', 500, corsHeaders);
   }
 });

@@ -207,6 +207,15 @@ html, body {
 }
 
 form { display: grid; gap: 14px; }
+
+/* Contenedores del widget invisible de Turnstile (portal.js los monta con
+   turnstile.render(..., { size: 'invisible' })). A propósito SIN
+   display:none ni visibility:hidden ni height:0: Turnstile necesita que el
+   nodo quede en el layout normal del documento para funcionar (puede
+   necesitar mostrar un challenge interactivo dentro del mismo contenedor).
+   "Invisible" es un tamaño de Cloudflare que no ocupa espacio visible por
+   diseño; no depender de CSS para ocultarlo. */
+[data-turnstile-container] { min-height: 0; }
 label {
   display: grid;
   gap: 6px;

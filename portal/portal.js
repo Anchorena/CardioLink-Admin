@@ -56,6 +56,30 @@
     return (typeof window !== 'undefined' && window.CARDIOLINK_PORTAL_GATEWAY_URL) || GATEWAY_URL_PRODUCCION_DEFAULT;
   }
 
+  // Turnstile (anti-bots): la sitekey es pública por diseño (viaja al
+  // navegador para poder mostrar el widget) — no es un secreto. La clave
+  // SECRETA de verificación (TURNSTILE_SECRET_KEY) vive únicamente
+  // server-side, en la Edge Function, y nunca se referencia acá.
+  //
+  // En local siempre usa la sitekey de test pública que Cloudflare documenta
+  // para el widget INVISIBLE (no es secreta ni exclusiva de este proyecto:
+  // https://developers.cloudflare.com/turnstile/troubleshooting/testing/).
+  // OJO: 1x00000000000000000000AA es la de test del widget VISIBLE (con
+  // casilla) — acá el widget es invisible (size: 'invisible'), así que hay
+  // que usar la sitekey de test invisible, distinta:
+  // 1x00000000000000000000BB ("always passes", invisible). El secret de
+  // test emparejado sigue siendo el mismo para las dos
+  // (1x0000000000000000000000000000000AA, server-side en index.ts).
+  // No hay que reemplazar esta sitekey por una clave real para probar en
+  // localhost.
+  const TURNSTILE_SITEKEY_QA_LOCAL = '1x00000000000000000000BB';
+  const TURNSTILE_SITEKEY_PRODUCCION_DEFAULT = 'REEMPLAZAR-CON-SITEKEY-REAL-DE-TURNSTILE';
+
+  function turnstileSitekey() {
+    if (esEntornoLocal()) return TURNSTILE_SITEKEY_QA_LOCAL;
+    return (typeof window !== 'undefined' && window.CARDIOLINK_TURNSTILE_SITEKEY) || TURNSTILE_SITEKEY_PRODUCCION_DEFAULT;
+  }
+
   function contenidoPublico() {
     return (typeof window !== 'undefined' && window.CardioLinkContenidoPublico) || null;
   }
@@ -101,9 +125,78 @@
     return cuerpo;
   }
 
-  const consultarDni = (dni) => llamarGateway('check-dni', { dni });
+  const consultarDni = (dni, turnstileToken) => llamarGateway('check-dni', { dni, turnstileToken });
   const registrarPaciente = (datos) => llamarGateway('registro', datos);
   const enviarSolicitud = (datos) => llamarGateway('solicitud-turno', datos);
+
+  // -----------------------------------------------------------------------
+  // Turnstile: un token por envío, para check-dni, registro y
+  // solicitud-turno (los tres únicos llamados al gateway). Widget
+  // "invisible" (sin casilla ni UI visible): no cambia la experiencia
+  // visual del formulario. Esto sólo obtiene el token en el navegador; la
+  // verificación real y obligatoria vive en la Edge Function.
+  // -----------------------------------------------------------------------
+
+  let turnstileWidget = { widgetId: null, containerId: null };
+
+  function turnstileDisponible() {
+    return hayNavegador() && typeof window.turnstile === 'object' && typeof window.turnstile.render === 'function';
+  }
+
+  // Se llama después de cada render(): si el paso actual tiene un
+  // contenedor de Turnstile, lo monta (el nodo es siempre nuevo porque
+  // render() reemplaza todo el HTML, así que no hay widget previo que
+  // reutilizar sobre ese mismo nodo).
+  function montarTurnstileSiCorresponde() {
+    if (!turnstileDisponible()) return;
+    const contenedor = document.querySelector('[data-turnstile-container]');
+    if (!contenedor) { turnstileWidget = { widgetId: null, containerId: null }; return; }
+    try {
+      const widgetId = window.turnstile.render(contenedor, {
+        sitekey: turnstileSitekey(),
+        size: 'invisible',
+        execution: 'execute'
+      });
+      turnstileWidget = { widgetId, containerId: contenedor.id };
+    } catch (_) {
+      turnstileWidget = { widgetId: null, containerId: null };
+    }
+  }
+
+  // Ejecuta el desafío del widget ya montado y devuelve un token nuevo. Se
+  // llama recién al enviar el formulario (no al montar), con un timeout
+  // propio por si el challenge nunca resuelve (red caída, script
+  // bloqueado, etc.). Un mismo widget nunca entrega el mismo token dos
+  // veces: además de que cada render() posterior remonta un widget nuevo
+  // desde cero, acá se llama a turnstile.reset() apenas se resuelve (haya
+  // token o error), así que aunque este mismo widget se reutilizara sin
+  // pasar por otro render(), el próximo turnstile.execute() igual va a
+  // generar un token distinto.
+  function obtenerTokenTurnstile() {
+    return new Promise((resolve, reject) => {
+      if (!turnstileDisponible() || turnstileWidget.widgetId === null) {
+        reject(new Error('No se pudo cargar la verificación anti-bots. Recargá la página e intentá de nuevo.'));
+        return;
+      }
+      const widgetId = turnstileWidget.widgetId;
+      let resuelto = false;
+      const finalizar = (fn, valor) => {
+        if (resuelto) return;
+        resuelto = true;
+        try { window.turnstile.reset(widgetId); } catch (_) {}
+        fn(valor);
+      };
+      window.setTimeout(() => finalizar(reject, new Error('La verificación anti-bots tardó demasiado. Probá de nuevo.')), 15000);
+      try {
+        window.turnstile.execute(widgetId, {
+          callback: (token) => finalizar(resolve, token),
+          'error-callback': () => finalizar(reject, new Error('No se pudo verificar que sos una persona. Probá de nuevo.'))
+        });
+      } catch (_) {
+        finalizar(reject, new Error('No se pudo verificar que sos una persona. Probá de nuevo.'));
+      }
+    });
+  }
 
   const estado = {
     source: 'web',
@@ -278,6 +371,7 @@
       <p class="portal-muted">Para empezar, necesitamos verificar si ya estás registrado.</p>
       <form id="portalFormDni" novalidate>
         <label>DNI<input name="dni" inputmode="numeric" autocomplete="off" maxlength="9" required></label>
+        <div id="turnstileDni" data-turnstile-container></div>
         <button type="submit" class="portal-btn-primario">CONTINUAR</button>
       </form>
     `;
@@ -321,6 +415,7 @@
         <label>Email (opcional)<input name="email" type="email" maxlength="200"></label>
         <label>Obra social / prepaga<select name="coberturaHabitual" required>${opcionesCobertura}</select></label>
         <label>N° de afiliado (opcional)<input name="numeroAfiliado" maxlength="60"></label>
+        <div id="turnstileAlta" data-turnstile-container></div>
         <button type="submit" class="portal-btn-primario">DARME DE ALTA</button>
       </form>
     `;
@@ -343,6 +438,7 @@
       <form id="portalFormSolicitud" novalidate>
         <label>Prestación<select name="prestacion" required>${opcionesPrestacion}</select></label>
         <label>Cobertura para esta solicitud<select name="cobertura" required>${opcionesCobertura}</select></label>
+        <div id="turnstileSolicitud" data-turnstile-container></div>
         <button type="submit" class="portal-btn-primario">ENVIAR SOLICITUD</button>
       </form>
     `;
@@ -378,6 +474,8 @@
     document.querySelectorAll('[data-portal-accion="volver-inicio"], [data-portal-accion="finalizar"]').forEach((boton) => {
       boton.addEventListener('click', volverAlInicio);
     });
+
+    montarTurnstileSiCorresponde();
   }
 
   function volverAlInicio() {
@@ -396,12 +494,24 @@
       render();
       return;
     }
+    // El token se pide ANTES de tocar estado.cargando/render(): render()
+    // reemplaza todo el HTML del paso, incluido el contenedor del widget ya
+    // montado, así que hay que usarlo mientras el nodo original sigue vivo.
+    let turnstileToken;
+    try {
+      turnstileToken = await obtenerTokenTurnstile();
+    } catch (error) {
+      estado.mensaje = error.message;
+      estado.tipoMensaje = 'error';
+      render();
+      return;
+    }
     estado.dni = soloDigitos(dni);
     estado.cargando = true;
     estado.mensaje = '';
     render();
     try {
-      const resultado = await consultarDni(estado.dni);
+      const resultado = await consultarDni(estado.dni, turnstileToken);
       estado.paso = resultado.existe ? 'ya-registrado' : 'alta';
       estado.mensaje = '';
     } catch (error) {
@@ -416,6 +526,15 @@
   async function onSubmitAlta(evento) {
     evento.preventDefault();
     const datosForm = new FormData(evento.target);
+    let turnstileToken;
+    try {
+      turnstileToken = await obtenerTokenTurnstile();
+    } catch (error) {
+      estado.mensaje = error.message;
+      estado.tipoMensaje = 'error';
+      render();
+      return;
+    }
     const datos = {
       nombre: datosForm.get('nombre'),
       apellido: datosForm.get('apellido'),
@@ -425,7 +544,8 @@
       email: datosForm.get('email'),
       coberturaHabitual: datosForm.get('coberturaHabitual'),
       numeroAfiliado: datosForm.get('numeroAfiliado'),
-      source: estado.source
+      source: estado.source,
+      turnstileToken
     };
     estado.cargando = true;
     estado.mensaje = '';
@@ -465,11 +585,21 @@
   async function onSubmitSolicitud(evento) {
     evento.preventDefault();
     const datosForm = new FormData(evento.target);
+    let turnstileToken;
+    try {
+      turnstileToken = await obtenerTokenTurnstile();
+    } catch (error) {
+      estado.mensaje = error.message;
+      estado.tipoMensaje = 'error';
+      render();
+      return;
+    }
     const datos = {
       dni: estado.dni,
       prestacion: datosForm.get('prestacion'),
       cobertura: datosForm.get('cobertura'),
-      source: estado.source
+      source: estado.source,
+      turnstileToken
     };
     estado.cargando = true;
     estado.mensaje = '';
@@ -502,12 +632,13 @@
   }
 
   return Object.freeze({
-    version: '2.2.0-portal-publico-v1-staging-local',
+    version: '3.0.1-portal-publico-hardening-v1-turnstile-invisible',
     obtenerSourceDesdeUrl,
     dniClienteValido,
     soloDigitos,
     esEntornoLocal,
     gatewayUrl,
+    turnstileSitekey,
     install
   });
 });

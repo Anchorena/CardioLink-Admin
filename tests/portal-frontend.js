@@ -11,6 +11,8 @@ const indexPath = path.join(root, 'portal', 'index.html');
 const indexSource = fs.readFileSync(indexPath, 'utf8');
 const contenidoPath = path.join(root, 'portal', 'contenido-publico.js');
 const contenidoSource = fs.readFileSync(contenidoPath, 'utf8');
+const portalCssPath = path.join(root, 'portal', 'portal.css');
+const portalCssSource = fs.readFileSync(portalCssPath, 'utf8');
 
 function test(name, run) {
   try {
@@ -35,6 +37,7 @@ test('el factory expone window.CardioLinkPortal con la API completa', () => {
   assert.equal(typeof mod.soloDigitos, 'function');
   assert.equal(typeof mod.esEntornoLocal, 'function');
   assert.equal(typeof mod.gatewayUrl, 'function');
+  assert.equal(typeof mod.turnstileSitekey, 'function');
   assert.equal(typeof mod.install, 'function');
   assert.match(moduleSource, /if \(root && !root\.CardioLinkPortal\) root\.CardioLinkPortal = api;/);
 });
@@ -120,6 +123,38 @@ test('fuera de local, el override window.CARDIOLINK_PORTAL_GATEWAY_URL sigue fun
   }
 });
 
+test('turnstileSitekey usa la sitekey de test INVISIBLE de Cloudflare en local (BB, no AA que es la del widget visible), incluso con el override seteado', () => {
+  conVentanaFalsa('localhost', (mod) => {
+    assert.equal(mod.turnstileSitekey(), '1x00000000000000000000BB');
+  });
+  delete require.cache[require.resolve(modulePath)];
+  global.window = { location: { hostname: 'localhost', search: '' }, CARDIOLINK_TURNSTILE_SITEKEY: 'otra-sitekey-cualquiera' };
+  global.document = {};
+  try {
+    const mod = require(modulePath);
+    assert.equal(mod.turnstileSitekey(), '1x00000000000000000000BB', 'en local, la QA sitekey es automática, no una opción manual');
+  } finally {
+    delete global.window;
+    delete global.document;
+  }
+});
+
+test('turnstileSitekey nunca usa la sitekey de QA fuera de un origen local; el override configura la de Producción', () => {
+  conVentanaFalsa('www.consultoriomedicorm.com.ar', (mod) => {
+    assert.notEqual(mod.turnstileSitekey(), '1x00000000000000000000BB');
+  });
+  delete require.cache[require.resolve(modulePath)];
+  global.window = { location: { hostname: 'www.consultoriomedicorm.com.ar', search: '' }, CARDIOLINK_TURNSTILE_SITEKEY: 'sitekey-real-de-produccion' };
+  global.document = {};
+  try {
+    const mod = require(modulePath);
+    assert.equal(mod.turnstileSitekey(), 'sitekey-real-de-produccion');
+  } finally {
+    delete global.window;
+    delete global.document;
+  }
+});
+
 test('render() muestra el badge STAGING LOCAL sólo cuando esEntornoLocal() es true', () => {
   const inicio = moduleSource.indexOf('function render()');
   const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
@@ -130,6 +165,104 @@ test('gatewayUrl es la única pieza modificada: no toca el flujo DNI/alta/solici
   const inicio = moduleSource.indexOf('function gatewayUrl');
   const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
   assert.doesNotMatch(cuerpo, /dni|cobertura|prestacion|alta|solicitud/i);
+});
+
+// -----------------------------------------------------------------------
+// Turnstile: widget invisible en los tres formularios protegidos, token
+// obtenido ANTES de render() (que destruye el contenedor ya montado), y
+// agregado al payload de las tres llamadas al gateway. Sin cambios
+// visuales: size 'invisible', sin casilla ni texto agregado a la UI.
+// -----------------------------------------------------------------------
+
+test('los tres formularios protegidos tienen un contenedor de Turnstile, invisible y sin texto visible agregado', () => {
+  assert.equal((moduleSource.match(/data-turnstile-container/g) || []).length, 3);
+  assert.match(moduleSource, /<div id="turnstileDni" data-turnstile-container><\/div>/);
+  assert.match(moduleSource, /<div id="turnstileAlta" data-turnstile-container><\/div>/);
+  assert.match(moduleSource, /<div id="turnstileSolicitud" data-turnstile-container><\/div>/);
+});
+
+test('el widget se monta como invisible y con ejecución manual (no dispara el desafío solo al montar)', () => {
+  const inicio = moduleSource.indexOf('function montarTurnstileSiCorresponde');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  assert.match(cuerpo, /window\.turnstile\.render\(contenedor, \{/, 'el widget se renderiza explícitamente, no por auto-init');
+  assert.match(cuerpo, /sitekey: turnstileSitekey\(\)/);
+  assert.match(cuerpo, /size: 'invisible'/);
+  assert.match(cuerpo, /execution: 'execute'/);
+});
+
+test('ningún contenedor de Turnstile usa la clase cf-turnstile: el render es siempre explícito, nunca por auto-init de Cloudflare', () => {
+  assert.doesNotMatch(moduleSource, /cf-turnstile/);
+});
+
+test('obtenerTokenTurnstile resetea el widget al resolver (con token o con error): nunca reutiliza el mismo token', () => {
+  const inicio = moduleSource.indexOf('function obtenerTokenTurnstile');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  const posFinalizarDef = cuerpo.indexOf('const finalizar = (fn, valor) => {');
+  const posReset = cuerpo.indexOf('window.turnstile.reset(widgetId)');
+  const posFnLlamado = cuerpo.indexOf('fn(valor);');
+  assert.notEqual(posFinalizarDef, -1);
+  assert.notEqual(posReset, -1);
+  assert.notEqual(posFnLlamado, -1);
+  assert.ok(posFinalizarDef < posReset && posReset < posFnLlamado, 'reset() corre dentro de finalizar(), antes de resolver/rechazar la promesa');
+  // finalizar() es el único callback pasado tanto a execute() como al
+  // timeout: se usa para las tres rutas de salida (token, error-callback,
+  // timeout), así que las tres resetean el widget.
+  assert.match(cuerpo, /callback: \(token\) => finalizar\(resolve, token\)/);
+  assert.match(cuerpo, /'error-callback': \(\) => finalizar\(reject,/);
+  assert.match(cuerpo, /window\.setTimeout\(\(\) => finalizar\(reject,/);
+});
+
+test('el contenedor de Turnstile no depende de display:none: portal.css lo deja en el layout normal', () => {
+  assert.match(portalCssSource, /\[data-turnstile-container\]/);
+  const inicio = portalCssSource.indexOf('[data-turnstile-container]');
+  const cuerpo = portalCssSource.slice(inicio, portalCssSource.indexOf('}', inicio));
+  assert.doesNotMatch(cuerpo, /display:\s*none/);
+  assert.doesNotMatch(cuerpo, /visibility:\s*hidden/);
+});
+
+test('el token se pide ANTES de estado.cargando/render() en los tres submit, porque render() destruye el contenedor ya montado', () => {
+  [
+    ['async function onSubmitDni', 'estado.cargando = true'],
+    ['async function onSubmitAlta', 'estado.cargando = true'],
+    ['async function onSubmitSolicitud', 'estado.cargando = true']
+  ].forEach(([marcadorFuncion, marcadorCargando]) => {
+    const inicio = moduleSource.indexOf(marcadorFuncion);
+    assert.notEqual(inicio, -1, `existe ${marcadorFuncion}`);
+    const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+    const posToken = cuerpo.indexOf('await obtenerTokenTurnstile()');
+    const posCargando = cuerpo.indexOf(marcadorCargando);
+    assert.notEqual(posToken, -1, `${marcadorFuncion} pide el token`);
+    assert.notEqual(posCargando, -1);
+    assert.ok(posToken < posCargando, `${marcadorFuncion}: el token se pide antes de estado.cargando`);
+  });
+});
+
+test('el token viaja en el payload de check-dni, registro y solicitud-turno', () => {
+  const inicioDni = moduleSource.indexOf('async function onSubmitDni');
+  const cuerpoDni = moduleSource.slice(inicioDni, moduleSource.indexOf('\n  }', inicioDni));
+  assert.match(cuerpoDni, /consultarDni\(estado\.dni, turnstileToken\)/);
+
+  const inicioAlta = moduleSource.indexOf('async function onSubmitAlta');
+  const cuerpoAlta = moduleSource.slice(inicioAlta, moduleSource.indexOf('\n  }', inicioAlta));
+  assert.match(cuerpoAlta, /turnstileToken\n?\s*\};/, 'el objeto datos del alta incluye turnstileToken');
+
+  const inicioSolicitud = moduleSource.indexOf('async function onSubmitSolicitud');
+  const cuerpoSolicitud = moduleSource.slice(inicioSolicitud, moduleSource.indexOf('\n  }', inicioSolicitud));
+  assert.match(cuerpoSolicitud, /turnstileToken\n?\s*\};/, 'el objeto datos de la solicitud incluye turnstileToken');
+});
+
+test('sin Turnstile cargado, obtenerTokenTurnstile rechaza con un mensaje claro en vez de dejar pasar el envío', () => {
+  const inicio = moduleSource.indexOf('function obtenerTokenTurnstile');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  assert.match(cuerpo, /if \(!turnstileDisponible\(\) \|\| turnstileWidget\.widgetId === null\)/);
+  assert.match(cuerpo, /reject\(new Error\('No se pudo cargar la verificación anti-bots/);
+});
+
+test('el script de Turnstile se carga en portal/index.html antes de portal.js', () => {
+  assert.match(indexSource, /<script src="https:\/\/challenges\.cloudflare\.com\/turnstile\/v0\/api\.js" async defer><\/script>/);
+  const posTurnstile = indexSource.indexOf('challenges.cloudflare.com/turnstile');
+  const posPortalJs = indexSource.indexOf('<script src="portal.js');
+  assert.ok(posTurnstile < posPortalJs);
 });
 
 // -----------------------------------------------------------------------
