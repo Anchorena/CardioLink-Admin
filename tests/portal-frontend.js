@@ -239,6 +239,44 @@ test('ningún contenedor de Turnstile usa la clase cf-turnstile: el render es si
   assert.doesNotMatch(moduleSource, /cf-turnstile/);
 });
 
+// -----------------------------------------------------------------------
+// Fix: condición de carrera entre el script async de Cloudflare y el
+// primer montaje del widget. Desde que el hero embebe el formulario de
+// DNI directamente en el primer render() de la página (antes sólo pasaba
+// al hacer click en "SOLICITAR TURNO", segundos después de cargar),
+// montarTurnstileSiCorresponde() puede correr ANTES de que
+// window.turnstile exista todavía. Sin reintento, turnstileWidget.widgetId
+// quedaba en null para siempre y cualquier envío fallaba de entrada con
+// "No se pudo cargar la verificación anti-bots.", aunque Turnstile
+// terminara cargando un instante después.
+// -----------------------------------------------------------------------
+
+test('si Turnstile todavía no cargó al montar, se programa un reintento en vez de dejar el widget en null para siempre', () => {
+  const inicio = moduleSource.indexOf('function montarTurnstileSiCorresponde');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  assert.match(cuerpo, /if \(!turnstileDisponible\(\)\) \{/);
+  assert.match(cuerpo, /reintentarMontajeTurnstile\(0\)/);
+  // Guardado por una bandera para no arrancar varias cadenas de reintento
+  // en paralelo si hay más de un render() mientras se espera.
+  assert.match(cuerpo, /if \(!turnstileEsperandoScript\) \{/);
+  assert.match(cuerpo, /turnstileEsperandoScript = true;/);
+});
+
+test('reintentarMontajeTurnstile: reintenta con un límite acotado (no reintenta para siempre) y nunca pisa un widget que ya se montó con éxito', () => {
+  const inicio = moduleSource.indexOf('function reintentarMontajeTurnstile');
+  assert.notEqual(inicio, -1, 'existe reintentarMontajeTurnstile');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  assert.match(cuerpo, /window\.setTimeout\(\(\) => \{/, 'usa un timeout, no un loop bloqueante');
+  assert.match(cuerpo, /250\)/, '250ms entre intentos');
+  assert.match(cuerpo, /intentos < 40/, 'límite acotado de reintentos (~10s en total)');
+  // Antes de reintentar, chequea que no haya un widget ya montado (por
+  // otro render() mientras tanto) y que todavía exista un contenedor.
+  const posCheckWidget = cuerpo.indexOf('if (turnstileWidget.widgetId !== null) return;');
+  const posCheckContenedor = cuerpo.indexOf("if (!document.querySelector('[data-turnstile-container]')) return;");
+  assert.notEqual(posCheckWidget, -1);
+  assert.notEqual(posCheckContenedor, -1);
+});
+
 test('obtenerTokenTurnstile resetea el widget al resolver (con token o con error): nunca reutiliza el mismo token', () => {
   const inicio = moduleSource.indexOf('function obtenerTokenTurnstile');
   const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
@@ -485,10 +523,10 @@ test('la cobertura de la solicitud y la cobertura habitual del alta son campos d
 // contenido-publico.js: estructura centralizada, sin datos inventados.
 // -----------------------------------------------------------------------
 
-test('contenido-publico.js expone window.CardioLinkContenidoPublico con las 6 áreas centralizadas', () => {
+test('contenido-publico.js expone window.CardioLinkContenidoPublico con las 9 áreas centralizadas', () => {
   delete require.cache[require.resolve(contenidoPath)];
   const contenido = require(contenidoPath);
-  ['identidad', 'profesionales', 'prestaciones', 'modalidad', 'contacto', 'coberturas'].forEach((clave) => {
+  ['identidad', 'profesionales', 'prestaciones', 'especialidadesComplementarias', 'equipamiento', 'modalidad', 'estudiosPaciente', 'contacto', 'coberturas'].forEach((clave) => {
     assert.ok(clave in contenido, `expone ${clave}`);
   });
   assert.match(contenidoSource, /if \(root && !root\.CardioLinkContenidoPublico\) root\.CardioLinkContenidoPublico = api;/);
@@ -501,33 +539,189 @@ test('la identidad usa el nombre real ya usado por el Admin (marcaDocumento de M
   assert.match(appSource, /'Consultorio Médico RM'/, 'ese nombre existe de verdad en app.js, no se inventó para el portal');
 });
 
-test('los colores de marca son los mismos que ya usa el Admin (styles.css/manifest), no colores inventados', () => {
+test('la descripción institucional representa al conjunto del centro, no a un solo profesional: no dice "Medicina Intensiva" (eso es el perfil personal de Matías)', () => {
   const contenido = require(contenidoPath);
-  assert.equal(contenido.identidad.colorPrimario, '#123f56');
-  const manifestSource = fs.readFileSync(path.join(root, 'manifest.webmanifest'), 'utf8');
-  assert.match(manifestSource, /"theme_color":\s*"#123f56"/);
-  assert.match(moduleSource + fs.readFileSync(path.join(root, 'portal', 'portal.css'), 'utf8'), /#123f56/);
+  assert.doesNotMatch(contenido.identidad.descripcionBreve, /Medicina Intensiva/i);
+  assert.match(contenido.identidad.descripcionBreve, /Cardiología/);
+  assert.match(contenido.identidad.descripcionBreve, /Diagnóstico por Imágenes/);
 });
 
-test('el logo reutiliza el único asset de imagen real del repo (icons/icon-512.png): no se referencia ningún archivo inexistente', () => {
+test('"Medicina Intensiva y Cardiología" es el perfil personal de Matías, no la descripción institucional', () => {
   const contenido = require(contenidoPath);
-  assert.equal(contenido.identidad.logoUrl, '../icons/icon-512.png');
-  const rutaLogo = path.join(root, 'icons', 'icon-512.png');
-  assert.ok(fs.existsSync(rutaLogo), 'el archivo referenciado como logo existe de verdad en el repo');
+  const matias = contenido.profesionales.find((p) => p.nombre === 'Dr. Matías Anchorena');
+  assert.match(matias.descripcionBreve, /Medicina Intensiva y Cardiología/);
+});
+
+test('los colores de marca son los del brand kit aprobado (azul petróleo + turquesa), en la misma familia que el Admin pero identidad propia del portal', () => {
+  const contenido = require(contenidoPath);
+  assert.equal(contenido.identidad.colorPrimario, '#0e4f63');
+  const portalCss = fs.readFileSync(path.join(root, 'portal', 'portal.css'), 'utf8');
+  assert.match(portalCss, /--portal-primary:\s*#0e4f63/);
+  assert.match(portalCss, /--portal-primary-dark:\s*#0b2d42/);
+  assert.match(portalCss, /--portal-turquesa:\s*#14b8c5/);
+  const manifestSource = fs.readFileSync(path.join(root, 'manifest.webmanifest'), 'utf8');
+  assert.match(manifestSource, /"theme_color":\s*"#123f56"/, 'el Admin no se tocó: sigue con su propio color original');
+});
+
+test('los logos reales del brand kit (horizontal, oscuro, claro) todavía no se entregaron: quedan vacíos, no se recrean con SVG/CSS', () => {
+  const contenido = require(contenidoPath);
+  ['logoPrincipal', 'logoOscuro', 'logoClaro'].forEach((campo) => {
+    assert.equal(contenido.identidad[campo], '', `${campo} debe quedar vacío: archivo real todavía no entregado`);
+  });
+});
+
+test('el isologo institucional es el archivo real del brand kit (isologo.png), no el fallback provisional en código', () => {
+  const contenido = require(contenidoPath);
+  assert.equal(contenido.identidad.isologo, 'assets/branding/isologo.png');
+  const rutaLogo = path.join(root, 'portal', 'assets', 'branding', 'isologo.png');
+  assert.ok(fs.existsSync(rutaLogo), 'el archivo referenciado existe de verdad en el repo');
+});
+
+test('el header prioriza logoOscuro → logoPrincipal → isologo, y sólo el isologo fallback lleva el recuadro blanco', () => {
+  const inicio = moduleSource.indexOf('function logoHeroSeleccionado');
+  assert.notEqual(inicio, -1, 'existe logoHeroSeleccionado');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  assert.match(cuerpo, /identidad\.logoOscuro/);
+  assert.match(cuerpo, /identidad\.logoPrincipal/);
+  assert.match(cuerpo, /identidad\.isologo/);
+  // El logo vive en el header (nav), no en el cuerpo del hero: el hero ya
+  // no repite el logo, sólo el mensaje institucional + la card de DNI.
+  const inicioHeader = moduleSource.indexOf('function renderHeader');
+  const cuerpoHeader = moduleSource.slice(inicioHeader, moduleSource.indexOf('\n  }', inicioHeader));
+  assert.match(cuerpoHeader, /logoHeroSeleccionado/);
+  assert.match(cuerpoHeader, /portal-logo-fallback/);
+});
+
+test('logoUrl: Matías y Rogelio ya tienen su logo personal real cargado; Drago/Rutter siguen sin uno (vacío, no inventado)', () => {
+  const contenido = require(contenidoPath);
+  const porNombre = Object.fromEntries(contenido.profesionales.map((p) => [p.nombre, p.logoUrl]));
+  assert.equal(porNombre['Dr. Matías Anchorena'], 'assets/profesionales/matias-anchorena.png');
+  assert.equal(porNombre['Dr. Rogelio Anchorena'], 'assets/profesionales/rogelio-anchorena.png');
+  ['Dr. Fernández Drago Humberto', 'Dra. Rutter'].forEach((nombre) => {
+    assert.equal(porNombre[nombre], '', `${nombre}.logoUrl debe quedar vacío: sin logo personal real confirmado todavía`);
+  });
+  ['matias-anchorena.png', 'rogelio-anchorena.png'].forEach((archivo) => {
+    const rutaLogo = path.join(root, 'portal', 'assets', 'profesionales', archivo);
+    assert.ok(fs.existsSync(rutaLogo), `${archivo} existe de verdad en el repo`);
+  });
+});
+
+test('renderAvatarProfesional(): fotoUrl → foto circular; si no hay foto pero sí logoUrl → logo completo sin recortar (object-fit: contain) en caja rectangular; si no hay ninguno → iniciales', () => {
+  const inicio = moduleSource.indexOf('function renderAvatarProfesional');
+  assert.notEqual(inicio, -1, 'existe renderAvatarProfesional');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  // Orden de las tres ramas: fotoUrl primero, logoUrl segundo, iniciales al final.
+  const posFoto = cuerpo.indexOf('p.fotoUrl');
+  const posLogo = cuerpo.indexOf('p.logoUrl');
+  const posIniciales = cuerpo.indexOf('portal-profesional-avatar');
+  assert.ok(posFoto !== -1 && posLogo !== -1 && posIniciales !== -1, 'las tres ramas existen');
+  assert.ok(posFoto < posLogo && posLogo < posIniciales, 'el orden de prioridad es foto → logo → iniciales');
+  assert.match(cuerpo, /class="portal-profesional-foto"/);
+  assert.match(cuerpo, /class="portal-profesional-logo-box"/);
+  assert.match(cuerpo, /class="portal-profesional-logo-img"/);
+  // renderProfesionalesPublicos usa esta función (no duplica la lógica).
+  const inicioCards = moduleSource.indexOf('function renderProfesionalesPublicos');
+  const cuerpoCards = moduleSource.slice(inicioCards, moduleSource.indexOf('\n  }', inicioCards));
+  assert.match(cuerpoCards, /renderAvatarProfesional\(p\)/);
+});
+
+test('el logo completo (sin foto) nunca se recorta en el círculo de 72px: usa object-fit contain en una caja propia, no la clase de foto/avatar circular', () => {
+  const inicio = moduleSource.indexOf('function renderAvatarProfesional');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  // El bloque exacto que arma la rama logoUrl: ni la img ni su contenedor
+  // reutilizan las clases circulares de foto/iniciales.
+  const bloqueLogo = /if \(p\.logoUrl\) \{\s*return `<div class="portal-profesional-logo-box"><img class="portal-profesional-logo-img"[^`]*<\/div>`;\s*\}/;
+  assert.match(cuerpo, bloqueLogo, 'la rama de logoUrl arma la caja+img esperadas');
+  const match = cuerpo.match(bloqueLogo)[0];
+  assert.doesNotMatch(match, /portal-profesional-foto"|portal-profesional-avatar"/, 'no reutiliza las clases circulares de foto/iniciales');
+
+  const cssPath = path.join(root, 'portal', 'portal.css');
+  const css = fs.readFileSync(cssPath, 'utf8');
+  const inicioCss = css.indexOf('.portal-profesional-logo-img');
+  assert.notEqual(inicioCss, -1, 'existe la regla CSS de la imagen del logo');
+  assert.match(css.slice(inicioCss, inicioCss + 200), /object-fit:\s*contain/, 'sin recorte ni deformación: contain, no cover');
+});
+
+test('portal/assets/README.md documenta el nombre de archivo, carpeta y valor de configuración esperados para cada logo/foto pendiente', () => {
+  const readmePath = path.join(root, 'portal', 'assets', 'README.md');
+  assert.ok(fs.existsSync(readmePath), 'existe portal/assets/README.md');
+  const readme = fs.readFileSync(readmePath, 'utf8');
+  ['logoPrincipal', 'logoOscuro', 'logoClaro', 'fotoUrl'].forEach((campo) => {
+    assert.match(readme, new RegExp(campo));
+  });
+});
+
+test('los 4 profesionales confirmados aparecen, en este orden: Matías, Rogelio, Fernández Drago Humberto y Rutter', () => {
+  const contenido = require(contenidoPath);
+  assert.equal(contenido.profesionales.length, 4);
+  const nombres = contenido.profesionales.map((p) => p.nombre);
+  assert.deepEqual(nombres, ['Dr. Matías Anchorena', 'Dr. Rogelio Anchorena', 'Dr. Fernández Drago Humberto', 'Dra. Rutter']);
+});
+
+test('los 3 profesionales con prestaciones confirmadas (Matías, Rogelio, Drago Humberto) existen de verdad en app.js, con configuración propia', () => {
+  const contenido = require(contenidoPath);
+  const appSource = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
+  const conPrestaciones = contenido.profesionales.filter((p) => p.nombre !== 'Dra. Rutter');
+  assert.equal(conPrestaciones.length, 3);
+  conPrestaciones.forEach((p) => {
+    assert.match(appSource, new RegExp(`nombre:'${p.nombre.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}'`), `${p.nombre} existe de verdad en app.js`);
+    assert.ok(Array.isArray(p.prestaciones) && p.prestaciones.length, `${p.nombre} tiene prestaciones reales cargadas`);
+  });
+  // Cada profesional tiene su propio array de prestaciones (nunca la misma
+  // referencia compartida), aunque el contenido real pueda coincidir.
+  const referencias = new Set(conPrestaciones.map((p) => p.prestaciones));
+  assert.equal(referencias.size, 3, 'las tres listas de prestaciones son objetos/arrays independientes, no una referencia compartida');
+});
+
+test('"Drago Lucas" NO se muestra como profesional público: sólo se confirmó a Fernández Drago Humberto', () => {
+  const contenido = require(contenidoPath);
+  assert.ok(contenido.profesionales.every((p) => !/lucas/i.test(p.nombre)), 'Drago Lucas no debe aparecer como dato dentro de PROFESIONALES todavía');
+  const appSource = fs.readFileSync(path.join(root, 'app.js'), 'utf8');
+  assert.match(appSource, /nombre:'Dr\. Drago Lucas'/, 'confirma que sí existe un registro real para él en app.js, pero no se usó todavía sin confirmación');
 });
 
 test('Geraldine no aparece en la sección de profesionales del portal (no es profesional médica)', () => {
   const contenido = require(contenidoPath);
-  assert.equal(contenido.profesionales.length, 1);
   // No se prohíbe la palabra en comentarios (hay uno que documenta por qué
   // se excluye): se prohíbe que aparezca como dato dentro de PROFESIONALES.
   assert.ok(contenido.profesionales.every((p) => !/geraldine/i.test(p.nombre)));
-  assert.equal(contenido.profesionales[0].nombre, 'Dr. Matías Anchorena');
 });
 
-test('los datos de contacto sin confirmar en el repo quedan vacíos: nada de teléfono/dirección/email/redes inventado', () => {
+test('Rutter SÍ está en PROFESIONALES, pero sin ningún dato inventado: especialidad/matrícula/prestaciones/horarios/bio/foto/logo quedan vacíos', () => {
   const contenido = require(contenidoPath);
-  ['direccion', 'telefono', 'whatsapp', 'instagram', 'email', 'mapaUrl'].forEach((campo) => {
+  const rutter = contenido.profesionales.find((p) => p.nombre === 'Dra. Rutter');
+  assert.ok(rutter, 'Rutter existe en PROFESIONALES');
+  ['especialidad', 'matriculaNacional', 'matriculaProvincial', 'descripcionBreve', 'fotoUrl', 'logoUrl', 'diasAtencion', 'horarios'].forEach((campo) => {
+    assert.equal(rutter[campo], '', `${campo} de Rutter debe quedar vacío: sin dato real confirmado`);
+  });
+  assert.deepEqual(rutter.prestaciones, []);
+  // Su único respaldo real en el repo es el nombre, en la lista de colegas
+  // externos que derivan pacientes — no tiene ahí ninguno de los otros
+  // campos, así que no hay de dónde tomarlos sin inventarlos.
+  const referidosSource = fs.readFileSync(path.join(root, 'cardiolink-hc-referidos.js'), 'utf8');
+  assert.match(referidosSource, /'Dra\. Rutter'/);
+});
+
+test('Rutter NO se publica todavía (visibleEnPortal: false): decisión explícita del dueño para no mostrar una tarjeta incompleta', () => {
+  const contenido = require(contenidoPath);
+  const rutter = contenido.profesionales.find((p) => p.nombre === 'Dra. Rutter');
+  assert.equal(rutter.visibleEnPortal, false);
+  // Sigue confirmada como staff público: la modalidad no se vacía, sólo se
+  // oculta la tarjeta hasta tener días/horarios reales.
+  assert.equal(rutter.modalidadAtencion, 'orden_llegada');
+});
+
+test('la modalidad de atención de Rutter (orden de llegada) SÍ está confirmada, a diferencia del resto de sus datos: no queda vacía', () => {
+  const contenido = require(contenidoPath);
+  const rutter = contenido.profesionales.find((p) => p.nombre === 'Dra. Rutter');
+  assert.equal(rutter.modalidadAtencion, 'orden_llegada');
+  assert.equal(rutter.mensajeModalidad, '', 'sin override manual: el texto se arma desde la plantilla genérica');
+});
+
+test('el email de contacto es el real entregado (drm.anchorena@gmail.com), el resto de los campos sin confirmar sigue vacío', () => {
+  const contenido = require(contenidoPath);
+  assert.equal(contenido.contacto.email, 'drm.anchorena@gmail.com');
+  ['direccion', 'telefono', 'whatsapp', 'instagram', 'mapaUrl'].forEach((campo) => {
     assert.equal(contenido.contacto[campo], '', `${campo} debe quedar vacío: no hay dato real confirmado en el repo`);
   });
 });
@@ -555,27 +749,361 @@ test('las coberturas incluyen al menos Particular y "No sé / consultar", tomada
 // Landing / micrositio: secciones A-F pedidas.
 // -----------------------------------------------------------------------
 
-test('renderLanding compone las 6 secciones pedidas: hero, prestaciones, profesionales, modalidad, contacto y CTA final', () => {
+test('renderLanding compone las secciones pedidas: header, hero, prestaciones, profesionales, especialidades, equipamiento, modalidad, mis estudios, contacto, CTA y footer', () => {
   const inicio = moduleSource.indexOf('function renderLanding');
   const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
-  ['renderHero', 'renderPrestacionesPublicas', 'renderProfesionalesPublicos', 'renderModalidad', 'renderContacto', 'renderCtaFinal'].forEach((fn) => {
+  [
+    'renderHeader', 'renderHero', 'renderPrestacionesPublicas', 'renderProfesionalesPublicos',
+    'renderEspecialidadesComplementarias', 'renderEquipamiento', 'renderModalidad',
+    'renderEstudiosPaciente', 'renderContacto', 'renderCtaFinal', 'renderFooter'
+  ].forEach((fn) => {
     assert.ok(cuerpo.includes(fn), `renderLanding incluye ${fn}`);
   });
 });
 
-test('el hero tiene logo, nombre, descripción y el botón SOLICITAR TURNO', () => {
+test('el hero tiene nombre, descripción y la card de DNI embebida (sin repetir el logo, que ya está en el header)', () => {
   const inicio = moduleSource.indexOf('function renderHero');
   const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
   assert.match(cuerpo, /identidad\.nombreConsultorio/);
   assert.match(cuerpo, /identidad\.descripcionBreve/);
-  assert.match(cuerpo, /SOLICITAR TURNO/);
-  assert.match(cuerpo, /data-portal-accion="ir-solicitud"/);
+  assert.match(cuerpo, /renderFormularioDni\(\)/);
+  assert.match(cuerpo, /id="hero-turno"/);
+  assert.doesNotMatch(cuerpo, /logoHeroSeleccionado/, 'el logo vive sólo en el header, no se repite en el hero');
+});
+
+test('el header tiene logo+nombre, nav a las secciones existentes y un CTA que ancla a la card de DNI del hero (sin disparar ninguna acción de JS)', () => {
+  const inicio = moduleSource.indexOf('function renderHeader');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  assert.match(cuerpo, /identidad\.nombreConsultorio/);
+  assert.match(cuerpo, /href="#inicio"/);
+  assert.match(cuerpo, /href="#prestaciones"/);
+  assert.match(cuerpo, /href="#profesionales"/);
+  assert.match(cuerpo, /href="#contacto"/);
+  assert.match(cuerpo, /href="#hero-turno"/);
+  assert.doesNotMatch(cuerpo, /data-portal-accion/, 'el header es sólo navegación por anclas, no dispara acciones');
+});
+
+test('el formulario de DNI del hero es el mismo real de siempre (mismo id/inputs/Turnstile), no una card decorativa', () => {
+  const inicio = moduleSource.indexOf('function renderFormularioDni');
+  assert.notEqual(inicio, -1, 'existe renderFormularioDni');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  assert.match(cuerpo, /id="portalFormDni"/);
+  assert.match(cuerpo, /name="dni"/);
+  assert.match(cuerpo, /data-turnstile-container/);
+  assert.match(cuerpo, /value="\$\{escapar\(estado\.dni\)\}"/, 'precarga el DNI ya tipeado si el formulario se vuelve a mostrar');
+  // renderPasoDni (usado dentro del flujo, ej. para "Ver días y horarios")
+  // reutiliza esta misma función, no duplica el formulario.
+  const inicioPasoDni = moduleSource.indexOf('function renderPasoDni');
+  const cuerpoPasoDni = moduleSource.slice(inicioPasoDni, moduleSource.indexOf('\n  }', inicioPasoDni));
+  assert.match(cuerpoPasoDni, /renderFormularioDni\(\)/);
+});
+
+test('el turno público sigue siendo sólo para Matías: el formulario de DNI del hero es genérico, sin selector de profesional', () => {
+  const inicio = moduleSource.indexOf('function renderHero');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  assert.doesNotMatch(cuerpo, /<select|data-profesional-index/, 'el hero no ofrece elegir profesional');
 });
 
 test('la sección de profesionales es informativa: no hay ningún <select>/<input> para elegir profesional', () => {
   const inicio = moduleSource.indexOf('function renderProfesionalesPublicos');
   const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
   assert.doesNotMatch(cuerpo, /<select|<input|<form/);
+});
+
+test('la tarjeta de cada profesional muestra sus prestaciones y, si están cargados, días/horarios', () => {
+  const inicio = moduleSource.indexOf('function renderProfesionalesPublicos');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  assert.match(cuerpo, /p\.prestaciones/);
+  assert.match(cuerpo, /p\.diasAtencion, p\.horarios/);
+});
+
+test('un profesional sin ningún dato confirmado (ni siquiera modalidad) muestra un aviso discreto, nunca campos vacíos ni inventados', () => {
+  const inicio = moduleSource.indexOf('function renderProfesionalesPublicos');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  // modalidadAtencion cuenta como dato confirmado: si está cargada, ya no
+  // corresponde el aviso "Más información, próximamente." (es lo que le
+  // pasa hoy a Rutter, que tiene la modalidad confirmada aunque el resto
+  // de sus campos siga vacío — ver el test de arriba).
+  assert.match(cuerpo, /const sinDatosConfirmados = !p\.especialidad && !matriculas && !p\.descripcionBreve && !horario && !tienePrestaciones && !modalidad;/);
+  assert.match(cuerpo, /Más información, próximamente\./);
+  // No inventa ninguno de los campos que pueden estar vacíos: no hay
+  // ningún valor por defecto (||) para especialidad/matrícula/etc., cada
+  // uno sólo se muestra si viene con dato real.
+  ['p.especialidad', 'matriculas', 'p.descripcionBreve', 'horario'].forEach((campo) => {
+    assert.doesNotMatch(cuerpo, new RegExp(`\\$\\{${campo.replace('.', '\\.')} \\|\\| '`), `${campo} no tiene un valor inventado de reemplazo`);
+  });
+});
+
+// -----------------------------------------------------------------------
+// Modalidad de atención por profesional: configurable, data-driven, sin
+// lógica hardcodeada por nombre/apellido.
+// -----------------------------------------------------------------------
+
+test('cada profesional confirmado tiene su propia modalidadAtencion configurada: Matías con turno, el resto por orden de llegada', () => {
+  const contenido = require(contenidoPath);
+  const porNombre = Object.fromEntries(contenido.profesionales.map((p) => [p.nombre, p.modalidadAtencion]));
+  assert.equal(porNombre['Dr. Matías Anchorena'], 'con_turno');
+  assert.equal(porNombre['Dr. Rogelio Anchorena'], 'orden_llegada');
+  assert.equal(porNombre['Dr. Fernández Drago Humberto'], 'orden_llegada');
+  assert.equal(porNombre['Dra. Rutter'], 'orden_llegada');
+  contenido.profesionales.forEach((p) => {
+    assert.ok(['con_turno', 'orden_llegada', 'mixta'].includes(p.modalidadAtencion), `${p.nombre} tiene un valor válido de modalidadAtencion`);
+  });
+});
+
+test('las prestaciones confirmadas de Rogelio son Consulta/Electrocardiograma/Holter/MAPA, sin Ecocardiograma ni Ergometría (dato directo del dueño, no copiado de Matías)', () => {
+  const contenido = require(contenidoPath);
+  const rogelio = contenido.profesionales.find((p) => p.nombre === 'Dr. Rogelio Anchorena');
+  assert.deepEqual(rogelio.prestaciones, ['Consulta', 'Electrocardiograma', 'Holter', 'MAPA']);
+  assert.ok(!rogelio.prestaciones.includes('Ecocardiograma'));
+  assert.ok(!rogelio.prestaciones.includes('Ecocardiograma Doppler'));
+  assert.ok(!rogelio.prestaciones.includes('Ergometría'));
+});
+
+test('etiquetaModalidad() en portal.js es puramente data-driven: no hay ningún if/comparación por nombre de profesional, sólo por modalidadAtencion', () => {
+  const inicio = moduleSource.indexOf('function etiquetaModalidad');
+  assert.notEqual(inicio, -1, 'existe etiquetaModalidad');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  assert.match(cuerpo, /p\.modalidadAtencion === 'con_turno'/);
+  assert.match(cuerpo, /p\.modalidadAtencion === 'orden_llegada'/);
+  assert.match(cuerpo, /p\.modalidadAtencion === 'mixta'/);
+  assert.doesNotMatch(cuerpo, /nombre/i, 'no debe mirar el nombre del profesional para decidir su comportamiento');
+});
+
+test('sólo las tarjetas de profesionales "orden_llegada"/"mixta" ofrecen el CTA "Ver días y horarios" (data-portal-accion="ver-modalidad"); "con_turno" no repite "Solicitar turno" en su tarjeta', () => {
+  const inicio = moduleSource.indexOf('function renderProfesionalesPublicos');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  assert.match(cuerpo, /data-portal-accion="ver-modalidad"/);
+  assert.match(cuerpo, /data-profesional-index/);
+  assert.doesNotMatch(cuerpo, /data-portal-accion="ir-solicitud"/, 'con_turno se queda sólo con el badge, sin duplicar el CTA del hero');
+});
+
+test('el flujo "Ver días y horarios" reutiliza el mismo paso DNI, pero nunca termina ofreciendo "Solicitar turno": arma un mensaje propio con lineasModalidad()', () => {
+  assert.match(moduleSource, /function irAVerModalidad/);
+  assert.match(moduleSource, /modoFlujo = 'modalidad'/);
+  assert.match(moduleSource, /function lineasModalidad/);
+  assert.match(moduleSource, /function renderPasoModalidad/);
+  const inicio = moduleSource.indexOf('function renderPasoModalidad');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  assert.doesNotMatch(cuerpo, /SOLICITAR TURNO/);
+  assert.doesNotMatch(cuerpo, /data-portal-accion="ir-solicitud"/);
+  assert.match(cuerpo, /data-portal-accion="finalizar"/);
+});
+
+test('lineasModalidad() nunca inventa días/horarios: sólo arma la línea de día+horario si los dos vienen confirmados, si no usa "Horarios próximamente"', () => {
+  const inicio = moduleSource.indexOf('function lineasModalidad');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  assert.match(cuerpo, /dias && horarios \? /, 'sólo arma la línea de día/horario si los dos están confirmados a la vez');
+  assert.match(cuerpo, /Horarios próximamente/, 'si no están confirmados, un texto genérico lo dice en vez de inventar');
+});
+
+test('el mensaje de modalidad (orden de llegada) nunca dice que el consultorio va a contactar para coordinar: en esa modalidad no se coordina turno', () => {
+  const inicioLineas = moduleSource.indexOf('function lineasModalidad');
+  const cuerpoLineas = moduleSource.slice(inicioLineas, moduleSource.indexOf('\n  }', inicioLineas));
+  assert.doesNotMatch(cuerpoLineas, /contactar|coordinar/i);
+  const inicioPaso = moduleSource.indexOf('function renderPasoModalidad');
+  const cuerpoPaso = moduleSource.slice(inicioPaso, moduleSource.indexOf('\n  }', inicioPaso));
+  assert.doesNotMatch(cuerpoPaso, /contactar|coordinar/i);
+});
+
+test('el texto público de Rogelio y Drago Humberto arma exactamente "Atención por orden de llegada." + día/horario + "No necesitás solicitar turno previamente."', () => {
+  delete require.cache[require.resolve(contenidoPath)];
+  const contenido = require(contenidoPath);
+  // lineasModalidad no está exportada (es interna a portal.js): se
+  // reconstruye acá la misma lógica sobre los datos reales para verificar
+  // el resultado exacto, palabra por palabra, para los dos profesionales
+  // con día/horario ya confirmado.
+  const armar = (p) => [
+    'Atención por orden de llegada.',
+    `${p.diasAtencion.charAt(0).toUpperCase()}${p.diasAtencion.slice(1)} de ${p.horarios}.`,
+    'No necesitás solicitar turno previamente.'
+  ];
+  const rogelio = contenido.profesionales.find((p) => p.nombre === 'Dr. Rogelio Anchorena');
+  assert.equal(rogelio.diasAtencion, 'lunes a viernes');
+  assert.equal(rogelio.horarios, '14:30 a 19:30');
+  assert.deepEqual(armar(rogelio), [
+    'Atención por orden de llegada.',
+    'Lunes a viernes de 14:30 a 19:30.',
+    'No necesitás solicitar turno previamente.'
+  ]);
+  const drago = contenido.profesionales.find((p) => p.nombre === 'Dr. Fernández Drago Humberto');
+  assert.equal(drago.diasAtencion, 'martes y viernes');
+  assert.equal(drago.horarios, '09:00 a 15:00');
+  assert.deepEqual(armar(drago), [
+    'Atención por orden de llegada.',
+    'Martes y viernes de 09:00 a 15:00.',
+    'No necesitás solicitar turno previamente.'
+  ]);
+});
+
+test('Matías sigue siendo el único profesional confirmado con solicitud de turno ("con_turno")', () => {
+  const contenido = require(contenidoPath);
+  const conTurno = contenido.profesionales.filter((p) => p.modalidadAtencion === 'con_turno');
+  assert.deepEqual(conTurno.map((p) => p.nombre), ['Dr. Matías Anchorena']);
+});
+
+test('Rutter no tiene días/horarios inventados: siguen vacíos, y por eso su tarjeta no ofrece el botón "Ver días y horarios" (evita llevar a un paso sin información real)', () => {
+  const contenido = require(contenidoPath);
+  const rutter = contenido.profesionales.find((p) => p.nombre === 'Dra. Rutter');
+  assert.equal(rutter.diasAtencion, '');
+  assert.equal(rutter.horarios, '');
+  const inicio = moduleSource.indexOf('function etiquetaModalidad');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  assert.match(cuerpo, /tieneHorarioConfirmado = Boolean\(p\.diasAtencion && p\.horarios\)/);
+  assert.match(cuerpo, /cta: tieneHorarioConfirmado \? 'Ver días y horarios' : null/);
+});
+
+test('visibleEnPortal existe como dato configurable por profesional, con filtro real en renderProfesionalesPublicos (no lógica por nombre)', () => {
+  const contenido = require(contenidoPath);
+  contenido.profesionales.forEach((p) => {
+    assert.equal(typeof p.visibleEnPortal, 'boolean', `${p.nombre} tiene visibleEnPortal configurado`);
+  });
+  const inicio = moduleSource.indexOf('function renderProfesionalesPublicos');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  assert.match(cuerpo, /p\.visibleEnPortal !== false/);
+});
+
+test('onSubmitDni/onSubmitAlta miran estado.modoFlujo para decidir el paso siguiente: "modalidad" nunca llega a ya-registrado/alta-exitosa', () => {
+  assert.match(moduleSource, /estado\.modoFlujo === 'modalidad' \? 'modalidad-existente' : 'ya-registrado'/);
+  assert.match(moduleSource, /estado\.modoFlujo === 'modalidad' \? 'modalidad-nueva' : 'alta-exitosa'/);
+});
+
+test('onSubmitDni entra a la vista de flujo apenas se envía el formulario (venga del hero embebido en la landing o de una re-entrada), antes de validar/llamar al gateway', () => {
+  const inicio = moduleSource.indexOf('async function onSubmitDni');
+  assert.notEqual(inicio, -1, 'existe onSubmitDni');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  const posVista = cuerpo.indexOf("estado.vista = 'flujo';");
+  const posValidacion = cuerpo.indexOf('dniClienteValido(dni)');
+  const posGateway = cuerpo.indexOf('consultarDni(');
+  assert.ok(posVista !== -1 && posValidacion !== -1 && posGateway !== -1, 'las tres líneas existen');
+  assert.ok(posVista < posValidacion && posValidacion < posGateway, 'el cambio de vista pasa antes de validar y antes de llamar al gateway');
+});
+
+test('volverAlInicio limpia estado.dni: al volver al inicio, la card del hero no debe quedar con un DNI de una vuelta anterior', () => {
+  const inicio = moduleSource.indexOf('function volverAlInicio');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  assert.match(cuerpo, /estado\.dni = '';/);
+});
+
+test('la modalidad general ("Cómo es la atención") ya no dice que la atención es siempre con turno: cada profesional tiene la suya propia', () => {
+  const contenido = require(contenidoPath);
+  assert.ok(contenido.modalidad.every((texto) => !/siempre con turno/i.test(texto)));
+  const inicio = moduleSource.indexOf('function renderModalidad');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  assert.doesNotMatch(cuerpo, /siempre con turno/i);
+});
+
+// -----------------------------------------------------------------------
+// Ergometría: sacada de cards/contenido público/select de la solicitud.
+// -----------------------------------------------------------------------
+
+test('Ergometría no aparece en ningún lado del frontend público: ni en contenido-publico.js ni en portal.js', () => {
+  assert.doesNotMatch(contenidoSource, /Ergometría/);
+  assert.doesNotMatch(moduleSource, /Ergometría/);
+});
+
+test('el select de prestación de la solicitud de turno sólo puede ofrecer lo que hay en contenido-publico.js (sin Ergometría)', () => {
+  const contenido = require(contenidoPath);
+  assert.deepEqual(contenido.prestaciones.map((p) => p.nombre), ['Consulta', 'Holter 24 h', 'MAPA', 'Ecocardiograma']);
+});
+
+// -----------------------------------------------------------------------
+// CTA: el hero embebe el formulario real de DNI (no un botón "SOLICITAR
+// TURNO"); el CTA final es otra cosa útil, no un duplicado.
+// -----------------------------------------------------------------------
+
+test('ninguna función que arma la landing dispara ir-solicitud: el hero ya embebe el formulario real de DNI directamente, sin necesitar ese botón como paso intermedio', () => {
+  const cuerpoDe = (nombreFuncion) => {
+    const inicio = moduleSource.indexOf(`function ${nombreFuncion}`);
+    assert.notEqual(inicio, -1, `existe ${nombreFuncion}`);
+    return moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  };
+  // Todas las funciones que renderLanding compone (ver test anterior): hoy
+  // "ir-solicitud" sólo se usa dentro del flujo (ya-registrado/alta-
+  // exitosa → elegir prestación), nunca en la landing.
+  const sinIrSolicitud = [
+    'renderHeader', 'renderHero', 'renderPrestacionesPublicas', 'renderProfesionalesPublicos',
+    'renderEspecialidadesComplementarias', 'renderEquipamiento', 'renderModalidad',
+    'renderEstudiosPaciente', 'renderContacto', 'renderFooter'
+  ];
+  sinIrSolicitud.forEach((fn) => {
+    assert.doesNotMatch(cuerpoDe(fn), /data-portal-accion="ir-solicitud"/, `${fn} no debe disparar ir-solicitud`);
+  });
+
+  const cuerpoCtaFinal = cuerpoDe('renderCtaFinal');
+  assert.doesNotMatch(cuerpoCtaFinal, /SOLICITAR TURNO/, 'el CTA final no repite el mismo texto que el hero');
+  assert.doesNotMatch(cuerpoCtaFinal, /data-portal-accion="ir-solicitud"/);
+  assert.match(cuerpoCtaFinal, /href="#prestaciones"/, 'el CTA final es un link útil, no un duplicado');
+});
+
+// -----------------------------------------------------------------------
+// Especialidades complementarias, Equipamiento, Mis estudios (futuro).
+// -----------------------------------------------------------------------
+
+test('especialidades complementarias muestra el texto pedido y reutiliza las prestaciones reales de Drago para Diagnóstico por imágenes', () => {
+  const contenido = require(contenidoPath);
+  assert.equal(contenido.especialidadesComplementarias.descripcion, 'Además contamos con otras especialidades para completar la atención de manera integral y multidisciplinaria.');
+  const nombres = contenido.especialidadesComplementarias.items.map((e) => e.nombre);
+  assert.deepEqual(nombres, ['Diabetología y Nutrición', 'Diagnóstico por imágenes', 'Psiquiatría', 'Próximamente más especialidades']);
+  const imagenes = contenido.especialidadesComplementarias.items.find((e) => e.nombre === 'Diagnóstico por imágenes');
+  const dragoHumberto = contenido.profesionales.find((p) => p.nombre === 'Dr. Fernández Drago Humberto');
+  assert.deepEqual(imagenes.prestaciones, dragoHumberto.prestaciones, 'reutiliza las prestaciones reales de Drago, no una lista inventada aparte');
+});
+
+test('equipamiento muestra sólo tipos de estudio reales, sin inventar marca/modelo', () => {
+  const contenido = require(contenidoPath);
+  const estudios = contenido.equipamiento.items.map((e) => e.estudio);
+  assert.deepEqual(estudios, ['Ecocardiografía', 'Holter', 'MAPA', 'ECG']);
+  contenido.equipamiento.items.forEach((e) => {
+    assert.equal(e.detalle, '', `${e.estudio}: sin marca/modelo inventado, queda vacío hasta tener un dato real`);
+  });
+});
+
+test('equipamiento se renderiza como chips compactos (no una lista vertical más): menos bloques apilados en la página', () => {
+  const inicio = moduleSource.indexOf('function renderEquipamiento');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  assert.match(cuerpo, /portal-equipo-chips/);
+  assert.match(cuerpo, /portal-chip/);
+  assert.doesNotMatch(cuerpo, /portal-contacto-list/, 'ya no reutiliza el estilo de lista vertical de contacto');
+});
+
+// -----------------------------------------------------------------------
+// Anclas de navegación (header): mismas secciones ya existentes, ninguna
+// nueva sección ni id inventado.
+// -----------------------------------------------------------------------
+
+test('las secciones que el header referencia por ancla existen de verdad, con el mismo id', () => {
+  const secciones = {
+    renderHero: 'id="inicio"',
+    renderProfesionalesPublicos: 'id="profesionales"',
+    renderContacto: 'id="contacto"'
+  };
+  Object.entries(secciones).forEach(([fn, idEsperado]) => {
+    const inicio = moduleSource.indexOf(`function ${fn}`);
+    const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+    assert.match(cuerpo, new RegExp(idEsperado.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), `${fn} expone ${idEsperado}`);
+  });
+  // "Estudios" del header ya apuntaba a #prestaciones desde antes (mismo id
+  // que usa el CTA final): no es nuevo, sólo lo reutiliza.
+  assert.match(moduleSource, /id="prestaciones"/);
+});
+
+test('"Mis estudios" queda preparado visualmente pero sin funcionalidad: sólo un aviso "Próximamente", sin descarga ni autenticación', () => {
+  const contenido = require(contenidoPath);
+  assert.equal(contenido.estudiosPaciente.disponible, false);
+  const inicio = moduleSource.indexOf('function renderEstudiosPaciente');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  assert.match(cuerpo, /Próximamente/);
+  assert.doesNotMatch(cuerpo, /<a href|<button|fetch\(|descargar/i, 'sin ningún control funcional todavía');
+});
+
+// -----------------------------------------------------------------------
+// CTA de alta: "Quiero registrarme como paciente" (ya no "Darme de alta").
+// -----------------------------------------------------------------------
+
+test('el botón de alta dice "QUIERO REGISTRARME COMO PACIENTE", ya no "DARME DE ALTA"', () => {
+  assert.doesNotMatch(moduleSource, /DARME DE ALTA/);
+  assert.match(moduleSource, /QUIERO REGISTRARME COMO PACIENTE/);
 });
 
 test('renderContacto no muestra una etiqueta vacía por cada campo sin dato: filtra por valor antes de listar', () => {
@@ -585,7 +1113,7 @@ test('renderContacto no muestra una etiqueta vacía por cada campo sin dato: fil
   assert.match(cuerpo, /se van a completar próximamente/);
 });
 
-test('landing y flujo comparten el mismo botón SOLICITAR TURNO por data-attribute, enlazado con querySelectorAll', () => {
+test('los botones SOLICITAR TURNO de ya-registrado/alta-exitosa se enlazan por data-attribute con querySelectorAll (no por id), soportando más de una instancia', () => {
   assert.match(moduleSource, /document\.querySelectorAll\('\[data-portal-accion="ir-solicitud"\]'\)/);
 });
 
@@ -605,16 +1133,29 @@ test('portal/index.html es una página separada del Admin, mobile-first, sin dat
   assert.ok(posContenido >= 0 && posContenido < posPortal, 'contenido-publico.js se carga antes que portal.js');
 });
 
+test('el favicon de index.html y privacidad.html es el isologo real (PNG), no el fallback SVG anterior', () => {
+  [indexSource, privacidadSource].forEach((fuente) => {
+    assert.match(fuente, /<link rel="icon" type="image\/png" href="assets\/branding\/isologo\.png/);
+    assert.doesNotMatch(fuente, /isologo\.svg/);
+  });
+});
+
 // -----------------------------------------------------------------------
 // Privacidad: link discreto en el footer + página estática simple sobre
 // Turnstile, sin tocar el flujo DNI/alta/solicitud ni el diseño general.
 // -----------------------------------------------------------------------
 
-test('la landing tiene un footer con un link a Privacidad, sin tocar el resto del diseño', () => {
-  assert.match(moduleSource, /function renderFooter\(\) \{/);
+test('la landing tiene un footer con nombre real del consultorio y un link a Privacidad, sin datos ficticios del mockup', () => {
+  assert.match(moduleSource, /function renderFooter\(identidad\) \{/);
   assert.match(moduleSource, /<footer class="portal-footer">/);
   assert.match(moduleSource, /<a href="privacidad\.html">Privacidad<\/a>/);
-  assert.match(moduleSource, /\$\{renderCtaFinal\(\)\}\s*\n\s*\$\{renderFooter\(\)\}/, 'el footer se agrega después del CTA final, sin reemplazar nada existente');
+  assert.match(moduleSource, /\$\{renderCtaFinal\(\)\}\s*\n\s*\$\{renderFooter\(contenido\.identidad\)\}/, 'el footer se agrega después del CTA final, sin reemplazar nada existente');
+  const inicio = moduleSource.indexOf('function renderFooter');
+  const cuerpo = moduleSource.slice(inicio, moduleSource.indexOf('\n  }', inicio));
+  assert.match(cuerpo, /identidad\.nombreConsultorio/);
+  // Nada de teléfono/dirección/redes: sólo el nombre real ya aprobado y el
+  // link a Privacidad, para no copiar los datos ficticios del mockup.
+  assert.doesNotMatch(cuerpo, /telefono|direccion|instagram|whatsapp/i);
 });
 
 test('privacidad.html existe, es una página separada (no toca portal.js) y no requiere el gateway ni Turnstile para mostrarse', () => {

@@ -248,27 +248,51 @@ test('el gateway nunca crea una atención ni marca appointment_assigned', () => 
   assert.doesNotMatch(logicaSource, /cardiolink_atenciones|appointment_assigned/);
 });
 
-test('el catálogo de prestaciones públicas V1 está aislado y coincide exactamente con portal/contenido-publico.js', () => {
-  assert.match(gatewaySource, /PRESTACIONES_PUBLICAS_V1 = Object\.freeze\(\[/);
-  assert.doesNotMatch(gatewaySource, /arancel|configFinanzas|cardiolink_finance/i);
+function extraerListaPlana(fuente, marcador, cierre) {
+  const inicio = fuente.indexOf(marcador);
+  assert.notEqual(inicio, -1, `existe ${marcador}`);
+  const fin = fuente.indexOf(cierre, inicio);
+  const bloque = fuente.slice(inicio, fin);
+  return Array.from(bloque.matchAll(/'([^']+)'/g)).map((m) => m[1]);
+}
+
+function extraerPrestacionesContenido() {
   const contenidoPath = path.join(root, 'portal', 'contenido-publico.js');
   const contenidoSource = fs.readFileSync(contenidoPath, 'utf8');
-  const extraerLista = (fuente, marcador) => {
-    const inicio = fuente.indexOf(marcador);
-    assert.notEqual(inicio, -1, `existe ${marcador}`);
-    const finLista = fuente.indexOf(']', inicio);
-    const bloque = fuente.slice(inicio, finLista);
-    return Array.from(bloque.matchAll(/'([^']+)'/g)).map((m) => m[1]);
-  };
-  const nombresGateway = extraerLista(gatewaySource, 'PRESTACIONES_PUBLICAS_V1 = Object.freeze([');
   // Sólo el bloque de PRESTACIONES: contenido-publico.js también tiene
-  // "nombre: '...'" dentro de PROFESIONALES, que no debe mezclarse acá.
+  // "nombre: '...'" dentro de PROFESIONALES/ESPECIALIDADES, que no debe
+  // mezclarse acá.
   const inicioPrestaciones = contenidoSource.indexOf('const PRESTACIONES = Object.freeze([');
   assert.notEqual(inicioPrestaciones, -1, 'existe PRESTACIONES en contenido-publico.js');
   const finPrestaciones = contenidoSource.indexOf(']);', inicioPrestaciones);
   const bloquePrestaciones = contenidoSource.slice(inicioPrestaciones, finPrestaciones);
-  const nombresContenido = Array.from(bloquePrestaciones.matchAll(/nombre: '([^']+)'/g)).map((m) => m[1]);
-  assert.deepEqual(nombresGateway, nombresContenido, 'las prestaciones del gateway y del contenido público deben coincidir en nombre y orden');
+  return Array.from(bloquePrestaciones.matchAll(/nombre: '([^']+)'/g)).map((m) => m[1]);
+}
+
+test('el catálogo de prestaciones públicas V1 está aislado; portal/contenido-publico.js es un subconjunto suyo, en el mismo orden', () => {
+  assert.match(gatewaySource, /PRESTACIONES_PUBLICAS_V1 = Object\.freeze\(\[/);
+  assert.doesNotMatch(gatewaySource, /arancel|configFinanzas|cardiolink_finance/i);
+  const nombresGateway = extraerListaPlana(gatewaySource, 'PRESTACIONES_PUBLICAS_V1 = Object.freeze([', ']');
+  const nombresContenido = extraerPrestacionesContenido();
+  // Ya no se exige coincidencia exacta: Portal Visual V1 sacó "Ergometría"
+  // de contenido-publico.js (única diferencia, ver test siguiente) sin
+  // tocar el backend (restricción explícita de esa tarea). Lo que sigue
+  // valiendo es que el frontend nunca ofrezca algo que el backend no
+  // acepte, y que el orden relativo de lo que sí comparten se mantenga.
+  nombresContenido.forEach((nombre) => {
+    assert.ok(nombresGateway.includes(nombre), `"${nombre}" del contenido público debe existir en el catálogo del gateway`);
+  });
+  const posicionesEnGateway = nombresContenido.map((nombre) => nombresGateway.indexOf(nombre));
+  const enOrden = posicionesEnGateway.every((pos, i) => i === 0 || pos > posicionesEnGateway[i - 1]);
+  assert.ok(enOrden, 'el orden relativo de las prestaciones compartidas se mantiene igual en los dos archivos');
+});
+
+test('Ergometría se sacó del contenido público (cards/select de solicitud) pero sigue en el catálogo del backend, sin tocarlo — divergencia documentada, no un bug', () => {
+  const nombresGateway = extraerListaPlana(gatewaySource, 'PRESTACIONES_PUBLICAS_V1 = Object.freeze([', ']');
+  const nombresContenido = extraerPrestacionesContenido();
+  assert.ok(nombresGateway.includes('Ergometría'), 'el backend no se tocó: sigue aceptando Ergometría si alguien la manda directo a la API');
+  assert.ok(!nombresContenido.includes('Ergometría'), 'el contenido público (cards y select de la solicitud) ya no ofrece Ergometría');
+  assert.match(gatewaySource, /Ergometría/, 'index.ts efectivamente no fue modificado para esto');
 });
 
 test('COBERTURAS_VALIDAS (logica.js) coincide exactamente con portal/contenido-publico.js → coberturas', () => {

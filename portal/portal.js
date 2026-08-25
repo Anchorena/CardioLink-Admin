@@ -155,6 +155,11 @@
   // -----------------------------------------------------------------------
 
   let turnstileWidget = { widgetId: null, containerId: null };
+  // true mientras hay un reintento de montaje ya programado (setTimeout
+  // pendiente) — evita arrancar varias cadenas de reintento en paralelo si
+  // montarTurnstileSiCorresponde() se llama de nuevo (otro render()) antes
+  // de que el primer reintento dispare.
+  let turnstileEsperandoScript = false;
 
   function turnstileDisponible() {
     return hayNavegador() && typeof window.turnstile === 'object' && typeof window.turnstile.render === 'function';
@@ -164,10 +169,33 @@
   // contenedor de Turnstile, lo monta (el nodo es siempre nuevo porque
   // render() reemplaza todo el HTML, así que no hay widget previo que
   // reutilizar sobre ese mismo nodo).
+  //
+  // El script de Cloudflare se carga con `async` (index.html/privacidad no
+  // lo bloquean a propósito, para no frenar el resto de la página) — puede
+  // no estar listo todavía la primera vez que se llama acá. Antes esto no
+  // importaba: el primer contenedor de Turnstile recién aparecía cuando el
+  // usuario hacía click en "SOLICITAR TURNO" en el hero, segundos después
+  // de cargar la página, tiempo de sobra para que el script ya hubiera
+  // cargado. Ahora el hero embebe el formulario de DNI (con su contenedor
+  // de Turnstile) directamente en el primer render() de la página, así que
+  // ese primer intento de montaje puede competir de verdad contra la carga
+  // async del script — y perder, sobre todo con latencia de red real (no
+  // en un entorno local con todo cacheado). Si eso pasa y no se reintenta,
+  // turnstileWidget.widgetId queda en null para siempre y cualquier envío
+  // falla de entrada con "No se pudo cargar la verificación anti-bots.",
+  // aunque Turnstile termine cargando un instante después — por eso el
+  // reintento con backoff fijo de acá, en vez de un intento único.
   function montarTurnstileSiCorresponde() {
-    if (!turnstileDisponible()) return;
     const contenedor = document.querySelector('[data-turnstile-container]');
     if (!contenedor) { turnstileWidget = { widgetId: null, containerId: null }; return; }
+    if (!turnstileDisponible()) {
+      turnstileWidget = { widgetId: null, containerId: null };
+      if (!turnstileEsperandoScript) {
+        turnstileEsperandoScript = true;
+        reintentarMontajeTurnstile(0);
+      }
+      return;
+    }
     try {
       const widgetId = window.turnstile.render(contenedor, {
         sitekey: turnstileSitekey(),
@@ -178,6 +206,25 @@
     } catch (_) {
       turnstileWidget = { widgetId: null, containerId: null };
     }
+  }
+
+  // 40 intentos × 250ms = 10s de margen, de sobra para cualquier latencia
+  // real de carga del script — sin quedar reintentando para siempre.
+  function reintentarMontajeTurnstile(intentos) {
+    window.setTimeout(() => {
+      turnstileEsperandoScript = false;
+      // Si mientras tanto otro render() ya montó un widget con éxito (o ya
+      // no queda ningún contenedor de Turnstile en la página), no hay nada
+      // que hacer acá: nunca pisa un montaje que ya funcionó.
+      if (turnstileWidget.widgetId !== null) return;
+      if (!document.querySelector('[data-turnstile-container]')) return;
+      if (turnstileDisponible()) {
+        montarTurnstileSiCorresponde();
+      } else if (intentos < 40) {
+        turnstileEsperandoScript = true;
+        reintentarMontajeTurnstile(intentos + 1);
+      }
+    }, 250);
   }
 
   // Ejecuta el desafío del widget ya montado y devuelve un token nuevo. Se
@@ -222,7 +269,16 @@
     dni: '',
     cargando: false,
     mensaje: '',
-    tipoMensaje: ''
+    tipoMensaje: '',
+    // 'solicitud': flujo normal de turno (hero, o tarjeta 'con_turno'/
+    // 'mixta'), termina en 'ya-registrado'/'alta-exitosa' → 'solicitud'.
+    // 'modalidad': flujo disparado por "Ver días y horarios" en una
+    // tarjeta 'orden_llegada'/'mixta' — nunca ofrece solicitar turno,
+    // termina mostrando la modalidad configurada de ese profesional.
+    modoFlujo: 'solicitud',
+    // Índice del profesional en contenido.profesionales, sólo relevante
+    // cuando modoFlujo === 'modalidad' (fijado por irAVerModalidad).
+    profesionalIndice: -1
   };
 
   function hayNavegador() {
@@ -251,26 +307,133 @@
     const contenido = contenidoPublico();
     if (!contenido) return '<div class="portal-aviso portal-aviso-error">No se pudo cargar el contenido público.</div>';
     return `
-      ${renderHero(contenido.identidad)}
+      <div class="portal-top">
+        <div class="portal-top-inner">
+          ${renderHeader(contenido.identidad)}
+          ${renderHero(contenido.identidad)}
+        </div>
+      </div>
       ${renderPrestacionesPublicas(contenido.prestaciones)}
       ${renderProfesionalesPublicos(contenido.profesionales)}
+      ${renderEspecialidadesComplementarias(contenido.especialidadesComplementarias)}
+      ${renderEquipamiento(contenido.equipamiento)}
       ${renderModalidad(contenido.modalidad)}
+      ${renderEstudiosPaciente(contenido.estudiosPaciente)}
       ${renderContacto(contenido.contacto)}
       ${renderCtaFinal()}
-      ${renderFooter()}
+      ${renderFooter(contenido.identidad)}
     `;
   }
 
-  function renderHero(identidad) {
-    const logo = identidad.logoUrl
-      ? `<img class="portal-logo" src="${escapar(identidad.logoUrl)}" alt="${escapar(identidad.logoAlt || identidad.nombreConsultorio)}">`
-      : `<div class="portal-logo portal-logo-placeholder" aria-hidden="true">${escapar((identidad.nombreConsultorio || 'C').trim().charAt(0))}</div>`;
+  // El logo es 100% configurable desde contenido-publico.js: nunca queda
+  // fijo en el layout, completar la ruta correspondiente alcanza para
+  // reemplazarlo en toda la página (ver portal/assets/README.md). El header
+  // y el hero tienen fondo oscuro, así que priorizan la versión pensada
+  // para eso (logoOscuro); si no está, caen al logo horizontal general
+  // (logoPrincipal); si tampoco, al isologo (hoy el único cargado, y un
+  // fallback provisional — nunca se recrea un logo con SVG/CSS más allá de
+  // ese fallback ya existente).
+  function logoHeroSeleccionado(identidad) {
+    if (identidad.logoOscuro) return { src: identidad.logoOscuro, esFallback: false };
+    if (identidad.logoPrincipal) return { src: identidad.logoPrincipal, esFallback: false };
+    if (identidad.isologo) return { src: identidad.isologo, esFallback: true };
+    return null;
+  }
+
+  // Header: logo chico + nombre (link a #inicio), nav a las secciones ya
+  // existentes (anclas simples, no cambian estado ni flujo) y un CTA que
+  // baja a la card de DNI del hero — no dispara ninguna acción de JS.
+  function renderHeader(identidad) {
+    const seleccionado = logoHeroSeleccionado(identidad);
+    const claseLogo = 'portal-header-logo' + (seleccionado && seleccionado.esFallback ? ' portal-logo-fallback' : '');
+    const logo = seleccionado
+      ? `<img class="${claseLogo}" src="${escapar(seleccionado.src)}" alt="${escapar(identidad.logoAlt || identidad.nombreConsultorio)}">`
+      : `<span class="portal-header-logo portal-header-logo-placeholder" aria-hidden="true">${escapar((identidad.nombreConsultorio || 'C').trim().charAt(0))}</span>`;
     return `
-      <section class="portal-hero">
-        ${logo}
-        <h1>${escapar(identidad.nombreConsultorio)}</h1>
-        ${identidad.descripcionBreve ? `<p class="portal-hero-desc">${escapar(identidad.descripcionBreve)}</p>` : ''}
-        <button type="button" class="portal-btn-primario" data-portal-accion="ir-solicitud">SOLICITAR TURNO</button>
+      <header class="portal-header">
+        <a class="portal-header-marca" href="#inicio">
+          ${logo}
+          <span class="portal-header-nombre">${escapar(identidad.nombreConsultorio)}</span>
+        </a>
+        <nav class="portal-header-nav" aria-label="Navegación principal">
+          <a href="#inicio">Inicio</a>
+          <a href="#prestaciones">Estudios</a>
+          <a href="#profesionales">Profesionales</a>
+          <a href="#contacto">Información</a>
+        </nav>
+        <a class="portal-header-cta" href="#hero-turno">Solicitar turno</a>
+      </header>
+    `;
+  }
+
+  // Íconos decorativos chicos (línea, currentColor) para los beneficios del
+  // hero — NO son logos de marca, sólo UI genérica; no reemplazan ni
+  // recrean ningún logo real.
+  function iconoBeneficio(tipo) {
+    const trazos = {
+      turno: '<rect x="4" y="6" width="16" height="14" rx="2"/><path d="M8 3v4M16 3v4M4 10h16"/>',
+      cardio: '<path d="M12 20s-6.7-4.1-9-8.6A4.8 4.8 0 0 1 12 6a4.8 4.8 0 0 1 9 5.4C18.7 15.9 12 20 12 20Z"/><path d="M3.5 11.5h4l1.8-3 2.2 5 1.8-3.5 1 1.5H20.5"/>',
+      online: '<circle cx="12" cy="12" r="9"/><path d="M8.5 12.3l2.3 2.3 4.7-4.7"/>'
+    };
+    return `<svg class="portal-hero-beneficio-icono" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${trazos[tipo] || ''}</svg>`;
+  }
+
+  // El formulario en sí (mismo id/inputs/Turnstile que siempre tuvo el paso
+  // "dni" del flujo): se usa embebido en el hero de la landing Y dentro de
+  // renderPasoDni() para las re-entradas (modalidad, volver a intentar).
+  // Nunca se duplica en el DOM al mismo tiempo: landing y flujo son vistas
+  // mutuamente excluyentes (estado.vista). value precarga estado.dni para
+  // no perder lo ya tipeado si el formulario se vuelve a mostrar por un
+  // error de validación.
+  function renderFormularioDni() {
+    return `
+      <form id="portalFormDni" novalidate>
+        <label>DNI<input name="dni" inputmode="numeric" autocomplete="off" maxlength="9" value="${escapar(estado.dni)}" required placeholder="Ej: 20304050"></label>
+        <div id="turnstileDni" data-turnstile-container></div>
+        <button type="submit" class="portal-btn-primario">CONTINUAR</button>
+      </form>
+    `;
+  }
+
+  // Hero: dos columnas en desktop (mensaje institucional a la izquierda,
+  // card de DNI a la derecha), una sola columna apilada en mobile (mensaje
+  // primero, card después — mismo orden que en el DOM, sin necesitar CSS
+  // de reordenamiento). Los turnos públicos son sólo para Matías hoy: este
+  // formulario sigue siendo el mismo genérico de siempre (sin selector de
+  // profesional), a propósito.
+  function renderHero(identidad) {
+    return `
+      <section class="portal-hero" id="inicio">
+        <div class="portal-hero-grid">
+          <div class="portal-hero-mensaje">
+            <h1>${escapar(identidad.nombreConsultorio)}</h1>
+            ${identidad.descripcionBreve ? `<p class="portal-hero-desc">${escapar(identidad.descripcionBreve)}</p>` : ''}
+            <ul class="portal-hero-beneficios">
+              <li>
+                ${iconoBeneficio('turno')}
+                <div><strong>Modalidad flexible</strong><span>Turno programado o atención por orden de llegada, según el profesional.</span></div>
+              </li>
+              <li>
+                ${iconoBeneficio('cardio')}
+                <div><strong>Cardiología integral</strong><span>Estudios cardiológicos, clínica médica y diagnóstico por imágenes.</span></div>
+              </li>
+              <li>
+                ${iconoBeneficio('online')}
+                <div><strong>Solicitud online</strong><span>Identificate con tu DNI y coordiná desde acá, sin llamadas.</span></div>
+              </li>
+            </ul>
+            <div class="portal-hero-como-funciona">
+              <strong>¿Cómo funciona?</strong>
+              <p>Ingresá tu DNI. Si es tu primera vez, te damos de alta en el momento. Según el profesional, vas a poder solicitar turno o ver directamente los días y horarios de atención.</p>
+            </div>
+          </div>
+          <div class="portal-hero-card" id="hero-turno">
+            <h2>Solicitá tu turno</h2>
+            <p class="portal-muted">Ingresá tu DNI para comenzar.</p>
+            ${renderFormularioDni()}
+            <p class="portal-hero-card-nota">¿Todavía no estás registrado? Te damos de alta en el mismo paso, con este mismo DNI.</p>
+          </div>
+        </div>
       </section>
     `;
   }
@@ -287,34 +450,172 @@
       </article>
     `).join('');
     return `
-      <section class="portal-section">
+      <section class="portal-section" id="prestaciones">
         <h2>Prestaciones / estudios</h2>
         <div class="portal-grid-cards">${tarjetas}</div>
       </section>
     `;
   }
 
+  // Data-driven a propósito, sin ningún if/switch por nombre de
+  // profesional: todo el comportamiento (badge + si ofrece o no
+  // "Solicitar turno"/"Ver días y horarios") sale únicamente de
+  // p.modalidadAtencion (+ si diasAtencion/horarios ya están cargados). El
+  // día que un profesional pase de 'orden_llegada' a 'con_turno' (o
+  // viceversa) en contenido-publico.js, la tarjeta y el flujo se adaptan
+  // solos, sin tocar este archivo.
+  function etiquetaModalidad(p) {
+    // Sin día+horario confirmados todavía no tiene sentido ofrecer el CTA
+    // (llevaría a un paso sin información real): la tarjeta muestra
+    // "Horarios próximamente" en su lugar (ver renderProfesionalesPublicos).
+    const tieneHorarioConfirmado = Boolean(p.diasAtencion && p.horarios);
+    if (p.modalidadAtencion === 'con_turno') {
+      return { badge: 'Turnos programados', claseBadge: 'portal-badge-modalidad-turno', cta: null, pendiente: false };
+    }
+    if (p.modalidadAtencion === 'mixta') {
+      return {
+        badge: 'Turnos programados y por orden de llegada',
+        claseBadge: 'portal-badge-modalidad-mixta',
+        cta: tieneHorarioConfirmado ? 'Ver días y horarios' : null,
+        pendiente: !tieneHorarioConfirmado
+      };
+    }
+    if (p.modalidadAtencion === 'orden_llegada') {
+      return {
+        badge: 'Atención por orden de llegada',
+        claseBadge: 'portal-badge-modalidad-llegada',
+        cta: tieneHorarioConfirmado ? 'Ver días y horarios' : null,
+        pendiente: !tieneHorarioConfirmado
+      };
+    }
+    return null;
+  }
+
+  // Genérico para cualquier profesional (no hay ningún if por nombre):
+  // 1) fotoUrl → foto circular, tamaño avatar (la vamos a tener para caras).
+  // 2) si no hay foto pero sí logoUrl → el logo COMPLETO, sin recortar ni
+  //    deformar, en una caja rectangular con fondo propio
+  //    (object-fit: contain) — un logo con texto (nombre/especialidad/
+  //    matrícula) se vuelve ilegible si se lo fuerza a un círculo chico
+  //    pensado para una cara.
+  // 3) si no hay ninguno de los dos → iniciales, igual que siempre.
+  function renderAvatarProfesional(p) {
+    if (p.fotoUrl) {
+      return `<img class="portal-profesional-foto" src="${escapar(p.fotoUrl)}" alt="${escapar(p.nombre)}">`;
+    }
+    if (p.logoUrl) {
+      return `<div class="portal-profesional-logo-box"><img class="portal-profesional-logo-img" src="${escapar(p.logoUrl)}" alt="${escapar(p.nombre)}"></div>`;
+    }
+    return `<div class="portal-profesional-avatar" aria-hidden="true">${escapar((p.nombre || '').replace(/^Dr\.?a?\.?\s*/i, '').trim().charAt(0) || '?')}</div>`;
+  }
+
   function renderProfesionalesPublicos(profesionales) {
     if (!Array.isArray(profesionales) || !profesionales.length) return '';
-    const tarjetas = profesionales.map((p) => {
-      const avatar = p.fotoUrl
-        ? `<img class="portal-profesional-foto" src="${escapar(p.fotoUrl)}" alt="${escapar(p.nombre)}">`
-        : `<div class="portal-profesional-avatar" aria-hidden="true">${escapar((p.nombre || '').replace(/^Dr\.?a?\.?\s*/i, '').trim().charAt(0) || '?')}</div>`;
+    // visibleEnPortal (default true si no está seteado) permite ocultar a
+    // futuro un profesional puntual desde la configuración, sin borrar sus
+    // datos ni tocar este archivo. Se guarda el índice ORIGINAL de
+    // contenido.profesionales (no el de este array ya filtrado): es el que
+    // usa data-profesional-index para que irAVerModalidad encuentre al
+    // profesional correcto.
+    const visibles = profesionales
+      .map((p, indice) => ({ p, indice }))
+      .filter(({ p }) => p.visibleEnPortal !== false);
+    if (!visibles.length) return '';
+    const tarjetas = visibles.map(({ p, indice }) => {
+      // Prioridad foto → logo propio → iniciales (nunca una foto/logo
+      // inventado; ver portal/assets/README.md y renderAvatarProfesional()).
+      const avatar = renderAvatarProfesional(p);
       const matriculas = [p.matriculaNacional, p.matriculaProvincial].filter(Boolean).join(' · ');
+      const horario = [p.diasAtencion, p.horarios].filter(Boolean).join(' · ');
+      const tienePrestaciones = Array.isArray(p.prestaciones) && p.prestaciones.length;
+      const prestaciones = tienePrestaciones
+        ? `<p class="portal-profesional-prestaciones">${p.prestaciones.map((nombre) => `<span class="portal-chip">${escapar(nombre)}</span>`).join('')}</p>`
+        : '';
+      const modalidad = etiquetaModalidad(p);
+      const modalidadBadge = modalidad
+        ? `<span class="portal-badge-modalidad ${modalidad.claseBadge}">${escapar(modalidad.badge)}</span>`
+        : '';
+      // Sólo 'orden_llegada'/'mixta' ofrecen este botón, y sólo si ya
+      // tienen día+horario confirmados. 'con_turno' no repite un segundo
+      // "Solicitar turno" acá (el del hero ya alcanza); su modalidad queda
+      // igual de clara con el badge solo. Si la modalidad está confirmada
+      // pero todavía no el horario (como Rutter hoy), un aviso en vez de
+      // un botón que llevaría a un paso sin información real.
+      const modalidadCta = modalidad && modalidad.cta
+        ? `<button type="button" class="portal-btn-secundario portal-profesional-cta" data-portal-accion="ver-modalidad" data-profesional-index="${indice}">${escapar(modalidad.cta)}</button>`
+        : (modalidad && modalidad.pendiente ? '<p class="portal-muted portal-profesional-pendiente">Horarios próximamente.</p>' : '');
+      // Si no hay ningún dato confirmado más allá del nombre (ni siquiera
+      // la modalidad), un aviso discreto en vez de una tarjeta casi vacía o
+      // campos inventados.
+      const sinDatosConfirmados = !p.especialidad && !matriculas && !p.descripcionBreve && !horario && !tienePrestaciones && !modalidad;
       return `
         <article class="portal-item-card portal-profesional-card">
           ${avatar}
           <h3>${escapar(p.nombre)}</h3>
+          ${modalidadBadge}
           ${p.especialidad ? `<p class="portal-item-meta">${escapar(p.especialidad)}</p>` : ''}
           ${matriculas ? `<p class="portal-item-meta">${escapar(matriculas)}</p>` : ''}
           ${p.descripcionBreve ? `<p>${escapar(p.descripcionBreve)}</p>` : ''}
+          ${horario ? `<p class="portal-item-meta">${escapar(horario)}</p>` : ''}
+          ${prestaciones}
+          ${modalidadCta}
+          ${sinDatosConfirmados ? '<p class="portal-muted portal-profesional-pendiente">Más información, próximamente.</p>' : ''}
         </article>
       `;
     }).join('');
     return `
-      <section class="portal-section">
+      <section class="portal-section" id="profesionales">
         <h2>Profesionales</h2>
         <div class="portal-grid-cards">${tarjetas}</div>
+      </section>
+    `;
+  }
+
+  function renderEspecialidadesComplementarias(especialidades) {
+    if (!especialidades || !Array.isArray(especialidades.items) || !especialidades.items.length) return '';
+    const tarjetas = especialidades.items.map((e) => `
+      <article class="portal-item-card">
+        <h3>${escapar(e.nombre)}</h3>
+        ${e.detalle ? `<p>${escapar(e.detalle)}</p>` : ''}
+        ${Array.isArray(e.prestaciones) && e.prestaciones.length ? `<p class="portal-profesional-prestaciones">${e.prestaciones.map((nombre) => `<span class="portal-chip">${escapar(nombre)}</span>`).join('')}</p>` : ''}
+      </article>
+    `).join('');
+    return `
+      <section class="portal-section">
+        <h2>Especialidades complementarias</h2>
+        ${especialidades.descripcion ? `<p class="portal-muted">${escapar(especialidades.descripcion)}</p>` : ''}
+        <div class="portal-grid-cards">${tarjetas}</div>
+      </section>
+    `;
+  }
+
+  // Chips en vez de una lista vertical: mismo dato, ocupa menos alto y no
+  // suma otro bloque apilado más a la página.
+  function renderEquipamiento(equipamiento) {
+    if (!equipamiento || !Array.isArray(equipamiento.items) || !equipamiento.items.length) return '';
+    const chips = equipamiento.items.map((e) => {
+      const tituloAttr = e.detalle ? ` title="${escapar(e.detalle)}"` : '';
+      return `<span class="portal-chip"${tituloAttr}>${escapar(e.estudio)}</span>`;
+    }).join('');
+    return `
+      <section class="portal-section">
+        <h2>Equipos disponibles</h2>
+        ${equipamiento.descripcion ? `<p class="portal-muted">${escapar(equipamiento.descripcion)}</p>` : ''}
+        <div class="portal-equipo-chips">${chips}</div>
+      </section>
+    `;
+  }
+
+  // Sin funcionalidad todavía: sólo un aviso "Próximamente", preparado para
+  // no tener que rehacer el diseño cuando se implemente descarga real
+  // (que va a necesitar autenticación del paciente, fuera de esta etapa).
+  function renderEstudiosPaciente(estudios) {
+    if (!estudios) return '';
+    return `
+      <section class="portal-section portal-estudios-paciente">
+        <h2>${escapar(estudios.titulo || 'Mis estudios')}</h2>
+        <p class="portal-muted">${escapar(estudios.descripcion || '')}</p>
+        <span class="portal-chip portal-chip-proximamente">Próximamente</span>
       </section>
     `;
   }
@@ -342,17 +643,21 @@
       ? `<ul class="portal-contacto-list">${filas.map(([etiqueta, valor]) => `<li><strong>${escapar(etiqueta)}:</strong> ${escapar(valor)}</li>`).join('')}</ul>`
       : '<p class="portal-muted">Los datos de contacto se van a completar próximamente.</p>';
     return `
-      <section class="portal-section">
+      <section class="portal-section" id="contacto">
         <h2>Contacto</h2>
         ${cuerpo}
       </section>
     `;
   }
 
+  // Un solo CTA fuerte de "SOLICITAR TURNO" en toda la landing (el del
+  // hero, arriba). Acá, en vez de repetirlo, un link útil que vuelve a
+  // subir a la sección de prestaciones (ancla simple, sin tocar el estado
+  // del flujo).
   function renderCtaFinal() {
     return `
       <section class="portal-section portal-cta-final">
-        <button type="button" class="portal-btn-primario" data-portal-accion="ir-solicitud">SOLICITAR TURNO</button>
+        <a href="#prestaciones" class="portal-btn-secundario">Conocé nuestras prestaciones</a>
       </section>
     `;
   }
@@ -360,10 +665,13 @@
   // Link discreto al anexo de privacidad de Turnstile (widget invisible:
   // Cloudflare pide que quede accesible). Página estática aparte
   // (privacidad.html), no un paso más del flujo: no toca el estado ni la
-  // experiencia de DNI/alta/solicitud.
-  function renderFooter() {
+  // experiencia de DNI/alta/solicitud. nombreConsultorio es el único dato
+  // que suma acá (ya real/aprobado): nada de teléfono/dirección/redes
+  // ficticias del mockup.
+  function renderFooter(identidad) {
     return `
       <footer class="portal-footer">
+        <p class="portal-footer-nombre">${escapar((identidad && identidad.nombreConsultorio) || '')}</p>
         <a href="privacidad.html">Privacidad</a>
       </footer>
     `;
@@ -390,6 +698,8 @@
     if (estado.paso === 'ya-registrado') return renderPasoYaRegistrado();
     if (estado.paso === 'alta') return renderPasoAlta();
     if (estado.paso === 'alta-exitosa') return renderPasoAltaExitosa();
+    if (estado.paso === 'modalidad-nueva') return renderPasoModalidad('nueva');
+    if (estado.paso === 'modalidad-existente') return renderPasoModalidad('existente');
     if (estado.paso === 'solicitud') return renderPasoSolicitud();
     if (estado.paso === 'enviado') return renderPasoEnviado();
     return renderPasoDni();
@@ -399,11 +709,7 @@
     return `
       <h2>Ingresá tu DNI</h2>
       <p class="portal-muted">Para empezar, necesitamos verificar si ya estás registrado.</p>
-      <form id="portalFormDni" novalidate>
-        <label>DNI<input name="dni" inputmode="numeric" autocomplete="off" maxlength="9" required></label>
-        <div id="turnstileDni" data-turnstile-container></div>
-        <button type="submit" class="portal-btn-primario">CONTINUAR</button>
-      </form>
+      ${renderFormularioDni()}
     `;
   }
 
@@ -430,6 +736,56 @@
     `;
   }
 
+  function capitalizarPrimeraLetra(texto) {
+    const str = String(texto || '');
+    return str ? str.charAt(0).toUpperCase() + str.slice(1) : str;
+  }
+
+  // Arma las líneas del mensaje de modalidad a partir de los datos
+  // configurados del profesional (diasAtencion, horarios) — nunca inventa
+  // un día u horario. Nunca dice que el consultorio va a contactar para
+  // coordinar: en "orden_llegada"/"mixta" no se coordina turno, así que esa
+  // frase sería falsa acá (a diferencia del flujo "con_turno", que sí
+  // coordina y lo dice en su propio paso, renderPasoYaRegistrado/
+  // renderPasoAltaExitosa). mensajeModalidad, si está cargado, es un
+  // override manual completo (para un caso puntual que no entre en esta
+  // plantilla genérica) y reemplaza esta plantilla por completo.
+  function lineasModalidad(profesional) {
+    if (profesional.mensajeModalidad) return [profesional.mensajeModalidad];
+    const dias = profesional.diasAtencion;
+    const horarios = profesional.horarios;
+    const primeraLinea = profesional.modalidadAtencion === 'mixta'
+      ? 'Atención por orden de llegada y con turno programado, según el día.'
+      : 'Atención por orden de llegada.';
+    const lineas = [primeraLinea];
+    lineas.push(dias && horarios ? `${capitalizarPrimeraLetra(dias)} de ${horarios}.` : 'Horarios próximamente.');
+    lineas.push('No necesitás solicitar turno previamente.');
+    return lineas;
+  }
+
+  // Paso de cierre para profesionales 'orden_llegada'/'mixta': mismo cierre
+  // tanto si el paciente se acaba de registrar (origen 'nueva') como si ya
+  // estaba registrado (origen 'existente', sin obligarlo a re-registrarse),
+  // sólo cambia el título.
+  function renderPasoModalidad(origen) {
+    const contenido = contenidoPublico();
+    const profesional = contenido && Array.isArray(contenido.profesionales)
+      ? contenido.profesionales[estado.profesionalIndice]
+      : null;
+    const titulo = origen === 'nueva' ? 'Tu registro fue realizado correctamente.' : 'Ya estás registrado en CardioLink.';
+    // Defensivo: no debería pasar (el índice se fija al hacer click en la
+    // propia tarjeta del profesional), pero si por algo cambiara entre el
+    // click y este render, no romper con un profesional inexistente.
+    const cuerpo = profesional
+      ? lineasModalidad(profesional).map((linea) => `<p class="portal-muted">${escapar(linea)}</p>`).join('')
+      : '';
+    return `
+      <h2>${escapar(titulo)}</h2>
+      ${cuerpo}
+      <button type="button" class="portal-btn-primario" data-portal-accion="finalizar">FINALIZAR</button>
+    `;
+  }
+
   function renderPasoAlta() {
     const coberturas = (contenidoPublico() && contenidoPublico().coberturas) || [];
     const opcionesCobertura = coberturas.map((c) => `<option value="${escapar(c)}"${c === 'Particular' ? ' selected' : ''}>${escapar(c)}</option>`).join('');
@@ -446,7 +802,7 @@
         <label>Obra social / prepaga<select name="coberturaHabitual" required>${opcionesCobertura}</select></label>
         <label>N° de afiliado (opcional)<input name="numeroAfiliado" maxlength="60"></label>
         <div id="turnstileAlta" data-turnstile-container></div>
-        <button type="submit" class="portal-btn-primario">DARME DE ALTA</button>
+        <button type="submit" class="portal-btn-primario">QUIERO REGISTRARME COMO PACIENTE</button>
       </form>
     `;
   }
@@ -499,6 +855,10 @@
       boton.addEventListener('click', irASolicitud);
     });
 
+    document.querySelectorAll('[data-portal-accion="ver-modalidad"]').forEach((boton) => {
+      boton.addEventListener('click', () => irAVerModalidad(boton));
+    });
+
     // FINALIZAR es una salida tan válida como "Volver al inicio": el
     // registro ya quedó guardado, no hace falta pedir turno para terminar.
     document.querySelectorAll('[data-portal-accion="volver-inicio"], [data-portal-accion="finalizar"]').forEach((boton) => {
@@ -511,13 +871,24 @@
   function volverAlInicio() {
     estado.vista = 'landing';
     estado.paso = 'dni';
+    estado.dni = '';
     estado.mensaje = '';
+    estado.modoFlujo = 'solicitud';
+    estado.profesionalIndice = -1;
     render();
   }
 
   async function onSubmitDni(evento) {
     evento.preventDefault();
     const dni = new FormData(evento.target).get('dni');
+    // Entra a la vista de flujo apenas se envía el formulario — venga del
+    // hero embebido en la landing, o de una re-entrada ya dentro del flujo
+    // (modalidad, reintento): así loading/error/resultado siempre se
+    // muestran en el mismo contenedor (renderFlujo), sin duplicar esa UI
+    // en el hero. estado.dni se guarda ya (antes de validar) para no
+    // perder lo tipeado si el formulario se vuelve a mostrar por un error.
+    estado.vista = 'flujo';
+    estado.dni = soloDigitos(dni);
     if (!dniClienteValido(dni)) {
       estado.mensaje = 'Ingresá un DNI válido.';
       estado.tipoMensaje = 'error';
@@ -536,13 +907,22 @@
       render();
       return;
     }
-    estado.dni = soloDigitos(dni);
     estado.cargando = true;
     estado.mensaje = '';
     render();
     try {
       const resultado = await consultarDni(estado.dni, turnstileToken);
-      estado.paso = resultado.existe ? 'ya-registrado' : 'alta';
+      // Si ya existe: el destino depende de modoFlujo (solicitud de turno,
+      // o directamente la info de modalidad si venía de "Ver días y
+      // horarios" — sin volver a pedirle que se registre). Si no existe
+      // todavía, el próximo paso es el mismo formulario de alta en los dos
+      // casos: onSubmitAlta es quien decide el destino final después,
+      // mirando el mismo estado.modoFlujo.
+      if (resultado.existe) {
+        estado.paso = estado.modoFlujo === 'modalidad' ? 'modalidad-existente' : 'ya-registrado';
+      } else {
+        estado.paso = 'alta';
+      }
       estado.mensaje = '';
     } catch (error) {
       estado.mensaje = error.message;
@@ -586,8 +966,10 @@
       // Paso propio (no "ya-registrado"): mensaje y botones distintos
       // ("Tu registro fue realizado correctamente." + SOLICITAR TURNO /
       // FINALIZAR). El alta ya quedó guardada en cardiolink_pacientes; no
-      // hace falta pedir turno para que el registro sea válido.
-      estado.paso = 'alta-exitosa';
+      // hace falta pedir turno para que el registro sea válido. Si venía de
+      // "Ver días y horarios" (modoFlujo 'modalidad'), el cierre es el
+      // mensaje de modalidad en vez de ofrecer solicitar turno.
+      estado.paso = estado.modoFlujo === 'modalidad' ? 'modalidad-nueva' : 'alta-exitosa';
       estado.mensaje = '';
     } catch (error) {
       estado.mensaje = error.message;
@@ -598,16 +980,35 @@
     }
   }
 
-  // "Solicitar turno" tiene dos orígenes: desde la landing (no sabemos el
-  // DNI todavía, hay que arrancar por ahí) o desde una pantalla donde el DNI
-  // ya quedó confirmado en este mismo flujo — "ya-registrado" (paciente
-  // preexistente) o "alta-exitosa" (recién registrado) — donde se salta
-  // directo a elegir prestación/cobertura, sin volver a pedir nombre,
-  // nacimiento, teléfono ni email.
+  // "Solicitar turno" (data-portal-accion="ir-solicitud") sólo se dispara
+  // hoy desde "ya-registrado" (paciente preexistente) o "alta-exitosa"
+  // (recién registrado) — el DNI ya quedó confirmado en este mismo flujo,
+  // así que salta directo a elegir prestación/cobertura, sin volver a pedir
+  // nombre/nacimiento/teléfono/email. La entrada "no sabemos el DNI
+  // todavía" ya no pasa por acá: el hero de la landing embebe directamente
+  // el mismo formulario de DNI (ver renderFormularioDni()/onSubmitDni), sin
+  // necesitar este botón como paso intermedio.
   function irASolicitud() {
-    const dniYaConfirmado = estado.vista === 'flujo' && ['ya-registrado', 'alta-exitosa'].includes(estado.paso);
     estado.vista = 'flujo';
-    estado.paso = dniYaConfirmado ? 'solicitud' : 'dni';
+    estado.modoFlujo = 'solicitud';
+    estado.profesionalIndice = -1;
+    estado.paso = 'solicitud';
+    estado.mensaje = '';
+    render();
+  }
+
+  // Disparado por "Ver días y horarios" en una tarjeta 'orden_llegada'/
+  // 'mixta'. Reutiliza el mismo paso 'dni' (mismo formulario, mismo
+  // Turnstile, mismo gateway) que el flujo de solicitud: lo único que
+  // cambia es a dónde se va después de identificar/registrar al paciente
+  // (ver onSubmitDni/onSubmitAlta, que miran estado.modoFlujo) — nunca
+  // ofrece "Solicitar turno".
+  function irAVerModalidad(boton) {
+    const indice = parseInt(boton.getAttribute('data-profesional-index'), 10);
+    estado.vista = 'flujo';
+    estado.modoFlujo = 'modalidad';
+    estado.profesionalIndice = Number.isFinite(indice) ? indice : -1;
+    estado.paso = 'dni';
     estado.mensaje = '';
     render();
   }
@@ -662,7 +1063,7 @@
   }
 
   return Object.freeze({
-    version: '3.1.0-portal-publico-preparacion-produccion',
+    version: '3.4.2-portal-publico-fix-race-turnstile-hero',
     obtenerSourceDesdeUrl,
     dniClienteValido,
     soloDigitos,

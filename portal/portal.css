@@ -1,11 +1,21 @@
 /* CardioLink — Portal Público V1. Mobile-first, aislado del Admin (no
-   reutiliza styles.css). Colores tomados de la identidad real que ya usa
-   el Admin (styles.css --primary, manifest.webmanifest theme_color /
-   background_color: #123f56 / #f4f7f9). */
+   reutiliza styles.css). Paleta tomada del brand kit azul petróleo +
+   turquesa aprobado para el portal (ver docs/PORTAL_PUBLICO_VISUAL_V1.md):
+   #0b2d42 / #0e4f63 / #14b8c5 / #6fd0da / #e6f4f6. Es una identidad propia
+   del portal público, en la misma familia de azules que el Admin
+   (styles.css --primary: #123f56) pero no idéntica: el Admin no se tocó. */
 
 :root {
-  --portal-primary: #123f56;
-  --portal-primary-dark: #0b2c3d;
+  --portal-primary: #0e4f63;
+  --portal-primary-dark: #0b2d42;
+  --portal-primary-light: #156a83;
+  /* Turquesa: el segundo color de identidad del brand kit (no un acento
+     inventado aparte). Se usa para detalles — eyebrow de sección, foco del
+     hero, chip de "Próximamente" — nunca reemplaza al petróleo como color
+     dominante. */
+  --portal-turquesa: #14b8c5;
+  --portal-turquesa-claro: #6fd0da;
+  --portal-turquesa-soft: #e6f4f6;
   --portal-ink: #16222b;
   --portal-muted: #5b6b74;
   --portal-line: #d7e0e4;
@@ -23,6 +33,7 @@ html, body {
   background: var(--portal-soft);
   color: var(--portal-ink);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
 }
 
 #portalRoot {
@@ -32,7 +43,11 @@ html, body {
   min-height: 100vh;
   display: flex;
   flex-direction: column;
-  gap: 28px;
+  gap: 32px;
+}
+
+@media (min-width: 860px) {
+  #portalRoot { max-width: 1120px; gap: 40px; }
 }
 
 .portal-staging-badge {
@@ -48,49 +63,222 @@ html, body {
   border-bottom: 1px solid #fb923c;
 }
 
-/* --- Hero / header ---------------------------------------------------- */
+/* --- Header + Hero ------------------------------------------------------
+   Un único bloque oscuro (header + hero) para que la barra de navegación
+   se sienta parte de la misma composición, no un elemento aparte: el
+   header usa el tono más oscuro del degradé del hero como fondo sólido,
+   así no hay costura visible entre los dos. */
 
-.portal-hero {
-  text-align: center;
-  padding: 32px 18px 26px;
-  background: var(--portal-primary);
+.portal-top {
+  border-radius: 0 0 28px 28px;
+  overflow: hidden;
+}
+.portal-top-inner {
+  padding: 0 18px;
+}
+
+.portal-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 0;
+  background: var(--portal-primary-dark);
   color: #fff;
-  border-radius: 0 0 22px 22px;
 }
-.portal-logo {
-  width: 76px;
-  height: 76px;
-  border-radius: 18px;
-  object-fit: cover;
-  background: #fff;
-  padding: 6px;
+.portal-header-marca {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #fff;
+  text-decoration: none;
+  margin-right: auto;
 }
-.portal-logo-placeholder {
+.portal-header-logo {
+  width: 34px;
+  height: 34px;
+  border-radius: 9px;
+  /* contain, no cover: el isologo real no es cuadrado (más alto que
+     ancho) — cover lo recortaría. La caja ya tiene fondo blanco propio
+     (.portal-logo-fallback), así que el espacio libre alrededor no se
+     nota. */
+  object-fit: contain;
+}
+.portal-header-logo-placeholder {
   display: flex;
   align-items: center;
   justify-content: center;
-  margin: 0 auto;
-  color: var(--portal-primary);
-  font-size: 32px;
+  color: var(--portal-primary-dark);
+  background: #fff;
+  font-size: 15px;
   font-weight: 900;
 }
-.portal-hero h1 {
-  margin: 14px 0 0;
-  font-size: 24px;
-  font-weight: 900;
+.portal-header-nombre {
+  font-size: 15px;
+  font-weight: 800;
   letter-spacing: .01em;
 }
-.portal-hero-desc {
-  margin: 6px 0 0;
+.portal-header-nav {
+  display: none;
+  align-items: center;
+  gap: 22px;
+}
+.portal-header-nav a {
+  color: #d7e3ea;
   font-size: 14px;
+  font-weight: 700;
+  text-decoration: none;
+}
+.portal-header-nav a:hover { color: #fff; }
+.portal-header-cta {
+  display: inline-flex;
+  align-items: center;
+  padding: 9px 16px;
+  border-radius: 999px;
+  background: var(--portal-turquesa);
+  color: var(--portal-primary-dark);
+  font-size: 13.5px;
+  font-weight: 800;
+  text-decoration: none;
+  white-space: nowrap;
+}
+@media (min-width: 1040px) {
+  .portal-header-nav { display: flex; }
+}
+
+.portal-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 30px 0 44px;
+  background: linear-gradient(155deg, var(--portal-primary) 0%, var(--portal-primary-dark) 100%);
+  color: #fff;
+}
+.portal-hero::before {
+  /* Detalle turquesa, muy sutil, detrás del contenido: no compite con el
+     texto ni la card, sólo da profundidad al azul petróleo. */
+  content: "";
+  position: absolute;
+  top: -60px;
+  right: -60px;
+  width: 260px;
+  height: 260px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(20, 184, 197, .28) 0%, rgba(20, 184, 197, 0) 70%);
+  pointer-events: none;
+}
+.portal-hero-grid {
+  position: relative;
+  display: grid;
+  gap: 32px;
+}
+@media (min-width: 900px) {
+  .portal-hero-grid {
+    grid-template-columns: 1.1fr .9fr;
+    align-items: center;
+    gap: 48px;
+    min-height: 440px;
+  }
+}
+
+.portal-hero-mensaje h1 {
+  margin: 0;
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: .01em;
+  line-height: 1.15;
+}
+@media (min-width: 900px) {
+  .portal-hero-mensaje h1 { font-size: 38px; }
+}
+.portal-hero-desc {
+  margin: 12px 0 0;
+  max-width: 46ch;
+  font-size: 15.5px;
+  line-height: 1.55;
   color: #d7e3ea;
 }
-.portal-hero .portal-btn-primario {
-  margin-top: 20px;
-  background: #fff;
-  color: var(--portal-primary-dark);
+
+.portal-hero-beneficios {
+  list-style: none;
+  margin: 26px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 16px;
 }
-.portal-hero .portal-btn-primario:active { background: #e2edf1; }
+.portal-hero-beneficios li {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+}
+.portal-hero-beneficio-icono {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  margin-top: 2px;
+  color: var(--portal-turquesa-claro);
+}
+.portal-hero-beneficios strong {
+  display: block;
+  font-size: 14.5px;
+  font-weight: 800;
+}
+.portal-hero-beneficios span {
+  display: block;
+  margin-top: 2px;
+  font-size: 13.5px;
+  line-height: 1.5;
+  color: #cfe0e7;
+}
+
+.portal-hero-como-funciona {
+  margin: 26px 0 0;
+  padding: 16px 18px;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, .08);
+  border: 1px solid rgba(255, 255, 255, .16);
+}
+.portal-hero-como-funciona strong {
+  display: block;
+  margin-bottom: 4px;
+  font-size: 14.5px;
+  font-weight: 800;
+}
+.portal-hero-como-funciona p {
+  margin: 0;
+  font-size: 13.5px;
+  line-height: 1.55;
+  color: #d7e3ea;
+}
+
+.portal-hero-card {
+  position: relative;
+  background: var(--portal-card-bg);
+  color: var(--portal-ink);
+  border-radius: 20px;
+  padding: 28px 24px;
+  box-shadow: 0 20px 44px rgba(11, 45, 66, .28);
+  text-align: center;
+}
+.portal-hero-card h2 {
+  margin: 0;
+  font-size: 20px;
+  color: var(--portal-ink);
+}
+.portal-hero-card .portal-muted { margin: 6px 0 18px; }
+.portal-hero-card form { text-align: left; }
+.portal-hero-card-nota {
+  margin: 14px 0 0;
+  font-size: 12.5px;
+  color: var(--portal-muted);
+  line-height: 1.5;
+}
+
+/* Sólo para el isologo fallback (ver logoHeroSeleccionado() en portal.js):
+   necesita un fondo blanco para verse sobre fondo oscuro. Un logo real
+   preparado para fondo oscuro no debería llevar este recuadro. */
+.portal-logo-fallback {
+  background: #fff;
+  padding: 4px;
+}
 
 /* --- Secciones informativas -------------------------------------------- */
 
@@ -98,57 +286,164 @@ html, body {
   padding: 0 18px;
 }
 .portal-section h2 {
-  margin: 0 0 12px;
-  font-size: 18px;
+  position: relative;
+  margin: 0 0 14px;
+  padding-left: 14px;
+  font-size: 19px;
+  font-weight: 800;
   color: var(--portal-primary-dark);
+}
+.portal-section h2::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 3px;
+  bottom: 3px;
+  width: 4px;
+  border-radius: 4px;
+  background: var(--portal-turquesa);
 }
 
 .portal-grid-cards {
   display: grid;
-  gap: 12px;
+  gap: 14px;
 }
 @media (min-width: 460px) {
   .portal-grid-cards { grid-template-columns: 1fr 1fr; }
+}
+@media (min-width: 860px) {
+  .portal-grid-cards { grid-template-columns: repeat(3, 1fr); }
 }
 
 .portal-item-card {
   background: var(--portal-card-bg);
   border: 1px solid var(--portal-line);
-  border-radius: 14px;
-  padding: 14px 16px;
+  border-radius: 16px;
+  padding: 18px 18px 16px;
+  box-shadow: 0 2px 10px rgba(15, 23, 42, .05);
+  transition: box-shadow .15s ease, transform .15s ease;
+}
+@media (hover: hover) {
+  .portal-item-card:hover {
+    box-shadow: 0 10px 24px rgba(15, 23, 42, .09);
+    transform: translateY(-2px);
+  }
 }
 .portal-item-card h3 {
   margin: 0 0 4px;
-  font-size: 15px;
+  font-size: 15.5px;
+  font-weight: 800;
   color: var(--portal-ink);
 }
 .portal-item-card p {
   margin: 4px 0 0;
-  font-size: 13px;
+  font-size: 13.5px;
   color: var(--portal-muted);
-  line-height: 1.45;
+  line-height: 1.5;
 }
-.portal-item-meta { font-weight: 600; color: var(--portal-primary-dark) !important; }
+.portal-item-meta { font-weight: 700; color: var(--portal-primary-dark) !important; }
 
 .portal-profesional-card { text-align: center; }
 .portal-profesional-foto,
 .portal-profesional-avatar {
-  width: 64px;
-  height: 64px;
+  width: 72px;
+  height: 72px;
   border-radius: 50%;
-  margin: 0 auto 8px;
+  margin: 0 auto 10px;
   object-fit: cover;
 }
 .portal-profesional-avatar {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--portal-soft);
+  background: linear-gradient(160deg, var(--portal-soft) 0%, #e6edf0 100%);
   color: var(--portal-primary);
-  font-size: 24px;
+  font-size: 26px;
   font-weight: 900;
   border: 1px solid var(--portal-line);
 }
+
+/* Logo personal completo (cuando no hay foto): nunca se recorta en el
+   círculo de 72px pensado para una cara — un logo con texto (nombre,
+   especialidad, matrícula) se vuelve ilegible ahí. Caja rectangular propia,
+   ancho completo de la card, con fondo neutro para que el logo (que puede
+   traer su propio fondo transparente u oscuro) siempre se vea prolijo. */
+.portal-profesional-logo-box {
+  width: 100%;
+  height: 108px;
+  margin: 0 0 10px;
+  padding: 12px;
+  border-radius: 14px;
+  background: var(--portal-soft);
+  border: 1px solid var(--portal-line);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.portal-profesional-logo-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+}
+
+.portal-badge-modalidad {
+  display: inline-flex;
+  margin: 6px 0 0;
+  padding: 3px 11px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: .02em;
+}
+.portal-badge-modalidad-turno {
+  background: var(--portal-soft);
+  border: 1px solid var(--portal-line);
+  color: var(--portal-primary-dark);
+}
+.portal-badge-modalidad-llegada,
+.portal-badge-modalidad-mixta {
+  background: var(--portal-turquesa-soft);
+  border: 1px solid var(--portal-turquesa-claro);
+  color: var(--portal-primary-dark);
+}
+
+.portal-profesional-cta {
+  margin-top: 10px;
+  padding: 9px 16px;
+  min-height: auto;
+  font-size: 13.5px;
+}
+
+.portal-profesional-prestaciones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: center;
+  margin: 8px 0 0;
+}
+.portal-profesional-pendiente {
+  margin: 8px 0 0;
+  font-size: 12.5px;
+  font-style: italic;
+}
+.portal-chip {
+  display: inline-flex;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--portal-soft);
+  border: 1px solid var(--portal-line);
+  color: var(--portal-primary-dark);
+  font-size: 12px;
+  font-weight: 700;
+}
+.portal-chip-proximamente {
+  background: var(--portal-turquesa-soft);
+  border-color: var(--portal-turquesa-claro);
+  color: var(--portal-primary-dark);
+}
+
+.portal-estudios-paciente { text-align: center; }
+.portal-estudios-paciente .portal-chip { margin-top: 4px; }
 
 .portal-modalidad-list {
   margin: 0;
@@ -170,14 +465,29 @@ html, body {
 }
 .portal-contacto-list strong { color: var(--portal-primary-dark); }
 
+.portal-equipo-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
 .portal-cta-final { text-align: center; padding-bottom: 8px; }
 
 .portal-footer {
-  padding: 4px 18px 20px;
+  margin-top: 8px;
+  padding: 22px 18px 26px;
   text-align: center;
+  background: var(--portal-primary-dark);
+  color: #d7e3ea;
+}
+.portal-footer-nombre {
+  margin: 0 0 8px;
+  font-size: 14px;
+  font-weight: 800;
+  color: #fff;
 }
 .portal-footer a {
-  color: var(--portal-muted);
+  color: #cfe0e7;
   font-size: 13px;
   text-decoration: underline;
 }
@@ -200,9 +510,9 @@ html, body {
   margin: 0 18px;
   background: var(--portal-card-bg);
   border: 1px solid var(--portal-line);
-  border-radius: 18px;
-  padding: 22px 18px;
-  box-shadow: 0 1px 3px rgba(15, 23, 42, .06);
+  border-radius: 20px;
+  padding: 24px 20px;
+  box-shadow: 0 4px 18px rgba(15, 23, 42, .07);
 }
 .portal-card h2 {
   margin: 0 0 6px;
@@ -246,7 +556,7 @@ input, select, textarea {
 input:focus, select:focus, textarea:focus {
   outline: none;
   border-color: var(--portal-primary);
-  box-shadow: 0 0 0 3px rgba(18, 63, 86, .15);
+  box-shadow: 0 0 0 3px rgba(14, 79, 99, .15);
 }
 textarea { resize: vertical; }
 
@@ -262,11 +572,16 @@ textarea { resize: vertical; }
   letter-spacing: .03em;
   cursor: pointer;
   min-height: 52px;
+  box-shadow: 0 6px 16px rgba(14, 79, 99, .22);
+  transition: transform .1s ease, box-shadow .1s ease;
 }
-.portal-btn-primario:active { background: var(--portal-primary-dark); }
-.portal-btn-primario:disabled { opacity: .6; cursor: default; }
+.portal-btn-primario:active { background: var(--portal-primary-dark); transform: translateY(1px); box-shadow: 0 3px 10px rgba(14, 79, 99, .22); }
+.portal-btn-primario:disabled { opacity: .6; cursor: default; box-shadow: none; }
 
 .portal-btn-secundario {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   margin-top: 4px;
   padding: 16px 18px;
   border: 1px solid var(--portal-primary);
@@ -276,6 +591,7 @@ textarea { resize: vertical; }
   font-size: 16px;
   font-weight: 900;
   letter-spacing: .03em;
+  text-decoration: none;
   cursor: pointer;
   min-height: 52px;
 }
