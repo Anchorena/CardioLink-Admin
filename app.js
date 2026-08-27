@@ -1789,6 +1789,11 @@ function upsertPacienteDesdeCarga(){
  p.actualizadoEn=new Date().toISOString();
  $('pacienteId').value=p.id;
  saveConfig();
+ // v4.1.0-hc: toda alta/edicion de paciente sincroniza tambien la ficha
+ // administrativa en la capa relacional (cardiolink_pacientes). Usa la
+ // variante "basica" (nunca toca tablas de HC) porque este flujo lo dispara
+ // Secretaria, no Medico.
+ try{window.cardiolinkClinica410?.sincronizarFichaBasica?.(p)?.catch?.(e=>console.warn('No se pudo sincronizar la capa clínica relacional:',e));}catch(e){console.warn('No se pudo sincronizar la capa clínica relacional:',e);}
  return p;
 }
 function fechaISODesdeTexto(t){
@@ -3537,6 +3542,11 @@ function guardarPacientePanel(id){
   });
   saveConfig();
   saveAtenciones();
+  // v4.1.0-hc: toda alta/edicion de paciente sincroniza tambien la ficha
+  // administrativa en la capa relacional (cardiolink_pacientes). Usa la
+  // variante "basica" (nunca toca tablas de HC) porque este flujo lo dispara
+  // Secretaria, no Medico.
+  try{window.cardiolinkClinica410?.sincronizarFichaBasica?.(p)?.catch?.(e=>console.warn('No se pudo sincronizar la capa clínica relacional:',e));}catch(e){console.warn('No se pudo sincronizar la capa clínica relacional:',e);}
   pacienteSeleccionadoPanelId=p.id;
   renderPacientesPanel($('pacientesBuscar')?.value||'',false);
   seleccionarPacientePanel(p.id);
@@ -6229,6 +6239,11 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const ats=atencionesPac(original);
     ats.forEach(a=>{a.pacienteId=p.id; a.paciente=p.nombreCompleto; a.dni=p.dni; a.telefono=p.telefono; a.email=p.email; a.fechaNacimiento=p.fechaNacimiento;});
     try{saveConfig();saveAtenciones();}catch(e){}
+    // v4.1.0-hc: toda alta/edicion de paciente sincroniza tambien la ficha
+    // administrativa en la capa relacional (cardiolink_pacientes). Usa la
+    // variante "basica" (nunca toca tablas de HC) porque este flujo lo dispara
+    // Secretaria, no Medico.
+    try{window.cardiolinkClinica410?.sincronizarFichaBasica?.(p)?.catch?.(e=>console.warn('No se pudo sincronizar la capa clínica relacional:',e));}catch(e){console.warn('No se pudo sincronizar la capa clínica relacional:',e);}
     try{renderPacientesPanel?.('',true);renderTabla?.();renderAgenda?.();renderEstadisticas?.();renderStats?.();}catch(e){}
     abrirPacienteGlobalDetalle350(pacienteClave(p));
     try{copyText300('Ficha guardada','') }catch(e){ alert('Ficha guardada'); }
@@ -9721,6 +9736,30 @@ function patientInfoTextHC(p,coverage){
     };
   }
 
+  // Escribe SOLO la ficha administrativa en la capa relacional
+  // (cardiolink_pacientes) - a diferencia de sincronizarPacienteCompleto410()
+  // (mas abajo), nunca toca cardiolink_hc_resumen ni cardiolink_hc_evoluciones.
+  // listo410() no exige ningun rol especifico (solo sesion Supabase activa),
+  // asi que esta funcion es utilizable por Secretaria bajo el RLS actual sin
+  // depender de tener Historia Clinica abierta - pero justamente por eso no
+  // debe arriesgarse a escribir en tablas clinicas, sin importar que datos
+  // clinicos pueda tener cacheados localmente la sesion que la llama. Pensada
+  // para los puntos de alta/edicion de ficha que Secretaria dispara (turno
+  // nuevo, editar ficha): ver upsertPacienteDesdeCarga(), guardarPacientePanel(),
+  // guardarPacienteGlobal350().
+  async function sincronizarFichaPacienteBasica410(p){
+    if(!listo410()||!p)return false;
+    try{
+      const prow=pacienteRow410(p);
+      const {error:pe}=await supabaseClient.from('cardiolink_pacientes').upsert([prow],{onConflict:'id'});
+      if(pe)throw pe;
+      return true;
+    }catch(e){
+      console.warn('No se pudo sincronizar la ficha del paciente a la capa relacional:',e?.message||e);
+      return false;
+    }
+  }
+
   async function sincronizarPacienteCompleto410(p){
     if(!listo410()||!p)return false;
     try{
@@ -9800,7 +9839,7 @@ function patientInfoTextHC(p,coverage){
     finally{cargando410=false;}
   }
 
-  window.cardiolinkClinica410={version:VERSION_CLINICA_410,cargar:cargar410,sincronizarPacienteCompleto:sincronizarPacienteCompleto410};
+  window.cardiolinkClinica410={version:VERSION_CLINICA_410,cargar:cargar410,sincronizarPacienteCompleto:sincronizarPacienteCompleto410,sincronizarFichaBasica:sincronizarFichaPacienteBasica410};
 
   // Carga inicial: espera a que Supabase Auth haya terminado el login.
   let intentos=0;
