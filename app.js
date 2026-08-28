@@ -5258,6 +5258,13 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     if(ex && !confirm('Ya existe un paciente probable. ¿Actualizar la ficha existente?')) return;
     const r=aplicarPaciente298(p,ex);
     try{saveConfig(); guardarConfigEnSupabase298(); renderPacientesPanel('',true); seleccionarPacientePanel(r.paciente.id);}catch(e){console.warn(e)}
+    // v4.1.0-hc: mismo hook que upsertPacienteDesdeCarga()/guardarPacientePanel()/
+    // guardarPacienteGlobal350() - este modal ("Cargar paciente") es una via de
+    // alta separada que quedó afuera del relevamiento original y no sincronizaba
+    // a cardiolink_pacientes. Usa r.paciente (el objeto ya resuelto por
+    // aplicarPaciente298, con id real), no el "p" de arriba (datos crudos del
+    // formulario, sin id).
+    try{window.cardiolinkClinica410?.sincronizarFichaBasica?.(r.paciente)?.catch?.(e=>console.warn('No se pudo sincronizar la capa clínica relacional:',e));}catch(e){console.warn('No se pudo sincronizar la capa clínica relacional:',e);}
     cerrarModalPaciente298();
     alert(r.creado?'Paciente cargado.':'Ficha del paciente actualizada.');
   }
