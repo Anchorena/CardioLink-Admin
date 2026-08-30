@@ -1,0 +1,20 @@
+# CardioLink Admin - configuracion de Supabase CLI.
+#
+# Unica entrada relevante hoy: patient-reminders-24h no usa el JWT de
+# Supabase para autenticarse (la invoca un cron job server-side, no un
+# usuario logueado) - usa un secret propio (PATIENT_REMINDERS_CRON_SECRET),
+# verificado dentro de la propia funcion, fail-closed si falta o no
+# coincide. Por default Supabase exige un JWT valido (anon/authenticated/
+# service_role) en el gateway ANTES de que el codigo de la funcion corra;
+# sin este "verify_jwt = false" puntual, el cron job (que manda el secret
+# propio en el header Authorization, no un JWT) quedaria rechazado por el
+# gateway antes de llegar a la verificacion real. Esto NO deja la funcion
+# abierta: sigue exigiendo el secret propio como unica puerta de entrada.
+#
+# patient-communications NO se declara aca a proposito: se queda con el
+# default verify_jwt = true (exige ademas un JWT real de Supabase, sobre el
+# cual la funcion valida rol via cardiolink_has_communications_access()) -
+# doble capa, plataforma + rol propio.
+
+[functions.patient-reminders-24h]
+verify_jwt = false

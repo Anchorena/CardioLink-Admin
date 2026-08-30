@@ -1599,7 +1599,7 @@ function prestacionesAdicionalesSeleccionadas(prestPrincipal){
  return extras;
 }
 let guardandoAtencion=false;
-function guardarAtencion(e){
+async function guardarAtencion(e){
  if(e)e.preventDefault();
  if(guardandoAtencion)return;
  guardandoAtencion=true;
@@ -1611,7 +1611,11 @@ function guardarAtencion(e){
   asegurarValorSelect('obraSocial','Particular');
   asegurarValorSelect('profesional',esMedico()?profesionalIdUsuarioActual():'matias');
   if(!$('prestacion')?.value){alert('Falta seleccionar prestación.');return;}
-  const paciente=upsertPacienteDesdeCarga();
+  const paciente=await upsertPacienteDesdeCarga();
+  // upsertPacienteDesdeCarga() ya mostró el motivo (alert) si abortó por un
+  // conflicto de DNI que no pudo reconciliar con seguridad: no seguir
+  // armando la atención con un pacienteId huérfano.
+  if(!paciente)return;
   const registros=[];
   const grupoTurnoId='turno_'+Date.now();
   const prestPrincipal=$('prestacion').value;
@@ -1633,6 +1637,22 @@ function guardarAtencion(e){
   if(typeof renderAgenda==='function')renderAgenda();
   renderStats();
   if(resumenFiltrosVisible)calcularLiquidacionColocaciones();
+  // Patient Communications V1: turno recién guardado -> ofrecer notificar.
+  // validos[0] es siempre el registro principal (los adicionales se
+  // agregan después, ver prestacionesAdicionalesSeleccionadas() arriba).
+  // saveAtenciones() sincroniza a Supabase con debounce (programarSyncSupabase,
+  // 700ms) - el modal llama a una Edge Function que lee cardiolink_atenciones
+  // remoto, así que hay que forzar la sincronización inmediata antes de
+  // abrirlo (si no, "No se encontró el turno" por una carrera de timing).
+  try{
+    const principal=validos[0];
+    if(principal?.id){
+      const idParaNotificar=principal.id;
+      (typeof sincronizarAtencionesSupabase==='function'?sincronizarAtencionesSupabase(true):Promise.resolve())
+        .catch(e=>console.warn('No se pudo forzar la sincronización antes de notificar:',e))
+        .finally(()=>{ window.abrirModalNotificarPaciente460?.(idParaNotificar,'confirmation'); window.notificarProfesionalAsignado460?.(idParaNotificar,'assignment'); });
+    }
+  }catch(e){console.warn('No se pudo abrir el modal de notificación al paciente:',e);}
   limpiarForm();
   if(guardarYContinuar){guardarYContinuar=false;showSection('carga');setTimeout(()=>$('buscarPaciente')?.focus(),50)}else showSection('listado')
  }finally{
@@ -1762,14 +1782,15 @@ function nuevoPacienteManual(){
  if($('pacienteId'))$('pacienteId').value='';
  if($('resultadosPacientes'))$('resultadosPacientes').innerHTML='<div class="muted">Cargá los datos manualmente. Si ponés DNI, CardioLink evitará duplicados al guardar.</div>';
 }
-function upsertPacienteDesdeCarga(){
+async function upsertPacienteDesdeCarga(){
  const dni=String($('dni')?.value||'').replace(/\D/g,'');
  const nombreCompleto=($('paciente')?.value||'').trim();
  if(!dni && !nombreCompleto)return null;
  if(!Array.isArray(data.pacientes))data.pacientes=[];
  let p=dni?data.pacientes.find(x=>String(x.dni||'').replace(/\D/g,'')===dni):null;
  if(!p && $('pacienteId')?.value)p=data.pacientes.find(x=>x.id===$('pacienteId').value);
- if(!p){p={id:'pac_'+Date.now()+Math.floor(Math.random()*10000),historialCoberturas:[]};data.pacientes.push(p);}
+ let esNuevoLocal=false;
+ if(!p){p={id:'pac_'+Date.now()+Math.floor(Math.random()*10000),historialCoberturas:[]};data.pacientes.push(p);esNuevoLocal=true;}
  p.nombreCompleto=nombreCompleto;
  p.dni=$('dni')?.value.trim()||p.dni||'';
  p.telefono=$('telefono')?.value.trim()||p.telefono||'';
@@ -1787,6 +1808,46 @@ function upsertPacienteDesdeCarga(){
    p.numeroAfiliadoHabitual=afiliado;
  }
  p.actualizadoEn=new Date().toISOString();
+
+ // Fix pacienteId huérfano por DNI duplicado. NO limitar a esNuevoLocal:
+ // data.pacientes/localStorage puede tener un paciente previo con este
+ // mismo DNI pero con un id huérfano (generado por este mismo bug en una
+ // carga anterior) - ahí esNuevoLocal da false y la validación se
+ // saltearía igual. Con DNI presente, siempre se verifica/reconcilia
+ // ANTES de devolver el paciente, evitando que la atención que arma
+ // guardarAtencion() a continuación quede con un pacienteId que nunca
+ // llega a existir en la capa relacional (ver docs/CARDIOLINK_CONTEXT.md
+ // y la auditoría de este bug). Camino offline-friendly: si no hay sesión
+ // Supabase activa o el fallo no es por DNI duplicado, no bloquea nada
+ // (mismo criterio que el resto de la sincronización en este archivo).
+ if(dni){
+   // El "?." silencia con undefined si window.cardiolinkClinica410 todavía
+   // no expone asegurarPacienteSinConflictoDni (por ejemplo, un script
+   // cacheado por el navegador de antes de que existiera esta función) -
+   // eso dejaría pasar el id huérfano sin ningún aviso. Se distingue ese
+   // caso explícitamente en vez de tratarlo igual que "sin conflicto".
+   if(typeof window.cardiolinkClinica410?.asegurarPacienteSinConflictoDni!=='function'){
+     // Fail closed: sin la función de seguridad no hay forma de verificar
+     // el DNI contra la capa relacional - no seguir normalmente. Mismo
+     // mecanismo de cancelación que ya usa el flujo cuando sí se detecta
+     // el conflicto y no se puede reconciliar (abajo).
+     console.error('cardiolinkClinica410.asegurarPacienteSinConflictoDni no está disponible - probablemente app.js está en caché desactualizado.');
+     alert('No se pudo verificar el DNI del paciente contra la base de datos (la app parece estar desactualizada en este navegador). Recargá la página (Ctrl/Cmd+Shift+R) y volvé a intentar antes de guardar este turno.');
+     data.pacientes=data.pacientes.filter(x=>x!==p);
+     $('pacienteId').value='';
+     return null;
+   }else{
+     const resultado=await window.cardiolinkClinica410.asegurarPacienteSinConflictoDni(p);
+     if(resultado===false){
+       alert('Ya existe un paciente con ese DNI y no se pudo verificar/reconciliar automáticamente. Volvé a intentar; si el problema persiste, buscá el paciente por DNI en el panel de Pacientes.');
+       data.pacientes=data.pacientes.filter(x=>x!==p);
+       $('pacienteId').value='';
+       return null;
+     }
+     if(resultado && typeof resultado==='object')p=resultado;
+   }
+ }
+
  $('pacienteId').value=p.id;
  saveConfig();
  // v4.1.0-hc: toda alta/edicion de paciente sincroniza tambien la ficha
@@ -3489,7 +3550,7 @@ function editarPacientePanel(id){
       <button class="primary" type="button" onclick="guardarPacientePanel('${escapeHtml(clavePacientePanel(p))}')">Guardar ficha</button>
     </div>`;
 }
-function guardarPacientePanel(id){
+async function guardarPacientePanel(id){
   const original=buscarPacientePanelPorId(id);
   if(!original)return;
   if(!Array.isArray(data.pacientes))data.pacientes=[];
@@ -3499,9 +3560,11 @@ function guardarPacientePanel(id){
   if(original.id && !String(original.id).startsWith('legacy_')) p=data.pacientes.find(x=>x.id===original.id);
   if(!p && dni) p=data.pacientes.find(x=>dniLimpio(x.dni)===dni);
   if(!p && nombreOriginal) p=data.pacientes.find(x=>normalizarTexto(x.nombreCompleto||x.paciente||'')===nombreOriginal);
+  let esNuevoLocal=false;
   if(!p){
     p={id:'pac_'+Date.now()+Math.floor(Math.random()*10000),historialCoberturas:[]};
     data.pacientes.push(p);
+    esNuevoLocal=true;
   }
   const atencionesOriginales=atencionesDelPaciente(original);
   p.nombreCompleto=$('pacEditNombre')?.value.trim()||original.nombreCompleto||'';
@@ -3520,6 +3583,27 @@ function guardarPacientePanel(id){
   p.contactoResponsableTelefono=$('pacEditContactoTelefono')?.value.trim()||'';
   p.contactoResponsableEmail=$('pacEditContactoEmail')?.value.trim()||'';
   p.actualizadoEn=new Date().toISOString();
+
+  // Mismo fix que upsertPacienteDesdeCarga(). NO limitar a esNuevoLocal:
+  // data.pacientes/localStorage puede tener un paciente previo con este
+  // mismo DNI pero con un id huérfano (ya generado por este mismo bug en
+  // una carga anterior) - ahí esNuevoLocal da false y la validación se
+  // saltearía igual. Con DNI presente, siempre se verifica/reconcilia
+  // ANTES de propagar el id a las atenciones vinculadas.
+  if(dni){
+    if(typeof window.cardiolinkClinica410?.asegurarPacienteSinConflictoDni!=='function'){
+      alert('No se pudo verificar el DNI del paciente contra la base de datos (la app parece estar desactualizada en este navegador). Recargá la página (Ctrl/Cmd+Shift+R) y volvé a intentar.');
+      data.pacientes=data.pacientes.filter(x=>x!==p);
+      return;
+    }
+    const resultado=await window.cardiolinkClinica410.asegurarPacienteSinConflictoDni(p);
+    if(resultado===false){
+      alert('Ya existe un paciente con ese DNI y no se pudo verificar/reconciliar automáticamente. Volvé a intentar; si el problema persiste, buscá el paciente por DNI en el panel de Pacientes.');
+      data.pacientes=data.pacientes.filter(x=>x!==p);
+      return;
+    }
+    if(resultado && typeof resultado==='object')p=resultado;
+  }
 
   // Clave del arreglo: editar ficha actualiza el paciente seleccionado y adopta sus atenciones previas.
   // No crea un paciente suelto con 0 atenciones.
@@ -5249,14 +5333,35 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     <div class="modal-actions"><button class="secondary" type="button" onclick="cerrarModalPaciente298()">Cancelar</button><button class="primary" type="button" id="btnGuardarPacientePuro298">Guardar paciente</button></div>`);
   }
   window.abrirCargaPacientePuro298=abrirCargaPacientePuro298;
-  function guardarPacientePuro298(){
+  async function guardarPacientePuro298(){
     const p={
       nombreCompleto: clean(d('pac298Nombre')?.value), dni: onlyDigits(d('pac298Dni')?.value), fechaNacimiento:d('pac298Nacimiento')?.value||'', telefono:clean(d('pac298Telefono')?.value), email:clean(d('pac298Email')?.value), coberturaHabitual:clean(d('pac298Cobertura')?.value), numeroAfiliadoHabitual:clean(d('pac298Afiliado')?.value), contactoResponsableNombre:clean(d('pac298ContactoNombre')?.value), contactoResponsableRelacion:clean(d('pac298ContactoRelacion')?.value), contactoResponsableTelefono:clean(d('pac298ContactoTelefono')?.value), contactoResponsableEmail:clean(d('pac298ContactoEmail')?.value), observacionesAdministrativas:clean(d('pac298Obs')?.value)
     };
     if(!p.nombreCompleto && !p.dni && !p.telefono){alert('Cargá al menos nombre, DNI o teléfono.');return;}
     const ex=pacienteExistente298(p);
     if(ex && !confirm('Ya existe un paciente probable. ¿Actualizar la ficha existente?')) return;
-    const r=aplicarPaciente298(p,ex);
+    let r=aplicarPaciente298(p,ex);
+    // Mismo fix que upsertPacienteDesdeCarga()/guardarPacientePanel()/
+    // guardarPacienteGlobal350(). NO limitar a r.creado: pacienteExistente298()
+    // busca local (data.pacientes/localStorage) por DNI/nombre+nacimiento,
+    // pero ese match local puede ser justamente un id huérfano generado
+    // por este mismo bug en una carga anterior - ahí r.creado da false y
+    // la validación se saltearía igual. Con DNI presente, siempre se
+    // verifica/reconcilia antes de sincronizar.
+    if(p.dni){
+      if(typeof window.cardiolinkClinica410?.asegurarPacienteSinConflictoDni!=='function'){
+        alert('No se pudo verificar el DNI del paciente contra la base de datos (la app parece estar desactualizada en este navegador). Recargá la página (Ctrl/Cmd+Shift+R) y volvé a intentar.');
+        data.pacientes=data.pacientes.filter(x=>x!==r.paciente);
+        return;
+      }
+      const resultado=await window.cardiolinkClinica410.asegurarPacienteSinConflictoDni(r.paciente);
+      if(resultado===false){
+        alert('Ya existe un paciente con ese DNI y no se pudo verificar/reconciliar automáticamente. Volvé a intentar; si el problema persiste, buscá el paciente por DNI en el panel de Pacientes.');
+        data.pacientes=data.pacientes.filter(x=>x!==r.paciente);
+        return;
+      }
+      if(resultado && typeof resultado==='object')r={...r,paciente:resultado};
+    }
     try{saveConfig(); guardarConfigEnSupabase298(); renderPacientesPanel('',true); seleccionarPacientePanel(r.paciente.id);}catch(e){console.warn(e)}
     // v4.1.0-hc: mismo hook que upsertPacienteDesdeCarga()/guardarPacientePanel()/
     // guardarPacienteGlobal350() - este modal ("Cargar paciente") es una via de
@@ -6219,13 +6324,14 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         <div class="modal-actions"><button class="secondary" type="button" onclick="abrirPacienteGlobalDetalle350('${esc(k)}')">Cancelar</button><button class="primary" type="button" onclick="guardarPacienteGlobal350('${esc(k)}')">Guardar ficha</button></div>
       </div>`;
   }
-  function guardarPacienteGlobal350(k){
+  async function guardarPacienteGlobal350(k){
     const original=pacientePorClave350(k); if(!original)return;
     if(!Array.isArray(data.pacientes))data.pacientes=[];
     let p=null; const dni=dniClean($id('gPacDni')?.value||original.dni||'');
     if(original.id && !String(original.id).startsWith('legacy_'))p=data.pacientes.find(x=>x.id===original.id);
     if(!p && dni)p=data.pacientes.find(x=>dniClean(x.dni)===dni);
-    if(!p){p={id:'pac_'+Date.now()+Math.floor(Math.random()*10000),historialCoberturas:[]};data.pacientes.push(p);}
+    let esNuevoLocal=false;
+    if(!p){p={id:'pac_'+Date.now()+Math.floor(Math.random()*10000),historialCoberturas:[]};data.pacientes.push(p);esNuevoLocal=true;}
     p.nombreCompleto=($id('gPacNombre')?.value||'').trim();
     p.dni=($id('gPacDni')?.value||'').trim();
     p.fechaNacimiento=$id('gPacNacimiento')?.value||'';
@@ -6243,6 +6349,28 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     p.contactoResponsableEmail=($id('gPacContactoEmail')?.value||'').trim();
     p.observacionesAdministrativas=($id('gPacObs')?.value||'').trim();
     p.actualizadoEn=new Date().toISOString();
+
+    // Mismo fix que upsertPacienteDesdeCarga()/guardarPacientePanel(). NO
+    // limitar a esNuevoLocal: puede haber un paciente previo en
+    // data.pacientes/localStorage con este DNI pero con un id huérfano
+    // (generado por este mismo bug en una carga anterior) - ahí
+    // esNuevoLocal da false y la validación se saltearía igual. Con DNI
+    // presente, siempre se verifica/reconcilia antes de propagar el id.
+    if(dni){
+      if(typeof window.cardiolinkClinica410?.asegurarPacienteSinConflictoDni!=='function'){
+        alert('No se pudo verificar el DNI del paciente contra la base de datos (la app parece estar desactualizada en este navegador). Recargá la página (Ctrl/Cmd+Shift+R) y volvé a intentar.');
+        data.pacientes=data.pacientes.filter(x=>x!==p);
+        return;
+      }
+      const resultado=await window.cardiolinkClinica410.asegurarPacienteSinConflictoDni(p);
+      if(resultado===false){
+        alert('Ya existe un paciente con ese DNI y no se pudo verificar/reconciliar automáticamente. Volvé a intentar; si el problema persiste, buscá el paciente por DNI en el panel de Pacientes.');
+        data.pacientes=data.pacientes.filter(x=>x!==p);
+        return;
+      }
+      if(resultado && typeof resultado==='object')p=resultado;
+    }
+
     const ats=atencionesPac(original);
     ats.forEach(a=>{a.pacienteId=p.id; a.paciente=p.nombreCompleto; a.dni=p.dni; a.telefono=p.telefono; a.email=p.email; a.fechaNacimiento=p.fechaNacimiento;});
     try{saveConfig();saveAtenciones();}catch(e){}
@@ -9767,6 +9895,123 @@ function patientInfoTextHC(p,coverage){
     }
   }
 
+  // Cuando un alta local ("nueva" solo porque data.pacientes no la tenía
+  // cacheada) choca contra un DNI que ya existe en cardiolink_pacientes,
+  // esta función busca el paciente real por dni_normalizado y reconcilia:
+  // adopta su id, fusiona los datos administrativos nuevos que se acaban
+  // de tipear (nunca los pisa con datos remotos, y nunca deja que un
+  // string vacío remoto pise un dato local ya cargado) y devuelve el
+  // objeto local resultante. Null si no se pudo reconciliar con
+  // seguridad (el llamador debe abortar el guardado, nunca dejar un
+  // pacienteId huérfano).
+  async function reconciliarDniDuplicado410(p){
+    const dni=digits410(p?.dni);
+    if(!dni)return null;
+    try{
+      const {data:filas,error}=await supabaseClient.from('cardiolink_pacientes').select('*').eq('dni_normalizado',dni).limit(1);
+      if(error||!filas||!filas.length)return null;
+      const real=filas[0];
+      if(String(p.id)===String(real.id))return p;
+      let destino=data.pacientes.find(x=>String(x.id)===String(real.id)&&x!==p);
+      if(destino){
+        // Ya había otro objeto local con el id real (por ejemplo, cargado
+        // por otra sincronización mientras tanto): los datos nuevos
+        // tipeados en "p" ganan sobre lo que hubiera ahí; se descarta el
+        // objeto huérfano duplicado.
+        Object.keys(p).forEach(k=>{
+          if(k==='id')return;
+          const v=p[k];
+          if(v!==undefined&&v!==null&&v!==''&&!(Array.isArray(v)&&!v.length))destino[k]=v;
+        });
+        data.pacientes=data.pacientes.filter(x=>x!==p);
+      }else{
+        // No había otro objeto local con ese id: el mismo objeto adopta
+        // el id real in-place.
+        p.id=real.id;
+        destino=p;
+      }
+      const fill=(k,v)=>{ if((destino[k]===undefined||destino[k]===null||destino[k]==='') && v!==undefined&&v!==null&&v!=='') destino[k]=v; };
+      fill('nombreCompleto',real.nombre_completo);
+      fill('telefono',real.telefono);
+      fill('email',real.email);
+      fill('fechaNacimiento',real.fecha_nacimiento);
+      fill('coberturaHabitual',real.cobertura_habitual);
+      fill('numeroAfiliadoHabitual',real.numero_afiliado_habitual);
+      fill('contactoResponsableNombre',real.contacto_responsable_nombre);
+      fill('contactoResponsableRelacion',real.contacto_responsable_relacion);
+      fill('contactoResponsableTelefono',real.contacto_responsable_telefono);
+      fill('contactoResponsableEmail',real.contacto_responsable_email);
+      return destino;
+    }catch(e){
+      console.warn('No se pudo reconciliar el DNI duplicado:',e?.message||e);
+      return null;
+    }
+  }
+
+  // Verifica (y si hace falta, reconcilia) un paciente "nuevo para este
+  // cliente" ANTES de que se use su id para armar una atención - ver
+  // upsertPacienteDesdeCarga() en app.js.
+  //
+  // v2 (bug real de QA en Staging, DNI 4343434343): la versión anterior
+  // era reactiva - intentaba el upsert con el id nuevo primero, y sólo
+  // reconciliaba si lograba reconocer el error como "conflicto de DNI"
+  // via un patrón sobre pe.message (`/dni_normalizado/i`). Si el error
+  // real que devolvía Postgres/PostgREST no matcheaba ese patrón exacto,
+  // la función asumía "sin conflicto" y devolvía true - el id huérfano
+  // quedaba en la atención igual, aunque el upsert hubiera fallado con
+  // 409 por DNI duplicado. Ahora el chequeo es PREVENTIVO: se busca el
+  // DNI en cardiolink_pacientes ANTES de intentar cualquier upsert, sin
+  // depender de interpretar el texto/código de un error para detectar el
+  // conflicto. El upsert-y-catch queda sólo como red de seguridad para
+  // una carrera real (otra alta con el mismo DNI en el intervalo entre el
+  // chequeo preventivo y este upsert) - y ahí, cualquier 23505 en ESTE
+  // upsert puntual (con un id recién generado, sin colisión de id
+  // posible en la práctica) se trata como conflicto de DNI sin exigir
+  // que el mensaje mencione literalmente el nombre de la constraint.
+  //
+  // Devuelve:
+  //   true    -> se puede seguir con p tal cual (sin conflicto, o sin
+  //              poder verificar por estar offline/otro error no
+  //              relacionado a DNI - no bloquea, mismo criterio que el
+  //              resto de la sincronización de este archivo).
+  //   objeto  -> el conflicto se resolvió: usar ESTE objeto (con el id
+  //              real) en vez de p.
+  //   false   -> conflicto de DNI detectado pero no se pudo reconciliar
+  //              con seguridad: el llamador debe abortar el guardado.
+  async function asegurarPacienteSinConflictoDni410(p){
+    if(!listo410()||!p)return true;
+    const dni=digits410(p?.dni);
+    try{
+      if(dni){
+        // v3 (bug real de QA #2, mismo DNI 4343434343): reconciliarDniDuplicado410()
+        // muta p.id=real.id IN PLACE cuando no hay otro objeto local con ese
+        // id (el caso más común - caché sin ningún registro previo de ese
+        // paciente). Como devuelve la MISMA referencia (destino===p) en ese
+        // caso, comparar "reconciliadoPreventivo.id !== p.id" después de
+        // la mutación siempre daba false (un objeto no es distinto de sí
+        // mismo) y el código caía al intento de upsert en vez de propagar
+        // la reconciliación de forma explícita. Ahora se confía
+        // directamente en lo que devuelve reconciliarDniDuplicado410():
+        // cualquier objeto no nulo significa "ya existe, usar este id",
+        // sin comparaciones de por medio.
+        const reconciliadoPreventivo=await reconciliarDniDuplicado410(p);
+        if(reconciliadoPreventivo)return reconciliadoPreventivo;
+      }
+      const prow=pacienteRow410(p);
+      const {error:pe}=await supabaseClient.from('cardiolink_pacientes').upsert([prow],{onConflict:'id'});
+      if(!pe)return true;
+      if(pe.code!=='23505'){
+        console.warn('No se pudo sincronizar la ficha del paciente a la capa relacional:',pe.message||pe);
+        return true;
+      }
+      const reconciliado=await reconciliarDniDuplicado410(p);
+      return reconciliado||false;
+    }catch(e){
+      console.warn('No se pudo verificar el DNI contra la capa relacional:',e?.message||e);
+      return true;
+    }
+  }
+
   async function sincronizarPacienteCompleto410(p){
     if(!listo410()||!p)return false;
     try{
@@ -9846,7 +10091,7 @@ function patientInfoTextHC(p,coverage){
     finally{cargando410=false;}
   }
 
-  window.cardiolinkClinica410={version:VERSION_CLINICA_410,cargar:cargar410,sincronizarPacienteCompleto:sincronizarPacienteCompleto410,sincronizarFichaBasica:sincronizarFichaPacienteBasica410};
+  window.cardiolinkClinica410={version:VERSION_CLINICA_410,cargar:cargar410,sincronizarPacienteCompleto:sincronizarPacienteCompleto410,sincronizarFichaBasica:sincronizarFichaPacienteBasica410,asegurarPacienteSinConflictoDni:asegurarPacienteSinConflictoDni410,reconciliarDniDuplicado:reconciliarDniDuplicado410};
 
   // Carga inicial: espera a que Supabase Auth haya terminado el login.
   let intentos=0;
@@ -11028,4 +11273,503 @@ function patientInfoTextHC(p,coverage){
     @media(max-width:980px){.finance-kpis-4-411f{grid-template-columns:repeat(2,1fr)!important}.finance-config-grid411f{grid-template-columns:1fr}}
   `;
   document.head.appendChild(s);
+})();
+
+/* ===== CardioLink · Patient Communications V1 (460) =====
+   Objetivo: reemplazar gradualmente a MediCloud en la comunicación con
+   pacientes. Módulo desacoplado de HC/Finanzas/backfill/Portal/auth:
+   - Habla únicamente con la Edge Function "patient-communications"
+     (supabaseClient.functions.invoke, que reenvía el JWT de la sesión
+     activa sola). Nunca escribe cardiolink_communications directo: esa
+     tabla no tiene policy de insert/update para authenticated a propósito
+     (ver supabase/migrations/20260828120000_cardiolink_communications_schema.sql).
+   - No inventa una segunda noción de "turno": usa el mismo id de atención
+     que ya usa el resto de app.js (atenciones[].id).
+   - WhatsApp sigue siendo manual en V1 (abre wa.me con el mensaje ya
+     armado); la Edge Function sólo valida/normaliza el teléfono y registra
+     que se inició el envío. Nunca dispara nada por sí sola: sólo el click
+     del usuario abre WhatsApp.
+*/
+(function(){
+  function comms460ListoSupabase(){
+    return !!(typeof supabaseClient!=='undefined' && supabaseClient && typeof supabaseClient.functions?.invoke==='function');
+  }
+
+  async function comms460Invoke(action,payload){
+    if(!comms460ListoSupabase()) return {ok:false,error:'Sin conexión a Supabase.'};
+    try{
+      const {data,error}=await supabaseClient.functions.invoke('patient-communications',{body:{action,...payload}});
+      if(error) return {ok:false,error:error.message||'No se pudo contactar el servicio de comunicaciones.'};
+      return data||{ok:false,error:'Respuesta vacía del servicio de comunicaciones.'};
+    }catch(e){
+      return {ok:false,error:e?.message||'Error inesperado contactando el servicio de comunicaciones.'};
+    }
+  }
+
+  function cerrarModalComms460(){ document.getElementById('modalComms460')?.remove(); }
+  window.cerrarModalComms460=cerrarModalComms460;
+
+  // Abre la pestaña YA, de forma síncrona, dentro del mismo gesto de click
+  // que disparó el botón - un window.open() llamado después de un await
+  // (una llamada de red) pierde el "user activation" y la mayoría de los
+  // navegadores lo bloquea como popup. Se navega esa pestaña ya abierta
+  // recién cuando llega la respuesta async; si el navegador igual bloqueó
+  // la apertura (winRef null/cerrada), se ofrece un link para abrir a mano.
+  function comms460AbrirVentanaWhatsapp(){
+    try{ return window.open('about:blank','_blank'); }
+    catch(e){ return null; }
+  }
+
+  function comms460MostrarLinkManualWhatsapp(url){
+    const body=document.getElementById('comms460Body');
+    if(!body) return;
+    const p=document.createElement('p');
+    p.innerHTML=`<a href="${escapeHtml(url)}" target="_blank" rel="noopener">El navegador bloqueó la apertura automática. Tocá acá para abrir WhatsApp.</a>`;
+    body.appendChild(p);
+  }
+
+  async function comms460EnviarWhatsapp(atencionId,tipo,winRef){
+    const r=await comms460Invoke('log-whatsapp',{atencionId,tipo});
+    if(!r.ok){
+      try{ winRef && !winRef.closed && winRef.close(); }catch(e){}
+      alert('No se pudo preparar WhatsApp: '+(r.error||'motivo desconocido'));
+      return false;
+    }
+    const url='https://wa.me/'+r.telefono+'?text='+encodeURIComponent(r.mensaje||'');
+    if(winRef && !winRef.closed){
+      try{ winRef.location.href=url; return true; }
+      catch(e){ console.warn('No se pudo redirigir la ventana de WhatsApp:',e); }
+    }
+    comms460MostrarLinkManualWhatsapp(url);
+    return true;
+  }
+
+  async function comms460EnviarEmail(atencionId,tipo){
+    const r=await comms460Invoke('send-email',{atencionId,tipo});
+    if(!r.ok){ alert('No se pudo enviar el email: '+(r.error||'motivo desconocido')); return false; }
+    return true;
+  }
+
+  async function comms460EnviarAmbos(atencionId,tipo,faltaTelefono,faltaEmail){
+    // La ventana de WhatsApp se abre PRIMERO y de forma síncrona (antes de
+    // cualquier await, incluido el del email) para no perder el gesto del
+    // usuario mientras se espera la respuesta de "enviar email".
+    const winRef=faltaTelefono?null:comms460AbrirVentanaWhatsapp();
+    const resultados=[];
+    if(faltaEmail) resultados.push('Email: sin dirección cargada, no se envió.');
+    else resultados.push('Email: '+(await comms460EnviarEmail(atencionId,tipo)?'enviado.':'no se pudo enviar (ver aviso anterior).'));
+    if(faltaTelefono) resultados.push('WhatsApp: sin teléfono cargado, no se inició.');
+    else resultados.push('WhatsApp: '+(await comms460EnviarWhatsapp(atencionId,tipo,winRef)?'iniciado.':'no se pudo iniciar (ver aviso anterior).'));
+    alert(resultados.join('\n'));
+  }
+
+  const COMMS460_TIPOS_LABEL={confirmation:'Confirmación',reschedule:'Reprogramación',cancellation:'Cancelación',reminder:'Recordatorio'};
+
+  // opciones.seleccionable=true agrega un <select> de tipo arriba del
+  // preview (usado por el botón manual "Notificar paciente": ese disparo
+  // no sabe de antemano si el usuario quiere avisar una reprogramación o
+  // repetir una confirmación). Los disparos automáticos (alta de turno,
+  // cambio de estado a confirmado/cancelado) no lo usan: ya saben el tipo
+  // exacto, no hace falta elegir.
+  async function abrirModalNotificarPaciente460(atencionId,tipoInicial,opciones={}){
+    if(!atencionId) return;
+    if(!comms460ListoSupabase()){ console.warn('Patient Communications V1: sin sesión Supabase activa, se omite el modal de notificación.'); return; }
+    cerrarModalComms460();
+    let tipoActual=tipoInicial;
+    const overlay=document.createElement('div');
+    overlay.id='modalComms460';
+    overlay.className='modal-backdrop';
+    overlay.innerHTML=`<div class="agenda-modal-card" style="max-width:480px">
+      <div class="modal-header"><div><h2>¿Notificar al paciente?</h2><p class="muted">${escapeHtml(COMMS460_TIPOS_LABEL[tipoInicial]||'Comunicación')}</p></div><button class="modal-close" type="button" id="comms460Cerrar">×</button></div>
+      ${opciones.seleccionable?`<div style="margin-bottom:8px"><label>Tipo de aviso</label><select id="comms460Tipo">
+        <option value="confirmation">Confirmación</option>
+        <option value="reschedule">Reprogramación</option>
+        <option value="cancellation">Cancelación</option>
+      </select></div>`:''}
+      <div id="comms460Body" style="padding:6px 0"><p class="muted">Generando vista previa…</p></div>
+      <div class="modal-actions" id="comms460Botones">
+        <button class="secondary" type="button" id="comms460BtnNo">No notificar</button>
+        <button class="secondary" type="button" id="comms460BtnWs" disabled>WhatsApp</button>
+        <button class="secondary" type="button" id="comms460BtnEmail" disabled>Email</button>
+        <button class="primary" type="button" id="comms460BtnAmbos" disabled>Ambos</button>
+      </div>
+    </div>`;
+    document.body.appendChild(overlay);
+    document.getElementById('comms460Cerrar').onclick=cerrarModalComms460;
+    document.getElementById('comms460BtnNo').onclick=cerrarModalComms460;
+    if(opciones.seleccionable){
+      const sel=document.getElementById('comms460Tipo');
+      sel.value=tipoInicial;
+      sel.onchange=()=>{ tipoActual=sel.value; cargarPreview460(); };
+    }
+
+    async function cargarPreview460(){
+      const body=document.getElementById('comms460Body');
+      if(body) body.innerHTML='<p class="muted">Generando vista previa…</p>';
+      const r=await comms460Invoke('preview',{atencionId,tipo:tipoActual});
+      if(!body || !document.getElementById('modalComms460')) return; // el usuario ya cerró el modal
+      if(!r.ok){
+        body.innerHTML=`<p class="muted">No se pudo generar la vista previa: ${escapeHtml(r.error||'')}</p>`;
+        return;
+      }
+      if(r.sinCanales){
+        body.innerHTML='<p class="muted">Este paciente no tiene canales de contacto cargados.</p>';
+      }else{
+        body.innerHTML=`
+          <p><strong>${escapeHtml(r.asunto||'')}</strong></p>
+          <p style="white-space:pre-wrap">${escapeHtml(r.mensaje||'')}</p>
+        `;
+      }
+      // Mostrar solo los canales realmente disponibles (no alcanza con
+      // deshabilitar: un botón deshabilitado seguía apareciendo). "Ambos"
+      // sólo existe si los dos canales están disponibles a la vez.
+      const mostrarWs=!r.sinCanales&&!r.faltaTelefono;
+      const mostrarEmail=!r.sinCanales&&!r.faltaEmail;
+      const mostrarAmbos=mostrarWs&&mostrarEmail;
+      const btnWs=document.getElementById('comms460BtnWs');
+      const btnEmail=document.getElementById('comms460BtnEmail');
+      const btnAmbos=document.getElementById('comms460BtnAmbos');
+      if(btnWs){
+        btnWs.style.display=mostrarWs?'':'none';
+        btnWs.disabled=false;
+        btnWs.textContent=r.telefonoFuente==='responsible_contact'?'WhatsApp a contacto responsable':'WhatsApp';
+        btnWs.onclick=()=>{ const winRef=comms460AbrirVentanaWhatsapp(); comms460EnviarWhatsapp(atencionId,tipoActual,winRef).then(cerrarModalComms460); };
+      }
+      if(btnEmail){
+        btnEmail.style.display=mostrarEmail?'':'none';
+        btnEmail.disabled=false;
+        btnEmail.textContent=r.emailFuente==='responsible_contact'?'Email a contacto responsable':'Email';
+        btnEmail.onclick=async()=>{ await comms460EnviarEmail(atencionId,tipoActual); cerrarModalComms460(); };
+      }
+      if(btnAmbos){
+        btnAmbos.style.display=mostrarAmbos?'':'none';
+        btnAmbos.disabled=false;
+        btnAmbos.onclick=async()=>{ await comms460EnviarAmbos(atencionId,tipoActual,r.faltaTelefono,r.faltaEmail); cerrarModalComms460(); };
+      }
+    }
+    await cargarPreview460();
+  }
+  window.abrirModalNotificarPaciente460=abrirModalNotificarPaciente460;
+
+  // Aviso automático al profesional asignado. Circuito DISTINTO del modal
+  // "¿Notificar al paciente?": nunca pregunta nada, nunca bloquea el
+  // guardado del turno (fire-and-forget, el resultado se ignora acá - la
+  // Edge Function ya maneja internamente autonotificación/preferencia
+  // desactivada/sin email como "omitido", no como error). Ver acción
+  // 'notify-professional' en supabase/functions/patient-communications/index.ts.
+  function notificarProfesionalAsignado460(atencionId,evento){
+    if(!atencionId||!comms460ListoSupabase())return;
+    comms460Invoke('notify-professional',{atencionId,evento}).catch(e=>console.warn('No se pudo avisar al profesional asignado:',e));
+  }
+  window.notificarProfesionalAsignado460=notificarProfesionalAsignado460;
+
+  // Confirmar/cancelar desde la agenda también ofrece notificar. Mismo
+  // patrón de wrap-con-guardia que ya usan otros módulos de este archivo
+  // (ver preguntarSenia411C más arriba) para no romper las capas
+  // anteriores que ya envuelven cambiarEstadoAgenda.
+  const oldCambiarEstado460=window.cambiarEstadoAgenda;
+  if(typeof oldCambiarEstado460==='function' && !oldCambiarEstado460.__comms460){
+    const wrapped=function(id,estado){
+      const r=oldCambiarEstado460.apply(this,arguments);
+      try{
+        const tipo=estado==='confirmado'?'confirmation':(estado==='cancelado'?'cancellation':null);
+        if(tipo){
+          // Mismo motivo que en guardarAtencion(): cambiarEstadoAgenda()
+          // también guarda vía saveAtenciones(), que sincroniza a Supabase
+          // con debounce (700ms) - forzar la sincronización antes de abrir
+          // el modal evita "No se encontró el turno" por timing.
+          (typeof sincronizarAtencionesSupabase==='function'?sincronizarAtencionesSupabase(true):Promise.resolve())
+            .catch(e=>console.warn('No se pudo forzar la sincronización antes de notificar:',e))
+            .finally(()=>{ abrirModalNotificarPaciente460(id,tipo); notificarProfesionalAsignado460(id,tipo); });
+        }
+      }catch(e){console.warn('No se pudo abrir el modal de notificación al paciente:',e);}
+      return r;
+    };
+    wrapped.__comms460=true;
+    window.cambiarEstadoAgenda=cambiarEstadoAgenda=wrapped;
+  }
+
+  // Aviso automático al profesional cuando se reprograma un turno (cambia
+  // fecha u hora). Mismo patrón de wrap-con-guardia; a diferencia del modal
+  // de paciente (manual, vía botón "Notificar paciente" - ver más abajo),
+  // este SÍ se auto-detecta: no hay pregunta que responder, es un email
+  // silencioso, así que comparar fecha/hora antes/después de
+  // guardarEdicionModal() es seguro acá aunque esa función también toque
+  // muchos otros campos no relacionados (facturación, impresión, etc.).
+  const oldGuardarEdicion460=typeof guardarEdicionModal==='function'?guardarEdicionModal:null;
+  if(oldGuardarEdicion460 && !oldGuardarEdicion460.__comms460){
+    const wrapped=function(id){
+      const antes=(atenciones||[]).find(x=>String(x.id)===String(id));
+      const fechaAntes=antes?.fecha, horaAntes=antes?.horaInicio;
+      const r=oldGuardarEdicion460.apply(this,arguments);
+      try{
+        const despues=(atenciones||[]).find(x=>String(x.id)===String(id));
+        if(despues && (despues.fecha!==fechaAntes || despues.horaInicio!==horaAntes)){
+          (typeof sincronizarAtencionesSupabase==='function'?sincronizarAtencionesSupabase(true):Promise.resolve())
+            .catch(e=>console.warn('No se pudo forzar la sincronización antes de avisar al profesional:',e))
+            .finally(()=>{ notificarProfesionalAsignado460(id,'reschedule'); });
+        }
+      }catch(e){console.warn('No se pudo evaluar si el turno fue reprogramado:',e);}
+      return r;
+    };
+    wrapped.__comms460=true;
+    window.guardarEdicionModal=guardarEdicionModal=wrapped;
+  }
+
+  // Botón manual "Notificar paciente" dentro del modal de agenda (cubre
+  // reprogramación y cualquier reenvío ad-hoc, sin depender de detectar
+  // automáticamente un cambio de fecha/hora en guardarEdicionModal, que ya
+  // tiene varias capas de wrap encima - ver auditoría del módulo). Mismo
+  // patrón de inyección post-render que ya usa copiarWsTurno350() (v3.5):
+  // opera sobre el DOM ya renderizado, no sobre el HTML fuente, así
+  // convive con cualquier capa de abrirAgendaModal que esté activa.
+  const oldAgendaModal460=typeof abrirAgendaModal==='function'?abrirAgendaModal:null;
+  if(oldAgendaModal460 && !oldAgendaModal460.__comms460){
+    const wrapped=function(id){
+      oldAgendaModal460.apply(this,arguments);
+      setTimeout(()=>{
+        const body=document.getElementById('agendaModalBody');
+        if(!body)return;
+        const acciones=body.querySelector('.agenda-actions')||body.querySelector('.modal-actions');
+        if(!document.getElementById('comms460BtnNotificar')){
+          const btn=document.createElement('button');
+          btn.type='button'; btn.id='comms460BtnNotificar'; btn.className='secondary';
+          btn.textContent='Notificar paciente';
+          btn.onclick=()=>abrirModalNotificarPaciente460(id,'confirmation',{seleccionable:true});
+          if(acciones) acciones.appendChild(btn); else body.appendChild(btn);
+        }
+        // Botón visible "Cancelar turno": no implementa lógica propia, llama
+        // exactamente a la MISMA cambiarEstadoAgenda(id,'cancelado') que ya
+        // usa la opción "Cancelado" del selector de estados - pasa por la
+        // misma confirmación, motivo obligatorio, seña y notificaciones
+        // (ver wrap 460c más abajo), sin duplicar nada.
+        if(!document.getElementById('comms460cBtnCancelar')){
+          const btnCancelar=document.createElement('button');
+          btnCancelar.type='button'; btnCancelar.id='comms460cBtnCancelar'; btnCancelar.className='secondary';
+          btnCancelar.textContent='Cancelar turno';
+          btnCancelar.onclick=()=>cambiarEstadoAgenda(id,'cancelado');
+          if(acciones) acciones.appendChild(btnCancelar); else body.appendChild(btnCancelar);
+        }
+      },40);
+    };
+    wrapped.__comms460=true;
+    window.abrirAgendaModal=abrirAgendaModal=wrapped;
+  }
+})();
+
+/* ===== CardioLink · Patient Communications V1 - Avisos de turno al
+   profesional, preferencias (460b) =====
+   Un médico NO tiene acceso a la sección Configuración (catálogo, valores,
+   obras sociales, usuarios, etc. son administrativos - seccionPermitida()
+   no lo permite y no se toca acá). Por eso esta tarjeta NUNCA se monta
+   dentro de #config para un médico: se monta en #dashboard, una sección
+   que un médico ya puede ver hoy, y ahí SOLO se le ofrece su propia fila
+   ("Mis avisos de turnos"), sin ningún otro control de configuración
+   alrededor. Owner/admin siguen viendo (y pudiendo editar) la de
+   cualquier profesional, pero dentro de Configuración - superficie donde
+   ya tenían acceso total de antes, sin cambios de permisos ahí. Lee/
+   escribe cardiolink_professional_notification_preferences directo con el
+   cliente principal: RLS (self-o-admin, ver la migración) es la
+   autorización real, esto es sólo para no mostrarle a nadie el
+   formulario de otro profesional que no le corresponde. */
+(function(){
+  function comms460bListo(){
+    return !!(typeof supabaseClient!=='undefined' && supabaseClient && typeof supabaseClient.from==='function');
+  }
+
+  function comms460bEsAdmin(){
+    return typeof puedeGestionarConfigAdministrativa==='function' && puedeGestionarConfigAdministrativa();
+  }
+
+  function comms460bProfesionalesVisibles(){
+    const todos=(data.profesionales||[]).filter(p=>p.id!=='general');
+    if(comms460bEsAdmin())return todos;
+    if(typeof esMedico==='function' && esMedico()){
+      const pid=typeof profesionalIdUsuarioActual==='function'?profesionalIdUsuarioActual():'';
+      return todos.filter(p=>p.id===pid);
+    }
+    return [];
+  }
+
+  async function comms460bCargarPreferencias(ids){
+    if(!ids.length||!comms460bListo())return {};
+    try{
+      const {data:filas,error}=await supabaseClient.from('cardiolink_professional_notification_preferences').select('professional_id,email_enabled,email_override').in('professional_id',ids);
+      if(error){console.warn('No se pudieron cargar las preferencias de aviso:',error.message||error);return {};}
+      const mapa={};
+      (filas||[]).forEach(f=>{mapa[f.professional_id]=f;});
+      return mapa;
+    }catch(e){console.warn('No se pudieron cargar las preferencias de aviso:',e?.message||e);return {};}
+  }
+
+  async function comms460bGuardarPreferencia(profesionalId,emailEnabled,emailOverride){
+    if(!comms460bListo())return false;
+    try{
+      const {error}=await supabaseClient.from('cardiolink_professional_notification_preferences').upsert({professional_id:profesionalId,email_enabled:emailEnabled,email_override:emailOverride||null},{onConflict:'professional_id'});
+      if(error){alert('No se pudo guardar la preferencia de avisos: '+(error.message||''));return false;}
+      return true;
+    }catch(e){alert('No se pudo guardar la preferencia de avisos: '+(e?.message||''));return false;}
+  }
+
+  function comms460bFilaHTML(p,pref){
+    const chk=pref.email_enabled!==false;
+    return `<div class="comms460b-row" data-profesional="${escapeHtml(p.id)}" style="margin:10px 0;padding:10px;border:1px solid #e2e8f0;border-radius:10px">
+      <strong>${escapeHtml(p.nombre||p.id)}</strong>
+      <div style="margin-top:6px"><label><input type="checkbox" class="comms460bChk" ${chk?'checked':''}> Recibir avisos de turnos por email</label></div>
+      <div class="comms460bEmailWrap" style="margin-top:6px;${chk?'':'display:none'}">
+        <label>Email para avisos</label><br>
+        <input type="email" class="comms460bEmail" placeholder="opcional" value="${escapeHtml(pref.email_override||'')}">
+        <div class="muted">Si se deja vacío, se utilizará el email de tu cuenta CardioLink.</div>
+      </div>
+    </div>`;
+  }
+
+  function comms460bWireRow(row){
+    const pid=row.dataset.profesional;
+    const chk=row.querySelector('.comms460bChk');
+    const emailWrap=row.querySelector('.comms460bEmailWrap');
+    const emailInput=row.querySelector('.comms460bEmail');
+    const guardar=()=>comms460bGuardarPreferencia(pid,chk.checked,emailInput.value.trim());
+    chk.addEventListener('change',()=>{ emailWrap.style.display=chk.checked?'':'none'; guardar(); });
+    emailInput.addEventListener('change',guardar);
+  }
+
+  // Owner/admin: tarjeta con TODOS los profesionales, dentro de
+  // Configuración (superficie a la que ya tenían acceso total).
+  async function comms460bRenderCardConfig(){
+    const section=document.getElementById('config');
+    if(!section||!comms460bEsAdmin()){ document.getElementById('comms460bCard')?.remove(); return; }
+    const visibles=comms460bProfesionalesVisibles();
+    let card=document.getElementById('comms460bCard');
+    if(!visibles.length){ card?.remove(); return; }
+    if(!card){ card=document.createElement('div'); card.id='comms460bCard'; card.className='config-smart-card-310'; section.appendChild(card); }
+    card.innerHTML='<h3>Avisos de turnos por email</h3><p class="muted">Cargando…</p>';
+    const ids=visibles.map(p=>p.id);
+    const prefs=await comms460bCargarPreferencias(ids);
+    card.innerHTML='<h3>Avisos de turnos por email</h3>'+visibles.map(p=>comms460bFilaHTML(p,prefs[p.id]||{email_enabled:true,email_override:''})).join('');
+    card.querySelectorAll('.comms460b-row').forEach(comms460bWireRow);
+  }
+
+  // Médico: SOLO su propia fila, dentro de #dashboard (sección que ya
+  // puede ver hoy) - nunca dentro de #config, que un médico no puede
+  // abrir en absoluto.
+  async function comms460bRenderCardDashboard(){
+    const section=document.getElementById('dashboard');
+    const esMed=typeof esMedico==='function'&&esMedico();
+    if(!section||!esMed){ document.getElementById('comms460bCardPropio')?.remove(); return; }
+    const visibles=comms460bProfesionalesVisibles();
+    let card=document.getElementById('comms460bCardPropio');
+    if(!visibles.length){ card?.remove(); return; }
+    if(!card){ card=document.createElement('div'); card.id='comms460bCardPropio'; card.className='config-smart-card-310'; section.appendChild(card); }
+    card.innerHTML='<h3>Mis avisos de turnos</h3><p class="muted">Cargando…</p>';
+    const ids=visibles.map(p=>p.id);
+    const prefs=await comms460bCargarPreferencias(ids);
+    card.innerHTML='<h3>Mis avisos de turnos</h3>'+visibles.map(p=>comms460bFilaHTML(p,prefs[p.id]||{email_enabled:true,email_override:''})).join('');
+    card.querySelectorAll('.comms460b-row').forEach(comms460bWireRow);
+  }
+
+  function comms460bRenderAmbas(){ comms460bRenderCardConfig(); comms460bRenderCardDashboard(); }
+
+  document.addEventListener('click',e=>{
+    if(e.target.closest?.('.nav[data-section="config"], .nav[data-section="dashboard"]')) setTimeout(comms460bRenderAmbas,150);
+  },true);
+  // #dashboard es la sección visible por defecto (index.html: class="section visible")
+  // - un médico puede aterrizar ahí sin clickear ningún nav.
+  document.addEventListener('DOMContentLoaded',()=>setTimeout(comms460bRenderAmbas,900));
+  setTimeout(comms460bRenderAmbas,1800);
+})();
+
+/* ===== CardioLink · Patient Communications V1 - Cancelar turno con motivo (460c) =====
+   NO reimplementa cancelación: ESTADOS_AGENDA.cancelado, la exclusión de
+   turnos cancelados de pendientes/activos/estadísticas, la distinción con
+   'ausente', la lógica de seña (preguntarSenia411C) y el aviso automático
+   al paciente/profesional (ver wrap 460 más arriba, __comms460) YA
+   existen y funcionan para estado='cancelado' - no se tocan. Lo único que
+   agrega este módulo es exigir confirmación + motivo ANTES de dejar pasar
+   una cancelación por la acción "Cancelado" ya existente en el grid de
+   estados del modal de agenda (mismo lugar donde hoy se cancela un
+   turno): si el usuario no confirma o no completa el motivo, la
+   cancelación NUNCA llega a dispararse - ni el cambio de estado, ni la
+   seña, ni las notificaciones. */
+(function(){
+  const MOTIVOS_CANCELACION_460C=['Cancela paciente','Cancela profesional','Enfermedad','Problema administrativo','Otro'];
+
+  function cerrarModalMotivoCancelacion460c(){ document.getElementById('modalMotivoCancelacion460c')?.remove(); }
+
+  // Promise<string|null>: el motivo elegido, o null si el usuario cerró/
+  // volvió sin confirmar (en ese caso no debe cancelarse nada).
+  function pedirMotivoCancelacion460c(){
+    return new Promise(resolve=>{
+      cerrarModalMotivoCancelacion460c();
+      const overlay=document.createElement('div');
+      overlay.id='modalMotivoCancelacion460c';
+      overlay.className='modal-backdrop';
+      overlay.innerHTML=`<div class="agenda-modal-card" style="max-width:420px">
+        <div class="modal-header"><div><h2>Cancelar turno</h2><p class="muted">Indicá el motivo de la cancelación</p></div><button class="modal-close" type="button" id="motivoCancelacion460cCerrar">×</button></div>
+        <div style="padding:6px 0">
+          <label>Motivo</label>
+          <select id="motivoCancelacion460cSelect">${MOTIVOS_CANCELACION_460C.map(m=>`<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('')}</select>
+          <div id="motivoCancelacion460cOtroWrap" style="margin-top:8px;display:none">
+            <label>Detalle</label>
+            <input type="text" id="motivoCancelacion460cOtro" placeholder="Especificá el motivo">
+          </div>
+        </div>
+        <div class="modal-actions">
+          <button class="secondary" type="button" id="motivoCancelacion460cVolver">Volver</button>
+          <button class="primary" type="button" id="motivoCancelacion460cConfirmar">Confirmar cancelación</button>
+        </div>
+      </div>`;
+      document.body.appendChild(overlay);
+      const sel=document.getElementById('motivoCancelacion460cSelect');
+      const otroWrap=document.getElementById('motivoCancelacion460cOtroWrap');
+      const otroInput=document.getElementById('motivoCancelacion460cOtro');
+      const actualizarOtro=()=>{ otroWrap.style.display=sel.value==='Otro'?'':'none'; };
+      sel.addEventListener('change',actualizarOtro);
+      actualizarOtro();
+      const cerrar=(valor)=>{ cerrarModalMotivoCancelacion460c(); resolve(valor); };
+      document.getElementById('motivoCancelacion460cCerrar').onclick=()=>cerrar(null);
+      document.getElementById('motivoCancelacion460cVolver').onclick=()=>cerrar(null);
+      document.getElementById('motivoCancelacion460cConfirmar').onclick=()=>{
+        if(sel.value==='Otro'){
+          const detalle=otroInput.value.trim();
+          if(!detalle){ alert('Especificá el motivo.'); otroInput.focus(); return; }
+          cerrar(detalle);
+        }else{
+          cerrar(sel.value);
+        }
+      };
+    });
+  }
+
+  const oldCambiarEstado460c=window.cambiarEstadoAgenda;
+  if(typeof oldCambiarEstado460c==='function' && !oldCambiarEstado460c.__comms460c){
+    const wrapped=async function(id,estado){
+      if(estado!=='cancelado')return oldCambiarEstado460c.apply(this,arguments);
+      if(!confirm('¿Cancelar este turno?'))return;
+      const motivo=await pedirMotivoCancelacion460c();
+      if(!motivo)return; // usuario cerró/volvió sin confirmar: no cancelar nada
+      // Recién acá se dispara la cancelación real: cambio de estado, seña
+      // (preguntarSenia411C) y notificaciones a paciente/profesional -
+      // exactamente el mismo camino que ya existía, sin duplicarlo.
+      const r=await oldCambiarEstado460c.apply(this,arguments);
+      try{
+        // No asumir que la cadena anterior efectivamente canceló: recién
+        // ahora se vuelve a leer la atención y se comprueba el estado real
+        // antes de escribir metadata de cancelación. Si por cualquier
+        // motivo esa cadena abortó (turno no encontrado, etc.) y el estado
+        // no quedó 'cancelado', no se escribe nada.
+        const a=(atenciones||[]).find(x=>String(x.id)===String(id));
+        const quedoCancelado=!!a && (a.estadoTurno==='cancelado' || a.estado==='cancelado');
+        if(a && quedoCancelado){
+          a.motivoCancelacion=motivo;
+          a.canceladoEn=new Date().toISOString();
+          a.canceladoPor=typeof nombreUsuarioAuditoria==='function'?nombreUsuarioAuditoria():usuarioActualNombreCorto();
+          saveAtenciones();
+        }
+      }catch(e){console.warn('No se pudo registrar el motivo de cancelación:',e);}
+      return r;
+    };
+    wrapped.__comms460c=true;
+    window.cambiarEstadoAgenda=cambiarEstadoAgenda=wrapped;
+  }
 })();
