@@ -612,6 +612,7 @@ body[data-rol="admin"] .solo-matias { display:none !important; }
 .dot.estado-en_consulta { background:#9747E8; }
 .dot.estado-atendido { background:#6256A5; }
 .dot.estado-ausente { background:#F23B7B; }
+.dot.estado-cancelado { background:#64748B; }
 .agenda-resumen { margin:8px 0 14px; font-weight:700; }
 .agenda-table-wrap table { min-width:980px; }
 .agenda-status { display:inline-flex; align-items:center; gap:8px; padding:9px 13px; border-radius:999px; font-weight:900; white-space:nowrap; }
@@ -622,6 +623,7 @@ body[data-rol="admin"] .solo-matias { display:none !important; }
 .agenda-status.estado-en_consulta, .agenda-state-btn.estado-en_consulta { background:#f1e5ff; color:#7e22ce; }
 .agenda-status.estado-atendido, .agenda-state-btn.estado-atendido { background:#ebe7ff; color:#574b91; }
 .agenda-status.estado-ausente, .agenda-state-btn.estado-ausente { background:#ffe2eb; color:#be185d; }
+.agenda-status.estado-cancelado, .agenda-state-btn.estado-cancelado { background:#e2e8f0; color:#475569; }
 .agenda-actions { display:flex; flex-wrap:wrap; gap:8px; }
 .agenda-actions button { border:0; border-radius:12px; padding:10px 12px; font-weight:900; cursor:pointer; background:#e5e7eb; color:#111827; }
 .agenda-actions button:first-child { background:#16475b; color:#fff; }
@@ -984,7 +986,8 @@ body.dark .bloque-check{background:rgba(15,23,42,.5);}
 .cal-turno320.estado-sala_espera{border-left-color:#06b6d4;background:#ecfeff;}
 .cal-turno320.estado-en_consulta{border-left-color:#9333ea;background:#f5f3ff;}
 .cal-turno320.estado-atendido{border-left-color:#6d5bb5;background:#f4f0ff;}
-.cal-turno320.estado-ausente,.cal-turno320.estado-cancelado{border-left-color:#ec4899;background:#fff1f2;}
+.cal-turno320.estado-ausente{border-left-color:#ec4899;background:#fff1f2;}
+.cal-turno320.estado-cancelado{border-left-color:#64748b;background:#f1f5f9;}
 .empty-day320{font-size:13px;margin:8px 0;}
 .contador-coberturas320{margin:18px 0;}
 .coverage-grid320{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;margin-top:12px;}

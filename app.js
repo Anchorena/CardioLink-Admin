@@ -2864,7 +2864,7 @@ const ESTADOS_AGENDA = {
   en_consulta:{label:'En consulta / atendiendo', short:'Atendiendo', cls:'estado-en_consulta'},
   atendido:{label:'Atendido', short:'Atendido', cls:'estado-atendido'},
   ausente:{label:'Ausente', short:'Ausente', cls:'estado-ausente'},
-  cancelado:{label:'Cancelado', short:'Cancelado', cls:'estado-ausente'}
+  cancelado:{label:'Cancelado', short:'Cancelado', cls:'estado-cancelado'}
 };
 function preferenciaAgendaKey(){return 'cardiolink_agenda_vista_'+usuarioActualNombreCorto();}
 function guardarPreferenciaAgenda(v){localStorage.setItem(preferenciaAgendaKey(),v||'tabla');}
@@ -4053,8 +4053,18 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       return abrirAgendaModal(id);
     }
     if(action === 'agenda-estado' || action === 'agenda-estado-modal'){
-      if(typeof cambiarEstadoAgenda==='function') cambiarEstadoAgenda(id, btn.dataset.estado);
-      if(action === 'agenda-estado-modal') setTimeout(()=>abrirAgendaModal(id), 80);
+      // cambiarEstadoAgenda() puede ser async (cancelado pide confirmación +
+      // motivo obligatorio antes de resolver, ver módulo 460c) - reabrir el
+      // modal con un setTimeout de tiempo fijo reabría una vista vieja del
+      // turno mientras esa confirmación/motivo todavía estaban pendientes,
+      // dando la sensación de tener que ir a "Editar atención" para
+      // terminar de guardar. Ahora se espera a que la promesa (si la hay)
+      // resuelva de verdad antes de reabrir - mismo comportamiento para el
+      // resto de los estados, que ya resuelven de forma sincrónica.
+      const resultado = typeof cambiarEstadoAgenda === 'function' ? cambiarEstadoAgenda(id, btn.dataset.estado) : undefined;
+      if(action === 'agenda-estado-modal'){
+        Promise.resolve(resultado).then(() => abrirAgendaModal(id));
+      }
       return;
     }
   }, true);
