@@ -1358,6 +1358,9 @@ body.patient-modal-open-371{overflow:hidden!important}
 /* ===== v3.7.2 - listado más usable en tablet/móvil horizontal ===== */
 .listado-title-row-372{display:flex;align-items:center;justify-content:space-between;gap:12px}
 .filtros-toggle-372{display:none}
+/* UI Interna V1 - Bloque 6: hora del turno debajo de la fecha en el
+   listado, con menor peso visual (misma columna, sin agregar celdas). */
+.fecha-hora-372{display:block;color:var(--muted,#64748b);font-weight:400;margin-top:2px}
 
 @media (max-width:1024px) and (orientation:landscape){
   #listado .card{padding-top:14px}
