@@ -642,6 +642,11 @@ body[data-rol="admin"] .solo-matias { display:none !important; }
 .agenda-state-btn { display:inline-flex; align-items:center; gap:8px; border:1px solid transparent; border-radius:999px; padding:11px 14px; font-weight:900; cursor:pointer; }
 .agenda-state-btn.active { outline:3px solid rgba(37,99,235,.25); border-color:currentColor; }
 .modal-actions { border-top:1px solid #e5e7eb; padding-top:16px; }
+/* UI Interna V1 - Bloque 3: contenedor estable para las acciones de
+   comunicación del modal de Agenda (Notificar paciente, Plantillas WS),
+   agrupadas y separadas de "Editar atención" (acción operativa primaria). */
+.agenda-actions-comms { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+.agenda-actions-comms:empty { display:none; }
 @media (max-width: 1000px){
   .agenda-filters { grid-template-columns:1fr 1fr; }
   .agenda-modal-grid { grid-template-columns:1fr; }

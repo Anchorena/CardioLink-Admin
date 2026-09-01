@@ -6139,7 +6139,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const m=$id('agendaModal'), title=$id('agendaModalTitulo'), body=$id('agendaModalBody');
     if(!a||!m||!body){alert('No encontré la atención seleccionada. Actualizá y probá de nuevo.');return;}
     if(title)title.textContent=a.paciente||'Turno';
-    body.innerHTML=`<div class="agenda-modal-grid"><div><label>Horario</label><strong>${esc(hora(a))}</strong></div><div><label>Fecha</label><strong>${fmt(a.fecha)}</strong></div><div><label>Paciente</label><strong>${esc(a.paciente||'')}</strong></div><div><label>Profesional</label><strong>${esc(a.profesional||'')}</strong></div><div><label>Prestación</label><strong>${esc(a.prestacion||'')}</strong></div><div><label>Cobertura</label><strong>${esc(a.obraSocial||a.coberturaAtencion||'')}</strong></div><div><label>Teléfono</label><strong>${esc(a.telefono||'s/d')}</strong></div><div><label>Email</label><strong>${esc(a.email||'s/d')}</strong></div></div><h3>Estado del turno</h3><div class="agenda-state-grid">${Object.entries(ESTADOS_AGENDA||{}).map(([k,e])=>`<button type="button" class="agenda-state-btn ${e.cls||''} ${estado(a)===k?'active':''}" data-action="agenda-estado-modal" data-id="${esc(a.id)}" data-estado="${k}"><i></i>${e.short||k}</button>`).join('')}</div><div class="agenda-actions modal-actions"><button type="button" data-action="listado-editar" data-id="${esc(a.id)}">Editar atención</button></div>`;
+    body.innerHTML=`<div class="agenda-modal-grid"><div><label>Horario</label><strong>${esc(hora(a))}</strong></div><div><label>Fecha</label><strong>${fmt(a.fecha)}</strong></div><div><label>Paciente</label><strong>${esc(a.paciente||'')}</strong></div><div><label>Profesional</label><strong>${esc(a.profesional||'')}</strong></div><div><label>Prestación</label><strong>${esc(a.prestacion||'')}</strong></div><div><label>Cobertura</label><strong>${esc(a.obraSocial||a.coberturaAtencion||'')}</strong></div><div><label>Teléfono</label><strong>${esc(a.telefono||'s/d')}</strong></div><div><label>Email</label><strong>${esc(a.email||'s/d')}</strong></div></div><h3>Estado del turno</h3><div class="agenda-state-grid">${Object.entries(ESTADOS_AGENDA||{}).map(([k,e])=>`<button type="button" class="agenda-state-btn ${e.cls||''} ${estado(a)===k?'active':''}" data-action="agenda-estado-modal" data-id="${esc(a.id)}" data-estado="${k}"><i></i>${e.short||k}</button>`).join('')}</div><div class="agenda-actions modal-actions"><button type="button" data-action="listado-editar" data-id="${esc(a.id)}">Editar atención</button></div><div class="agenda-actions-comms" id="agendaModalAccionesComs"></div>`;
     m.classList.remove('hidden');
   };
 
@@ -6475,7 +6475,14 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   if(oldAgendaModal350 && !oldAgendaModal350.__v350){
     const wrapped=function(id){
       oldAgendaModal350.apply(this,arguments);
-      setTimeout(()=>{const body=$id('agendaModalBody'); if(body && !$id('wsTemplatesTurno350'))body.insertAdjacentHTML('beforeend',`<div id="wsTemplatesTurno350" class="ws-templates350"><h3>Copiar mensaje WhatsApp</h3><button type="button" class="secondary" onclick="copiarWsTurno350(${idJS(id)},'turno')">Recordatorio turno</button><button type="button" class="secondary" onclick="copiarWsTurno350(${idJS(id)},'holter')">Holter</button><button type="button" class="secondary" onclick="copiarWsTurno350(${idJS(id)},'mapa')">MAPA</button><button type="button" class="secondary" onclick="copiarWsTurno350(${idJS(id)},'eco')">Eco/estudio</button></div>`);},30);
+      // UI Interna V1 - Bloque 3: se inyecta en el mismo render síncrono
+      // (ya no con setTimeout) para evitar el "pop-in" perceptible, y en el
+      // contenedor de acciones de comunicación (#agendaModalAccionesComs,
+      // agregado en el render base) para agruparse con "Notificar
+      // paciente" en vez de quedar suelto al final del modal.
+      const body=$id('agendaModalBody');
+      const destino=(body&&$id('agendaModalAccionesComs'))||body;
+      if(destino && !$id('wsTemplatesTurno350'))destino.insertAdjacentHTML('beforeend',`<div id="wsTemplatesTurno350" class="ws-templates350"><h3>Copiar mensaje WhatsApp</h3><button type="button" class="secondary" onclick="copiarWsTurno350(${idJS(id)},'turno')">Recordatorio turno</button><button type="button" class="secondary" onclick="copiarWsTurno350(${idJS(id)},'holter')">Holter</button><button type="button" class="secondary" onclick="copiarWsTurno350(${idJS(id)},'mapa')">MAPA</button><button type="button" class="secondary" onclick="copiarWsTurno350(${idJS(id)},'eco')">Eco/estudio</button></div>`);
     };
     wrapped.__v350=true; window.abrirAgendaModal=abrirAgendaModal=wrapped;
   }
@@ -11537,25 +11544,26 @@ function patientInfoTextHC(p,coverage){
   if(oldAgendaModal460 && !oldAgendaModal460.__comms460){
     const wrapped=function(id){
       oldAgendaModal460.apply(this,arguments);
-      setTimeout(()=>{
-        const body=document.getElementById('agendaModalBody');
-        if(!body)return;
-        const acciones=body.querySelector('.agenda-actions')||body.querySelector('.modal-actions');
-        if(!document.getElementById('comms460BtnNotificar')){
-          const btn=document.createElement('button');
-          btn.type='button'; btn.id='comms460BtnNotificar'; btn.className='secondary';
-          btn.textContent='Notificar paciente';
-          btn.onclick=()=>abrirModalNotificarPaciente460(id,'confirmation',{seleccionable:true});
-          if(acciones) acciones.appendChild(btn); else body.appendChild(btn);
-        }
-        // UI Interna V1 - Bloque 2: se retiró el botón independiente
-        // "Cancelar turno" (llamaba exactamente a la misma
-        // cambiarEstadoAgenda(id,'cancelado') que ya ofrece el estado
-        // "Cancelado" de la grilla, sin ninguna función exclusiva propia,
-        // y a diferencia de esa vía no refrescaba el modal al terminar).
-        // Cancelar un turno queda con una única vía: el estado "Cancelado"
-        // dentro de "Estado del turno".
-      },40);
+      // UI Interna V1 - Bloque 3: inyección síncrona (ya no setTimeout) en
+      // el contenedor de acciones de comunicación (#agendaModalAccionesComs)
+      // para evitar el "pop-in" y agrupar visualmente con Plantillas WS.
+      const body=document.getElementById('agendaModalBody');
+      if(!body)return;
+      const acciones=body.querySelector('#agendaModalAccionesComs')||body.querySelector('.agenda-actions')||body.querySelector('.modal-actions');
+      if(!document.getElementById('comms460BtnNotificar')){
+        const btn=document.createElement('button');
+        btn.type='button'; btn.id='comms460BtnNotificar'; btn.className='secondary';
+        btn.textContent='Notificar paciente';
+        btn.onclick=()=>abrirModalNotificarPaciente460(id,'confirmation',{seleccionable:true});
+        if(acciones) acciones.appendChild(btn); else body.appendChild(btn);
+      }
+      // UI Interna V1 - Bloque 2: se retiró el botón independiente
+      // "Cancelar turno" (llamaba exactamente a la misma
+      // cambiarEstadoAgenda(id,'cancelado') que ya ofrece el estado
+      // "Cancelado" de la grilla, sin ninguna función exclusiva propia,
+      // y a diferencia de esa vía no refrescaba el modal al terminar).
+      // Cancelar un turno queda con una única vía: el estado "Cancelado"
+      // dentro de "Estado del turno".
     };
     wrapped.__comms460=true;
     window.abrirAgendaModal=abrirAgendaModal=wrapped;
