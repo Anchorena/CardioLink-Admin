@@ -11548,18 +11548,13 @@ function patientInfoTextHC(p,coverage){
           btn.onclick=()=>abrirModalNotificarPaciente460(id,'confirmation',{seleccionable:true});
           if(acciones) acciones.appendChild(btn); else body.appendChild(btn);
         }
-        // Botón visible "Cancelar turno": no implementa lógica propia, llama
-        // exactamente a la MISMA cambiarEstadoAgenda(id,'cancelado') que ya
-        // usa la opción "Cancelado" del selector de estados - pasa por la
-        // misma confirmación, motivo obligatorio, seña y notificaciones
-        // (ver wrap 460c más abajo), sin duplicar nada.
-        if(!document.getElementById('comms460cBtnCancelar')){
-          const btnCancelar=document.createElement('button');
-          btnCancelar.type='button'; btnCancelar.id='comms460cBtnCancelar'; btnCancelar.className='secondary';
-          btnCancelar.textContent='Cancelar turno';
-          btnCancelar.onclick=()=>cambiarEstadoAgenda(id,'cancelado');
-          if(acciones) acciones.appendChild(btnCancelar); else body.appendChild(btnCancelar);
-        }
+        // UI Interna V1 - Bloque 2: se retiró el botón independiente
+        // "Cancelar turno" (llamaba exactamente a la misma
+        // cambiarEstadoAgenda(id,'cancelado') que ya ofrece el estado
+        // "Cancelado" de la grilla, sin ninguna función exclusiva propia,
+        // y a diferencia de esa vía no refrescaba el modal al terminar).
+        // Cancelar un turno queda con una única vía: el estado "Cancelado"
+        // dentro de "Estado del turno".
       },40);
     };
     wrapped.__comms460=true;
