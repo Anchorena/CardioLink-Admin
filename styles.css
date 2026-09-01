@@ -600,11 +600,21 @@ body[data-rol="admin"] .solo-matias { display:none !important; }
 
 /* ===== AGENDA / SALA DE ESPERA v2.8.1 ===== */
 .agenda-card { overflow: visible; }
-.agenda-head { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; flex-wrap:wrap; }
+.agenda-head { display:flex; align-items:flex-start; justify-content:space-between; gap:18px; flex-wrap:wrap; margin-bottom:2px; }
+/* UI Interna V1 - Bloque 4: jerarquía visual - título principal más claro,
+   subtítulo de perfil más discreto (sin tocar el texto que arma
+   agendaTextoPerfil() en app.js, solo su peso visual). */
+.agenda-head h2 { margin:0 0 2px; font-size:26px; font-weight:900; letter-spacing:-.01em; }
+.agenda-head .muted { margin:0; font-size:12.5px; }
 .agenda-view-toggle { min-width:180px; }
-.agenda-filters { display:grid; grid-template-columns: repeat(3, minmax(180px, 1fr)) auto auto; gap:14px; align-items:end; margin:18px 0; }
-.agenda-legend { display:flex; flex-wrap:wrap; gap:10px 16px; margin:10px 0 16px; color:#53627a; font-weight:700; }
-.agenda-legend span { display:inline-flex; align-items:center; gap:6px; }
+/* Zona de filtros compacta y agrupada visualmente (Fecha/Profesional/Estado
+   + acciones de filtro), en vez de flotar suelta bajo la cabecera. */
+.agenda-filters { display:grid; grid-template-columns: repeat(3, minmax(180px, 1fr)) auto auto; gap:10px 14px; align-items:end; margin:10px 0; padding:12px 14px; background:#f8fafc; border:1px solid #e5e7eb; border-radius:14px; }
+/* Leyenda de estados: más compacta y visualmente secundaria (texto e
+   íconos más chicos, color atenuado) - misma información, menor peso. */
+.agenda-legend { display:flex; flex-wrap:wrap; gap:6px 12px; margin:2px 0 10px; color:#94a3b8; font-weight:600; font-size:12px; }
+.agenda-legend span { display:inline-flex; align-items:center; gap:5px; }
+.agenda-legend .dot { width:9px; height:9px; }
 .dot { width:14px; height:14px; border-radius:50%; display:inline-block; }
 .dot.estado-reservado { background:#5B63E0; }
 .dot.estado-confirmado { background:#24C7B7; }
@@ -613,7 +623,12 @@ body[data-rol="admin"] .solo-matias { display:none !important; }
 .dot.estado-atendido { background:#6256A5; }
 .dot.estado-ausente { background:#F23B7B; }
 .dot.estado-cancelado { background:#64748B; }
-.agenda-resumen { margin:8px 0 14px; font-weight:700; }
+/* Contador de turnos (#agendaResumen) funciona como cabecera compacta del
+   listado en vez de texto suelto entre la leyenda y la tabla/tarjetas/
+   calendario (sigue siendo un único elemento compartido por las 3 vistas,
+   ver abrirAgendaModal/render de vistas en app.js - no se movió en el DOM
+   para no romper esas vistas). */
+.agenda-resumen { margin:0 0 8px; padding:6px 12px; font-weight:800; font-size:12.5px; color:#334155; background:#eef2f7; border-radius:10px; display:inline-block; }
 .agenda-table-wrap table { min-width:980px; }
 .agenda-status { display:inline-flex; align-items:center; gap:8px; padding:9px 13px; border-radius:999px; font-weight:900; white-space:nowrap; }
 .agenda-status i, .agenda-state-btn i { width:12px; height:12px; border-radius:50%; display:inline-block; background:currentColor; }
