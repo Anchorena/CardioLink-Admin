@@ -17,6 +17,12 @@ try {
 let usuarioSupabase = null;
 let cargandoDesdeNube = false;
 let syncTimer = null;
+// true entre que se programa un push a Supabase (programarSyncSupabase) y
+// que ese push termina de confirmarse (sincronizarAtencionesSupabase) - ver
+// refrescarDesdeSupabaseAutomatico(), que la usa para no pisar un cambio
+// local recién hecho (ej. resolver un pendiente) con datos viejos todavía
+// no sincronizados.
+let syncPendienteSinConfirmar = false;
 const TAMANIO_PAGINA_LISTADO = 50;
 let paginaListado = 1;
 let modoPendientesGlobal = false;
@@ -667,14 +673,23 @@ async function cargarAtencionesDesdeSupabase() {
 function programarSyncSupabase() {
   if (!supabaseClient || !usuarioSupabase || cargandoDesdeNube) return;
 
+  syncPendienteSinConfirmar = true;
   clearTimeout(syncTimer);
   syncTimer = setTimeout(() => {
-    sincronizarAtencionesSupabase(false);
+    // sincronizarAtencionesSupabase() ya maneja sus propios reintentos
+    // (ver finally) - acá solo se evita dejar la promesa sin atender si
+    // relanza una excepción real.
+    sincronizarAtencionesSupabase(false).catch(() => {});
   }, 700);
 }
 
 let syncAtencionesEnCurso = false;
 let syncAtencionesPendiente = false;
+// Cuántos intentos de sync fallaron seguidos (upsertError o excepción real).
+// Se resetea en cada sincronización exitosa. Solo se usa para espaciar el
+// reintento automático (backoff) cuando Supabase/Internet no responde, para
+// no reintentar cada 900ms sin límite mientras dure la caída.
+let syncReintentosFallidos = 0;
 
 function registrosSincronizablesSupabase(lista = atenciones) {
   const vistos = new Set();
@@ -3122,6 +3137,13 @@ window.renderTabla=renderTabla;
 
 async function refrescarDesdeSupabaseAutomatico(){
   try{
+    // Si hay un cambio local recién hecho (ej. resolver un pendiente) que
+    // todavía no terminó de sincronizarse a Supabase, este refresco pisaría
+    // ese cambio con la versión vieja que todavía está en la nube - se
+    // omite este ciclo y el siguiente (30s) ya lo va a ver sincronizado.
+    if (syncPendienteSinConfirmar) {
+      return;
+    }
     await cargarAtencionesDesdeSupabase();
     renderTabla();
     renderStats();
@@ -5508,6 +5530,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       if(cargandoDesdeNube && !forzar) return false;
       if(syncAtencionesEnCurso){ syncAtencionesPendiente=true; return false; }
       syncAtencionesEnCurso=true;
+      let syncConfirmadoOk298=false;
       try{
         atenciones=registrosSincronizablesSupabase(atenciones);
         localStorage.setItem(storageAtenciones,JSON.stringify(atenciones));
@@ -5531,6 +5554,11 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         if(upErr){
           console.error(upErr);
           alert('No se pudo sincronizar con Supabase: '+upErr.message);
+          // No quedó confirmado: se reencola con el mismo mecanismo que ya
+          // usa este bloque para pedidos concurrentes (ver finally), en vez
+          // de darlo por sincronizado.
+          syncAtencionesPendiente=true;
+          syncReintentosFallidos++;
           return false;
         }
 
@@ -5544,10 +5572,29 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         }
 
         console.log('Supabase sincronizado de forma segura:',finalRows.length,'registros + config',limpieza?.eliminados?`· ${limpieza.eliminados} obsoletos eliminados`:'' );
+        syncConfirmadoOk298=true;
+        syncReintentosFallidos=0;
         return true;
+      }catch(e){
+        // Excepción real (no el upErr ya manejado arriba): tampoco quedó
+        // confirmado el push. Mismo reencolado, y se relanza para no
+        // cambiar el comportamiento que ya tenían los llamadores de esta
+        // función ante un error.
+        syncAtencionesPendiente=true;
+        syncReintentosFallidos++;
+        throw e;
       }finally{
         syncAtencionesEnCurso=false;
-        if(syncAtencionesPendiente){ syncAtencionesPendiente=false; setTimeout(()=>sincronizarAtencionesSupabase(false),900); }
+        if(syncAtencionesPendiente){
+          syncAtencionesPendiente=false;
+          // Backoff: mismo criterio que el resto del mecanismo - evita
+          // reintentar cada 900ms sin límite mientras Supabase/Internet
+          // no responda (techo de 30s, igual que el refresco automático).
+          const espera298=syncReintentosFallidos>0 ? Math.min(900*Math.pow(2,syncReintentosFallidos-1),30000) : 900;
+          setTimeout(()=>{ sincronizarAtencionesSupabase(false).catch(()=>{}); },espera298);
+        }else if(syncConfirmadoOk298){
+          syncPendienteSinConfirmar=false;
+        }
       }
     };
   }
