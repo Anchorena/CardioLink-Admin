@@ -501,7 +501,19 @@ input[type="checkbox"]{
 
 
 /* ===== SOLAPA PACIENTES ===== */
-.pacientes-toolbar{display:grid;grid-template-columns:1fr auto auto auto;gap:12px;align-items:end}
+/* PACIENTES V1 - cabecera/búsqueda/acciones: 3 zonas apiladas en vez de
+   una única grilla donde buscar, cargar paciente, ver todos, duplicados
+   e importaciones competían con el mismo peso visual. */
+.pacientes-toolbar{display:flex;flex-direction:column;gap:14px}
+.pacientes-search-row{display:flex;gap:12px;align-items:end;flex-wrap:wrap}
+.pacientes-search-row .primary{min-height:54px}
+.pacientes-acciones-principales{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+.pacientes-acciones-principales .primary{min-height:54px;font-size:15px;padding:12px 20px}
+.pacientes-acciones-principales .secondary{min-height:44px}
+.pacientes-import-zone{margin-top:2px;padding-top:14px;border-top:1px solid #e5e7eb}
+.pacientes-import-zone h4{margin:0 0 10px;font-size:13px;font-weight:800;color:#64748b;text-transform:uppercase;letter-spacing:.03em}
+.pacientes-import-acciones{display:flex;gap:8px;flex-wrap:wrap}
+.pacientes-btn-import{background:#f1f5f9;color:#475569;font-weight:700;font-size:13px;padding:9px 14px;border-radius:10px}
 .pacientes-layout{display:grid;grid-template-columns:360px 1fr;gap:18px;align-items:start}
 .pacientes-list-card,.pacientes-detail-card{min-height:420px}
 .pacientes-lista{display:flex;flex-direction:column;gap:10px;margin-top:12px;max-height:620px;overflow:auto;padding-right:4px}
@@ -521,7 +533,7 @@ input[type="checkbox"]{
 .paciente-historial{width:100%}
 .paciente-historial th{position:sticky;top:0;background:#f8fafc;z-index:1}
 .paciente-edit-actions{justify-content:flex-end;margin-top:16px}
-@media(max-width:1050px){.pacientes-toolbar{grid-template-columns:1fr}.pacientes-layout{grid-template-columns:1fr}.paciente-ficha-grid{grid-template-columns:1fr 1fr}}
+@media(max-width:1050px){.pacientes-layout{grid-template-columns:1fr}.paciente-ficha-grid{grid-template-columns:1fr 1fr}}
 @media(max-width:700px){.paciente-ficha-head{display:block}.paciente-ficha-actions{justify-content:flex-start;margin-top:10px}.paciente-ficha-grid{grid-template-columns:1fr}}
 
 
@@ -967,7 +979,6 @@ body.dark .bloque-check{background:rgba(15,23,42,.5);}
 
 
 /* ===== v2.9.8 - carga pura/importación pacientes ===== */
-.pacientes-toolbar{grid-template-columns:1fr auto auto auto auto auto !important;}
 .modal-pacientes298{z-index:12000;}
 .pacientes-import-card298{width:min(1100px,96vw);}
 .pacientes-import-card298 textarea{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:14px;padding:12px;font-size:15px;}
@@ -976,7 +987,6 @@ body.dark .bloque-check{background:rgba(15,23,42,.5);}
 .import-preview-wrap298 th{position:sticky;top:0;background:#f8fafc;z-index:1;}
 .pill.ok{background:#dcfce7;color:#166534;border-radius:999px;padding:5px 9px;font-weight:800;}
 .pill.warn{background:#fef3c7;color:#92400e;border-radius:999px;padding:5px 9px;font-weight:800;}
-@media(max-width:1050px){.pacientes-toolbar{grid-template-columns:1fr !important;}.pacientes-toolbar button{width:100%;}}
 
 
 /* v3.0.0 ajustes pacientes / pendientes / copiado */
@@ -992,10 +1002,6 @@ body.dark .bloque-check{background:rgba(15,23,42,.5);}
 
 
 /* v3.1.0 - botones de importación más prolijos en Pacientes */
-#pacientes .pacientes-toolbar{align-items:end;gap:12px;}
-#pacientes .pacientes-toolbar button{min-height:54px;}
-#btnPacientesImportExcel,#btnPacientesImportTextoWhatsapp,#btnPacientesImportTextoMedicloud{white-space:normal;line-height:1.05;min-width:190px;}
-#btnPacientesImportExcel{font-weight:900;}
 .copy-mini300{display:none!important;}
 
 /* ===== v3.2.0 ===== */
@@ -1309,7 +1315,8 @@ button{min-height:42px}
   .agenda-cards{grid-template-columns:1fr!important}
   .month-grid320{grid-template-columns:repeat(7,145px)!important}.week-grid320{grid-template-columns:repeat(7,170px)!important}
   .tabla-listado-wrap{overflow-x:auto!important;border-radius:14px}.tabla-listado-wrap table{min-width:980px}
-  .pacientes-toolbar{display:grid!important;grid-template-columns:1fr!important}.pacientes-toolbar button{width:100%}
+  .pacientes-search-row{flex-direction:column!important;align-items:stretch!important}.pacientes-search-row .primary{width:100%}
+  .pacientes-acciones-principales{flex-direction:column!important;align-items:stretch!important}.pacientes-acciones-principales button{width:100%}
   .paciente-ficha-grid,.agenda-modal-grid{grid-template-columns:1fr!important}
   .mensaje-burbuja{max-width:92%!important}
   .notifications-panel-360{left:10px!important;right:10px!important;top:calc(66px + env(safe-area-inset-top))!important;width:auto!important;max-height:75dvh!important}

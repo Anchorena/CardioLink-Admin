@@ -442,21 +442,32 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
       <h2>Pacientes</h2>
       <p class="muted">Padrón administrativo del consultorio. Tocá el nombre para abrir la ficha completa del paciente.</p>
       <div class="pacientes-toolbar">
-        <div class="pacientes-search-wrap">
-          <label>Buscar por DNI / apellido / teléfono / email</label>
-          <div class="search-input-clear">
-            <input type="text" id="pacientesBuscar" placeholder="Ej: DNI, apellido, teléfono o email">
-            <button class="clear-search" type="button" id="btnPacientesLimpiar" title="Limpiar búsqueda">×</button>
+        <div class="pacientes-search-row">
+          <div class="pacientes-search-wrap">
+            <label>Buscar por DNI / apellido / teléfono / email</label>
+            <div class="search-input-clear">
+              <input type="text" id="pacientesBuscar" placeholder="Ej: DNI, apellido, teléfono o email">
+              <button class="clear-search" type="button" id="btnPacientesLimpiar" title="Limpiar búsqueda">×</button>
+            </div>
+          </div>
+          <button class="primary" type="button" id="btnPacientesBuscar">Buscar</button>
+        </div>
+
+        <div class="pacientes-acciones-principales">
+          <button class="primary" type="button" id="btnPacienteNuevoPuro">+ Cargar paciente</button>
+          <button class="secondary" type="button" id="btnPacientesTodos">Ver todos</button>
+          <button class="secondary" type="button" id="btnPacientesDuplicados">Buscar duplicados</button>
+        </div>
+
+        <div class="pacientes-import-zone">
+          <h4>Importar pacientes</h4>
+          <div class="pacientes-import-acciones">
+            <button class="secondary pacientes-btn-import" type="button" id="btnPacientesImportTextoWhatsapp">WhatsApp</button>
+            <button class="secondary pacientes-btn-import" type="button" id="btnPacientesImportTextoMedicloud">Otra app</button>
+            <button class="secondary pacientes-btn-import" type="button" id="btnPacientesImportExcel">Excel</button>
+            <button class="secondary pacientes-btn-import" type="button" id="btnImportEvolMedicloudPac407">Importar evoluciones</button>
           </div>
         </div>
-        <button class="primary" type="button" id="btnPacientesBuscar">Buscar</button>
-        <button class="secondary" type="button" id="btnPacientesTodos">Ver todos</button>
-        <button class="secondary" type="button" id="btnPacientesDuplicados">Buscar duplicados</button>
-        <button class="primary" type="button" id="btnPacienteNuevoPuro">Cargar paciente</button>
-        <button class="secondary" type="button" id="btnPacientesImportTextoMedicloud">Subir texto de otra app</button>
-        <button class="secondary" type="button" id="btnPacientesImportTextoWhatsapp">Subir texto WhatsApp</button>
-        <button class="secondary" type="button" id="btnPacientesImportExcel">Subir pacientes desde Excel</button>
-        <button class="secondary" type="button" id="btnImportEvolMedicloudPac407">Importar evoluciones de otra app</button>
         <input type="file" id="inputPacientesExcel" accept=".xlsx,.xls,.csv" hidden>
       </div>
     </div>

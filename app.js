@@ -5913,9 +5913,11 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     try{document.querySelectorAll('.copy-mini300').forEach(el=>el.remove());}catch(e){}
   }
   function ajustarBotonesPacientes310(){
-    setText('btnPacientesImportExcel','Subir pacientes desde Excel');
-    setText('btnPacientesImportTextoWhatsapp','Subir texto WhatsApp');
-    setText('btnPacientesImportTextoMedicloud','Subir texto de otra app');
+    // PACIENTES V1: etiquetas cortas para la nueva zona "Importar pacientes"
+    // (secundaria, menor peso visual) - mismos ids, mismos handlers.
+    setText('btnPacientesImportExcel','Excel');
+    setText('btnPacientesImportTextoWhatsapp','WhatsApp');
+    setText('btnPacientesImportTextoMedicloud','Otra app');
     // Títulos más genéricos en los modales de texto, sin cambiar el parser.
     try{
       const oldAbrirMed = typeof abrirImportadorMedicloud==='function' ? abrirImportadorMedicloud : null;
