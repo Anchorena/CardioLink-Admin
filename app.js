@@ -2580,7 +2580,14 @@ function guardarEdicionModal(id){
 function guardarEdicion(id){guardarEdicionModal(id)}
 function eliminarAtencion(id){if(!confirm('¿Borrar esta atención?'))return;atenciones=atenciones.filter(a=>String(a.id)!==String(id));saveAtenciones();renderTabla();renderStats()}
 
-function setPeriodo20(){const d=new Date();let y=d.getFullYear(),m=d.getMonth()+1,day=d.getDate(),dy=y,dm=m,hy=y,hm=m+1;if(day<20){dm=m-1;hm=m}if(dm<1){dm=12;dy--}if(hm>12){hm=1;hy++}$('fDesde').value=`${dy}-${String(dm).padStart(2,'0')}-20`;$('fHasta').value=`${hy}-${String(hm).padStart(2,'0')}-20`;paginaListado=1;mostrarResumenFiltros();renderTabla();calcularLiquidacionColocaciones()}
+// UI Interna V1 (3ª iteración) - Listado: el corte de facturación pasó de
+// día 20 a día 25 (pedido explícito). Se mantiene el mismo id interno
+// (setPeriodo20/btnPeriodo20) para no tocar el binding ni arriesgar otras
+// referencias - solo cambia el día de corte (20→25) en los 3 lugares
+// donde aparecía: el umbral day<20 y las dos fechas "-20". La semántica
+// (rango 25-a-25 que contiene la fecha de hoy) es exactamente la misma
+// que ya tenía con 20.
+function setPeriodo20(){const d=new Date();let y=d.getFullYear(),m=d.getMonth()+1,day=d.getDate(),dy=y,dm=m,hy=y,hm=m+1;if(day<25){dm=m-1;hm=m}if(dm<1){dm=12;dy--}if(hm>12){hm=1;hy++}$('fDesde').value=`${dy}-${String(dm).padStart(2,'0')}-25`;$('fHasta').value=`${hy}-${String(hm).padStart(2,'0')}-25`;paginaListado=1;mostrarResumenFiltros();renderTabla();calcularLiquidacionColocaciones()}
 function resetFiltros(){
  $('fDesde').value='';
  $('fHasta').value='';

@@ -22,6 +22,24 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px
 .estado-cell{width:125px;max-width:125px}.actions-cell{width:82px;min-width:82px}.edit-actions{display:flex;flex-direction:column;gap:5px}.edit-actions button{width:72px;padding:6px!important;font-size:12px!important}
 .config-grid{display:grid;grid-template-columns:1fr 1fr;gap:24px}.config-grid ul{max-height:260px;overflow:auto;padding-left:20px}.config-grid li{margin-bottom:7px}.print-title{display:none}
 .edit-row input,.edit-row select{min-width:105px;padding:6px 8px;font-size:12px}.inline-checks-edit{min-width:190px;display:grid;gap:4px;font-size:12px;margin-top:6px}.inline-checks-edit label{font-weight:500;display:flex;gap:5px;margin:0}.inline-checks-edit input{width:auto}
+
+/* UI Interna V1 (3ª iteración) - Listado: resumen como franja de texto
+   compacta ("Actividad: Consultas 1 · Estudios 1 · ...") en vez de
+   tarjetas con borde. renderResumenCaja() en app.js solo hace textContent
+   sobre #rConsultas/#rEstudios/etc (sin tocar), así que reflujar estos
+   mismos 7 <strong> a una sola línea por grupo es seguro. #resumenCaja
+   (id) pisa el grid de .resumen-caja (clase) más abajo sin !important,
+   por especificidad. */
+#resumenCaja{display:flex;flex-direction:column;gap:3px;padding:8px 0;margin:4px 0 10px;border-top:1px solid var(--line,#e5e7eb);border-bottom:1px solid var(--line,#e5e7eb);font-size:12px}
+.resumen-caja-linea-372{display:flex;flex-wrap:wrap;align-items:baseline}
+.resumen-caja-grupo-titulo-372{font-weight:800;color:var(--text,#111827);margin-right:6px}
+#resumenCaja .resumen-caja-linea-372>div{background:transparent;padding:0;border-radius:0;min-width:0;display:inline-flex;gap:4px}
+#resumenCaja .resumen-caja-linea-372>div:not(:last-child)::after{content:' · ';color:var(--muted,#94a3b8)}
+#resumenCaja .resumen-caja-linea-372>div span{color:var(--muted,#64748b);font-size:12px}
+#resumenCaja .resumen-caja-linea-372 strong{font-size:12.5px;color:var(--text,#111827)}
+/* Total con algo más de jerarquía que Particular/Copago, sin exagerar. */
+#resumenCaja .resumen-caja-total-372 strong{font-size:14px;color:var(--primary,#123f56)}
+
 @media(max-width:950px){.sidebar{position:relative;width:100%}body{display:block}.main{margin-left:0;width:100%;padding:18px}.topbar{display:block}.profile-box{margin-top:16px}.stats,.form-grid,.filters,.checks,.config-grid,.resumen-caja,.money-lock{grid-template-columns:1fr}.actions,.inline-form{display:block}.actions button,.inline-form button{margin-top:8px;width:100%}}
 @media print{body{display:block;background:white;color:black}.sidebar,.topbar,.filters,.no-print,.money-lock,.card>h2{display:none!important}.main{margin:0;width:100%;padding:0}.card{box-shadow:none;border-radius:0;padding:0;margin:0}.print-title{display:block;text-align:center;margin-bottom:12px}.resumen-caja{grid-template-columns:repeat(4,1fr);gap:4px}.resumen-caja div{border:1px solid #aaa;background:white;padding:5px}table{font-size:10px}th,td{border:1px solid #bbb;padding:4px}}
 
@@ -65,6 +83,49 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px
 .checks select{width:100%;margin-top:6px}
 @media(max-width:950px){.liquidacion-grid{grid-template-columns:1fr}.liquidacion-box{grid-template-columns:1fr}}
 @media print{.liquidacion-box{display:none!important}}
+
+/* UI Interna V1 (3ª iteración, ajuste 2) - Liquidación colapsable con
+   <details>/<summary> nativo, sin JS. .liquidacion-box sigue siendo el
+   mismo #liquidacionBox de siempre (ahora <details> en vez de <div>):
+   .hidden/.hidden-permission lo siguen ocultando entero exactamente igual
+   que antes (display:none no depende del tag), y nada de esto toca los
+   inputs ni #liquidacionResultado (no se resetea al cerrar/abrir).
+
+   CAUSA del bug reportado ("franja celeste vacía, sin texto ni
+   indicador"): .liquidacion-box (unas líneas arriba) tiene
+   `display:grid;gap:10px` - pensado para cuando sus hijos eran elementos
+   normales (<strong>, <span>, dos <div>). <summary> en cambio tiene
+   `display:list-item` por default del navegador, y esa combinación
+   concreta (list-item como hijo directo de un contenedor grid) hace que
+   Chrome/Safari NO pinten el contenido del <summary> - queda solo el
+   fondo/borde/padding de .liquidacion-box, sin texto ni marcador. No es
+   un tema de color/opacity/visibility/z-index: el summary directamente
+   no genera su caja de texto en ese contexto de grid.
+
+   FIX (sin !important): se saca a <summary> de su `list-item` nativo
+   (`list-style:none` + `::-webkit-details-marker` para Safari, que no
+   respeta list-style solo) y se le da su propio `display:flex` - un
+   summary flex es un hijo de grid perfectamente normal, sin el problema
+   anterior. El indicador ▾/▴ pasa a ser manual (::after), controlado por
+   el atributo [open] nativo del propio <details>. */
+.liquidacion-summary-372{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:8px;
+  min-height:40px;
+  cursor:pointer;
+  list-style:none;
+  color:var(--text,#111827);
+}
+.liquidacion-summary-372::-webkit-details-marker{display:none}
+.liquidacion-summary-372::after{content:'▾';color:var(--primary,#123f56);font-size:12px;flex:0 0 auto}
+#liquidacionBox[open] .liquidacion-summary-372::after{content:'▴'}
+/* Fila cerrada compacta (~40px): el padding vertical del box solo se usa
+   cuando está abierto, para no sumar alto extra a la cabecera sola. */
+.liquidacion-box{padding:0 14px}
+#liquidacionBox[open]{padding:14px}
+#liquidacionBox[open] .liquidacion-summary-372{margin-bottom:4px}
 
 .muted{color:#64748b;font-size:13px;line-height:1.35;margin:8px 0 12px;}
 
@@ -260,6 +321,26 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px
   .tabla-listado-wrap table{min-width:0}
   .tabla-listado-wrap thead th{position:static;box-shadow:none}
 }
+
+/* UI Interna V1 - Listado/filtros: jerarquía de lectura por fila.
+   Selectores posicionales (nth-child) sobre las columnas de ESTA tabla
+   puntual (.tabla-listado-wrap table), sin tocar el <thead>/<tbody> que
+   arma renderTabla() en app.js ni las reglas ya existentes de
+   .estado-cell/.badge/.actions-cell/.edit-actions más arriba (varias
+   capas de !important encimadas de parches anteriores - no se agrega una
+   capa más). Columnas: 1 Fecha 2 Paciente 3 OS 4 Profesional
+   5 Prestación 6 Consulta a 7 Estudio a 8 Tipo cobro 9 Forma pago
+   10-12 montos 13 Estado 14 Acciones. Primario: fecha/paciente/prestación
+   más legibles. Secundario: OS/profesional más discretos (var(--muted)).
+   El resto de columnas (consulta a/estudio a/tipo/forma/montos) no se
+   tocó. Hover reutiliza el mismo tono que ya usa la tabla de Agenda
+   (.agenda-table tbody tr:hover), sin color nuevo. */
+.tabla-listado-wrap table td:nth-child(1){font-weight:600;white-space:nowrap}
+.tabla-listado-wrap table td:nth-child(2) strong{font-size:13px;color:var(--text,#111827)}
+.tabla-listado-wrap table td:nth-child(3),
+.tabla-listado-wrap table td:nth-child(4){color:var(--muted,#64748b);font-size:11.5px}
+.tabla-listado-wrap table td:nth-child(5){font-weight:700}
+.tabla-listado-wrap table tbody tr:hover{background:rgba(148,163,184,.08)}
 
 
 /* v2.6.6 - liquidación imprimible, botones más cerca, modal más cómoda */
@@ -1450,7 +1531,7 @@ body.patient-modal-open-371{overflow:hidden!important}
   .listado-title-row-372{position:sticky;top:74px;z-index:25;background:var(--card,#fff);padding:6px 0 10px}
   .filtros-toggle-372{display:inline-flex!important;align-items:center;justify-content:center;min-height:42px;padding:8px 16px!important;width:auto!important}
   #listadoFiltros372.filters-collapsible-372{display:none!important}
-  #listadoFiltros372.filters-collapsible-372.open-372{display:grid!important;grid-template-columns:repeat(3,minmax(0,1fr))!important;gap:9px!important;padding:10px;border:1px solid var(--line,#dbe3ea);border-radius:14px;background:rgba(148,163,184,.06);margin-bottom:12px}
+  #listadoFiltros372.filters-collapsible-372.open-372{display:grid!important;grid-template-columns:1fr!important;gap:9px!important;padding:10px;border:1px solid var(--line,#dbe3ea);border-radius:14px;background:rgba(148,163,184,.06);margin-bottom:12px}
   #listadoFiltros372 input,#listadoFiltros372 select,#listadoFiltros372 button,#listadoFiltros372 label{min-height:42px!important;margin:0!important}
   #listado .tabla-listado-wrap{max-height:calc(100vh - 190px)!important;overflow:auto!important}
   #listado .tabla-listado-wrap thead th{top:0!important}
@@ -1462,6 +1543,75 @@ body.patient-modal-open-371{overflow:hidden!important}
   .filtros-toggle-372{display:inline-flex!important;width:auto!important;min-height:42px!important;padding:8px 14px!important}
   #listadoFiltros372.filters-collapsible-372{display:none!important}
   #listadoFiltros372.filters-collapsible-372.open-372{display:grid!important;grid-template-columns:1fr!important;gap:8px!important}
+}
+
+/* UI Interna V1 (3ª iteración) - Listado/filtros: densidad, sin "cajas".
+   Se abandonan los bloques con borde+fondo de la 2ª iteración (pedido
+   explícito: "no agregar más cajas") a favor de una sola zona operativa
+   plana, separada solo con labels chicos y un divisor horizontal fino
+   antes de Pendientes/Exportar. Mismos campos/ids/handlers de siempre -
+   #listadoFiltros372 pasó de 3 bloques a 5 hijos directos (2 labels +
+   2 filas + 1 fila de Pendientes/Exportar), así que .open-372 (toggle
+   colapsable de tablet/celular, @media 1024px landscape y 700px más
+   arriba - sin tocar su JS) los sigue apilando en 1 columna igual que
+   antes. #fDesde/#fHasta mantienen el patrón label+input que ya usa
+   Estadísticas; el resto de los campos también llevan <label>. */
+.listado-subtitulo-372{display:block;margin:0 0 4px;font-size:11px;font-weight:700;color:var(--muted,#64748b);text-transform:uppercase;letter-spacing:.03em}
+.listado-fila-372{display:flex;flex-wrap:wrap;gap:6px 10px;align-items:flex-end;margin-bottom:8px}
+.listado-fila-372:last-child{margin-bottom:0}
+.listado-campo-372,.listado-filtro-fecha-372{display:flex;flex-direction:column;gap:3px}
+.listado-campo-372 label,.listado-filtro-fecha-372 label{margin:0;font-size:11.5px}
+.listado-campo-372 select,.listado-campo-372 input,
+.listado-filtro-fecha-372 select,.listado-filtro-fecha-372 input{height:38px;padding:7px 10px}
+.listado-periodo-atajos-372{display:flex;gap:5px;align-items:center;flex-wrap:wrap}
+/* Hoy/Mes/25 al 25 son atajos de período, no acciones - se ven como chips
+   discretos (mismo recurso que la etiqueta "Copiar:" de Ficha del
+   paciente), no como botones secondary de tamaño normal. */
+.ghost-chip-372{background:transparent;border:1px solid var(--line,#e5e7eb);color:var(--muted,#64748b);font-weight:600;font-size:12px;padding:0 11px;border-radius:999px;min-height:30px;height:30px}
+.ghost-chip-372:hover{border-color:var(--primary,#123f56);color:var(--primary,#123f56)}
+/* Filtrar/Limpiar: última cosa de la fila de filtros - con espacio a la
+   izquierda "empuja" a la derecha cuando el ancho alcanza para compartir
+   la fila con los campos (mockup: "máximo 2 filas si el ancho lo
+   permite"); si no alcanza, baja de línea sola. Sigue siendo el único
+   primary fuerte del panel. */
+.listado-filtros-acciones-372{display:flex;gap:8px;margin-left:auto;align-self:flex-end}
+
+/* Pendientes + Exportar comparten una sola fila secundaria, separada de
+   Filtros por un divisor horizontal fino (no una caja) y entre sí por un
+   divisor vertical cuando hay ancho para ir lado a lado. "Vencidos >7
+   días" y "Resolver pendientes visibles" los inserta app.js con
+   insertAdjacentElement junto a #btnPendientesGlobal y #fPendienteDetalle
+   respectivamente (sin tocar esa lógica) - al vivir ahora dentro de este
+   bloque, quedan agrupados solos automáticamente. */
+.listado-secundarios-372{display:flex;flex-wrap:wrap;gap:14px 28px;padding-top:8px;margin-top:2px;border-top:1px solid var(--line,#e5e7eb)}
+.listado-pendientes-372,.listado-exportar-372{flex:1 1 260px}
+.listado-pendientes-372 .listado-fila-372,.listado-exportar-372 .listado-fila-372{align-items:center}
+/* "Ver pendientes" mantiene .danger (señal de alerta existente) pero
+   compacto acá, no un botón rojo grande. */
+#btnPendientesGlobal{padding:8px 14px;font-size:13px}
+/* #btnVerVencidos411C: reutiliza el mismo par de colores que ya usa
+   .badge.bad (alerta existente, sin color nuevo), como chip compacto en
+   vez de botón - sigue siendo el mismo <button> con el mismo handler. */
+#btnVerVencidos411C{background:#fee2e2;color:#991b1b;border:0;border-radius:999px;padding:0 12px;font-size:12px;font-weight:700;min-height:28px;height:28px}
+#fPendienteDetalle{width:auto;max-width:190px}
+/* Exportar: PDF/Excel ya pasaron a class="secondary" en el HTML (antes
+   primary), acá se compactan un poco más; el checkbox "Incluir valores"
+   queda chico. */
+.listado-exportar-372 #btnPrint,.listado-exportar-372 #btnExportExcel{padding:8px 12px;font-size:13px}
+.listado-exportar-372 .print-values{padding:5px 9px;font-weight:600;font-size:12px;background:transparent;border:1px solid var(--line,#e5e7eb);border-radius:999px}
+
+@media(min-width:701px){
+  /* Divisor vertical entre Pendientes y Exportar solo cuando van lado a
+     lado (en mobile ya se separan con el margen normal entre filas). */
+  .listado-exportar-372{border-left:1px solid var(--line,#e5e7eb);padding-left:26px}
+}
+@media(min-width:951px){
+  /* Acotado a min-width:951px para no competir con la regla genérica
+     .filters{grid-template-columns:1fr} de @media(max-width:950px) más
+     arriba en este archivo, ni con el toggle colapsable (1024px landscape
+     y 700px, con sus propios !important, sin modificar). */
+  #listadoFiltros372.filters{display:block}
+  .listado-campo-372{flex:1 1 150px;max-width:200px}
 }
 
 

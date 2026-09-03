@@ -572,29 +572,55 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
         <button class="secondary no-print filtros-toggle-372" id="btnToggleFiltros372" type="button" aria-expanded="false">Mostrar filtros</button>
       </div>
       <div class="filters filters-collapsible-372" id="listadoFiltros372">
-        <input type="date" id="fDesde">
-        <input type="date" id="fHasta">
-        <select id="fOS"></select>
-        <select id="fProfesional"></select>
-        <select id="fPrestacion"></select>
-        <input type="text" id="fPaciente" placeholder="Buscar paciente">
-        <select id="fDestino"><option value="">Todos los destinos</option><option>Matías</option><option>Rogelio</option></select>
-        <button class="secondary" id="btnHoy">Hoy</button>
-        <button class="secondary" id="btnMes">Mes</button>
-        <button class="secondary" id="btnPeriodo20">20 al 20</button>
-        <button class="primary" id="btnFiltrar">Filtrar</button>
-        <button class="secondary" id="btnResetFiltros">Limpiar</button>
-        <button class="danger" id="btnPendientesGlobal" type="button">Ver pendientes</button>
-        <select id="fPendienteDetalle" title="Filtrar pendientes">
-          <option value="">Todos los pendientes</option>
-          <option value="firma">Falta firma</option>
-          <option value="copia">Falta copia</option>
-          <option value="informe">Falta informe</option>
-          <option value="entrega">Falta enviar / imprimir</option>
-        </select>
-        <button class="primary" id="btnPrint">Imprimir / PDF</button>
-        <button class="primary" id="btnExportExcel">Exportar Excel</button>
-        <label class="print-values no-print"><input type="checkbox" id="incluirValoresImpresion"> Incluir valores</label>
+
+        <span class="listado-subtitulo-372">Período</span>
+        <div class="listado-fila-372 listado-periodo-372">
+          <div class="listado-filtro-fecha-372 listado-filtro-desde-372"><label>Desde</label><input type="date" id="fDesde"></div>
+          <div class="listado-filtro-fecha-372 listado-filtro-hasta-372"><label>Hasta</label><input type="date" id="fHasta"></div>
+          <div class="listado-periodo-atajos-372">
+            <button class="ghost-chip-372" type="button" id="btnHoy">Hoy</button>
+            <button class="ghost-chip-372" type="button" id="btnMes">Mes</button>
+            <button class="ghost-chip-372" type="button" id="btnPeriodo20">25 al 25</button>
+          </div>
+        </div>
+
+        <span class="listado-subtitulo-372">Filtros</span>
+        <div class="listado-fila-372 listado-filtros-fila-372">
+          <div class="listado-campo-372"><label>Cobertura</label><select id="fOS"></select></div>
+          <div class="listado-campo-372"><label>Profesional</label><select id="fProfesional"></select></div>
+          <div class="listado-campo-372"><label>Prestación</label><select id="fPrestacion"></select></div>
+          <div class="listado-campo-372"><label>Paciente</label><input type="text" id="fPaciente" placeholder="Buscar paciente"></div>
+          <div class="listado-campo-372"><label>Destino</label><select id="fDestino"><option value="">Todos los destinos</option><option>Matías</option><option>Rogelio</option></select></div>
+          <div class="listado-filtros-acciones-372">
+            <button class="primary" id="btnFiltrar">Filtrar</button>
+            <button class="secondary" id="btnResetFiltros">Limpiar</button>
+          </div>
+        </div>
+
+        <div class="listado-secundarios-372">
+          <div class="listado-pendientes-372">
+            <span class="listado-subtitulo-372">Pendientes</span>
+            <div class="listado-fila-372">
+              <button class="danger" id="btnPendientesGlobal" type="button">Ver pendientes</button>
+              <select id="fPendienteDetalle" title="Filtrar pendientes">
+                <option value="">Todos los pendientes</option>
+                <option value="firma">Falta firma</option>
+                <option value="copia">Falta copia</option>
+                <option value="informe">Falta informe</option>
+                <option value="entrega">Falta enviar / imprimir</option>
+              </select>
+            </div>
+          </div>
+          <div class="listado-exportar-372">
+            <span class="listado-subtitulo-372">Exportar</span>
+            <div class="listado-fila-372">
+              <button class="secondary" id="btnPrint">Imprimir / PDF</button>
+              <button class="secondary" id="btnExportExcel">Excel</button>
+              <label class="print-values no-print"><input type="checkbox" id="incluirValoresImpresion"> Incluir valores</label>
+            </div>
+          </div>
+        </div>
+
       </div>
 
       <div id="printArea">
@@ -605,17 +631,23 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
         </div>
 
         <div class="resumen-caja hidden" id="resumenCaja">
-          <div><span>Consultas</span><strong id="rConsultas">0</strong></div>
-          <div><span>Estudios</span><strong id="rEstudios">0</strong></div>
-          <div><span>Bono consulta</span><strong id="rBonoConsulta">0</strong></div>
-          <div><span>Bono estudio</span><strong id="rBonoEstudio">0</strong></div>
-          <div><span>Caja HOY particular</span><strong id="rParticular">$0</strong></div>
-          <div><span>Caja HOY copago</span><strong id="rCopago">$0</strong></div>
-          <div><span>Caja HOY total</span><strong id="rTotal">$0</strong></div>
+          <div class="resumen-caja-linea-372">
+            <span class="resumen-caja-grupo-titulo-372">Actividad:</span>
+            <div><span>Consultas</span><strong id="rConsultas">0</strong></div>
+            <div><span>Estudios</span><strong id="rEstudios">0</strong></div>
+            <div><span>Bono consulta</span><strong id="rBonoConsulta">0</strong></div>
+            <div><span>Bono estudio</span><strong id="rBonoEstudio">0</strong></div>
+          </div>
+          <div class="resumen-caja-linea-372">
+            <span class="resumen-caja-grupo-titulo-372">Caja hoy:</span>
+            <div><span>Particular</span><strong id="rParticular">$0</strong></div>
+            <div><span>Copago</span><strong id="rCopago">$0</strong></div>
+            <div class="resumen-caja-total-372"><span>Total</span><strong id="rTotal">$0</strong></div>
+          </div>
         </div>
 
-        <div class="liquidacion-box no-print hidden" id="liquidacionBox">
-          <strong>Liquidación colocación Holter / MAPA / ECG</strong>
+        <details class="liquidacion-box no-print hidden" id="liquidacionBox">
+          <summary class="liquidacion-summary-372"><strong>Liquidación colocación Holter / MAPA / ECG</strong></summary>
           <span>Cuenta solo registros marcados como colocación liquidable.</span>
           <div class="liquidacion-grid">
             <label>Valor Holter <input type="number" id="valorColocacionHolter" min="0" value="10000"></label>
@@ -624,7 +656,7 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
             <button class="primary" id="btnCalcularLiquidacion" type="button">Calcular liquidación</button>
           </div>
           <div id="liquidacionResultado" class="money-result"></div>
-        </div>
+        </details>
 
         <div class="tabla-listado-wrap">
           <table>
