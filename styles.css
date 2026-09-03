@@ -308,14 +308,16 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px
 
 /* v2.6.7 - Paciente único, Medicloud y prestaciones múltiples */
 .paciente-search-box,
-.prestaciones-multiples-box{
+.prestaciones-multiples-box,
+.carga-profesional-box{
   background:#f8fafc;
   border:1px solid #dbe4ee;
   border-radius:18px;
   padding:16px;
 }
 .paciente-search-box h3,
-.prestaciones-multiples-box h3{margin:0 0 10px 0;color:#0f172a}
+.prestaciones-multiples-box h3,
+.carga-profesional-box h3{margin:0 0 10px 0;color:#0f172a}
 .paciente-search-grid{display:grid;grid-template-columns:1fr auto;gap:12px;align-items:end}
 .paciente-search-actions{display:flex;gap:8px;flex-wrap:wrap;align-items:end}
 .paciente-results{margin-top:10px;display:grid;gap:8px}
@@ -327,6 +329,15 @@ table{width:100%;border-collapse:collapse;font-size:12px}th,td{border-bottom:1px
 .badge.neutral{background:#e5e7eb;color:#374151}
 .modal-import-card textarea{width:100%;box-sizing:border-box;border:1px solid #cbd5e1;border-radius:14px;padding:14px;font-size:16px;min-height:220px}
 @media(max-width:900px){.paciente-search-grid,.prestaciones-extra-grid{grid-template-columns:1fr}.paciente-search-actions{justify-content:flex-start}}
+
+/* CARGA DE TURNO V1 - jerarquía Paciente / Turno / Información para el
+   profesional / Información administrativa, dentro del mismo .form-grid
+   ya existente (mismos ids, sin tocar la lógica de guardado). */
+.paciente-datos-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:14px;margin-top:14px}
+.carga-seccion-titulo{margin:10px 0 2px;padding-top:16px;border-top:1px solid #e5e7eb;color:#0f172a;font-size:17px}
+.carga-profesional-box{display:grid;gap:14px}
+.derivante-field label{font-size:15px;color:var(--primary,#123f56)}
+@media(max-width:900px){.paciente-datos-grid{grid-template-columns:1fr}}
 
 /* v2.6.8 - Instructivos y fix visual de checkboxes */
 input[type="checkbox"]{

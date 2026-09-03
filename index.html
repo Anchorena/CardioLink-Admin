@@ -150,6 +150,9 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
       <form id="formAtencion" class="form-grid">
         <input type="hidden" id="pacienteId">
 
+        <!-- CARGA DE TURNO V1 - 1. PACIENTE: búsqueda + datos demográficos
+             obligatorios (nombre, sexo, fecha de nacimiento) + cobertura de
+             este turno, todo en una única zona. -->
         <div class="full paciente-search-box">
           <h3>Paciente</h3>
           <div class="paciente-search-grid">
@@ -166,21 +169,26 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
           </div>
           <div id="resultadosPacientes" class="paciente-results"></div>
           <div id="pacienteSeleccionadoBox" class="paciente-selected hidden"></div>
+
+          <div class="paciente-datos-grid">
+            <div><label>Apellido y nombre *</label><input type="text" id="paciente" required placeholder="Apellido y nombre"></div>
+            <div><label>DNI</label><input type="text" id="dni" placeholder="12345678"></div>
+            <div><label>Teléfono</label><input type="text" id="telefono" placeholder="11 1234 5678"></div>
+            <div><label>Email</label><input type="email" id="email" placeholder="paciente@email.com"></div>
+            <div><label>Sexo *</label><select id="sexo"><option value="">Seleccionar…</option><option value="Masculino">Masculino</option><option value="Femenino">Femenino</option><option value="Otro">Otro</option></select></div>
+            <div><label>Fecha de nacimiento *</label><input type="date" id="fechaNacimiento"></div>
+            <div><label>Edad</label><input type="text" id="edadCalculada" readonly placeholder="—"></div>
+            <div><label>Obra social / cobertura para este turno</label><select id="obraSocial"></select></div>
+            <div><label>Nº afiliado para este turno</label><input type="text" id="numeroAfiliado" placeholder="Número de afiliado"></div>
+          </div>
+          <label class="check-line"><input type="checkbox" id="actualizarCoberturaHabitual"> Guardar esta cobertura como cobertura habitual del paciente</label>
         </div>
 
+        <!-- 2. TURNO / ATENCIÓN -->
+        <h3 class="full carga-seccion-titulo">Turno / atención</h3>
         <div><label>Fecha</label><input type="date" id="fecha" required></div>
         <div><label>Hora inicio</label><input type="text" id="horaInicio" placeholder="13:00" inputmode="numeric"></div>
         <div><label>Hora fin</label><input type="text" id="horaFin" placeholder="13:20" inputmode="numeric"></div>
-        <div><label>Apellido y nombre</label><input type="text" id="paciente" required placeholder="Apellido y nombre"></div>
-        <div><label>DNI</label><input type="text" id="dni" placeholder="Opcional"></div>
-        <div><label>Teléfono</label><input type="text" id="telefono" placeholder="Opcional"></div>
-        <div><label>Email</label><input type="email" id="email" placeholder="Opcional"></div>
-        <div><label>Fecha nacimiento</label><input type="date" id="fechaNacimiento"></div>
-        <div><label>Obra social / cobertura para este turno</label><select id="obraSocial"></select></div>
-        <div><label>Nº afiliado para este turno</label><input type="text" id="numeroAfiliado" placeholder="Opcional"></div>
-        <div class="full">
-          <label class="check-line"><input type="checkbox" id="actualizarCoberturaHabitual"> Guardar esta cobertura como cobertura habitual del paciente</label>
-        </div>
         <div><label>Profesional actuante</label><select id="profesional"></select></div>
         <div><label>Prestación principal</label><select id="prestacion"></select></div>
 
@@ -195,6 +203,27 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
           </div>
         </div>
 
+        <!-- 3. INFORMACIÓN PARA EL PROFESIONAL -->
+        <div class="full carga-profesional-box">
+          <h3>Información para el profesional</h3>
+          <div class="derivante-field">
+            <label>Profesional derivante</label>
+            <input type="text" id="derivante" list="derivantesList" placeholder="Buscar o escribir un profesional derivante nuevo" autocomplete="off">
+            <datalist id="derivantesList"></datalist>
+          </div>
+          <div>
+            <label>Motivo de consulta / estudio</label>
+            <input type="text" id="motivoConsulta" list="motivosList" placeholder="Ej: Palpitaciones, Control HTA, Prequirúrgico, Síncope..." autocomplete="off">
+            <datalist id="motivosList"></datalist>
+          </div>
+          <div>
+            <label>Observación clínica relevante</label>
+            <textarea id="observacionClinica" rows="2" placeholder="Ej: Embarazo 20 semanas, portador de marcapasos, anticoagulado, prótesis valvular..."></textarea>
+          </div>
+        </div>
+
+        <!-- 4. INFORMACIÓN ADMINISTRATIVA -->
+        <h3 class="full carga-seccion-titulo">Información administrativa</h3>
         <div><label>Consulta se contabiliza a</label><select id="consultaA">
           <option>Matías</option><option>Rogelio</option><option>No aplica</option><option>A definir</option>
         </select></div>
@@ -248,7 +277,9 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
         </div>
 
         <div class="full rule-box" id="reglaInfo">Regla automática: sin aplicar.</div>
-        <div class="full"><label>Observaciones</label><textarea id="observaciones" rows="2"></textarea></div>
+        <div class="full"><label>Observaciones administrativas</label><textarea id="observaciones" rows="2"></textarea></div>
+
+        <!-- 5. GUARDAR -->
         <div class="full actions">
           <button class="primary" type="submit">Guardar atención</button>
           <button class="primary" type="button" id="btnGuardarNuevo">Guardar y nuevo registro</button>

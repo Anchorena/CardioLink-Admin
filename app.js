@@ -820,7 +820,12 @@ const defaults={
  reglasOS:{'IOMA':'IOMA_OSPRERA','OSPRERA':'IOMA_OSPRERA','OSDE':'OSDE','Sancor':'SANCOR_PREVENCION','Prevención Salud':'SANCOR_PREVENCION','Integral':'INTEGRAL','PAMI':'COBERTURA_COBRA_PARTICULAR'},
  pacientes:[],
  usuarios: usuariosDefault(),
- colocadores:['Geraldine','Secretaría','Otro']
+ colocadores:['Geraldine','Secretaría','Otro'],
+ // CARGA DE TURNO V1 - catálogos reutilizables de derivante/motivo, mismo
+ // mecanismo de persistencia que obrasSociales/colocadores (saveConfig(),
+ // sin tabla nueva de Supabase).
+ medicosDerivantes:[],
+ motivosConsulta:[]
 };
 
 let data=loadConfig();
@@ -842,6 +847,8 @@ try{localStorage.setItem(storageConfig,JSON.stringify(data));}catch(e){}
 if(!Array.isArray(data.pacientes)) data.pacientes=[];
 asegurarUsuariosConfig();
 if(!Array.isArray(data.colocadores)) data.colocadores=['Geraldine','Secretaría','Otro'];
+if(!Array.isArray(data.medicosDerivantes)) data.medicosDerivantes=[];
+if(!Array.isArray(data.motivosConsulta)) data.motivosConsulta=[];
 if(!data.reglasOS) data.reglasOS=structuredClone(defaults.reglasOS);
 let atenciones=loadAtenciones();
 limpiarPrestacionesCompuestasConfig();
@@ -1060,6 +1067,8 @@ function init(){
   on('btnImportarWhatsapp','click',abrirImportadorWhatsapp);
   on('btnNuevoPacienteManual','click',nuevoPacienteManual);
   on('dni','blur',buscarPacientePorDniSiExiste);
+  on('fechaNacimiento','change',actualizarEdadCarga);
+  on('fechaNacimiento','input',actualizarEdadCarga);
 
   on('btnHoy','click',()=>{const h=todayISO();$('fDesde').value=h;$('fHasta').value=h;paginaListado=1;mostrarResumenFiltros();renderTabla();calcularLiquidacionColocaciones()});
   on('btnMes','click',()=>{const d=new Date();const y=d.getFullYear();const m=String(d.getMonth()+1).padStart(2,'0');$('fDesde').value=`${y}-${m}-01`;$('fHasta').value=todayISO();paginaListado=1;mostrarResumenFiltros();renderTabla();calcularLiquidacionColocaciones()});
@@ -1162,6 +1171,10 @@ if(puedeVerFacturaRogelio()){
  llenarSelect($('profPrestacion'),data.profesionales.filter(p=>p.id!=='general'),p=>p.id,p=>p.nombre);
  llenarSelect($('cfgProfesionalValores'),data.profesionales.filter(p=>p.id!=='general'),p=>p.id,p=>p.nombre);
  llenarSelect($('cfgReglaOS'),data.obrasSociales);
+ // CARGA DE TURNO V1: sugerencias de derivante/motivo (llenarSelect() ya
+ // sirve para <datalist>, no solo <select> - misma función reutilizada).
+ if($('derivantesList'))llenarSelect($('derivantesList'),data.medicosDerivantes);
+ if($('motivosList'))llenarSelect($('motivosList'),data.motivosConsulta);
 }
 
 function actualizarInstructivoRolActual(){
@@ -1562,6 +1575,7 @@ function crearAtencionDesdeFormulario(prestacion, opciones={}){
   telefono:$('telefono')?.value.trim()||'',
   email:$('email')?.value.trim()||'',
   fechaNacimiento:$('fechaNacimiento')?.value||'',
+  sexo:($('sexo')?.value||'').trim(),
   obraSocial:osValor,
   coberturaAtencion:osValor,
   numeroAfiliadoAtencion:$('numeroAfiliado')?.value.trim()||'',
@@ -1599,7 +1613,14 @@ function crearAtencionDesdeFormulario(prestacion, opciones={}){
   editadoUsuario:'',
   editadoRol:'',
   editadoEn:'',
-  observaciones:esAdicional ? [observacionesBase,'Estudio adicional del mismo turno'].filter(Boolean).join(' | ') : observacionesBase
+  observaciones:esAdicional ? [observacionesBase,'Estudio adicional del mismo turno'].filter(Boolean).join(' | ') : observacionesBase,
+  // CARGA DE TURNO V1 - información para el profesional: queda en la
+  // atención (el episodio), lista para reutilizarse en evolución/HC,
+  // estudios/informes y estadísticas sin volver a pedirla (ver
+  // docs/CARGA_TURNO_V1.md).
+  derivante:($('derivante')?.value||'').trim(),
+  motivoConsulta:($('motivoConsulta')?.value||'').trim(),
+  observacionClinica:($('observacionClinica')?.value||'').trim()
  };
 }
 
@@ -1613,6 +1634,58 @@ function prestacionesAdicionalesSeleccionadas(prestPrincipal){
  });
  return extras;
 }
+// CARGA DE TURNO V1 - edad calculada a partir de la fecha de nacimiento del
+// formulario. #fechaNacimiento es siempre un <input type="date"> (ISO
+// directo), así que no hace falta el parseo de texto libre que sí necesitan
+// edadDesdeFecha409()/ageHC()/edadPendiente383() para fichas con fechas
+// heredadas en otros formatos - no se tocan esas funciones ni se refactoriza
+// nada, esta es una más, igual de local, con el mismo criterio de cálculo.
+function edadDesdeFechaCarga(raw){
+  const s=String(raw||'').trim();if(!s)return '';
+  const m=s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);if(!m)return '';
+  const y=+m[1],mo=+m[2],d=+m[3];
+  const dt=new Date(y,mo-1,d);if(dt.getFullYear()!==y||dt.getMonth()!==mo-1||dt.getDate()!==d)return '';
+  const now=new Date();let age=now.getFullYear()-y;
+  if(now.getMonth()<mo-1||(now.getMonth()===mo-1&&now.getDate()<d))age--;
+  return age>=0&&age<130?String(age):'';
+}
+function actualizarEdadCarga(){
+  const el=$('edadCalculada');if(!el)return;
+  const edad=edadDesdeFechaCarga($('fechaNacimiento')?.value);
+  el.value=edad?`${edad} años`:'';
+}
+// Resuelve un valor contra un catálogo simple (medicosDerivantes/
+// motivosConsulta): si ya existe una entrada equivalente (comparación
+// insensible a mayúsculas/acentos/espacios via normalizarTexto(), ya
+// existente, o via el comparador que se pase en `normalizador`), devuelve
+// EXACTAMENTE ese valor canónico ya guardado - así "juan perez"/
+// "dr juan pérez"/" Dr. Juan Pérez " no crean variantes nuevas de
+// "Dr. Juan Pérez". Si es genuinamente nuevo, lo agrega al catálogo y lo
+// devuelve tal cual (pasa a ser el canónico desde ahora, con su
+// presentación tal como se tipeó). Sin sistema de deduplicación nuevo:
+// mismo catálogo, misma normalizarTexto() por default.
+function resolverValorCatalogo(lista,valor,normalizador=normalizarTexto){
+  const v=String(valor||'').trim();
+  if(!v || !Array.isArray(lista))return '';
+  const existente=lista.find(x=>normalizador(x)===normalizador(v));
+  if(existente!=null)return existente;
+  lista.push(v);
+  return v;
+}
+// normalizarTexto() (minúsculas + sin tildes + trim) NO ignora "Dr."/"Dra.",
+// puntos ni espacios redundantes en el medio - "Dr. Juan Pérez" y
+// "juan perez" quedan como strings distintos para esa función. Este
+// comparador es SOLO para decidir si dos derivantes tipeados son "el
+// mismo médico" (no se usa para el valor guardado/visible, que siempre
+// sale del catálogo tal como está escrito). No reordena apellido/nombre,
+// solo ignora el título y la puntuación/espaciado.
+function normalizarDerivanteParaComparar(s){
+  return normalizarTexto(s)
+    .replace(/\b(dr|dra)\.?(?=\s|$)/g,'')
+    .replace(/\./g,'')
+    .replace(/\s+/g,' ')
+    .trim();
+}
 let guardandoAtencion=false;
 async function guardarAtencion(e){
  if(e)e.preventDefault();
@@ -1623,6 +1696,11 @@ async function guardarAtencion(e){
   const nombre=($('paciente')?.value||'').trim();
   const dni=($('dni')?.value||'').trim();
   if(!nombre && !dni){alert('Falta seleccionar o cargar paciente.');return;}
+  // CARGA DE TURNO V1 - la validación de nombre/sexo/fecha de nacimiento
+  // obligatorios vive en upsertPacienteDesdeCarga() (más abajo), el único
+  // punto por el que pasan TODAS las rutas que persisten un paciente desde
+  // esta pantalla (esta función y también las de "Importar desde otra app"/
+  // WhatsApp) - no se duplica el chequeo acá.
   asegurarValorSelect('obraSocial','Particular');
   asegurarValorSelect('profesional',esMedico()?profesionalIdUsuarioActual():'matias');
   if(!$('prestacion')?.value){alert('Falta seleccionar prestación.');return;}
@@ -1631,6 +1709,21 @@ async function guardarAtencion(e){
   // conflicto de DNI que no pudo reconciliar con seguridad: no seguir
   // armando la atención con un pacienteId huérfano.
   if(!paciente)return;
+  // CARGA DE TURNO V1 - antes de armar la atención: si el derivante/motivo
+  // tipeado coincide (normalizado) con uno ya existente, se reemplaza en el
+  // propio input por el valor canónico ya guardado, para que
+  // crearAtencionDesdeFormulario() (más abajo) guarde exactamente ese
+  // canónico - no lo que se tipeó. Si es genuinamente nuevo, queda agregado
+  // al catálogo y ese mismo valor pasa a ser el canónico.
+  try{
+    const derivantesPrevios=data.medicosDerivantes.length;
+    const motivosPrevios=data.motivosConsulta.length;
+    const derivanteCanonico=resolverValorCatalogo(data.medicosDerivantes,$('derivante')?.value,normalizarDerivanteParaComparar);
+    const motivoCanonico=resolverValorCatalogo(data.motivosConsulta,$('motivoConsulta')?.value);
+    if($('derivante'))$('derivante').value=derivanteCanonico;
+    if($('motivoConsulta'))$('motivoConsulta').value=motivoCanonico;
+    if(data.medicosDerivantes.length!==derivantesPrevios || data.motivosConsulta.length!==motivosPrevios){saveConfig();refreshSelects();}
+  }catch(e){console.warn('No se pudo resolver el catálogo de derivante/motivo:',e);}
   const registros=[];
   const grupoTurnoId='turno_'+Date.now();
   const prestPrincipal=$('prestacion').value;
@@ -1787,15 +1880,33 @@ function usarPaciente(id){
  if($('telefono'))$('telefono').value=p.telefono||'';
  if($('email'))$('email').value=p.email||'';
  if($('fechaNacimiento'))$('fechaNacimiento').value=fechaISODesdeTexto(p.fechaNacimiento||'')||p.fechaNacimiento||'';
+ // CARGA DE TURNO V1: precarga sexo desde la ficha (sin inventar valores -
+ // si la ficha no lo tiene, queda vacío y el turno pide completarlo).
+ if($('sexo'))$('sexo').value=p.sexo||'';
+ actualizarEdadCarga();
  if(p.coberturaHabitual){ensureSelectOption($('obraSocial'),p.coberturaHabitual);$('obraSocial').value=p.coberturaHabitual;}
  if($('numeroAfiliado'))$('numeroAfiliado').value=p.numeroAfiliadoHabitual||'';
- if($('pacienteSeleccionadoBox')){$('pacienteSeleccionadoBox').classList.remove('hidden');$('pacienteSeleccionadoBox').innerHTML=`Paciente seleccionado: <strong>${escapeHtml(p.nombreCompleto||'')}</strong> · DNI ${escapeHtml(p.dni||'')} · cobertura habitual ${escapeHtml(p.coberturaHabitual||'s/d')}`;}
+ if($('pacienteSeleccionadoBox')){
+   const faltan=[!p.sexo?'sexo':'',!p.fechaNacimiento?'fecha de nacimiento':''].filter(Boolean);
+   $('pacienteSeleccionadoBox').classList.remove('hidden');
+   $('pacienteSeleccionadoBox').innerHTML=`Paciente seleccionado: <strong>${escapeHtml(p.nombreCompleto||'')}</strong> · DNI ${escapeHtml(p.dni||'')} · cobertura habitual ${escapeHtml(p.coberturaHabitual||'s/d')}${faltan.length?` · <span class="danger-text">Falta completar: ${escapeHtml(faltan.join(' y '))}</span>`:''}`;
+ }
  if($('resultadosPacientes'))$('resultadosPacientes').innerHTML='';
  aplicarRegla();
 }
 function nuevoPacienteManual(){
  if($('pacienteId'))$('pacienteId').value='';
  if($('resultadosPacientes'))$('resultadosPacientes').innerHTML='<div class="muted">Cargá los datos manualmente. Si ponés DNI, CardioLink evitará duplicados al guardar.</div>';
+}
+// Campos obligatorios para persistir CUALQUIER paciente, sea cual sea el
+// flujo de alta: Carga de turno (upsertPacienteDesdeCarga) o Pacientes ->
+// "Cargar paciente" (guardarPacientePuro298, ver más abajo). Un único
+// lugar en vez de repetir el mismo chequeo/alert en cada función de
+// guardado. Recibe el paciente ya fusionado con lo que la ficha tenía
+// (no el formulario crudo), para no pedir de nuevo un dato que el
+// paciente ya tenía y el flujo actual simplemente no volvió a tipear.
+function datosPacienteObligatoriosFaltantes(p){
+ return [!p?.nombreCompleto?'nombre y apellido':'', !p?.sexo?'sexo':'', !p?.fechaNacimiento?'fecha de nacimiento':''].filter(Boolean);
 }
 async function upsertPacienteDesdeCarga(){
  const dni=String($('dni')?.value||'').replace(/\D/g,'');
@@ -1811,6 +1922,24 @@ async function upsertPacienteDesdeCarga(){
  p.telefono=$('telefono')?.value.trim()||p.telefono||'';
  p.email=$('email')?.value.trim()||p.email||'';
  p.fechaNacimiento=$('fechaNacimiento')?.value||p.fechaNacimiento||'';
+ // CARGA DE TURNO V1: sexo queda en la ficha del paciente igual que
+ // fechaNacimiento (dato demográfico, no del episodio puntual).
+ p.sexo=$('sexo')?.value.trim()||p.sexo||'';
+ // CARGA DE TURNO V1 - punto único de validación (ver
+ // datosPacienteObligatoriosFaltantes): nombre/sexo/fecha de nacimiento son
+ // obligatorios para persistir un paciente desde esta pantalla, sea
+ // paciente nuevo o existente con la ficha incompleta (ya mezclados arriba
+ // con lo que la ficha tenía). Acá, y no en cada llamador por separado,
+ // porque esta es la única función que efectivamente guarda (saveConfig()
+ // más abajo) - guardarAtencion() y las importaciones desde otra app/
+ // WhatsApp pasan igual por acá. Sin inventar valores: si falta algo, no
+ // se persiste nada todavía.
+ const faltan=datosPacienteObligatoriosFaltantes(p);
+ if(faltan.length){
+   alert('Para guardar el turno hace falta completar: '+faltan.join(', ')+'.');
+   if(esNuevoLocal){data.pacientes=data.pacientes.filter(x=>x!==p);$('pacienteId').value='';}
+   return null;
+ }
  const os=$('obraSocial')?.value||'';
  const afiliado=$('numeroAfiliado')?.value.trim()||'';
  const actualizar=$('actualizarCoberturaHabitual')?.checked || !p.coberturaHabitual;
@@ -5320,7 +5449,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const ex=existente || pacienteExistente298(p);
     const target=ex || {id:'pac_'+Date.now()+'_'+Math.random().toString(36).slice(2,8), historialCoberturas:[], creadoEn:new Date().toISOString(), creadoPor: (typeof usuarioActualNombreCorto==='function'?usuarioActualNombreCorto():'')};
     if(!ex) data.pacientes.push(target);
-    const campos=['nombreCompleto','dni','telefono','email','fechaNacimiento','coberturaHabitual','numeroAfiliadoHabitual','contactoResponsableNombre','contactoResponsableRelacion','contactoResponsableTelefono','contactoResponsableEmail','observacionesAdministrativas'];
+    const campos=['nombreCompleto','dni','sexo','telefono','email','fechaNacimiento','coberturaHabitual','numeroAfiliadoHabitual','contactoResponsableNombre','contactoResponsableRelacion','contactoResponsableTelefono','contactoResponsableEmail','observacionesAdministrativas'];
     campos.forEach(k=>{ if(clean(p[k])) target[k]=clean(p[k]); });
     target.actualizadoEn=new Date().toISOString();
     target.actualizadoPor=typeof usuarioActualNombreCorto==='function'?usuarioActualNombreCorto():'';
@@ -5348,9 +5477,11 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function abrirCargaPacientePuro298(){
     const osOpts=(data.obrasSociales||[]).map(os=>`<option>${esc(os)}</option>`).join('');
     modalPaciente298('Cargar paciente',`<div class="form-grid paciente-edit-form">
-      <div><label>Apellido y nombre</label><input id="pac298Nombre" placeholder="Ej: Pérez Juan"></div>
+      <div><label>Apellido y nombre *</label><input id="pac298Nombre" placeholder="Ej: Pérez Juan"></div>
       <div><label>DNI</label><input id="pac298Dni" inputmode="numeric"></div>
-      <div><label>Fecha nacimiento</label><input type="date" id="pac298Nacimiento"></div>
+      <div><label>Sexo *</label><select id="pac298Sexo"><option value="">Seleccionar…</option><option value="Masculino">Masculino</option><option value="Femenino">Femenino</option><option value="Otro">Otro</option></select></div>
+      <div><label>Fecha de nacimiento *</label><input type="date" id="pac298Nacimiento"></div>
+      <div><label>Edad</label><input type="text" id="pac298Edad" readonly placeholder="—"></div>
       <div><label>Teléfono</label><input id="pac298Telefono"></div>
       <div><label>Email</label><input id="pac298Email"></div>
       <div><label>Obra social / cobertura habitual</label><select id="pac298Cobertura"><option value="">Sin cobertura cargada</option>${osOpts}</select></div>
@@ -5363,16 +5494,37 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       <div style="grid-column:1/-1"><label>Observaciones administrativas</label><textarea id="pac298Obs" rows="3" placeholder="Dato administrativo útil. No genera evolución ni informe."></textarea></div>
     </div>
     <div class="modal-actions"><button class="secondary" type="button" onclick="cerrarModalPaciente298()">Cancelar</button><button class="primary" type="button" id="btnGuardarPacientePuro298">Guardar paciente</button></div>`);
+    // ALTA DE PACIENTE V1 - edad calculada en vivo, reutilizando la misma
+    // función pura de cálculo que ya usa Carga de turno (edadDesdeFechaCarga),
+    // sin duplicar la lógica ni tocar actualizarEdadCarga() (que está atada
+    // a los ids de #formAtencion, no a los de este modal).
+    const nacInput=d('pac298Nacimiento'), edadInput=d('pac298Edad');
+    if(nacInput && edadInput){
+      const actualizarEdadPuro298=()=>{ const e=edadDesdeFechaCarga(nacInput.value); edadInput.value=e?`${e} años`:''; };
+      nacInput.addEventListener('change',actualizarEdadPuro298);
+      nacInput.addEventListener('input',actualizarEdadPuro298);
+    }
   }
   window.abrirCargaPacientePuro298=abrirCargaPacientePuro298;
   async function guardarPacientePuro298(){
     const p={
-      nombreCompleto: clean(d('pac298Nombre')?.value), dni: onlyDigits(d('pac298Dni')?.value), fechaNacimiento:d('pac298Nacimiento')?.value||'', telefono:clean(d('pac298Telefono')?.value), email:clean(d('pac298Email')?.value), coberturaHabitual:clean(d('pac298Cobertura')?.value), numeroAfiliadoHabitual:clean(d('pac298Afiliado')?.value), contactoResponsableNombre:clean(d('pac298ContactoNombre')?.value), contactoResponsableRelacion:clean(d('pac298ContactoRelacion')?.value), contactoResponsableTelefono:clean(d('pac298ContactoTelefono')?.value), contactoResponsableEmail:clean(d('pac298ContactoEmail')?.value), observacionesAdministrativas:clean(d('pac298Obs')?.value)
+      nombreCompleto: clean(d('pac298Nombre')?.value), dni: onlyDigits(d('pac298Dni')?.value), sexo: clean(d('pac298Sexo')?.value), fechaNacimiento:d('pac298Nacimiento')?.value||'', telefono:clean(d('pac298Telefono')?.value), email:clean(d('pac298Email')?.value), coberturaHabitual:clean(d('pac298Cobertura')?.value), numeroAfiliadoHabitual:clean(d('pac298Afiliado')?.value), contactoResponsableNombre:clean(d('pac298ContactoNombre')?.value), contactoResponsableRelacion:clean(d('pac298ContactoRelacion')?.value), contactoResponsableTelefono:clean(d('pac298ContactoTelefono')?.value), contactoResponsableEmail:clean(d('pac298ContactoEmail')?.value), observacionesAdministrativas:clean(d('pac298Obs')?.value)
     };
     if(!p.nombreCompleto && !p.dni && !p.telefono){alert('Cargá al menos nombre, DNI o teléfono.');return;}
     const ex=pacienteExistente298(p);
     if(ex && !confirm('Ya existe un paciente probable. ¿Actualizar la ficha existente?')) return;
     let r=aplicarPaciente298(p,ex);
+    // ALTA DE PACIENTE V1 - mismo punto único de validación que Carga de
+    // turno (datosPacienteObligatoriosFaltantes): se valida sobre
+    // r.paciente (ya fusionado con lo que la ficha tenía), no sobre `p`
+    // (el formulario crudo), para no exigir de nuevo un dato que el
+    // paciente ya tenía y este modal no volvió a tipear.
+    const faltanPuro298=datosPacienteObligatoriosFaltantes(r.paciente);
+    if(faltanPuro298.length){
+      alert('Para guardar el paciente hace falta completar: '+faltanPuro298.join(', ')+'.');
+      if(r.creado)data.pacientes=data.pacientes.filter(x=>x!==r.paciente);
+      return;
+    }
     // Mismo fix que upsertPacienteDesdeCarga()/guardarPacientePanel()/
     // guardarPacienteGlobal350(). NO limitar a r.creado: pacienteExistente298()
     // busca local (data.pacientes/localStorage) por DNI/nombre+nacimiento,
