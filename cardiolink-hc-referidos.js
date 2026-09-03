@@ -178,7 +178,20 @@
     addAffiliateToGenericCopyRows();
 
     // Respaldo para versiones donde la fila de copia no esté presente.
-    if (!document.querySelector('#pacienteDetalle [data-cl-ficha-copy411r]')) {
+    // #pacienteCopyRow300 es la fila canónica que ya inserta app.js (con su
+    // propio botón de afiliado incluido): si ya está, este respaldo no debe
+    // agregar una segunda fila duplicada dentro de la Ficha del paciente.
+    // Este decorador corre en cada mutación del DOM (MutationObserver más
+    // abajo), y #pacienteCopyRow300 se inserta ~30ms después desde app.js -
+    // así que la primera vez que corre acá puede no existir todavía. Por
+    // eso no alcanza con no insertar de nuevo: si el respaldo ya se llegó a
+    // insertar en esa ventana y después aparece la fila canónica, hay que
+    // retirar el respaldo (no ocultarlo por CSS) para que quede una sola.
+    const filaCanonica = document.querySelector('#pacienteDetalle #pacienteCopyRow300');
+    const filaPropia = document.querySelector('#pacienteDetalle [data-cl-ficha-copy411r]');
+    if (filaCanonica) {
+      if (filaPropia) filaPropia.remove();
+    } else if (!filaPropia) {
       const row = document.createElement('div');
       row.className = 'cl-hc-copy-row411r';
       row.dataset.clFichaCopy411r = '1';

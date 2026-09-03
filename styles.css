@@ -521,20 +521,85 @@ input[type="checkbox"]{
 .paciente-panel-item:hover,.paciente-panel-item.active{border-color:#2563eb;background:#eff6ff}
 .paciente-panel-item strong{display:block;font-size:15px;margin-bottom:4px}
 .paciente-panel-item span{display:block;font-size:12px;color:#64748b;line-height:1.35}
-.paciente-ficha-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:14px}
-.paciente-ficha-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
-.paciente-ficha-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin:14px 0}
-.paciente-ficha-grid div{border:1px solid #dbe3ef;border-radius:16px;padding:14px;background:#f8fafc}
-.paciente-ficha-grid span{display:block;font-size:12px;color:#64748b;font-weight:700;margin-bottom:4px}
-.paciente-ficha-grid strong{font-size:15px;color:#0f172a}
-.paciente-mini-resumen{display:flex;gap:8px;flex-wrap:wrap;margin:12px 0 18px}
-.paciente-mini-resumen span{border:1px solid #bfdbfe;background:#eef4ff;color:#1d4ed8;border-radius:999px;padding:7px 10px;font-size:12px;font-weight:800}
+/* FICHA DEL PACIENTE V1 (2ª iteración) - una sola tarjeta vertical: nombre
+   → datos rápidos → acciones, en vez del nombre a la izquierda y las
+   acciones aparte a la derecha. Reutiliza los tokens de color reales de
+   CardioLink (var(--text)/--muted/--line/--primary, mismos que Agenda y
+   Carga de turno) en lugar de colores sueltos. */
+.paciente-ficha-head{display:flex;flex-direction:column;gap:10px;margin-bottom:14px}
+.paciente-ficha-head h3{font-size:22px;margin:0;color:var(--text,#111827)}
+.paciente-ficha-datos-linea{margin:0;font-size:13px;color:var(--text,#111827)}
+.paciente-ficha-datos-linea-secundaria{color:var(--muted,#4b5563)}
+/* Varias funciones distintas (HC, RCTA, documento rápido, copiar datos,
+   eliminar) insertan botones acá en momentos distintos - ver
+   seleccionarPacientePanel() y sus wraps en app.js, sin tocar ninguno.
+   El orden visual queda fijo por CSS `order`, sin depender de en qué
+   momento se insertó cada botón. ::before (order:3) y ::after (order:7)
+   fuerzan los dos saltos de línea - principales / secundarias / utilidades
+   - con el mismo truco flexbox (flex-basis:100% "corta" la fila), sin
+   agregar ningún elemento nuevo al DOM real ni empujar nada a los
+   extremos de una fila ancha: cada zona queda compacta y agrupada. */
+.paciente-ficha-actions{display:flex;gap:8px 10px;flex-wrap:wrap;justify-content:flex-start;align-items:center}
+.paciente-ficha-actions [onclick^="nuevaAtencionDesdePaciente"]{order:1}
+.paciente-ficha-actions [data-open-hc]{order:2}
+.paciente-ficha-actions::before{content:'';flex-basis:100%;order:3}
+.paciente-ficha-actions [onclick^="editarPacientePanel"]{order:4}
+.paciente-ficha-actions [data-new-doc406]{order:5}
+/* RCTA sigue distinguiéndose (integración externa) pero con la misma
+   paleta y la misma altura/borde que sus vecinas - ya no un violeta
+   saturado con !important propio (ese estilo global de .rcta-button4095
+   sigue intacto en HC/evoluciones, acá se lo pisa solo dentro de esta
+   ficha). El estilo global solo definía border-color sin border-width,
+   por eso se veía como texto suelto - acá se define el borde completo. */
+.paciente-ficha-actions .rcta-button4095{order:6;background:var(--card,#fff)!important;color:var(--primary,#123f56)!important;border:1px solid var(--primary,#123f56)!important}
+/* Salto de línea antes de la zona de utilidades (Copiar.../Eliminar), para
+   que quede agrupada y separada de las acciones de arriba, pero SIN
+   ocupar toda la fila ella sola - así "Copiar..." y "Eliminar" pueden
+   quedar juntos en vez de a los extremos opuestos de una fila ancha. */
+.paciente-ficha-actions::after{content:'';flex-basis:100%;order:7;border-top:1px dashed var(--line,#e5e7eb);margin-top:6px;padding-top:2px}
+/* Copiar datos: utilidad de un clic, no una acción principal - estilo
+   "ghost" (fondo transparente, borde fino), con etiqueta "Copiar:"
+   generada por CSS para no tener que tocar los 3 wraps que arman estos
+   botones por separado. */
+.paciente-ficha-actions .copy-row300{order:8;align-items:center}
+.paciente-ficha-actions .copy-row300::before{content:'Copiar:';font-size:11px;font-weight:800;color:var(--muted,#64748b);text-transform:uppercase;letter-spacing:.03em;margin-right:4px}
+.paciente-ficha-actions .copy-row300 .copy-btn300{background:transparent;border:1px solid var(--line,#e5e7eb);color:var(--muted,#64748b);font-weight:600;font-size:12px;padding:5px 10px;border-radius:8px}
+.paciente-ficha-actions .copy-row300 .copy-btn300:hover{border-color:var(--primary,#123f56);color:var(--primary,#123f56)}
+/* Eliminar paciente: baja frecuencia, en la misma fila que "Copiar..." (no
+   la fila entera de por medio) pero con distancia propia para no
+   confundirse con una utilidad más. Mantiene .danger (rojo) - es
+   intencional que una acción destructiva no pase desapercibida. */
+.paciente-ficha-actions .delete-patient386{order:9;margin-left:16px;padding:8px 12px;font-size:13px}
+/* FICHA DEL PACIENTE V1 (4ª iteración) - densidad calcada de la grilla de
+   datos que ya usa Historia Clínica (.hc-patient-data-408: padding 9px
+   11px, gap 9px, labels en mayúsculas 11px) en vez de valores propios más
+   sueltos - mismo criterio visual entre las dos vistas del paciente, sin
+   compartir la clase en sí (evita cualquier riesgo de romper HC si se
+   toca acá). */
+.paciente-ficha-seccion-titulo{margin:16px 0 8px;font-size:12px;font-weight:800;color:var(--muted,#64748b);text-transform:uppercase;letter-spacing:.03em}
+.paciente-ficha-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:9px;margin:0}
+.paciente-ficha-grid div{border:1px solid var(--line,#dbe3ef);border-radius:12px;padding:9px 11px;background:var(--card,#f8fafc)}
+.paciente-ficha-grid span{display:block;font-size:11px;color:var(--muted,#64748b);font-weight:800;text-transform:uppercase;letter-spacing:.02em;margin-bottom:3px}
+.paciente-ficha-grid strong{font-size:14px;color:var(--text,#0f172a)}
+/* "Total atenciones" no debe competir con el resto de la ficha (sin
+   cambiar el dato en sí, solo su peso visual). */
+.paciente-ficha-grid .paciente-ficha-stat-secundario strong{font-size:13px;color:var(--muted,#64748b);font-weight:700}
+.paciente-mini-resumen{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0 4px}
+.paciente-mini-resumen span{border:1px solid var(--line,#e2e8f0);background:transparent;color:var(--muted,#64748b);border-radius:999px;padding:5px 9px;font-size:11px;font-weight:700}
+/* Nota interna, dentro de esta ficha: tarjeta secundaria compacta, no debe
+   dominar la cabecera. Mismo componente que usa HC (.private-note-card-402,
+   sin tocar su estilo base ahí) - acá se lo pisa solo cuando aparece dentro
+   de #pacienteDetalle. */
+#pacienteDetalle .private-note-card-402{padding:10px 12px;margin:10px 0;border:1px solid var(--line,#e5e7eb);border-left:3px solid #d97706;border-radius:10px;background:var(--card,#fff)}
+#pacienteDetalle .private-note-title-402{font-size:12.5px;font-weight:800;color:#92400e}
+#pacienteDetalle .private-note-warning-402{font-size:11px}
+#pacienteDetalle .private-note-card-402 p{font-size:13px}
 .paciente-historial-wrap{overflow:auto;max-height:520px;border:1px solid #e2e8f0;border-radius:16px}
 .paciente-historial{width:100%}
 .paciente-historial th{position:sticky;top:0;background:#f8fafc;z-index:1}
 .paciente-edit-actions{justify-content:flex-end;margin-top:16px}
 @media(max-width:1050px){.pacientes-layout{grid-template-columns:1fr}.paciente-ficha-grid{grid-template-columns:1fr 1fr}}
-@media(max-width:700px){.paciente-ficha-head{display:block}.paciente-ficha-actions{justify-content:flex-start;margin-top:10px}.paciente-ficha-grid{grid-template-columns:1fr}}
+@media(max-width:700px){.paciente-ficha-grid{grid-template-columns:1fr}}
 
 
 /* ===== PACIENTES: BUSCADOR CON LIMPIAR ===== */

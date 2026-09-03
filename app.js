@@ -3543,6 +3543,25 @@ function buscarPacientePanelPorId(id){
   return todosPacientes().find(p=>clavePacientePanel(p)===id || p.id===id) || null;
 }
 
+// FICHA DEL PACIENTE V1 (3ª iteración) - causa del segundo grupo de
+// "Copiar...": además del click del padrón (ya corregido), existen otros
+// disparadores del modal "paciente global" (#pacienteGlobalModal) que son
+// accesibles desde CUALQUIER pantalla (búsqueda global del topbar, menú
+// de "paciente actual") - si se usan mientras la pantalla Pacientes ya
+// está mostrando la ficha en el panel (#pacienteDetalle), el modal se
+// abre encima y duplica nombre/datos/Copiar por segunda vez. Este punto
+// único decide, para esos dos disparadores puntuales, usar el panel en
+// vez de abrir el modal cuando corresponde - sin tocar el modal en sí
+// (sus propios usos internos, como Cancelar o el refresco después de
+// guardar una edición, siguen abriendo el modal exactamente igual).
+function preferirFichaPanelPacientes(key){
+  const seccionVisible=document.getElementById('pacientes')?.classList.contains('visible');
+  if(!seccionVisible || typeof seleccionarPacientePanel!=='function')return false;
+  seleccionarPacientePanel(key);
+  document.getElementById('pacienteDetalle')?.scrollIntoView({behavior:'smooth',block:'start'});
+  return true;
+}
+
 /* v4.1.0-hc.1: apertura robusta de ficha desde el padrón de Pacientes.
    Se usa delegación de eventos en vez de onclick inline para evitar fallos
    con claves que contienen espacios, tildes o apóstrofes. */
@@ -3551,19 +3570,20 @@ function abrirFichaDesdePadron4091(id){
   const p=buscarPacientePanelPorId(key);
   if(!p){alert('No se pudo abrir la ficha del paciente. Actualizá el padrón e intentá nuevamente.');return;}
   pacienteSeleccionadoPanelId=clavePacientePanel(p);
+  // FICHA DEL PACIENTE V1 - causa real de la duplicación visual de
+  // "Copiar DNI/teléfono/email" (y de "Nueva atención"/"Editar ficha"):
+  // este handler renderizaba la ficha en el panel (seleccionarPacientePanel,
+  // #pacienteDetalle) Y ADEMÁS abría el modal "paciente global"
+  // (abrirPacienteGlobal320/abrirPacienteGlobalDetalle350, #pacienteGlobalModal)
+  // para el mismo click - dos representaciones completas de la misma ficha
+  // a la vez. Ese modal sigue existiendo y sigue siendo el correcto para su
+  // único otro punto de entrada real, la búsqueda global (openPatient360,
+  // buscadorGlobal360), donde no hay panel de detalle al lado para mostrar
+  // algo. Acá, en el padrón de Pacientes, el panel de la derecha ya es la
+  // ficha - no hace falta abrir un modal encima. No se tocó ninguna de esas
+  // dos funciones ni la búsqueda global: solo se dejó de llamarlas desde
+  // este único lugar.
   try{seleccionarPacientePanel(pacienteSeleccionadoPanelId);}catch(e){console.error('Error al preparar la ficha del paciente',e);}
-  try{
-    if(typeof window.abrirPacienteGlobal320==='function'){
-      window.abrirPacienteGlobal320(pacienteSeleccionadoPanelId);
-      document.body.classList.add('patient-modal-open-371');
-      return;
-    }
-    if(typeof window.abrirPacienteGlobalDetalle350==='function'){
-      window.abrirPacienteGlobalDetalle350(pacienteSeleccionadoPanelId);
-      document.body.classList.add('patient-modal-open-371');
-      return;
-    }
-  }catch(e){console.error('Error al abrir la ficha modal',e);}
   const detalle=$('pacienteDetalle');
   if(detalle){detalle.scrollIntoView({behavior:'smooth',block:'start'});detalle.focus?.();}
 }
@@ -3619,17 +3639,23 @@ function seleccionarPacientePanel(id){
   const ats=atencionesPacienteGlobal(p);
   const porProf={}; ats.forEach(a=>{porProf[a.profesional||'Sin profesional']=(porProf[a.profesional||'Sin profesional']||0)+1;});
   const detalle=$('pacienteDetalle'); if(!detalle)return;
+  // FICHA DEL PACIENTE V1 (2ª iteración): edad precalculada para poder
+  // armar "67 años" con el fallback correcto si falta la fecha de
+  // nacimiento (edadDesdeFechaCarga ya existente, sin duplicar el cálculo).
+  const edadFichaPanel=edadDesdeFechaCarga(p.fechaNacimiento);
   detalle.innerHTML=`
     <div class="paciente-ficha-head">
       <div>
         <h3>${escapeHtml(nombrePacientePanel(p))}</h3>
-        <p class="muted">DNI ${escapeHtml(p.dni||'s/d')} · Tel ${escapeHtml(p.telefono||'s/d')} · ${escapeHtml(p.email||'')}</p>
+        <p class="paciente-ficha-datos-linea">${edadFichaPanel?escapeHtml(edadFichaPanel)+' años · ':''}${escapeHtml(p.sexo||'Sexo s/d')} · DNI ${escapeHtml(p.dni||'s/d')}</p>
+        <p class="paciente-ficha-datos-linea paciente-ficha-datos-linea-secundaria">${escapeHtml(p.telefono||'Tel s/d')} · ${escapeHtml(p.email||'Email s/d')} · ${escapeHtml(p.coberturaHabitual||'Cobertura s/d')} · Afiliado ${escapeHtml(p.numeroAfiliadoHabitual||'s/d')}</p>
       </div>
       <div class="paciente-ficha-actions">
         <button class="primary" type="button" onclick="nuevaAtencionDesdePaciente('${escapeHtml(clavePacientePanel(p))}')">Nueva atención</button>
         <button class="secondary" type="button" onclick="editarPacientePanel('${escapeHtml(clavePacientePanel(p))}')">Editar ficha</button>
       </div>
     </div>
+    <h3 class="paciente-ficha-seccion-titulo">Datos del paciente</h3>
     <div class="paciente-ficha-grid">
       <div><span>Cobertura habitual</span><strong>${escapeHtml(p.coberturaHabitual||'s/d')}</strong></div>
       <div><span>Nº afiliado habitual</span><strong>${escapeHtml(p.numeroAfiliadoHabitual||'s/d')}</strong></div>
@@ -3641,12 +3667,12 @@ function seleccionarPacientePanel(id){
       <div><span>Localidad</span><strong>${escapeHtml(p.localidad||'s/d')}</strong></div>
       <div><span>Dirección</span><strong>${escapeHtml(p.direccion||'s/d')}</strong></div>
       <div><span>Provincia</span><strong>${escapeHtml(p.provincia||'Buenos Aires')}</strong></div>
-      <div><span>Total atenciones</span><strong>${ats.length}</strong></div>
+      <div class="paciente-ficha-stat-secundario"><span>Total atenciones</span><strong>${ats.length}</strong></div>
     </div>
     <div class="paciente-mini-resumen">
       ${Object.entries(porProf).map(([prof,n])=>`<span>${escapeHtml(prof)}: <strong>${n}</strong></span>`).join('') || '<span>Sin atenciones registradas</span>'}
     </div>
-    <h3>Historial cruzado</h3>
+    <h3 class="paciente-ficha-seccion-titulo">Historial cruzado</h3>
     <p class="muted">Incluye consultas y estudios de todos los profesionales cargados en CardioLink para este mismo paciente.</p>
     <div class="paciente-historial-wrap">
       <table class="tabla-mini paciente-historial">
@@ -3658,7 +3684,7 @@ function seleccionarPacientePanel(id){
             <td><strong>${escapeHtml(prestacionListado(a))}</strong>${a.observaciones?'<br><small>'+escapeHtml(a.observaciones)+'</small>':''}</td>
             <td>${escapeHtml(a.obraSocial||'')}</td>
             <td>${escapeHtml(estadoCortoPaciente(a))}</td>
-            <td><button class="secondary" type="button" onclick="editarAtencion(${idJS(a.id)})">Editar</button></td>
+            <td><button class="secondary" type="button" data-action="listado-editar" data-id="${escapeHtml(a.id)}" onclick="editarAtencion(${idJS(a.id)})">Editar</button></td>
           </tr>`).join(''):'<tr><td colspan="6">Este paciente todavía no tiene atenciones cargadas.</td></tr>'}
         </tbody>
       </table>
@@ -5857,15 +5883,23 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     window.seleccionarPacientePanel = seleccionarPacientePanel = function(id){
       oldSeleccionarPaciente300.apply(this,arguments);
       setTimeout(()=>{
-        const det=$id('pacienteDetalle'); if(!det || det.querySelector('.copy-row300')) return;
+        // FICHA DEL PACIENTE V1 - único punto de inserción de "Copiar..."
+        // dentro de #pacienteDetalle (confirmado: no hay ningún otro
+        // insertAdjacentHTML/appendChild que agregue .copy-row300 acá -
+        // los otros 2 usos de esa clase apuntan a #pacienteGlobalBody, un
+        // contenedor distinto). Guard reforzado con id estable en vez de
+        // solo la clase, para que sea imposible duplicar aunque este
+        // wrap corra más de una vez para el mismo render.
+        const det=$id('pacienteDetalle'); if(!det || $id('pacienteCopyRow300')) return;
+        const actions=det.querySelector('.paciente-ficha-actions'); if(!actions) return;
         const p=(typeof buscarPacientePanelPorId==='function') ? buscarPacientePanelPorId(id) : null; if(!p) return;
-        const actions=det.querySelector('.paciente-ficha-actions');
-        const html=`<div class="copy-row300 compact">
-          <button type="button" class="copy-btn300" onclick="copyText300('${esc(p.dni||'')}','DNI')">Copiar DNI</button>
-          <button type="button" class="copy-btn300" onclick="copyText300('${esc(p.telefono||'')}','teléfono')">Copiar teléfono</button>
-          <button type="button" class="copy-btn300" onclick="copyText300('${esc(p.email||'')}','email')">Copiar email</button>
+        const html=`<div id="pacienteCopyRow300" class="copy-row300 compact">
+          <button type="button" class="copy-btn300" onclick="copyText300('${esc(p.dni||'')}','DNI')">DNI</button>
+          <button type="button" class="copy-btn300" onclick="copyText300('${esc(p.telefono||'')}','teléfono')">Teléfono</button>
+          <button type="button" class="copy-btn300" onclick="copyText300('${esc(p.email||'')}','email')">Email</button>
+          <button type="button" class="copy-btn300" onclick="copyText300('${esc(p.numeroAfiliadoHabitual||'')}','n° de afiliado')">Afiliado</button>
         </div>`;
-        if(actions) actions.insertAdjacentHTML('beforeend',html);
+        actions.insertAdjacentHTML('beforeend',html);
       },30);
     }
   }
@@ -6826,7 +6860,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function renderSpotlight360(q){const box=$360('resultadosGlobal360');if(!box)return;const n=norm360(q);if(n.length<2){box.classList.add('hidden');box.innerHTML='';spotlightMatches360=[];return;}
     spotlightMatches360=patients360().filter(p=>norm360([patientLabel360(p),p.dni,p.telefono,p.email,p.telefonoResponsable,p.emailResponsable].join(' ')).includes(n)).slice(0,10);spotlightIndex360=spotlightMatches360.length?0:-1;
     box.innerHTML=spotlightMatches360.length?spotlightMatches360.map((p,i)=>`<button type="button" class="spotlight-item-360 ${i===0?'active':''}" data-patient-id="${esc360(p.id)}"><strong>${esc360(patientLabel360(p))}</strong><small>DNI ${esc360(p.dni||'s/d')} · ${esc360(p.obraSocial||p.coberturaHabitual||'Sin cobertura')}</small></button>`).join(''):'<p class="muted">Sin coincidencias.</p>';box.classList.remove('hidden');}
-  function openPatient360(p){if(!p)return;try{const key=(typeof clavePac320==='function'?clavePac320(p):(p.id||p.dni||''));if(typeof abrirPacienteGlobal320==='function'){abrirPacienteGlobal320(key);document.getElementById('buscadorGlobal360')?.blur();document.getElementById('pacienteGlobalModal')?.scrollTo?.(0,0);document.body.classList.add('patient-modal-open-371');return;}if(typeof abrirFichaPaciente==='function'){abrirFichaPaciente(p.id);return;}showSection('pacientes');setTimeout(()=>{if(typeof seleccionarPacientePanel==='function')seleccionarPacientePanel(key);},80);}catch(e){console.error('No se pudo abrir paciente desde búsqueda global',e);showSection('pacientes');}}
+  function openPatient360(p){if(!p)return;try{const key=(typeof clavePac320==='function'?clavePac320(p):(p.id||p.dni||''));if(typeof preferirFichaPanelPacientes==='function'&&preferirFichaPanelPacientes(key)){document.getElementById('buscadorGlobal360')?.blur();return;}if(typeof abrirPacienteGlobal320==='function'){abrirPacienteGlobal320(key);document.getElementById('buscadorGlobal360')?.blur();document.getElementById('pacienteGlobalModal')?.scrollTo?.(0,0);document.body.classList.add('patient-modal-open-371');return;}if(typeof abrirFichaPaciente==='function'){abrirFichaPaciente(p.id);return;}showSection('pacientes');setTimeout(()=>{if(typeof seleccionarPacientePanel==='function')seleccionarPacientePanel(key);},80);}catch(e){console.error('No se pudo abrir paciente desde búsqueda global',e);showSection('pacientes');}}
   function updateSpotlightActive360(){document.querySelectorAll('.spotlight-item-360').forEach((x,i)=>x.classList.toggle('active',i===spotlightIndex360));document.querySelectorAll('.spotlight-item-360')[spotlightIndex360]?.scrollIntoView({block:'nearest'});}
 
   function shiftAgenda360(dir){const inp=$360('agendaFecha');if(!inp)return;const d=new Date((inp.value||today360())+'T12:00:00');const vista=$360('agendaVista')?.value||'tabla';d.setDate(d.getDate()+dir*(vista==='mes'?30:vista==='semana'?7:1));inp.value=d.toISOString().slice(0,10);renderAgenda?.();}
@@ -9984,9 +10018,41 @@ function patientInfoTextHC(p,coverage){
     if(e.target.closest?.('[data-rcta-open4095]')){openRcta4095();return;}
     if(e.target.closest?.('[data-rcta-copy-open4095]')){const text=document.getElementById('rctaPrepared4095')?.value||'';openRcta4095();const ok=await copy4095(text);if(!ok)alert('RCTA se abrió, pero el navegador no permitió copiar automáticamente. Usá “Copiar datos”.');return;}
   },true);
+  // FICHA DEL PACIENTE V1 - "Recetar en RCTA" tardaba varios segundos en
+  // aparecer en #pacienteDetalle porque dependía por completo del listener
+  // global de clicks (bindLightDecorators4096 -> queueDecorate4096(70) ->
+  // decorate4095), que además identifica al paciente leyendo el
+  // data-new-doc406/data-open-hc de OTRO botón ya insertado - una cadena
+  // indirecta y más lenta que la de sus vecinas (Historia clínica,
+  // Documento rápido), que se insertan solas con setTimeout(0) apenas se
+  // abre la ficha. Este wrap agrega el mismo botón por el mismo camino
+  // directo (mismo permiso canUseRcta4095(), mismo addButton4095(), mismo
+  // handler) - no reemplaza a decorate4095 (sigue sirviendo para HC y la
+  // ventana de evolución, y como red de respaldo acá también gracias al
+  // guard idempotente de addButton4095), solo deja de depender de él para
+  // que aparezca junto con el resto de las acciones.
+  function wrapPatientRcta4095(){
+    const old=window.seleccionarPacientePanel;
+    if(typeof old!=='function'||old.__v4095)return;
+    const w=function(id){
+      const r=old.apply(this,arguments);
+      if(canUseRcta4095()){
+        setTimeout(()=>{
+          const p=typeof buscarPacientePanelPorId==='function'?buscarPacientePanelPorId(id):null; if(!p)return;
+          const actions=document.getElementById('pacienteDetalle')?.querySelector('.paciente-ficha-actions'); if(!actions)return;
+          addButton4095(actions,patientKey4095(p),'Recetar en RCTA');
+        },0);
+      }
+      return r;
+    };
+    w.__v4095=true;
+    window.seleccionarPacientePanel=seleccionarPacientePanel=w;
+  }
+
   function boot4095(){
     try{if(window.data&&typeof window.data==='object'){window.data.integracionesClinicas=window.data.integracionesClinicas||{};if(!window.data.integracionesClinicas.rctaUrl)window.data.integracionesClinicas.rctaUrl=DEFAULT_RCTA_URL;}}
     catch(_){ }
+    wrapPatientRcta4095();
     bindLightDecorators4096();
     try{document.title=`CardioLink Admin v${VERSION_RCTA_4095}`;document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(x=>x.textContent=`v${VERSION_RCTA_4095}`);document.querySelectorAll('.login-meta').forEach(x=>x.textContent=`Versión ${VERSION_RCTA_4095} · 2026`);}catch(_){ }
   }
@@ -10556,6 +10622,7 @@ function patientInfoTextHC(p,coverage){
   function openPatient411B(p){
     if(!p)return;
     const k=patientKey(p);saveCurrent411B(k);
+    if(typeof window.preferirFichaPanelPacientes==='function'&&window.preferirFichaPanelPacientes(k))return;
     if(typeof window.abrirPacienteGlobal320==='function'){window.abrirPacienteGlobal320(k);return;}
     try{showSection('pacientes');setTimeout(()=>window.seleccionarPacientePanel?.(k),60);}catch(_){}
   }
