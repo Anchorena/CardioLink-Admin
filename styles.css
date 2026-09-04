@@ -2030,7 +2030,6 @@ body.dark .agenda-patient-evolve-403:hover{background:rgba(157,177,255,.12);colo
 .hc-patient-banner-408{margin-top:14px;border:1px solid var(--border,#dbe3ee);border-radius:18px;background:var(--soft,#f8fafc);padding:16px}
 .hc-patient-title-408{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:12px}
 .hc-patient-title-408 h3{margin:0;font-size:22px}
-.hc-patient-title-408>span{background:#e0f2fe;color:#075985;border-radius:999px;padding:6px 10px;font-size:12px;font-weight:800;white-space:nowrap}
 .hc-patient-data-408{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}
 .hc-patient-data-408>div{min-width:0;background:var(--card,#fff);border:1px solid var(--border,#dbe3ee);border-radius:12px;padding:9px 11px}
 .hc-patient-data-408 span{display:block;color:var(--muted,#64748b);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.02em}
@@ -2066,29 +2065,231 @@ body.dark .agenda-patient-evolve-403:hover{background:rgba(157,177,255,.12);colo
 .hc-evolution-card-409{width:min(1180px,calc(100vw - 28px));max-height:calc(100vh - 28px);overflow:auto}
 .hc-patient-title-actions409{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .hc-invalid-date409{margin-top:5px;color:#b45309;font-size:12px;font-weight:800}
-.hc-context-cards409{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin:14px 0}
-.hc-context-cards409>div{border:1px solid var(--border,#dbe3ee);border-radius:14px;padding:12px 14px;background:var(--soft,#f8fafc);min-width:0}
-.hc-context-cards409 span{display:block;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.035em;color:var(--muted,#64748b);margin-bottom:5px}
-.hc-context-cards409 strong{display:block;line-height:1.3;overflow-wrap:anywhere}
-.hc-permanent-data409{border:1px solid #bfd8e3;background:#f5fbfd;border-radius:16px;padding:15px;margin:12px 0 16px}
-.hc-permanent-title409 h3{margin:0 0 3px;font-size:17px}.hc-permanent-title409 p{margin:0 0 12px}
+.hc-permanent-data409{border:1px solid #bfd8e3;background:#f5fbfd;border-radius:16px;padding:12px 15px;margin:12px 0 16px}
+.hc-permanent-title409 h3{margin:0 0 3px;font-size:17px}.hc-permanent-title409 p{margin:0 0 10px}
 .hc-permanent-grid409{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
 .hc-permanent-grid409 label{display:block;font-weight:800;margin-bottom:6px}
-.hc-permanent-grid409 textarea{width:100%;min-height:88px;resize:vertical}
+.hc-permanent-grid409 textarea{width:100%;min-height:68px;resize:vertical}
 .hc-patient-edit-card409{width:min(900px,calc(100vw - 28px));max-height:calc(100vh - 28px);overflow:auto}
 .hc-patient-edit-grid409 small{display:block;color:var(--muted,#64748b);margin-top:5px;font-weight:700}
 .hc-patient-banner-408 .hc-patient-title-408{gap:16px}
 .hc-evolution-grid-408 .hc-motive-field-408 input{min-height:48px}
-.hc-evolution-grid-408 .hc-main-evolution-408 textarea{min-height:210px}
+/* FASE 5 UI Interna V1 (Hoja de evolución) - el textarea de Evolución/
+   examen físico es el centro de la pantalla: más alto, tipografía más
+   cómoda para escribir/dictar. */
+.hc-evolution-grid-408 .hc-main-evolution-408 textarea{min-height:280px;font-size:15.5px;line-height:1.5}
 @media(max-width:1100px){.patients-directory-head409,.patients-directory-row409{grid-template-columns:minmax(200px,1.4fr) 110px 80px minmax(135px,1fr) minmax(140px,1fr)}.patients-directory-head409>div:last-child,.patients-directory-row409>div:last-child{display:none}}
 @media(max-width:800px){
   .patients-directory-head409{display:none}
   .patients-directory-row409{display:grid;grid-template-columns:1fr 1fr;gap:8px 14px;padding:14px}
   .patients-directory-row409>div{min-width:0}.patients-directory-row409>div:not(.patients-name409)::before{content:attr(data-label);display:block;font-size:10px;font-weight:800;text-transform:uppercase;color:var(--muted,#64748b);margin-bottom:2px}
   .patients-name409{grid-column:1/-1;font-size:16px}.patients-email409{display:block!important}
-  .hc-context-cards409,.hc-permanent-grid409{grid-template-columns:1fr}
+  .hc-permanent-grid409{grid-template-columns:1fr}
 }
 @media(max-width:520px){.patients-directory-row409{grid-template-columns:1fr}.patients-name409{grid-column:auto}.hc-patient-title-actions409{align-items:flex-start;flex-direction:column}.hc-evolution-card-409{padding:14px}}
+
+/* UI Interna V1 - Hoja de evolución / Nueva evolución: espacio de trabajo
+   rápido del médico. .hc-context-cards409 (3 tarjetas Fecha/Profesional/
+   Vinculación) se reemplazó por esta línea de texto, debajo del nombre. */
+.hc-evo-meta411e{margin:2px 0 0}
+
+/* FASE 3 - Contexto del turno (derivante/motivo/observación clínica),
+   solo lectura: se lee directo de la atención vinculada (fuente única),
+   nunca se copia a la evolución. Estilo deliberadamente "no-input" (sin
+   fondo de campo editable) para que se perciba como referencia, no como
+   un formulario más. Solo aparece si hay atención vinculada. */
+.hc-episode-context411e{margin-top:12px;padding-top:12px;border-top:1px dashed var(--border,#dbe3ee)}
+.hc-episode-context-title411e{display:block;font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.035em;color:var(--muted,#64748b);margin-bottom:8px}
+.hc-episode-context-grid411e{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px 16px}
+.hc-episode-context-grid411e .full{grid-column:1/-1}
+.hc-episode-context-grid411e span{display:block;color:var(--muted,#64748b);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.02em}
+.hc-episode-context-grid411e strong{display:block;margin-top:2px;font-weight:600;overflow-wrap:anywhere}
+@media(max-width:600px){.hc-episode-context-grid411e{grid-template-columns:1fr}}
+
+/* FASE 4 - Signos vitales: la clase no tenía NINGÚN estilo (quedaban como
+   una lista de <label> apilados). Grid compacto, cómodo con teclado
+   numérico en iPad/celular (inputmode ya estaba). TA agrupa sistólica y
+   diastólica en una sola celda "120 / 80", como pide el mockup. El
+   "previo" es texto de referencia (hc-vital-prev410) que ya arma
+   openEvolutionModalHC - JAMÁS se copia a los inputs. */
+.hc-vitals-grid410{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:10px;margin-top:10px}
+.hc-vitals-grid410 label{display:flex;flex-direction:column;gap:4px;font-weight:800;font-size:12.5px;color:var(--text,#111827)}
+.hc-vitals-grid410 input{width:100%;height:42px}
+.hc-vital-prev410{font-weight:600;font-size:11px;color:var(--muted,#64748b);text-transform:none;letter-spacing:0}
+.hc-vital-ta410{display:flex;flex-direction:column;gap:4px}
+.hc-vital-ta-label410{font-weight:800;font-size:12.5px;color:var(--text,#111827)}
+.hc-vital-ta-inputs410{display:flex;align-items:center;gap:6px}
+.hc-vital-ta-inputs410 input{width:100%;height:42px;text-align:center}
+.hc-vital-ta-inputs410 span{color:var(--muted,#64748b);font-weight:800}
+@media(max-width:900px){.hc-vitals-grid410{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:520px){.hc-vitals-grid410{grid-template-columns:repeat(2,minmax(0,1fr))}}
+
+/* FASE 7 - Evoluciones previas como <details> (mismo recurso ya probado en
+   Liquidación de Listado/filtros y Herramientas de HC), cerrado por
+   defecto. Igual que en Liquidación: el <summary> se saca de su
+   list-item nativo (rompía dentro de layouts flex/grid) y usa su propio
+   display:flex + marcador manual ▾/▴. */
+.hc-prev-evolutions410{margin-top:14px;border:1px solid var(--border,#dbe3ee);border-radius:16px;background:var(--soft,#f8fafc)}
+.hc-prev-summary410{display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;font-weight:800;color:var(--text,#111827);list-style:none}
+.hc-prev-summary410::-webkit-details-marker{display:none}
+.hc-prev-summary410::after{content:'▾';margin-left:auto;color:var(--muted,#64748b);font-size:12px}
+.hc-prev-evolutions410[open] .hc-prev-summary410::after{content:'▴'}
+.hc-prev-count410{font-weight:600;font-size:12px;color:var(--muted,#64748b);text-transform:none}
+.hc-prev-body410{padding:2px 14px 14px;display:flex;flex-direction:column;gap:10px}
+.hc-prev-head410:empty{display:none}
+.hc-prev-actions411{display:flex;gap:8px;flex-wrap:wrap}
+#hcPrevList411{display:flex;flex-direction:column;gap:8px}
+#hcPrevList411 article{border:1px solid var(--border,#dbe3ee);border-radius:12px;padding:9px 11px;background:var(--card,#fff)}
+#hcPrevList411 article strong{display:block;font-size:12.5px;color:var(--muted,#64748b);font-weight:800}
+#hcPrevList411 article span{display:block;margin-top:2px}
+#hcPrevList411 article small{display:block;margin-top:3px;color:var(--muted,#64748b)}
+#hcPrevList411 article p{margin:6px 0 0;white-space:pre-wrap}
+.hc-continue-panel411{margin-top:4px;padding:12px;border:1px solid var(--border,#dbe3ee);border-radius:12px;background:var(--card,#fff)}
+.hc-continue-panel411 p{margin:4px 0 10px}
+.hc-continue-options411{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px 14px;margin-bottom:10px}
+.hc-continue-options411 label{display:flex;align-items:center;gap:6px;font-weight:600}
+.hc-continue-options411 input{width:auto}
+.hc-continue-actions411{display:flex;justify-content:flex-end;gap:8px}
+@media(max-width:520px){.hc-continue-options411{grid-template-columns:1fr}}
+
+/* FASE 8 - botonera: Eliminar (si corresponde) se separa a la izquierda
+   con margin-right:auto - Cancelar/Guardar siguen agrupados a la derecha
+   por el justify-content:flex-end ya existente en .hc-modal-actions
+   (compartida con otros modales, sin tocarla). Sin Eliminar, el layout
+   queda exactamente igual que antes. */
+#hcDeleteEvolucion411e{margin-right:auto}
+
+/* UI Interna V1 - Hoja de evolución: pasada de color/superficie/contraste,
+   2ª vuelta (sin tocar estructura, ids, handlers, cálculos, tamaños ni
+   responsive). La 1ª vuelta ya reemplazó var(--soft,#f8fafc)/
+   var(--border,#dbe3ee) -que resolvían casi al blanco del modal- por un
+   set propio de tokens; esta vuelta SUBE el contraste de esos mismos
+   tokens (~10-15%: overlay más opaco, borde de inputs más marcado,
+   sombras un poco más presentes) y agrega tokens de "identidad por
+   sección" (tintes muy lavados derivados del petroleo/teal de marca,
+   var(--primary)), para que cada bloque (paciente/contexto del turno/
+   antecedentes-evoluciones previas/signos vitales/zona de escritura) se
+   reconozca por color antes de leer el texto, sin salir de la gama
+   azul-petróleo-teal-gris de CardioLink. Todo sigue prefijado
+   #hcEvolutionModal - no toca #hcPacienteDetalle (HC) ni Ficha del
+   paciente. */
+#hcEvolutionModal{
+  --hc-evo-overlay:rgba(24,35,50,.62);
+  --hc-evo-modal-bg:#e9eef0;
+  --hc-evo-card-bg:#ffffff;
+  --hc-evo-card-border:#c2d3da;
+  --hc-evo-input-border:#85a9b7;
+  --hc-evo-hover:rgba(18,63,86,.08);
+  --hc-evo-focus-ring:rgba(18,63,86,.22);
+  --hc-evo-shadow-card:0 1px 3px rgba(15,35,55,.08);
+  --hc-evo-shadow-modal:0 22px 55px rgba(15,23,42,.20);
+  --hc-evo-text-label:#4f6b78;
+  /* Tintes de identidad por sección - todos derivados de var(--primary),
+     muy lavados, con un borde algo más marcado a juego. */
+  --hc-evo-tint-petrol:#dbe7eb;      /* A: paciente + acento de la zona de escritura */
+  --hc-evo-tint-petrol-border:#9dc0cb;
+  --hc-evo-tint-slate:#e5e8ec;       /* B: contexto del turno / derivante */
+  --hc-evo-tint-slate-border:#c1cad1;
+  --hc-evo-tint-teal:#dfebee;        /* C: antecedentes/datos permanentes + evoluciones previas */
+  --hc-evo-tint-teal-border:#a8cad3;
+  --hc-evo-tint-blue:#e2e7ed;        /* D: signos vitales */
+  --hc-evo-tint-blue-border:#b4c6d2;
+  --hc-evo-tint-diag:#e6eaee;        /* Impresión diagnóstica - azul grisáceo */
+  --hc-evo-tint-plan:#e1eaec;        /* Conducta/plan - teal grisáceo, matiz muy cercano al de diagnóstico */
+  background:var(--hc-evo-overlay);
+}
+body.dark #hcEvolutionModal{
+  --hc-evo-overlay:rgba(2,6,12,.78);
+  --hc-evo-modal-bg:#101a22;
+  --hc-evo-card-bg:#1d2c3a;
+  --hc-evo-card-border:#33586c;
+  --hc-evo-input-border:#4c7c8f;
+  --hc-evo-hover:rgba(95,167,194,.14);
+  --hc-evo-focus-ring:rgba(56,178,204,.35);
+  --hc-evo-shadow-card:0 1px 3px rgba(0,0,0,.40);
+  --hc-evo-shadow-modal:0 22px 55px rgba(0,0,0,.60);
+  --hc-evo-text-label:#8fb2bf;
+  --hc-evo-tint-petrol:#1b2f3a;--hc-evo-tint-petrol-border:#2e5164;
+  --hc-evo-tint-slate:#1b2430;--hc-evo-tint-slate-border:#303f52;
+  --hc-evo-tint-teal:#162e37;--hc-evo-tint-teal-border:#29525d;
+  --hc-evo-tint-blue:#192631;--hc-evo-tint-blue-border:#2c4257;
+  --hc-evo-tint-diag:#1c2530;
+  --hc-evo-tint-plan:#17262c;
+}
+/* Nivel 2: modal principal - ahora un gris azulado/petróleo bien lavado
+   pero perceptible (antes #f5f7f8, casi neutro). */
+#hcEvolutionModal .hc-modal-card{background:var(--hc-evo-modal-bg);box-shadow:var(--hc-evo-shadow-modal)}
+#hcEvolutionModal .hc-modal-head h2{color:var(--primary,#123f56)}
+/* A. Cabecera / datos del paciente: el bloque más identificable de la
+   pantalla - tinte petróleo, borde teal, nombre con un poco más de peso
+   (sin cambiar el tamaño de fuente) y labels secundarios en azul
+   grisáceo marcado. */
+#hcEvolutionModal .hc-patient-banner-408{background:var(--hc-evo-tint-petrol);border-color:var(--hc-evo-tint-petrol-border);box-shadow:var(--hc-evo-shadow-card)}
+#hcEvolutionModal .hc-patient-title-408 h3{font-weight:800}
+#hcEvolutionModal .hc-evo-meta411e,
+#hcEvolutionModal .hc-patient-data-408 span{color:var(--hc-evo-text-label)}
+/* Datos individuales del paciente (DNI/fecha nacimiento/edad/sexo/OS/
+   afiliado/teléfono/email): celdas blancas bien definidas, no "Excel". */
+#hcEvolutionModal .hc-patient-data-408>div{background:var(--hc-evo-card-bg);border-color:var(--hc-evo-card-border)}
+/* B. Contexto del turno (derivante/motivo/observación clínica): tono
+   azul grisáceo distinto del bloque del paciente - ya no es solo un
+   borde punteado arriba, pasa a tener superficie propia. */
+#hcEvolutionModal .hc-episode-context411e{background:var(--hc-evo-tint-slate);border:1px solid var(--hc-evo-tint-slate-border);border-radius:12px;padding:10px 12px;margin-top:12px}
+/* C. Antecedentes/alergias/medicación + Evoluciones previas: familia
+   teal, título en petróleo. */
+#hcEvolutionModal .hc-permanent-data409,
+#hcEvolutionModal .hc-prev-evolutions410{background:var(--hc-evo-tint-teal);border-color:var(--hc-evo-tint-teal-border);box-shadow:var(--hc-evo-shadow-card)}
+#hcEvolutionModal .hc-permanent-title409 h3,
+#hcEvolutionModal .hc-prev-summary410{color:var(--primary,#123f56)}
+/* Evolución anterior desplegada: card blanca con acento de color en la
+   fecha (mismo #hcPrevList411 de siempre, sin tocar su JS). */
+#hcEvolutionModal #hcPrevList411 article{background:var(--hc-evo-card-bg);border-color:var(--hc-evo-card-border)}
+#hcEvolutionModal #hcPrevList411 article strong{color:var(--primary,#123f56)}
+#hcEvolutionModal .hc-continue-panel411{background:var(--hc-evo-card-bg);border-color:var(--hc-evo-card-border);box-shadow:var(--hc-evo-shadow-card)}
+/* D. Signos vitales y antropometría: tinte azulado propio, reconocible
+   antes de leer el título. */
+#hcEvolutionModal .hc-vitals-section410{background:var(--hc-evo-tint-blue);border:1px solid var(--hc-evo-tint-blue-border);border-radius:16px;padding:14px 15px;box-shadow:var(--hc-evo-shadow-card)}
+/* Nivel de inputs/textareas en todo el modal: blanco puro, borde
+   marcadamente más visible que las cards, foco en petróleo de marca. */
+#hcEvolutionModal input,#hcEvolutionModal select,#hcEvolutionModal textarea{
+  background:var(--hc-evo-card-bg);
+  border-color:var(--hc-evo-input-border);
+}
+#hcEvolutionModal #hcImc410{background:var(--hc-evo-modal-bg)}
+#hcEvolutionModal input:focus,#hcEvolutionModal select:focus,#hcEvolutionModal textarea:focus{
+  border-color:var(--primary,#123f56);
+  box-shadow:0 0 0 3px var(--hc-evo-focus-ring);
+  outline:none;
+}
+/* E. Zona de escritura clínica (Motivo/Evolución/Diagnóstico/Conducta):
+   zona protagonista - se apoya sobre el mismo tinte petróleo que la
+   cabecera del paciente (misma "identidad fuerte"), SIN colorear los
+   textareas (siguen blancos por la regla de arriba). Diagnóstico y
+   conducta llevan matices casi idénticos entre sí (azul grisáceo / teal
+   grisáceo) dentro de la misma superficie. */
+#hcEvolutionModal .hc-evolution-grid-408{background:var(--hc-evo-tint-petrol);border:1px solid var(--hc-evo-tint-petrol-border);border-radius:16px;padding:14px}
+#hcEvolutionModal .hc-evolution-grid-408 label{color:var(--primary,#123f56)}
+#hcEvolutionModal .hc-main-evolution-408{border-left:4px solid var(--primary,#123f56);padding-left:12px}
+#hcEvolutionModal .hc-evolution-grid-408>div:nth-child(3){background:var(--hc-evo-tint-diag);border-radius:10px;padding:8px 10px}
+#hcEvolutionModal .hc-evolution-grid-408>div:nth-child(4){background:var(--hc-evo-tint-plan);border-radius:10px;padding:8px 10px}
+/* Botones secondary dentro del modal (Editar ficha, Copiar DNI/teléfono/
+   email/afiliado/datos, Cancelar): antes muy lavados (#dfe9ee), un
+   escalón más de presencia sin competir con el primary. */
+#hcEvolutionModal button.secondary{background:#cfe0e6;color:#123141;border:1px solid #a9c5cd}
+#hcEvolutionModal button.secondary:hover{background:#bcd3da}
+body.dark #hcEvolutionModal button.secondary{background:#28414f;color:#dceef3;border-color:#3d6272}
+body.dark #hcEvolutionModal button.secondary:hover{background:#31505f}
+/* RCTA, solo dentro de este modal (aparece en .hc-patient-title-actions409
+   vía addButton4095): el estilo global de .rcta-button4095 es violeta
+   saturado (#7c3aed), fuera de la paleta CardioLink. Acá se lo alinea al
+   teal institucional (sin cambios respecto de la 1ª vuelta, ya estaba
+   correcto) - no se toca la clase global (sigue violeta en HC y Ficha
+   del paciente, fuera del alcance de este pedido). */
+#hcEvolutionModal .rcta-button4095{background:var(--hc-evo-card-bg)!important;color:var(--primary,#123f56)!important;border-color:var(--primary,#123f56)!important}
+#hcEvolutionModal .rcta-button4095:hover{background:var(--hc-evo-hover)!important;border-color:var(--primary,#123f56)!important}
+/* Barra inferior de acciones: apoyada sobre una franja definida en vez de
+   flotar sobre el mismo blanco del modal. */
+#hcEvolutionModal .hc-modal-actions{border-top:1px solid var(--hc-evo-card-border);background:var(--hc-evo-modal-bg)}
 
 /* ===== CardioLink 4.0.9.2.1 · hotfix apertura de ficha desde padrón ===== */
 .patients-directory-row409[data-patient-open4091]{cursor:pointer}
