@@ -1767,9 +1767,129 @@ html body.app-ready-360 .sidebar #btnCerrarSesion{display:inline-flex!important;
 @media(max-width:560px){.estimacion-editor-3102,.estimacion-resumen-3102{grid-template-columns:1fr}.estimacion-grupo-3102 header{flex-direction:column}}
 
 /* ===== CardioLink HC 4.0 · Fase 1 ===== */
-.hc-shell{padding:28px}.hc-title-row{display:flex;justify-content:space-between;align-items:flex-start;gap:18px}.hc-beta-badge{background:#e0f2fe;color:#075985;border:1px solid #bae6fd;border-radius:999px;padding:8px 12px;font-weight:800;white-space:nowrap}.hc-search-row{display:flex;gap:12px;align-items:center;margin:22px 0}.hc-search-field{flex:1}.hc-search-field input{width:100%}.hc-layout{display:grid;grid-template-columns:minmax(260px,340px) minmax(0,1fr);gap:18px;align-items:start}.hc-patient-list,.hc-detail{border:1px solid var(--border,#dbe3ee);border-radius:20px;background:var(--card,#fff);padding:16px;min-height:420px}.hc-result-item{display:block;width:100%;text-align:left;border:1px solid var(--border,#dbe3ee);background:var(--soft,#f8fafc);border-radius:14px;padding:13px 14px;margin-top:10px;cursor:pointer}.hc-result-item.active{border-color:#0f4c5c;background:#e6f3f6}.hc-result-item strong,.hc-result-item span{display:block}.hc-result-item span{font-size:13px;color:var(--muted,#64748b);margin-top:3px}.hc-empty{display:flex;min-height:360px;flex-direction:column;justify-content:center;align-items:center;text-align:center;color:var(--muted,#64748b);gap:8px}.hc-patient-header{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;border-bottom:1px solid var(--border,#dbe3ee);padding-bottom:16px;margin-bottom:18px}.hc-patient-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}.hc-summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:14px 0 22px}.hc-summary-card{border:1px solid var(--border,#dbe3ee);border-radius:14px;padding:12px;background:var(--soft,#f8fafc)}.hc-summary-card span{display:block;color:var(--muted,#64748b);font-size:12px}.hc-summary-card strong{display:block;margin-top:4px}.hc-timeline{position:relative;margin-top:16px}.hc-event{border-left:4px solid #0f4c5c;border-radius:14px;background:var(--soft,#f8fafc);padding:14px 16px;margin:12px 0;box-shadow:0 2px 8px rgba(15,23,42,.04)}.hc-event.attention{border-left-color:#6366f1}.hc-event-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.hc-event-meta{color:var(--muted,#64748b);font-size:13px}.hc-event-section{margin-top:10px}.hc-event-section label{display:block;font-size:12px;color:var(--muted,#64748b);font-weight:800;text-transform:uppercase}.hc-event-section p{white-space:pre-wrap;margin:4px 0 0}.hc-lock{font-size:12px;border-radius:999px;padding:5px 8px;background:#f1f5f9;color:#475569}.hc-modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.58);z-index:9999;display:flex;align-items:center;justify-content:center;padding:18px}.hc-modal-card{width:min(900px,100%);max-height:94vh;overflow:auto;background:var(--card,#fff);border-radius:22px;padding:22px;box-shadow:0 30px 80px rgba(0,0,0,.28)}.hc-modal-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start}.hc-modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.hc-modal-grid .full{grid-column:1/-1}.hc-modal-grid textarea{min-height:105px;resize:vertical}.hc-modal-meta{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}.hc-modal-meta div{background:var(--soft,#f8fafc);border-radius:12px;padding:10px}.hc-modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px;position:sticky;bottom:-22px;background:var(--card,#fff);padding:14px 0 2px}.hc-clinical-summary{border:1px solid var(--border,#dbe3ee);border-radius:16px;padding:14px;margin-bottom:20px}.hc-clinical-summary-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.hc-clinical-summary textarea{min-height:84px}.hc-print-only{display:none}
-@media(max-width:900px){.hc-layout{grid-template-columns:1fr}.hc-patient-list{min-height:auto}.hc-summary-grid,.hc-clinical-summary-grid{grid-template-columns:1fr 1fr}.hc-patient-header{flex-direction:column}.hc-patient-actions{justify-content:flex-start}.hc-modal-grid{grid-template-columns:1fr}.hc-modal-grid .full{grid-column:auto}}
+.hc-shell{padding:20px}.hc-title-row{display:flex;justify-content:space-between;align-items:flex-start;gap:18px}.hc-search-row{display:flex;gap:12px;align-items:center;margin:22px 0}.hc-search-field{flex:1}.hc-search-field input{width:100%}.hc-detail{border:1px solid var(--border,#dbe3ee);border-radius:20px;background:var(--card,#fff);padding:16px;min-height:420px}.hc-result-item{display:block;width:100%;text-align:left;border:1px solid var(--border,#dbe3ee);background:var(--soft,#f8fafc);border-radius:14px;padding:13px 14px;margin-top:10px;cursor:pointer}.hc-result-item.active{border-color:#0f4c5c;background:#e6f3f6}.hc-result-item strong,.hc-result-item span{display:block}.hc-result-item span{font-size:13px;color:var(--muted,#64748b);margin-top:3px}.hc-empty{display:flex;min-height:360px;flex-direction:column;justify-content:center;align-items:center;text-align:center;color:var(--muted,#64748b);gap:8px}.hc-patient-header{display:flex;justify-content:space-between;gap:14px;align-items:flex-start;border-bottom:1px solid var(--border,#dbe3ee);padding-bottom:16px;margin-bottom:18px}.hc-patient-actions{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-start}.hc-summary-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:14px 0 22px}.hc-summary-card{border:1px solid var(--border,#dbe3ee);border-radius:14px;padding:12px;background:var(--soft,#f8fafc)}.hc-summary-card span{display:block;color:var(--muted,#64748b);font-size:12px}.hc-summary-card strong{display:block;margin-top:4px}.hc-timeline{position:relative;margin-top:16px}.hc-event{border-left:4px solid #0f4c5c;border-radius:14px;background:var(--soft,#f8fafc);padding:14px 16px;margin:12px 0;box-shadow:0 2px 8px rgba(15,23,42,.04)}.hc-event.attention{border-left-color:#6366f1}.hc-event-head{display:flex;justify-content:space-between;gap:12px;align-items:flex-start}.hc-event-meta{color:var(--muted,#64748b);font-size:13px}.hc-event-section{margin-top:10px}.hc-event-section label{display:block;font-size:12px;color:var(--muted,#64748b);font-weight:800;text-transform:uppercase}.hc-event-section p{white-space:pre-wrap;margin:4px 0 0}.hc-lock{font-size:12px;border-radius:999px;padding:5px 8px;background:#f1f5f9;color:#475569}.hc-modal-overlay{position:fixed;inset:0;background:rgba(15,23,42,.58);z-index:9999;display:flex;align-items:center;justify-content:center;padding:18px}.hc-modal-card{width:min(900px,100%);max-height:94vh;overflow:auto;background:var(--card,#fff);border-radius:22px;padding:22px;box-shadow:0 30px 80px rgba(0,0,0,.28)}.hc-modal-head{display:flex;justify-content:space-between;gap:14px;align-items:flex-start}.hc-modal-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.hc-modal-grid .full{grid-column:1/-1}.hc-modal-grid textarea{min-height:105px;resize:vertical}.hc-modal-meta{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:14px 0}.hc-modal-meta div{background:var(--soft,#f8fafc);border-radius:12px;padding:10px}.hc-modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px;position:sticky;bottom:-22px;background:var(--card,#fff);padding:14px 0 2px}.hc-clinical-summary{border:1px solid var(--border,#dbe3ee);border-radius:16px;padding:14px;margin-bottom:20px}.hc-clinical-summary-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.hc-clinical-summary textarea{min-height:84px}.hc-print-only{display:none}
+@media(max-width:900px){.hc-summary-grid,.hc-clinical-summary-grid{grid-template-columns:1fr 1fr}.hc-patient-header{flex-direction:column}.hc-patient-actions{justify-content:flex-start}.hc-modal-grid{grid-template-columns:1fr}.hc-modal-grid .full{grid-column:auto}}
 @media(max-width:600px){.hc-shell{padding:18px}.hc-search-row{flex-direction:column}.hc-search-row button{width:100%}.hc-summary-grid,.hc-clinical-summary-grid,.hc-modal-meta{grid-template-columns:1fr}.hc-title-row{flex-direction:column}.hc-event-head{flex-direction:column}.hc-modal-overlay{padding:0}.hc-modal-card{border-radius:0;max-height:100vh;min-height:100vh}}
+
+/* UI Interna V1 - Historia Clínica: jerarquía visual y ergonomía clínica.
+   #hcPacienteDetalle pasa a ordenar visualmente sus hijos con `order`
+   (mismo recurso ya usado en Ficha del paciente y Listado/filtros), sin
+   tocar los puntos de inserción de renderDetailHC/enhanceHC402/
+   enhanceHC406: Nota interna sigue insertándose afterend de
+   .hc-patient-header, Documentos sigue insertándose afterend de
+   .hc-clinical-summary - acá solo se reordena la PRESENTACIÓN. Orden
+   visual resultante: cabecera → nota interna → resumen (evoluciones/
+   atenciones/último evento) → últimos signos vitales → resumen clínico
+   (antecedentes/alergias/medicación) → título + línea de tiempo clínica
+   (protagonista, Fase 6) → documentos clínicos (Fase 9: disponibles pero
+   sin competir con la narrativa, quedan al final). */
+#hcPacienteDetalle{display:flex;flex-direction:column}
+#hcPacienteDetalle>.hc-patient-header{order:1}
+#hcPacienteDetalle>.private-note-card-402{order:2}
+#hcPacienteDetalle>.hc-summary-grid{order:3}
+#hcPacienteDetalle>.hc-last-vitals410{order:4}
+#hcPacienteDetalle>.hc-clinical-summary{order:5}
+#hcPacienteDetalle>h3{order:6}
+#hcPacienteDetalle>.hc-timeline{order:7}
+#hcPacienteDetalle>.clinical-docs406{order:8;margin-top:8px}
+
+/* Últimos signos vitales (Fase 5): esta clase no tenía NINGÚN estilo -
+   ultimaEvolucionConVitalesHC() ya calculaba el último registro con
+   fecha, pero se veía como texto plano sin jerarquía. Referencia rápida y
+   compacta; no arrastra valores a una evolución nueva (eso lo sigue
+   controlando openEvolutionModalHC/hcPeso410 etc., sin tocar). */
+.hc-last-vitals410{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 8px;margin:0 0 14px;padding:9px 12px;border:1px solid var(--border,#dbe3ee);border-radius:12px;background:var(--soft,#f8fafc);font-size:13px}
+.hc-last-vitals410 span{color:var(--muted,#64748b);font-weight:700}
+.hc-last-vitals410 strong{color:var(--text,#111827)}
+
+/* Evoluciones en la línea de tiempo (Fase 6): renderEvolutionEventHC ya
+   marca cada evolución con hc-event-compact411 y arma la línea de
+   motivo+signos vitales en hc-event-compact-line411 - ninguna de las dos
+   clases tenía CSS, quedaban con el mismo peso visual que una atención
+   administrativa completa. Acá se hacen efectivamente más compactas
+   (menos padding/sombra) y se les da jerarquía tipográfica a esa línea. */
+.hc-event-compact411{padding:12px 14px;box-shadow:none}
+.hc-event-compact-line411{color:var(--muted,#64748b);font-size:12.5px;margin-top:3px}
+/* Antecedentes/alergias/medicación sin registrar (Fase 4): se marcan
+   discretas en vez de competir visualmente con los apartados que sí
+   tienen datos - sin ocupar más espacio que el resto. */
+.hc-empty-value410{color:var(--muted,#94a3b8);font-style:italic}
+
+/* Nota interna dentro de HC: visible pero sin dominar la cabecera - mismo
+   criterio y mismo componente que ya se compactó en Ficha del paciente
+   (#pacienteDetalle .private-note-card-402), acá escopeado a HC. No toca
+   la paleta ámbar existente (ya presente antes de este bloque) ni la
+   lógica de privacidad/guardado. */
+#hcPacienteDetalle .private-note-card-402{padding:10px 12px;margin:0 0 14px}
+#hcPacienteDetalle .private-note-card-402 p{font-size:13px}
+
+/* UI Interna V1 (HC, 2ª iteración) - HC como espacio de trabajo clínico:
+   sin columna lateral permanente, encabezado general reducido a lo
+   clínico, cabecera del paciente con jerarquía primaria/secundaria clara. */
+
+/* Herramientas de HC / Importación: <details> nativo (mismo recurso que
+   Liquidación en Listado/filtros), cerrado por defecto - agrupa Importar/
+   Deshacer lote/ayuda/Integraciones clínicas/Mi membrete y firma, que
+   antes ocupaban toda la cabecera antes de llegar a lo clínico. */
+.hc-tools-411d{margin:14px 0;border:1px solid var(--border,#dbe3ee);border-radius:14px;background:var(--soft,#f8fafc)}
+.hc-tools-summary411d{display:flex;align-items:center;gap:10px;padding:12px 14px;cursor:pointer;font-weight:700;color:var(--text,#111827);list-style:none}
+.hc-tools-summary411d::-webkit-details-marker{display:none}
+.hc-tools-summary411d::after{content:'▾';margin-left:auto;color:var(--muted,#64748b);font-size:12px}
+.hc-tools-411d[open] .hc-tools-summary411d::after{content:'▴'}
+.hc-tools-body411d{padding:2px 14px 14px;display:flex;flex-direction:column;gap:10px}
+.hc-tools-body411d .hc-integration-note407{margin:0}
+/* "HC 4.0 · Fase 2": sin protagonismo - discreta, ya no es una badge azul
+   sólida (antes .hc-beta-badge, ahora retirada por no usarse más). */
+.hc-version-tag411d{font-size:11px;font-weight:600;color:var(--muted,#94a3b8);white-space:nowrap}
+
+/* Buscador con resultados transitorios (panel/dropdown) en vez de columna
+   lateral permanente. #hcResultadosResumen/#hcResultadosPacientes son los
+   mismos ids de siempre - renderSearchHC() los sigue llenando exactamente
+   igual, acá solo se les da otro contenedor visual. */
+.hc-search-row411d{position:relative;flex-wrap:wrap}
+.hc-results-panel411d{position:absolute;top:calc(100% + 6px);left:0;right:0;z-index:60;background:var(--card,#fff);border:1px solid var(--border,#dbe3ee);border-radius:16px;box-shadow:0 18px 45px rgba(15,23,42,.18);max-height:60vh;overflow:auto;padding:10px}
+.hc-results-panel411d.hidden{display:none}
+.hc-results-panel411d .hc-result-item{margin-top:0}
+.hc-results-panel411d .hc-result-item+.hc-result-item{margin-top:8px}
+#hcCambiarPaciente411d{white-space:nowrap}
+
+/* #hcPacienteDetalle ya no comparte grid con la lista lateral (removida) -
+   pasa a usar el ancho completo del card. Los textos largos de la
+   narrativa clínica mantienen un ancho de lectura razonable sin dejar
+   grandes márgenes vacíos (Fase 6). */
+#hcPacienteDetalle.hc-detail{max-width:100%}
+.hc-event-section p{max-width:78ch}
+
+/* Cabecera del paciente: "+ Nueva evolución" y "Ficha paciente" primero
+   (Fase 3), después las secundarias frecuentes (Resumen clínico/
+   Documento/RCTA, insertadas por sus propios módulos sin tocar su punto
+   de inserción), y "Más acciones" al final agrupando lo específico/poco
+   frecuente (Editar ficha/Imprimir HC). */
+.hc-patient-actions [data-hc-new]{order:1}
+.hc-patient-actions [data-hc-open-ficha]{order:2}
+.hc-patient-actions [data-hc-edit-summary]{order:3}
+.hc-patient-actions [data-new-doc406]{order:4}
+.hc-patient-actions .rcta-button4095{order:5}
+.hc-patient-actions .hc-more-wrap411d{order:6}
+.hc-more-wrap411d{position:relative}
+.hc-more-menu411d{position:absolute;top:calc(100% + 6px);right:0;z-index:50;display:flex;flex-direction:column;gap:6px;min-width:170px;background:var(--card,#fff);border:1px solid var(--border,#dbe3ee);border-radius:12px;box-shadow:0 14px 34px rgba(15,23,42,.16);padding:8px}
+.hc-more-menu411d.hidden{display:none}
+.hc-more-menu411d button{width:100%;text-align:left}
+
+/* Atenciones administrativas: menor peso que una evolución médica real
+   (Fase 8) - fondo neutro en vez del mismo fondo/sombra que .hc-event,
+   sin el borde lateral grueso, tipografía más chica. No toca datos ni
+   handlers, solo el peso visual de renderAttentionEventHC. */
+.hc-event.attention{background:transparent;box-shadow:none;border-left-width:3px;padding:10px 14px 10px 13px}
+.hc-event.attention .hc-event-head strong{font-size:14px;font-weight:700}
+.hc-event.attention .hc-lock{background:transparent;padding:2px 0;color:var(--muted,#94a3b8)}
+
+@media(max-width:900px){
+  .hc-results-panel411d{left:-4px;right:-4px}
+}
+@media(max-width:600px){
+  .hc-more-menu411d{left:0;right:auto;min-width:200px}
+}
 
 /* ===== CardioLink 4.0.2 ===== */
 .doc-prof-fields-402{grid-column:1/-1;display:grid;grid-template-columns:repeat(2,minmax(220px,1fr));gap:12px;padding:16px;border:1px solid var(--border,#dbe3ee);border-radius:14px;background:var(--surface-soft,#f8fafc)}
@@ -2006,7 +2126,6 @@ body.dark .agenda-patient-evolve-403:hover{background:rgba(157,177,255,.12);colo
 
 /* ===== CardioLink Admin v4.0.9.6 · scroll independiente + RCTA asistido ===== */
 @media(min-width:901px){
-  .hc-patient-list{max-height:calc(100vh - 235px);min-height:520px;overflow-y:auto;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:12px;contain:layout paint}
   .pacientes-directory-layout409 .pacientes-lista{max-height:68vh!important;overflow-y:auto!important;overflow-x:auto!important;overscroll-behavior:contain;scrollbar-gutter:stable;padding-right:8px;contain:layout paint}
   .pacientes-directory-layout409 .patients-directory-head409{top:0}
 }
@@ -2018,7 +2137,7 @@ body.dark .agenda-patient-evolve-403:hover{background:rgba(157,177,255,.12);colo
 .rcta-copy-label4095{display:block;font-weight:800;margin-bottom:7px}.rcta-assist-card4095 textarea{width:100%;min-height:245px;resize:vertical;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;line-height:1.55}
 .rcta-assist-note4095{display:flex;flex-direction:column;gap:4px;margin-top:14px;padding:12px 14px;border-left:4px solid #7c3aed;background:#f5f3ff;border-radius:10px;color:#4c1d95}
 .rcta-actions4095{flex-wrap:wrap}.rcta-actions4095>*{min-width:130px}
-@media(max-width:900px){.rcta-actions4095>*{flex:1 1 190px}.hc-patient-list{max-height:none;overflow:visible}.pacientes-directory-layout409 .pacientes-lista{max-height:none!important;overflow:visible!important}}
+@media(max-width:900px){.rcta-actions4095>*{flex:1 1 190px}.pacientes-directory-layout409 .pacientes-lista{max-height:none!important;overflow:visible!important}}
 
 /* ===== CardioLink Admin v4.0.9.6 · hotfix de rendimiento ===== */
-.hc-patient-list .hc-patient-item,.patients-directory-row409{content-visibility:auto;contain-intrinsic-size:72px}
+.patients-directory-row409{content-visibility:auto;contain-intrinsic-size:72px}

@@ -8556,11 +8556,48 @@ function patientInfoTextHC(p,coverage){
     if(!requireClinicalHC())return;
     const p=patientByKeyHC(key),box=$hc('hcPacienteDetalle');if(!p||!box)return;
     hcPacienteSeleccionado=patientKeyHC(p); renderSearchHC();
+    // UI Interna V1 (HC, 2ª iteración) - los resultados de búsqueda son
+    // transitorios: al seleccionar un paciente se ocultan (sin tocar su
+    // contenido/lógica, solo la clase hidden) y aparece "Cambiar
+    // paciente" para volver a abrirlos.
+    $hc('hcResultadosPanel411d')?.classList.add('hidden');
+    $hc('hcCambiarPaciente411d')?.classList.remove('hidden');
     const sum=resumenHC(p),evs=evolucionesHC(p),ats=atencionesHC(p),timeline=timelineHC(p),age=ageHC(p);
-    box.innerHTML=`<div class="hc-patient-header"><div><h2>${escHC(nombrePacientePanel?.(p)||p.nombreCompleto||'Paciente')}</h2><p class="muted">DNI ${escHC(p.dni||'s/d')} · Nacimiento ${escHC(birthDisplayHC(p))} · ${escHC(age?age+' años':'Edad s/d')} · ${escHC(p.coberturaHabitual||'Cobertura s/d')}</p></div><div class="hc-patient-actions"><button class="primary" type="button" data-hc-new="${escHC(patientKeyHC(p))}">+ Nueva evolución</button><button class="secondary" type="button" data-hc-edit-patient409="${escHC(patientKeyHC(p))}" data-hc-edit-context409="detail">Editar ficha</button><button class="secondary" type="button" data-hc-edit-summary="${escHC(patientKeyHC(p))}">Resumen clínico</button><button class="secondary" type="button" data-hc-print="${escHC(patientKeyHC(p))}">Imprimir HC</button></div></div>
+    box.innerHTML=`<div class="hc-patient-header"><div><h2>${escHC(nombrePacientePanel?.(p)||p.nombreCompleto||'Paciente')}</h2><p class="muted">DNI ${escHC(p.dni||'s/d')} · Nacimiento ${escHC(birthDisplayHC(p))} · ${escHC(age?age+' años':'Edad s/d')} · ${escHC(p.coberturaHabitual||'Cobertura s/d')}</p></div></div>
+      <div class="hc-patient-actions">
+        <button class="primary" type="button" data-hc-new="${escHC(patientKeyHC(p))}">+ Nueva evolución</button>
+        <button class="secondary" type="button" data-hc-open-ficha="${escHC(patientKeyHC(p))}">Ficha paciente</button>
+        <button class="secondary" type="button" data-hc-edit-summary="${escHC(patientKeyHC(p))}">Resumen clínico</button>
+        <div class="hc-more-wrap411d">
+          <button class="secondary" type="button" id="hcMoreToggle411d" aria-expanded="false">Más acciones ▾</button>
+          <div class="hc-more-menu411d hidden" id="hcMoreMenu411d">
+            <button class="secondary" type="button" data-hc-edit-patient409="${escHC(patientKeyHC(p))}" data-hc-edit-context409="detail">Editar ficha</button>
+            <button class="secondary" type="button" data-hc-print="${escHC(patientKeyHC(p))}">Imprimir HC</button>
+          </div>
+        </div>
+      </div>
       <div class="hc-summary-grid"><div class="hc-summary-card"><span>Evoluciones</span><strong>${evs.length}</strong></div><div class="hc-summary-card"><span>Atenciones</span><strong>${ats.length}</strong></div><div class="hc-summary-card"><span>Último evento</span><strong>${timeline[0]?fmtDateTimeHC(timeline[0].date):'Sin registros'}</strong></div></div>${(()=>{const uv=ultimaEvolucionConVitalesHC(p);return uv?`<div class="hc-last-vitals410"><span>Últimos signos vitales registrados · ${escHC(fmtDateTimeHC(uv.fechaHora))}</span><strong>${vitalesHC(uv)}</strong></div>`:'';})()}
-      <div class="hc-clinical-summary"><div class="hc-clinical-summary-title409"><h3>Resumen clínico</h3><button class="secondary small-btn" type="button" data-hc-edit-summary="${escHC(patientKeyHC(p))}">Editar</button></div><div class="hc-clinical-summary-grid"><div><strong>Antecedentes</strong><p>${escHC(sum.antecedentes||'Sin registrar')}</p></div><div><strong>Alergias</strong><p>${escHC(sum.alergias||'Sin registrar')}</p></div><div><strong>Medicación habitual</strong><p>${escHC(sum.medicacion||'Sin registrar')}</p></div></div>${sum.alertas?`<div class="hc-event-section"><label>Alertas</label><p>${escHC(sum.alertas)}</p></div>`:''}</div>
+      <div class="hc-clinical-summary"><div class="hc-clinical-summary-title409"><h3>Resumen clínico</h3><button class="secondary small-btn" type="button" data-hc-edit-summary="${escHC(patientKeyHC(p))}">Editar</button></div><div class="hc-clinical-summary-grid"><div><strong>Antecedentes</strong><p class="${sum.antecedentes?'':'hc-empty-value410'}">${escHC(sum.antecedentes||'Sin registrar')}</p></div><div><strong>Alergias</strong><p class="${sum.alergias?'':'hc-empty-value410'}">${escHC(sum.alergias||'Sin registrar')}</p></div><div><strong>Medicación habitual</strong><p class="${sum.medicacion?'':'hc-empty-value410'}">${escHC(sum.medicacion||'Sin registrar')}</p></div></div>${sum.alertas?`<div class="hc-event-section"><label>Alertas</label><p>${escHC(sum.alertas)}</p></div>`:''}</div>
       <h3>Línea de tiempo clínica</h3><div class="hc-timeline">${timeline.length?timeline.map(x=>x.type==='evolution'?renderEvolutionEventHC(x.obj):renderAttentionEventHC(x.obj)).join(''):'<div class="hc-empty"><strong>Sin eventos</strong><span>Creá la primera evolución clínica.</span></div>'}</div>`;
+    // UI Interna V1 - FASE 1/3: "Recetar en RCTA" dependía solo del camino
+    // indirecto decorate4095 (disparado por el listener global de clicks,
+    // ~70ms después) y de leer el data-hc-new de OTRO botón ya insertado
+    // para saber qué paciente mostrar - por eso aparecía "varios segundos"
+    // después de abrir la ficha, igual que ya pasaba en Ficha del
+    // paciente. Acá se inserta en el mismo render, igual que ya hacen
+    // Nota interna (402) y Documento (406) en HC. No reemplaza a
+    // decorate4095 (addButton4095/window.CardioLinkRCTA4095.addButton ya
+    // es idempotente - sigue sirviendo de respaldo/limpieza ante
+    // revocación de permiso).
+    try{
+      const rcta=window.CardioLinkRCTA4095;
+      if(rcta&&typeof rcta.canUse==='function'&&rcta.canUse()){
+        setTimeout(()=>{
+          const actions=box.querySelector('.hc-patient-actions');if(!actions)return;
+          rcta.addButton(actions,rcta.patientKey(p),'Recetar en RCTA');
+        },0);
+      }
+    }catch(e){}
   }
   function puedeEliminarEvolucionHC(){
     try{return (typeof esMatiasDuenio==='function'&&esMatiasDuenio())||(typeof esAdminComun==='function'&&esAdminComun());}catch(e){return false;}
@@ -8705,7 +8742,35 @@ function patientInfoTextHC(p,coverage){
     search?.addEventListener('input',()=>{hcPaginaResultados=1;renderSearchHC(false);});
     search?.addEventListener('keydown',e=>{if(e.key==='Enter'){e.preventDefault();hcPaginaResultados=1;renderSearchHC(true);}});
     $hc('hcLimpiarBusqueda')?.addEventListener('click',()=>{if(search)search.value='';hcPaginaResultados=1;renderSearchHC(false);});
+    // UI Interna V1 (HC, 2ª iteración) - panel de resultados transitorio:
+    // se muestra al enfocar/escribir en el buscador o al tocar Buscar, y
+    // se oculta al elegir un paciente (dentro de renderDetailHC) o al
+    // hacer click afuera (delegación de abajo). No cambia en nada la
+    // lógica de búsqueda/filtro (renderSearchHC, resultPatientsHC,
+    // searchScoreHC) - solo agrega/quita la clase hidden del wrapper.
+    const mostrarPanelResultados411d=()=>$hc('hcResultadosPanel411d')?.classList.remove('hidden');
+    search?.addEventListener('focus',mostrarPanelResultados411d);
+    search?.addEventListener('input',mostrarPanelResultados411d);
+    $hc('hcBtnBuscar')?.addEventListener('click',mostrarPanelResultados411d);
+    $hc('hcCambiarPaciente411d')?.addEventListener('click',()=>{
+      mostrarPanelResultados411d();
+      if(search){search.value='';search.focus();}
+      hcPaginaResultados=1;renderSearchHC(false);
+    });
     document.addEventListener('click',e=>{
+      // UI Interna V1 (HC, 2ª iteración) - toggle de "Más acciones" (menú
+      // con Editar ficha/Imprimir HC) y cierre del panel de resultados al
+      // clickear afuera. Ninguno de los dos cambia handlers/permisos de
+      // las acciones que agrupan/despliegan.
+      const moreToggle411d=e.target.closest?.('#hcMoreToggle411d');
+      if(moreToggle411d){
+        e.preventDefault();
+        const menu=$hc('hcMoreMenu411d');
+        if(menu){const abierto=!menu.classList.contains('hidden');menu.classList.toggle('hidden');moreToggle411d.setAttribute('aria-expanded',abierto?'false':'true');}
+        return;
+      }
+      if(!e.target.closest?.('.hc-more-wrap411d'))$hc('hcMoreMenu411d')?.classList.add('hidden');
+      if(!e.target.closest?.('.hc-search-row411d'))$hc('hcResultadosPanel411d')?.classList.add('hidden');
       const protectedClinicalTarget=e.target.closest?.('[data-hc-patient],[data-hc-new],[data-hc-edit],[data-hc-delete411b1],[data-hc-edit-summary],[data-hc-edit-patient409],[data-hc-print],[data-open-hc]');
       if(protectedClinicalTarget&&!requireClinicalHC())return;
       const copyBtn=e.target.closest?.('[data-hc-copy408]');
@@ -8714,8 +8779,21 @@ function patientInfoTextHC(p,coverage){
       if(page&&!page.disabled){e.preventDefault();hcPaginaResultados=Number(page.dataset.hcPage)||1;renderSearchHC(false);$hc('hcResultadosResumen')?.scrollIntoView({behavior:'smooth',block:'nearest'});return;}
       const nav=e.target.closest?.('[data-section="hc"]');
       if(nav){setTimeout(()=>renderSearchHC(false),80);return;}
-      const t=e.target.closest('[data-hc-patient],[data-hc-new],[data-hc-edit],[data-hc-delete411b1],[data-hc-edit-summary],[data-hc-edit-patient409],[data-hc-print],[data-hc-close],[data-hc-close-summary],[data-hc-close-patient409],[data-open-hc]');if(!t)return;
-      if(t.dataset.hcPatient)renderDetailHC(t.dataset.hcPatient);else if(t.dataset.hcNew)openEvolutionModalHC(t.dataset.hcNew,'',t.dataset.atencionId||'');else if(t.dataset.hcEdit){const ev=data.evolucionesClinicas.find(x=>x.id===t.dataset.hcEdit);if(ev)openEvolutionModalHC(ev.pacienteId,ev.id,ev.atencionId||'');}else if(t.dataset.hcDelete411b1){eliminarEvolucionHCProtegida411B1(t.dataset.hcDelete411b1);}else if(t.dataset.hcEditSummary)editSummaryHC(t.dataset.hcEditSummary);else if(t.dataset.hcEditPatient409)openPatientEditHC(t.dataset.hcEditPatient409,t.dataset.hcEditContext409||'detail');else if(t.dataset.hcPrint)printHC(t.dataset.hcPrint);else if(t.hasAttribute('data-hc-close'))$hc('hcEvolutionModal')?.remove();else if(t.hasAttribute('data-hc-close-summary'))$hc('hcSummaryModal')?.remove();else if(t.hasAttribute('data-hc-close-patient409'))$hc('hcPatientEditModal409')?.remove();else if(t.dataset.openHc){showSection('hc');setTimeout(()=>renderDetailHC(t.dataset.openHc),40);}
+      const t=e.target.closest('[data-hc-patient],[data-hc-new],[data-hc-open-ficha],[data-hc-edit],[data-hc-delete411b1],[data-hc-edit-summary],[data-hc-edit-patient409],[data-hc-print],[data-hc-close],[data-hc-close-summary],[data-hc-close-patient409],[data-open-hc]');if(!t)return;
+      if(t.dataset.hcPatient)renderDetailHC(t.dataset.hcPatient);else if(t.dataset.hcNew)openEvolutionModalHC(t.dataset.hcNew,'',t.dataset.atencionId||'');else if(t.dataset.hcOpenFicha){
+        // FASE 2 UI Interna V1 (HC) - "Ficha paciente" navega a Pacientes y
+        // abre el panel de la Ficha para el mismo paciente (misma clave que
+        // ya usa buscarPacientePanelPorId: p.id, con fallback por DNI) -
+        // sin duplicar datos ni lógica administrativa, solo cruza a la otra
+        // vista del mismo paciente. Mismo patrón que ya usan openPatient360
+        // / openPatient411B para caer en el panel de Pacientes.
+        const key=t.dataset.hcOpenFicha;
+        showSection('pacientes');
+        setTimeout(()=>{
+          if(typeof seleccionarPacientePanel==='function')seleccionarPacientePanel(key);
+          document.getElementById('pacienteDetalle')?.scrollIntoView({behavior:'smooth',block:'start'});
+        },60);
+      }else if(t.dataset.hcEdit){const ev=data.evolucionesClinicas.find(x=>x.id===t.dataset.hcEdit);if(ev)openEvolutionModalHC(ev.pacienteId,ev.id,ev.atencionId||'');}else if(t.dataset.hcDelete411b1){eliminarEvolucionHCProtegida411B1(t.dataset.hcDelete411b1);}else if(t.dataset.hcEditSummary)editSummaryHC(t.dataset.hcEditSummary);else if(t.dataset.hcEditPatient409)openPatientEditHC(t.dataset.hcEditPatient409,t.dataset.hcEditContext409||'detail');else if(t.dataset.hcPrint)printHC(t.dataset.hcPrint);else if(t.hasAttribute('data-hc-close'))$hc('hcEvolutionModal')?.remove();else if(t.hasAttribute('data-hc-close-summary'))$hc('hcSummaryModal')?.remove();else if(t.hasAttribute('data-hc-close-patient409'))$hc('hcPatientEditModal409')?.remove();else if(t.dataset.openHc){showSection('hc');setTimeout(()=>renderDetailHC(t.dataset.openHc),40);}
     });
     // Mostrar pacientes desde el ingreso y volver a calcular tras la sincronización inicial.
     if(canAccessClinicalHC()){setTimeout(()=>renderSearchHC(false),50);setTimeout(()=>renderSearchHC(false),900);setTimeout(()=>renderSearchHC(false),2200);}
@@ -9705,7 +9783,14 @@ function patientInfoTextHC(p,coverage){
   }
   function enhanceHC406(){
     ensure406();const root=$406('hcPacienteDetalle');if(!root)return;if(!isMedical406()){root.querySelectorAll('[data-docs-section406],[data-new-doc406]').forEach(x=>x.remove());return;}const key=root.querySelector('[data-hc-new]')?.dataset.hcNew;if(!key)return;const p=patient406(key);if(!p)return;
-    const actions=root.querySelector('.hc-patient-actions');if(actions&&isMedical406()&&!actions.querySelector('[data-new-doc406]')){const b=document.createElement('button');b.className='secondary';b.type='button';b.dataset.newDoc406=key;b.textContent='+ Documento';actions.insertBefore(b,actions.querySelector('[data-hc-print]')||null);}
+    // UI Interna V1 (HC, 2ª iteración) - "Imprimir HC" ahora vive dentro
+    // del menú "Más acciones" (hc-more-menu411d), ya no como hijo directo
+    // de .hc-patient-actions, así que insertBefore ya no podía usarlo como
+    // referencia (insertBefore exige que el nodo de referencia sea hijo
+    // directo del contenedor). El orden visual final ("+ Documento" antes
+    // que "Más acciones") lo resuelve el order de styles.css, no el punto
+    // de inserción acá.
+    const actions=root.querySelector('.hc-patient-actions');if(actions&&isMedical406()&&!actions.querySelector('[data-new-doc406]')){const b=document.createElement('button');b.className='secondary';b.type='button';b.dataset.newDoc406=key;b.textContent='+ Documento';actions.appendChild(b);}
     if(!root.querySelector('[data-docs-section406]')){const summary=root.querySelector('.hc-clinical-summary');if(summary)summary.insertAdjacentHTML('afterend',docsSection406(p));else root.insertAdjacentHTML('beforeend',docsSection406(p));}
   }
   function enhancePatientFicha406(id){
@@ -9714,7 +9799,16 @@ function patientInfoTextHC(p,coverage){
     if(!root.querySelector('[data-docs-section406]')){const history=root.querySelector('.paciente-historial-wrap');if(history)history.insertAdjacentHTML('beforebegin',docsSection406(p));}
   }
   function injectIdentityToolbar406(){
-    const hc=$406('hc');if(!hc||$406('myIdentity406')||!isMedical406())return;const card=hc.querySelector('.card');if(!card)return;const b=document.createElement('button');b.id='myIdentity406';b.className='secondary my-identity406';b.type='button';b.textContent='Mi membrete y firma';const title=card.querySelector('h2');if(title)title.insertAdjacentElement('afterend',b);else card.prepend(b);
+    const hc=$406('hc');if(!hc||$406('myIdentity406')||!isMedical406())return;const card=hc.querySelector('.card');if(!card)return;const b=document.createElement('button');b.id='myIdentity406';b.className='secondary my-identity406';b.type='button';b.textContent='Mi membrete y firma';
+    // UI Interna V1 (HC, 2ª iteración) - "Mi membrete y firma" pasa a vivir
+    // dentro de "Herramientas de HC / Importación" (cerrado por defecto)
+    // en vez de al lado del título, para no competir con la atención
+    // diaria. Si por algún motivo ese bloque todavía no existe en el DOM,
+    // cae al comportamiento anterior (al lado del título) para no perder
+    // el acceso a la función.
+    const toolsBody=card.querySelector('.hc-tools-body411d');
+    if(toolsBody)toolsBody.prepend(b);
+    else{const title=card.querySelector('h2');if(title)title.insertAdjacentElement('afterend',b);else card.prepend(b);}
   }
   function wrapRenderConfig406(){
     const old=window.renderConfig;if(typeof old!=='function'||old.__v406)return;
@@ -10064,7 +10158,15 @@ function patientInfoTextHC(p,coverage){
     try{document.title=`CardioLink Admin v${VERSION_RCTA_4095}`;document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(x=>x.textContent=`v${VERSION_RCTA_4095}`);document.querySelectorAll('.login-meta').forEach(x=>x.textContent=`Versión ${VERSION_RCTA_4095} · 2026`);}catch(_){ }
   }
   if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',boot4095);else boot4095();
-  window.CardioLinkRCTA4095={open:openRctaModal4095,prepare:preparedText4095};
+  // UI Interna V1 (HC) - se agregan canUse/addButton/patientKey al mismo
+  // objeto ya expuesto, para que renderDetailHC (IIFE de Historia Clínica,
+  // más arriba en este archivo) pueda insertar "Recetar en RCTA" en el
+  // mismo render en vez de depender únicamente del camino indirecto
+  // (decorate4095 vía queueDecorate4096, que además identifica al
+  // paciente leyendo el data-hc-new de OTRO botón ya insertado). No
+  // reemplaza a decorate4095 - sigue activo como respaldo/limpieza ante
+  // revocación de permiso; addButton4095 ya es idempotente.
+  window.CardioLinkRCTA4095={open:openRctaModal4095,prepare:preparedText4095,canUse:canUseRcta4095,addButton:addButton4095,patientKey:patientKey4095};
 })();
 
 

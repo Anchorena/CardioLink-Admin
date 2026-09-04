@@ -502,43 +502,61 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
           <h2>Historia clínica</h2>
           <p class="muted">Evoluciones cronológicas vinculadas al paciente. Se pueden crear desde un turno o directamente desde la ficha.</p>
         </div>
-        <div class="hc-title-actions405">
-          <span class="hc-beta-badge">HC 4.0 · Fase 2</span>
-          <button class="secondary" type="button" id="btnImportEvolMedicloud405">Importar evoluciones de otra app</button>
-          <button class="secondary" type="button" id="btnUndoEvolMedicloud405">Deshacer último lote</button>
-          <input id="inputImportEvolMedicloud405" type="file" accept=".xls,.xlsx,.csv,text/html" hidden>
+      </div>
+
+      <!-- UI Interna V1 (HC, 2ª iteración) - Herramientas de HC / Importación:
+           agrupa lo que antes ocupaba toda la cabecera (importar, deshacer
+           lote, ayuda de importación, integraciones clínicas) en un bloque
+           secundario cerrado por defecto. Mismos ids/handlers de siempre,
+           solo reagrupados en un <details> (cerrado por defecto, sin JS
+           adicional) para que HC empiece directamente en lo clínico. -->
+      <details class="hc-tools-411d">
+        <summary class="hc-tools-summary411d">Herramientas de HC / Importación <span class="hc-version-tag411d">HC 4.0 · Fase 2</span></summary>
+        <div class="hc-tools-body411d">
+          <div class="hc-title-actions405">
+            <button class="secondary" type="button" id="btnImportEvolMedicloud405">Importar evoluciones de otra app</button>
+            <button class="secondary" type="button" id="btnUndoEvolMedicloud405">Deshacer último lote</button>
+            <input id="inputImportEvolMedicloud405" type="file" accept=".xls,.xlsx,.csv,text/html" hidden>
+          </div>
+          <div id="hcImportStatus405" class="hc-import-status405 muted"></div>
+          <details class="hc-import-help407">
+            <summary>Cómo importar evoluciones desde otra app</summary>
+            <ol>
+              <li>Tocá <strong>Importar evoluciones de otra app</strong> y elegí un archivo .xls o .xlsx compatible.</li>
+              <li>Revisá la vista previa: CardioLink vincula por DNI, detecta duplicados y marca los casos dudosos.</li>
+              <li>Confirmá el profesional autor y tocá <strong>Importar lote</strong>. Las evoluciones conservan su fecha original.</li>
+            </ol>
+            <p class="muted">No crea turnos ni movimientos de caja. El último lote puede deshacerse desde esta misma pantalla.</p>
+          </details>
+          <div class="hc-integration-note407">
+            <strong>Integraciones clínicas</strong>
+            <span>La vinculación con CardioLink Informes y EcoApp se hará por paciente (DNI + ID interno), profesional, tipo de estudio y fecha. Los PDF se asociarán a la misma línea de tiempo clínica.</span>
+          </div>
         </div>
-      </div>
-      <div id="hcImportStatus405" class="hc-import-status405 muted"></div>
-      <details class="hc-import-help407">
-        <summary>Cómo importar evoluciones desde otra app</summary>
-        <ol>
-          <li>Tocá <strong>Importar evoluciones de otra app</strong> y elegí un archivo .xls o .xlsx compatible.</li>
-          <li>Revisá la vista previa: CardioLink vincula por DNI, detecta duplicados y marca los casos dudosos.</li>
-          <li>Confirmá el profesional autor y tocá <strong>Importar lote</strong>. Las evoluciones conservan su fecha original.</li>
-        </ol>
-        <p class="muted">No crea turnos ni movimientos de caja. El último lote puede deshacerse desde esta misma pantalla.</p>
       </details>
-      <div class="hc-integration-note407">
-        <strong>Integraciones clínicas</strong>
-        <span>La vinculación con CardioLink Informes y EcoApp se hará por paciente (DNI + ID interno), profesional, tipo de estudio y fecha. Los PDF se asociarán a la misma línea de tiempo clínica.</span>
-      </div>
-      <div class="hc-search-row">
+
+      <!-- UI Interna V1 (HC, 2ª iteración) - buscador con resultados
+           transitorios (panel/dropdown) en vez de columna lateral
+           permanente. Mismos ids (#hcBuscarPaciente/#hcBtnBuscar/
+           #hcLimpiarBusqueda/#hcResultadosResumen/#hcResultadosPacientes)
+           y misma lógica de búsqueda/filtro/selección de siempre - lo
+           único que cambia es que el panel de resultados se muestra/oculta
+           en vez de quedar siempre visible como columna fija. -->
+      <div class="hc-search-row hc-search-row411d">
         <div class="field-with-clear hc-search-field">
           <input id="hcBuscarPaciente" placeholder="Buscar por apellido, nombre, DNI, teléfono o email" autocomplete="off">
           <button class="clear-search" type="button" id="hcLimpiarBusqueda" title="Limpiar">×</button>
         </div>
         <button class="primary" type="button" id="hcBtnBuscar">Buscar</button>
-      </div>
-      <div class="hc-layout">
-        <aside class="hc-patient-list">
+        <button class="secondary hidden" type="button" id="hcCambiarPaciente411d">Cambiar paciente</button>
+        <div id="hcResultadosPanel411d" class="hc-results-panel411d hidden">
           <div id="hcResultadosResumen" class="muted">Cargando pacientes…</div>
           <div id="hcResultadosPacientes"></div>
-        </aside>
-        <main id="hcPacienteDetalle" class="hc-detail">
-          <div class="hc-empty"><strong>Seleccioná un paciente</strong><span>Acá aparecerán su resumen clínico, evoluciones y atenciones.</span></div>
-        </main>
+        </div>
       </div>
+      <main id="hcPacienteDetalle" class="hc-detail">
+        <div class="hc-empty"><strong>Seleccioná un paciente</strong><span>Usá el buscador de arriba para encontrar su historia clínica.</span></div>
+      </main>
     </div>
   </section>
 
