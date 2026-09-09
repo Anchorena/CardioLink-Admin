@@ -168,6 +168,34 @@ body.dark{
   margin-top:14px;
 }
 
+/* UI Interna V1 (iteración 1) - jerarquía visual del sidebar. No se
+   reordena ni se renombra ningún data-section: "Clínico" y "Administrativo"
+   quedan con el peso de siempre; el último grupo (Configuración:
+   Instructivos/Configuración, el único que viene después de la última
+   etiqueta) baja de peso para leerse como secundario frente a la operación
+   diaria. :last-of-type ~ .nav sólo alcanza a los botones .nav que el
+   propio markup ya ubica después de esa etiqueta. */
+.nav-group-label:last-of-type{opacity:.65}
+.nav-group-label:last-of-type ~ .nav{opacity:.72;font-size:13.5px}
+.nav-group-label:last-of-type ~ .nav:hover,
+.nav-group-label:last-of-type ~ .nav.active{opacity:1}
+
+/* Badge de Pendientes: más visible cuando realmente hay pendientes. La
+   clase .zero (ya existente, ver app.js) sigue marcando "sin pendientes"
+   sin cambios; acá sólo se refuerza el caso contrario - no es una alerta
+   nueva, es el mismo badge de siempre con más peso cuando corresponde. */
+.nav-count383:not(.zero){box-shadow:0 0 0 2px rgba(200,30,30,.28);font-weight:800;transform:scale(1.05)}
+
+/* UI Interna V1 (iteración 1) - "Perfil activo" pierde peso visual frente
+   al buscador global de pacientes, que pasa a ser la acción protagonista
+   del topbar. No se toca tamaño/alto/alineación (las reglas con
+   !important en styles.css que igualan alto/padding con .global-search-360
+   siguen intactas, para no romper el layout) - sólo se le quita la
+   apariencia de "tarjeta" (fondo/sombra) y se atenúa la etiqueta. Sigue
+   siendo perfectamente usable, sin cambios de funcionalidad ni de permisos. */
+.topbar-tools .profile-box{background:transparent;box-shadow:none;border:1px solid var(--border,#dbe3ea)}
+.topbar-tools .profile-box label{font-weight:600;opacity:.7;font-size:11px}
+
 /* ---------- Semáforo de antigüedad en Pendientes ---------- */
 .pend-card383{
   border-left:4px solid transparent;

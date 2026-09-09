@@ -323,7 +323,6 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
           <option value="cancelado">Cancelado</option>
         </select></div>
         <button class="primary" type="button" id="btnAgendaActualizar">Actualizar</button>
-        <button class="secondary" type="button" id="btnAgendaHoy">Hoy</button>
       </div>
 
       <div class="agenda-legend">
@@ -459,15 +458,23 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
           <button class="secondary" type="button" id="btnPacientesDuplicados">Buscar duplicados</button>
         </div>
 
-        <div class="pacientes-import-zone">
-          <h4>Importar pacientes</h4>
-          <div class="pacientes-import-acciones">
-            <button class="secondary pacientes-btn-import" type="button" id="btnPacientesImportTextoWhatsapp">WhatsApp</button>
-            <button class="secondary pacientes-btn-import" type="button" id="btnPacientesImportTextoMedicloud">Otra app</button>
-            <button class="secondary pacientes-btn-import" type="button" id="btnPacientesImportExcel">Excel</button>
-            <button class="secondary pacientes-btn-import" type="button" id="btnImportEvolMedicloudPac407">Importar evoluciones</button>
+        <!-- UI Interna V1 (iteración 1) - "Importar pacientes" es una acción
+             ocasional, no diaria: se colapsa por defecto reutilizando el
+             mismo patrón <details> ya usado en HC ("Herramientas de HC /
+             Importación", ver sección #hc) en vez de un componente nuevo.
+             Mismos ids/handlers/botones de siempre, sin ningún cambio de
+             funcionalidad. -->
+        <details class="hc-tools-411d pacientes-import-zone">
+          <summary class="hc-tools-summary411d">Importar pacientes</summary>
+          <div class="hc-tools-body411d">
+            <div class="pacientes-import-acciones">
+              <button class="secondary pacientes-btn-import" type="button" id="btnPacientesImportTextoWhatsapp">WhatsApp</button>
+              <button class="secondary pacientes-btn-import" type="button" id="btnPacientesImportTextoMedicloud">Otra app</button>
+              <button class="secondary pacientes-btn-import" type="button" id="btnPacientesImportExcel">Excel</button>
+              <button class="secondary pacientes-btn-import" type="button" id="btnImportEvolMedicloudPac407">Importar evoluciones</button>
+            </div>
           </div>
-        </div>
+        </details>
         <input type="file" id="inputPacientesExcel" accept=".xlsx,.xls,.csv" hidden>
       </div>
     </div>

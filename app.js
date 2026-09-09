@@ -1230,7 +1230,6 @@ function init(){
 
   // Agenda / sala
   on('btnAgendaActualizar','click',renderAgenda);
-  on('btnAgendaHoy','click',()=>{if($('agendaFecha'))$('agendaFecha').value=todayISO();renderAgenda();});
   on('agendaFecha','change',renderAgenda);
   on('agendaProfesional','change',renderAgenda);
   on('agendaEstado','change',renderAgenda);
@@ -4080,7 +4079,6 @@ document.addEventListener('click',function(e){
 },true);
 function cardio290AsegurarBotones(){
   const b1=$('btnAgendaActualizar'); if(b1&&!b1.dataset.cardio290){b1.dataset.cardio290='1'; b1.addEventListener('click',e=>cardio290EjecutarBoton(b1,e));}
-  const b2=$('btnAgendaHoy'); if(b2&&!b2.dataset.cardio290){b2.dataset.cardio290='1'; b2.addEventListener('click',e=>cardio290EjecutarBoton(b2,e));}
 }
 document.addEventListener('DOMContentLoaded',cardio290AsegurarBotones);
 setTimeout(cardio290AsegurarBotones,500);
@@ -4204,7 +4202,6 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
   function cl291BotonesBasicos(){
     const bAct=$id('btnAgendaActualizar'); if(bAct && !bAct.dataset.cl291){ bAct.dataset.cl291='1'; bAct.addEventListener('click',e=>{e.preventDefault();renderAgenda();},true); }
-    const bHoy=$id('btnAgendaHoy'); if(bHoy && !bHoy.dataset.cl291){ bHoy.dataset.cl291='1'; bHoy.addEventListener('click',e=>{e.preventDefault(); if($id('agendaFecha'))$id('agendaFecha').value=todayISO(); renderAgenda();},true); }
   }
   document.addEventListener('DOMContentLoaded', cl291BotonesBasicos);
   setTimeout(cl291BotonesBasicos,500);
