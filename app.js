@@ -1369,8 +1369,19 @@ function showSection(id){
     // firma" nunca se insertaba, y al navegar después a HC no se volvía a
     // intentar. La función ya es idempotente (corta si #myIdentity406 ya
     // existe) y ya valida isMedical406() internamente - alcanza con
-    // volver a llamarla acá cada vez que se abre la sección.
-    try{ if(typeof injectIdentityToolbar406==='function') injectIdentityToolbar406(); }catch(e){ console.warn('injectIdentityToolbar406 falló al abrir HC:',e); }
+    // volver a llamarla acá cada vez que se abre la sección. Está definida
+    // dentro del IIFE del módulo 406 (no es global): showSection() vive
+    // fuera de ese scope, así que hay que llamarla vía window (expuesta
+    // justo después de definirse, ver window.injectIdentityToolbar406=...
+    // en el módulo 406) - typeof injectIdentityToolbar406 a secas nunca la
+    // encontraba.
+    try{
+      if(typeof window.injectIdentityToolbar406==='function'){
+        window.injectIdentityToolbar406();
+      }
+    }catch(e){
+      console.warn('injectIdentityToolbar406 falló al abrir HC:',e);
+    }
   }
 }
 function cambiarPerfil(id){
@@ -10026,6 +10037,7 @@ function patientInfoTextHC(p,coverage){
     if(toolsBody)toolsBody.prepend(b);
     else{const title=card.querySelector('h2');if(title)title.insertAdjacentElement('afterend',b);else card.prepend(b);}
   }
+  window.injectIdentityToolbar406=injectIdentityToolbar406;
   function wrapRenderConfig406(){
     const old=window.renderConfig;if(typeof old!=='function'||old.__v406)return;
     const w=function(){const r=old.apply(this,arguments);setTimeout(()=>{enhanceConfigIdentity406();loadIdentityFields406();setVersion406();},30);return r;};w.__v406=true;window.renderConfig=renderConfig=w;
