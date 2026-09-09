@@ -70,11 +70,11 @@ function origenesPermitidosConfigurados() {
   return valor.split(',').map((o) => o.trim()).filter(Boolean);
 }
 
-function corsHeadersPara(origen) {
+function corsHeadersPara(origen, requestedHeaders) {
   const headers = {
-    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Headers': requestedHeaders || 'authorization, x-client-info, apikey, content-type',
     'Access-Control-Allow-Methods': 'POST, OPTIONS',
-    Vary: 'Origin'
+    Vary: 'Origin, Access-Control-Request-Headers'
   };
   const permitido = !!origen && (esOrigenLocal(origen) || origenesPermitidosConfigurados().includes(origen));
   if (permitido) headers['Access-Control-Allow-Origin'] = origen;
@@ -586,7 +586,10 @@ async function manejarLogWhatsapp(admin, body, uid) {
 }
 
 Deno.serve(async function (req) {
-  const corsHeaders = corsHeadersPara(req.headers.get('origin') || '');
+  const corsHeaders = corsHeadersPara(
+    req.headers.get('origin') || '',
+    req.headers.get('access-control-request-headers') || ''
+  );
 
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: corsHeaders });
   if (req.method !== 'POST') return conCors(errorResponse('Método no permitido.', 405), corsHeaders);
