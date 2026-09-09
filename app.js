@@ -172,10 +172,19 @@ function perfilUsuarioActual(){
    loginSupabase()) no hay auth.uid() que consultar: se preserva el
    comportamiento anterior, 100% alias/config local, sin cambios. */
 let backendRolCargado=false;
+// backendRolCargado=false es ambiguo por sí solo: puede significar "la
+// consulta todavía no terminó" o "terminó y falló". permisoBackendPendiente()
+// (más abajo) necesita distinguir esos dos casos - si no, un fallo real de
+// la RPC dejaría el DOM clínico en "pendiente" (sin destruir) para siempre
+// en vez de pasar a fail-closed definitivo. backendRolConsultaFinalizada
+// sólo se pone en true cuando la consulta real efectivamente terminó
+// (éxito o error) - nunca antes de intentarla.
+let backendRolConsultaFinalizada=false;
 let backendEsAdminOwner=false;
 let backendTieneAccesoTurnos=false;
 async function cargarPermisoBackendRoles(){
-  if(!supabaseClient || !usuarioSupabase) return;
+  if(!supabaseClient || !usuarioSupabase) return; // todavía antes del login: ni empezó la consulta
+  backendRolConsultaFinalizada=false;
   try{
     const [adminOwner,appointmentRequests]=await Promise.all([
       supabaseClient.rpc('cardiolink_es_admin_u_owner'),
@@ -193,6 +202,11 @@ async function cargarPermisoBackendRoles(){
     // determinarlo (no rompe el modo local sin Supabase, que no entra acá).
     console.warn('No se pudo confirmar el rol backend (cardiolink_user_roles):',e);
     backendRolCargado=false;backendEsAdminOwner=false;backendTieneAccesoTurnos=false;
+  }finally{
+    // Corre tanto en éxito como en error (nunca si se volvió antes por
+    // falta de supabaseClient/usuarioSupabase): la consulta ya terminó,
+    // sea cual sea el resultado - a partir de acá deja de ser "pendiente".
+    backendRolConsultaFinalizada=true;
   }
 }
 function esMatiasDuenio(){
@@ -291,6 +305,25 @@ function seccionPermitida(section){
   if(esMedico()) return ['dashboard','carga','agenda','mensajes','pacientes','hc','listado','estadisticas','instructivos'].includes(section);
   return section==='dashboard';
 }
+// Fix mínimo (carrera de permisos en el boot): distingue "todavía no
+// sabemos el rol backend" de "backend confirmó que no tiene permiso".
+// Sin sesión Supabase real (modo local, supabaseClient nunca se conectó)
+// no hay nada pendiente - se preserva el comportamiento de siempre. Con
+// supabaseClient activo pero usuarioSupabase todavía null, el login está
+// en curso (antes de que intentarLogin()/getSession() lo asignen): eso
+// también es "pendiente", nunca denegación definitiva. Con sesión real ya
+// asignada, sólo queda pendiente mientras cargarPermisoBackendRoles() (ver
+// más arriba) todavía no terminó.
+function permisoBackendPendiente(){
+  if(typeof supabaseClient==='undefined' || !supabaseClient) return false;
+  if(!usuarioSupabase) return true;
+  // Pendiente sólo mientras la consulta real no terminó. Si ya terminó
+  // (éxito o error), esto da false - un fallo real de la RPC pasa a
+  // fail-closed definitivo en vez de quedar "pendiente" para siempre
+  // (backendRolCargado seguiría en false en ambos casos, por eso no sirve
+  // acá: no distingue "todavía no sé" de "ya sé que falló").
+  return !backendRolConsultaFinalizada;
+}
 function aplicarPermisosUI(){
   perfilUsuarioActual();
   document.body.dataset.rol = rolBaseUsuarioActual() || perfilUsuarioActual().rol || '';
@@ -317,7 +350,17 @@ function aplicarPermisosUI(){
   document.querySelectorAll('[data-config-access="restore"]').forEach(el=>el.classList.toggle('hidden-permission',!puedeRestaurarBackups()));
   document.querySelectorAll('[data-config-group="usuarios"]').forEach(el=>el.classList.toggle('hidden-permission',!puedeGestionarConfigAdministrativa()));
   document.querySelectorAll('[data-clinical-access],[data-open-hc],[data-hc-new],[data-hc-edit],[data-hc-delete411b1],[data-hc-edit-summary],[data-hc-edit-patient409],[data-hc-print],[data-new-doc406],[data-edit-doc406],[data-print-doc406],[data-rcta-patient4095],[data-cp-action411b="hc"],[data-cp-action411b="evolve"],[data-cp-action411b="rcta"],[data-cp-action411b="order"],[data-cp-action411b="certificate"],#btnImportEvolMedicloud405,#btnImportEvolMedicloudPac407,#btnUndoEvolMedicloud405').forEach(el=>el.classList.toggle('hidden-permission',!puedeAccederInformacionClinica()));
-  if(!puedeAccederInformacionClinica()){
+  // La destrucción del DOM clínico (remove() de modales, vaciar
+  // resultados, reemplazar el detalle por "no disponible") sólo debe
+  // ocurrir cuando la denegación es definitiva - nunca mientras el rol
+  // backend todavía está pendiente (ver permisoBackendPendiente() arriba):
+  // si no, una llamada temprana (DOMContentLoaded/setTimeout de arranque,
+  // antes de que termine cargarPermisoBackendRoles()) puede destruir la HC
+  // de un owner/médico real antes de saber su rol real, y esa destrucción
+  // no siempre se reconstruye después. El ocultamiento visual de arriba
+  // (.hidden-permission en botones/nav) sigue aplicando siempre, sin
+  // cambios: eso es barato y reversible, no hace falta esperar.
+  if(!puedeAccederInformacionClinica() && !permisoBackendPendiente()){
     ['hcEvolutionModal','hcSummaryModal','hcPatientEditModal409','modalImportEvol405'].forEach(id=>$(id)?.remove());
     if($('hcResultadosPacientes'))$('hcResultadosPacientes').innerHTML='';
     if($('hcPacienteDetalle'))$('hcPacienteDetalle').innerHTML='<div class="muted">Historia clínica no disponible para este perfil.</div>';
