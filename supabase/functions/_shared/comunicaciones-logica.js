@@ -216,3 +216,52 @@ export function armarMensajeProfesional({ evento, atencion }) {
   ];
   return { asunto: def.asunto, mensaje: lineas.join('\n') };
 }
+
+// -----------------------------------------------------------------------
+// Aviso automático al profesional cuando Secretaría genera un certificado
+// u orden médica EN SU NOMBRE (Comunicaciones V1, cierre). Circuito
+// hermano de armarMensajeProfesional: mismo formato fijo, solo datos
+// administrativos - nunca el contenido del documento, ni título, ni
+// indicaciones, ni diagnóstico. Los documentos clínicos
+// (data.documentosClinicos) no tienen atencionId ni fila propia en
+// Supabase (viven en el config jsonb sincronizado), así que a diferencia
+// de armarMensajeProfesional no recibe una "atencion": recibe los campos
+// ya resueltos del lado del cliente.
+// -----------------------------------------------------------------------
+const TIPOS_DOCUMENTO_LABEL = Object.freeze({
+  certificado: 'Certificado médico',
+  orden: 'Orden médica'
+});
+
+function formatearFechaHoraCorta(fechaISO) {
+  try {
+    const fecha = new Date(fechaISO);
+    if (Number.isNaN(fecha.getTime())) return String(fechaISO || '');
+    return new Intl.DateTimeFormat('es-AR', {
+      timeZone: 'America/Argentina/Buenos_Aires',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    }).format(fecha);
+  } catch (_error) {
+    return String(fechaISO || '');
+  }
+}
+
+export function armarMensajeProfesionalDocumento({ tipoDocumento, pacienteNombre, fechaHora, generadoPor }) {
+  const etiquetaTipo = TIPOS_DOCUMENTO_LABEL[tipoDocumento] || 'Documento clínico';
+  const lineas = [
+    `Nuevo documento generado en tu nombre: ${etiquetaTipo}`,
+    '',
+    `Paciente: ${pacienteNombre || ''}`,
+    `Tipo de documento: ${etiquetaTipo}`,
+    `Fecha: ${fechaHora ? formatearFechaHoraCorta(fechaHora) : ''}`,
+    `Generado por: ${generadoPor || 'Secretaría'}`
+  ];
+  return {
+    asunto: `Nuevo documento generado — ${etiquetaTipo} — CardioLink`,
+    mensaje: lineas.join('\n')
+  };
+}

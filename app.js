@@ -156,15 +156,70 @@ function perfilUsuarioActual(){
   usuarioPerfilActual=u;
   return u;
 }
+/* ===== Rol backend autoritativo (cardiolink_user_roles vía RPC) =====
+   Bug real: un alias del frontend (usuariosDefault()/inferirUsuarioPorLogin)
+   podía otorgar el rol "dueño" (o cualquier otro) sólo por coincidencia de
+   texto en el email/usuario, sin importar el rol real guardado en
+   cardiolink_user_roles. cardiolink_user_roles tiene RLS sin policy SELECT
+   para el cliente, así que no se puede leer directo - se usan las RPC
+   SECURITY DEFINER que ya existen (dependen exclusivamente de auth.uid(),
+   nunca de nada que mande el cliente): cardiolink_es_admin_u_owner() y
+   cardiolink_has_appointment_requests_access() (true para owner/admin/
+   secretaria, no para médico). Se consultan una única vez por sesión,
+   inmediatamente después del login y ANTES del primer aplicarPermisosUI()
+   (ver iniciarCardioLink()), y se cachean en memoria acá.
+   Sin sesión Supabase real (usuarioSupabase null - "modo local", ver
+   loginSupabase()) no hay auth.uid() que consultar: se preserva el
+   comportamiento anterior, 100% alias/config local, sin cambios. */
+let backendRolCargado=false;
+let backendEsAdminOwner=false;
+let backendTieneAccesoTurnos=false;
+async function cargarPermisoBackendRoles(){
+  if(!supabaseClient || !usuarioSupabase) return;
+  try{
+    const [adminOwner,appointmentRequests]=await Promise.all([
+      supabaseClient.rpc('cardiolink_es_admin_u_owner'),
+      supabaseClient.rpc('cardiolink_has_appointment_requests_access')
+    ]);
+    if(adminOwner.error||appointmentRequests.error) throw (adminOwner.error||appointmentRequests.error);
+    backendEsAdminOwner=adminOwner.data===true;
+    backendTieneAccesoTurnos=appointmentRequests.data===true;
+    backendRolCargado=true;
+  }catch(e){
+    // FAIL CLOSED: si la consulta backend falla, no se eleva nada por
+    // alias - queda backendRolCargado=false, y tanto esMatiasDuenio()
+    // como rolBaseUsuarioActual() de abajo tratan "sesión Supabase real
+    // sin rol backend confirmado" como permisos mínimos hasta poder
+    // determinarlo (no rompe el modo local sin Supabase, que no entra acá).
+    console.warn('No se pudo confirmar el rol backend (cardiolink_user_roles):',e);
+    backendRolCargado=false;backendEsAdminOwner=false;backendTieneAccesoTurnos=false;
+  }
+}
 function esMatiasDuenio(){
   const u=perfilUsuarioActual();
-  return u.rol==='duenio' && (normalizarUsuarioClave(u.usuario)==='matias' || u.soloMatias===true || u.id==='matias');
+  const aliasDiceDuenio=u.rol==='duenio' && (normalizarUsuarioClave(u.usuario)==='matias' || u.soloMatias===true || u.id==='matias');
+  if(!aliasDiceDuenio) return false;
+  if(usuarioSupabase) return backendRolCargado ? backendEsAdminOwner : false;
+  return true;
 }
 function rolBaseUsuarioActual(){
   const u=perfilUsuarioActual();
   const rolId=u.rolId||u.rol||'';
   const rolConfigurado=(data.roles||[]).find(r=>r.id===rolId);
-  return rolConfigurado?.baseRole||u.baseRole||u.rol||'';
+  const rolLocal=rolConfigurado?.baseRole||u.baseRole||u.rol||'';
+  if(!usuarioSupabase) return rolLocal; // modo local sin sesión Supabase: sin cambios
+  if(!backendRolCargado){
+    // Sesión Supabase real, rol backend todavía sin confirmar (falló la
+    // consulta): fail-closed para los roles con más acceso.
+    return (rolLocal==='duenio'||rolLocal==='admin'||rolLocal==='secretaria') ? 'sin_configurar' : rolLocal;
+  }
+  if(backendEsAdminOwner) return rolLocal; // owner/admin: sin cambios
+  if(backendTieneAccesoTurnos) return 'secretaria'; // fuerza secretaria aunque el alias/local diga otra cosa
+  // Ni admin/owner ni secretaria según backend. No hay RPC acá que
+  // distinga médico de una cuenta sin fila en cardiolink_user_roles -
+  // médico sigue resolviéndose por alias/config sin cambios, salvo que el
+  // alias pretenda dueño/admin sin que el backend lo confirme (fail-closed).
+  return (rolLocal==='duenio'||rolLocal==='admin') ? 'sin_configurar' : rolLocal;
 }
 function esSecretaria(){ return rolBaseUsuarioActual()==='secretaria'; }
 function esAdminComun(){ return rolBaseUsuarioActual()==='admin'; }
@@ -1264,6 +1319,15 @@ function showSection(id){
   }else if(id==='config'){
     if($('tituloBienvenida'))$('tituloBienvenida').textContent='Configuración';
     if($('subtituloPerfil'))$('subtituloPerfil').textContent='Profesionales, obras sociales, valores, usuarios y reglas';
+  }else if(id==='hc'){
+    // Fix mínimo: injectIdentityToolbar406() sólo corría en boot406() (una
+    // vez al cargar la app) y en su setTimeout de 900ms - si en ese
+    // momento todavía no se había entrado a HC, el botón "Mi membrete y
+    // firma" nunca se insertaba, y al navegar después a HC no se volvía a
+    // intentar. La función ya es idempotente (corta si #myIdentity406 ya
+    // existe) y ya valida isMedical406() internamente - alcanza con
+    // volver a llamarla acá cada vez que se abre la sección.
+    try{ if(typeof injectIdentityToolbar406==='function') injectIdentityToolbar406(); }catch(e){ console.warn('injectIdentityToolbar406 falló al abrir HC:',e); }
   }
 }
 function cambiarPerfil(id){
@@ -3458,6 +3522,7 @@ async function iniciarCardioLink() {
     return;
   }
 
+  await cargarPermisoBackendRoles();
   await cargarAtencionesDesdeSupabase();
   init();
   agregarBotonCerrarSesion();
@@ -8875,6 +8940,10 @@ function patientInfoTextHC(p,coverage){
   function canMedical402(){
     try{if(typeof puedeAccederInformacionClinica==='function')return !!puedeAccederInformacionClinica();}catch(e){}
     try{if(typeof esMatiasDuenio==='function'&&esMatiasDuenio())return true;if(typeof esAdminComun==='function'&&esAdminComun())return true;if(typeof esMedico==='function'&&esMedico())return true;}catch(e){}
+    // Mismo motivo que isAdmin406(): con sesión Supabase real no hay que
+    // re-derivar el rol leyendo currentUser402() (perfil local sin ajustar
+    // por backend) si las funciones autoritativas de arriba ya dijeron que no.
+    try{if(typeof usuarioSupabase!=='undefined'&&usuarioSupabase)return false;}catch(e){}
     const u=currentUser402();const r=norm402(u.rolId||u.rol||u.baseRole||'');return r.includes('medico')||r.includes('director')||r.includes('duenio')||r.includes('admin');
   }
   function canCommercialConfig402(){try{return !!puedeGestionarConfigComercial()}catch(e){return false}}
@@ -9188,6 +9257,13 @@ function patientInfoTextHC(p,coverage){
       if(typeof esAdminComun==='function'&&esAdminComun())return true;
       if(typeof esMedico==='function'&&esMedico())return true;
     }catch(e){}
+    // Mismo motivo que isAdmin406()/canMedical402(): con sesión Supabase
+    // real, si ninguna de las funciones autoritativas de arriba dio true,
+    // no hay que re-derivar el permiso leyendo perfilUsuarioActual() acá
+    // abajo (mismo perfil local sin ajustar por backend que causaba el
+    // bug de alias) - eso reabriría exactamente el mismo agujero para
+    // Evoluciones.
+    try{if(typeof usuarioSupabase!=='undefined'&&usuarioSupabase)return false;}catch(e){}
     try{
       const u=typeof perfilUsuarioActual==='function'?perfilUsuarioActual():(window.usuarioPerfilActual||{});
       const r=norm403(u?.rolId||u?.rol||u?.baseRole||'');
@@ -9576,6 +9652,14 @@ function patientInfoTextHC(p,coverage){
   }
   function isAdmin406(){
     try{if(typeof esMatiasDuenio==='function'&&esMatiasDuenio())return true;if(typeof esAdminComun==='function'&&esAdminComun())return true;}catch(e){}
+    // Con sesión Supabase real, esMatiasDuenio()/esAdminComun() ya son la
+    // fuente autoritativa (respetan cardiolink_user_roles vía backend). Si
+    // ninguna dio true, NO hay que re-derivar admin/dueño leyendo el rol
+    // local de currentUser406() acá abajo: es el mismo perfil sin ajustar
+    // por backend que causaba que un alias (ej. drm.anchorena) se colara
+    // como "duenio". El fallback de texto libre queda sólo para el modo
+    // sin sesión Supabase (perfiles locales/offline).
+    try{if(typeof usuarioSupabase!=='undefined'&&usuarioSupabase)return false;}catch(e){}
     const r=norm406(currentUser406().rolId||currentUser406().rol||currentUser406().baseRole||'');
     return r.includes('admin')||r.includes('duenio');
   }
@@ -9592,7 +9676,14 @@ function patientInfoTextHC(p,coverage){
   }
   function canIssueDoc406(type=''){
     if(isMedical406()||isAdmin406())return true;
-    return isSecretary406()&&String(type||'')==='constancia_atencion';
+    // Comunicaciones V1 (cierre): Secretaría también puede emitir
+    // certificado y orden médica EN NOMBRE de un profesional (el selector
+    // de "profesional responsable" en openDocumentModal406, ya existente
+    // para Secretaría, sigue siendo quien determina a quién se atribuye).
+    // Cambio mínimo: solo se amplía esta lista de tipos habilitados para
+    // Secretaría, sin tocar el resto de la función ni ampliar a ningún
+    // otro tipo de documento.
+    return isSecretary406()&&['constancia_atencion','certificado','orden'].includes(String(type||''));
   }
   function responsibleProfId406(p){
     if(!p)return currentProfId406()||selectedProfId406()||'matias';
@@ -9820,10 +9911,36 @@ function patientInfoTextHC(p,coverage){
     if(!contenido&&!adicional){alert('Escribí el contenido antes de guardar.');return;}
     const profId=existing?.profesionalId||($406('docProfessional406')?.value)||(isSecretary406()?responsibleProfId406(p):(currentProfId406()||selectedProfId406())),pr=prof406(profId);if(!pr){alert('No se pudo identificar el profesional responsable.');return;}
     const now=new Date().toISOString(),fechaInput=$406('docDate406')?.value,fechaHora=fechaInput?new Date(fechaInput).toISOString():now;
+    // Comunicaciones V1 (cierre): el aviso al profesional solo aplica a
+    // documentos NUEVOS (no ediciones) - se decide acá, antes de que
+    // "existing" dejе de reflejar si esto era una creación.
+    const esDocumentoNuevo=!existing;
     let doc=existing;
     if(existing){Object.assign(existing,{tipo,titulo,contenido,adicional,fechaHora,incluirFirma:$406('docIncludeSignature406')?.checked!==false,actualizadoEn:now,actualizadoPor:pr.nombre});}
     else{doc={id:'doc_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),pacienteId:patientKey406(p),dni:p.dni||'',pacienteNombre:patientName406(p),tipo,titulo,contenido,adicional,fechaHora,profesionalId:profId,profesionalNombre:pr.nombre,incluirFirma:$406('docIncludeSignature406')?.checked!==false,creadoEn:now,creadoPor:currentUser406().nombre||pr.nombre};data.documentosClinicos.push(doc);}
-    persist406();$406('clinicalDocModal406')?.remove();enhanceHC406();enhancePatientFicha406();if(printAfter)printDocument406(doc.id);
+    persist406();
+    // Comunicaciones V1 (cierre) - aviso automático al profesional cuando
+    // Secretaría genera un certificado/orden médica en su nombre: fire-and-
+    // forget (window.notificarDocumentoGenerado460, expuesto por el módulo
+    // "Patient Communications V1 (460)" más abajo en este archivo), nunca
+    // bloquea el guardado/impresión ni muestra error a Secretaría - el
+    // documento ya quedó guardado en la línea de arriba antes de intentar
+    // avisar. No se manda contenido/adicional/título (texto clínico): solo
+    // paciente, tipo de documento, fecha/hora y quién lo generó.
+    if(esDocumentoNuevo&&isSecretary406()&&(tipo==='constancia_atencion'||tipo==='certificado'||tipo==='orden')){
+      try{
+        window.notificarDocumentoGenerado460?.({
+          profesionalId:profId,
+          profesionalNombre:pr.nombre||'',
+          pacienteNombre:patientName406(p),
+          tipoDocumento:tipo,
+          fechaHora:doc.fechaHora,
+          generadoPor:currentUser406().nombre||'',
+          documentoId:doc.id
+        });
+      }catch(e){console.warn('No se pudo avisar al profesional sobre el documento generado:',e);}
+    }
+    $406('clinicalDocModal406')?.remove();enhanceHC406();enhancePatientFicha406();if(printAfter)printDocument406(doc.id);
   }
   function printDocument406(id){
     ensure406();const d=data.documentosClinicos.find(x=>x.id===id);if(!d)return;if(!canIssueDoc406(d.tipo)){alert('Tu perfil no puede imprimir este documento.');return;}const p=patient406(d.pacienteId)||patients406().find(x=>String(x.dni||'').replace(/\D/g,'')===String(d.dni||'').replace(/\D/g,''))||{},pr=prof406(d.profesionalId)||{},color=/^#[0-9a-f]{6}$/i.test(pr.colorDocumento||'')?pr.colorDocumento:'#174b5c';
@@ -11931,6 +12048,22 @@ function patientInfoTextHC(p,coverage){
     comms460Invoke('notify-professional',{atencionId,evento}).catch(e=>console.warn('No se pudo avisar al profesional asignado:',e));
   }
   window.notificarProfesionalAsignado460=notificarProfesionalAsignado460;
+
+  // Comunicaciones V1 (cierre) - aviso al profesional cuando Secretaría
+  // genera un certificado/orden médica en su nombre (ver saveDocument406
+  // en el módulo "406", que llama a esta función expuesta). Mismo circuito
+  // fire-and-forget que notificarProfesionalAsignado460, pero SIN
+  // atencionId: los documentos clínicos (data.documentosClinicos) no están
+  // vinculados a un turno, así que se manda la información ya resuelta del
+  // lado del cliente (paciente/tipo/fecha/generadoPor) en vez de pedirle a
+  // la Edge Function que la busque por id de atención. Acción
+  // 'notify-professional-document' en
+  // supabase/functions/patient-communications/index.ts.
+  function notificarDocumentoGenerado460(payload){
+    if(!payload||!payload.profesionalId||!comms460ListoSupabase())return;
+    comms460Invoke('notify-professional-document',payload).catch(e=>console.warn('No se pudo avisar al profesional sobre el documento generado:',e));
+  }
+  window.notificarDocumentoGenerado460=notificarDocumentoGenerado460;
 
   // Confirmar/cancelar desde la agenda también ofrece notificar. Mismo
   // patrón de wrap-con-guardia que ya usan otros módulos de este archivo

@@ -37,7 +37,8 @@ import {
   elegirPlantilla,
   armarMensaje,
   resolverDestinatarios,
-  armarMensajeProfesional
+  armarMensajeProfesional,
+  armarMensajeProfesionalDocumento
 } from '../_shared/comunicaciones-logica.js';
 
 // -----------------------------------------------------------------------
@@ -419,6 +420,140 @@ async function manejarNotifyProfessional(admin, body, uid) {
   return jsonResponse({ ok: true, enviado: resultado.ok });
 }
 
+// -----------------------------------------------------------------------
+// Aviso automático al profesional cuando Secretaría genera un certificado
+// u orden médica EN SU NOMBRE (Comunicaciones V1, cierre). Mismo circuito
+// que manejarNotifyProfessional (nunca pregunta nada, nunca lanza un error
+// "duro" salvo fallas genuinas de Supabase, siempre responde ok:true con
+// omitido/duplicado en los casos normales) pero SIN buscar una atención:
+// los documentos clínicos no tienen atencionId (viven en el config jsonb
+// de app.js, no en cardiolink_atenciones), así que toda la información ya
+// llega resuelta desde el cliente en el body. Nunca recibe ni reenvía el
+// contenido del documento (título/cuerpo/indicaciones/diagnóstico): eso
+// nunca sale de app.js. A diferencia de manejarNotifyProfessional, ADEMÁS
+// verifica server-side que quien llama sea efectivamente Secretaría
+// (esSecretariaActiva): que el propio documento se haya podido crear no
+// prueba el rol de quien invoca esta acción puntual - ver esSecretariaActiva
+// más abajo.
+// -----------------------------------------------------------------------
+
+const TIPOS_DOCUMENTO_VALIDOS = ['constancia_atencion', 'certificado', 'orden'];
+
+// El cliente (app.js) ya filtra por isSecretary406() antes de invocar esta
+// acción, pero eso corre en el navegador: no es una autorización real, es
+// sólo UX. Acá se repite la validación server-side, contra la misma tabla
+// que ya usa autorizar()/cardiolink_has_communications_access() (ver
+// 20260815193000_finanzas_v5_schema.sql) - sin esto, cualquier sesión
+// autenticada con acceso a esta Edge Function (ej. un médico) podría
+// invocar notify-professional-document directamente y generar avisos en
+// nombre de Secretaría.
+async function esSecretariaActiva(admin, uid) {
+  if (!uid) return false;
+  const { data, error } = await admin
+    .from('cardiolink_user_roles')
+    .select('base_role')
+    .eq('user_id', uid)
+    .eq('active', true)
+    .eq('base_role', 'secretaria')
+    .limit(1);
+  if (error) throw error;
+  return !!(data && data.length);
+}
+
+async function manejarNotifyProfessionalDocument(admin, body, uid) {
+  const { profesionalId, profesionalNombre, pacienteNombre, tipoDocumento, fechaHora, generadoPor, documentoId } = body || {};
+  // profesionalId/documentoId/tipoDocumento se validan ANTES que el rol a
+  // propósito: cualquier entrada incompleta es inválida sin importar quién
+  // la mande, misma respuesta segura (ok:true, omitido:true) en todos los
+  // casos - no hay forma de distinguir desde afuera cuál falló. documentoId
+  // es obligatorio acá (a diferencia de otros campos informativos): sin él
+  // no hay document_id real para guardar, y la idempotencia de abajo deja
+  // de tener sentido - fail-safe: no se registra nada con document_id null.
+  if (!profesionalId || !documentoId || !TIPOS_DOCUMENTO_VALIDOS.includes(tipoDocumento)) {
+    return jsonResponse({ ok: true, omitido: true, motivo: 'entrada_invalida' });
+  }
+  if (!(await esSecretariaActiva(admin, uid))) {
+    return jsonResponse({ ok: true, omitido: true, motivo: 'rol_no_autorizado' });
+  }
+
+  const userIdProfesional = await resolverCuentaProfesional(admin, String(profesionalId));
+
+  // Anti-autonotificación: mismo chequeo que manejarNotifyProfessional
+  // (caso límite: la cuenta que generó el documento está vinculada como
+  // el propio profesional destinatario).
+  if (userIdProfesional && uid && userIdProfesional === uid) {
+    return jsonResponse({ ok: true, omitido: true, motivo: 'auto' });
+  }
+
+  const preferencia = await resolverPreferenciaProfesional(admin, String(profesionalId));
+  if (preferencia.email_enabled === false) {
+    return jsonResponse({ ok: true, omitido: true, motivo: 'desactivado' });
+  }
+
+  let email = '';
+  if (emailValido(preferencia.email_override || '')) email = preferencia.email_override;
+  else email = await resolverEmailAuth(admin, userIdProfesional);
+  if (!emailValido(email)) return jsonResponse({ ok: true, omitido: true, motivo: 'sin_email' });
+
+  // Idempotencia razonable, mismo patrón de ventana de 2 minutos que
+  // manejarNotifyProfessional, pero correlacionando por document_id (columna
+  // propia, agregada por 20260904120000_..._document_notifications.sql) en
+  // vez de atencion_id: un documento clínico no es una atención/turno y no
+  // debe mezclarse con esa columna. atencion_id queda null para tipo=document
+  // siempre. document_id es obligatorio en esta acción (ver validación de
+  // entrada más arriba): no hay rama "sin referencia" - dos documentos
+  // distintos nunca deben poder compartir una búsqueda por document_id is
+  // null dentro de la ventana.
+  const referencia = String(documentoId);
+  const hace2Minutos = new Date(Date.now() - 2 * 60 * 1000).toISOString();
+  const { data: recientes, error: recientesError } = await admin
+    .from('cardiolink_communications')
+    .select('id')
+    .eq('tipo', 'document')
+    .eq('recipient_source', 'professional')
+    .eq('destinatario', email)
+    .eq('document_id', referencia)
+    .gte('created_at', hace2Minutos)
+    .limit(1);
+  if (recientesError) throw recientesError;
+  if (Array.isArray(recientes) && recientes.length) return jsonResponse({ ok: true, duplicado: true });
+
+  const { asunto, mensaje } = armarMensajeProfesionalDocumento({
+    tipoDocumento,
+    pacienteNombre: pacienteNombre || '',
+    fechaHora: fechaHora || '',
+    generadoPor: generadoPor || ''
+  });
+  const resultado = await enviarConResend(email, asunto, mensaje);
+
+  // paciente_id queda null a propósito: el cliente sólo manda un nombre de
+  // paciente en texto libre (pacienteNombre), no un id validado contra
+  // cardiolink_pacientes - insertar un id sin validar arriesgaría violar
+  // la FK de esa columna. El nombre del paciente ya queda en el mensaje.
+  // atencion_id también queda null a propósito: un documento clínico no es
+  // una atención/turno. La referencia al documento va en document_id.
+  await registrarComunicacion(admin, {
+    paciente_id: null,
+    atencion_id: null,
+    document_id: referencia,
+    tipo: 'document',
+    canal: 'email',
+    destinatario: email,
+    recipient_source: 'professional',
+    recipient_name: profesionalNombre || null,
+    subject: asunto,
+    message: mensaje,
+    status: resultado.ok ? 'sent' : 'failed',
+    provider: 'resend',
+    provider_message_id: resultado.ok ? resultado.providerMessageId : null,
+    error_message: resultado.ok ? null : resultado.motivo,
+    sent_at: resultado.ok ? new Date().toISOString() : null,
+    created_by: uid
+  });
+
+  return jsonResponse({ ok: true, enviado: resultado.ok });
+}
+
 async function manejarLogWhatsapp(admin, body, uid) {
   const { atencionId, tipo } = body || {};
   if (!atencionId || !tipo) return errorResponse('Faltan atencionId/tipo.', 400);
@@ -478,6 +613,7 @@ Deno.serve(async function (req) {
     else if (accion === 'send-email') respuesta = await manejarSendEmail(admin, body, auth.uid);
     else if (accion === 'log-whatsapp') respuesta = await manejarLogWhatsapp(admin, body, auth.uid);
     else if (accion === 'notify-professional') respuesta = await manejarNotifyProfessional(admin, body, auth.uid);
+    else if (accion === 'notify-professional-document') respuesta = await manejarNotifyProfessionalDocument(admin, body, auth.uid);
     else respuesta = errorResponse('Acción no reconocida.', 400);
     return conCors(respuesta, corsHeaders);
   } catch (error) {

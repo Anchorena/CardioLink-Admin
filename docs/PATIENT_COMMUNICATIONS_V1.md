@@ -126,7 +126,15 @@ patrón ya usado por Finanzas 5 / Solicitudes de turno (ver
    (Project Settings → Edge Functions → Secrets, o `supabase secrets set`):
    - `RESEND_API_KEY` — opcional para probar el flujo de WhatsApp/preview
      sin tenerlo; **obligatorio para que un email realmente salga**.
-   - `RESEND_FROM_EMAIL` — remitente verificado en Resend.
+   - `RESEND_FROM_EMAIL` — remitente verificado en Resend. Identidad
+     definitiva: `CardioLink Turnos <turnos@cardiolink.com.ar>` (plural).
+     La recepción de respuestas ya está resuelta fuera de este código: el
+     circuito `turnos@cardiolink.com.ar` → Cloudflare Email Routing →
+     `drm.anchorena@gmail.com` ya está configurado y probado, así que un
+     email cuyo `From` es esa misma casilla no necesita un `reply_to`
+     distinto — la respuesta natural del paciente ya vuelve a
+     `turnos@cardiolink.com.ar` y Cloudflare la reenvía sola. No existe
+     ningún `RESEND_REPLY_TO_EMAIL` en el código.
    - `SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_ANON_KEY` —
      ya deberían existir como secrets por defecto en cualquier proyecto
      Supabase con Edge Functions.
@@ -207,3 +215,122 @@ patrón ya usado por Finanzas 5 / Solicitudes de turno (ver
   con el botón manual, ver sección 2).
 - Tracking real de apertura de email (`status='opened'` está en el
   esquema pero nada lo setea todavía).
+- Recordatorio 24h automático: la Edge Function y la migración del cron
+  (`20260828121000_...`) ya existen, pero `pg_cron`/`pg_net` todavía no
+  están habilitados en Production — se trata como un cambio separado y
+  controlado, posterior a este cierre.
+
+## 10. Cierre — aviso al profesional cuando Secretaría genera un
+    documento en su nombre
+
+**Estado: redactado, NADA ejecutado/desplegado todavía** (sin migración
+corrida, sin `supabase functions deploy`). Rama:
+`communications-v1-finalization`.
+
+**Objetivo:** cuando Secretaría genera (crea, no edita) una constancia de
+atención, un certificado o una orden médica en nombre de un profesional,
+ese profesional recibe un aviso automático por email — nunca el contenido
+del documento.
+
+**Cambios:**
+- `canIssueDoc406()` ([app.js](../app.js)) — Secretaría ya podía emitir
+  `constancia_atencion`; ahora también puede emitir `certificado` y
+  `orden` (mismo cambio mínimo: una lista en vez de una comparación
+  única). El profesional responsable sigue siendo el que ya resuelve
+  `openDocumentModal406` (selector "profesional responsable" cuando abre
+  Secretaría, o el profesional logueado) — no cambia esa lógica.
+- `saveDocument406()` ([app.js](../app.js)) — al guardar exitosamente un
+  documento **nuevo** (no una edición) con `tipo` `constancia_atencion`,
+  `certificado` u `orden`, generado por Secretaría, llama de forma
+  fire-and-forget a `window.notificarDocumentoGenerado460(...)` — nunca
+  bloquea el guardado ni la impresión, nunca muestra un error de
+  comunicaciones a Secretaría.
+- `notificarDocumentoGenerado460()` (módulo "Patient Communications V1
+  (460)", [app.js](../app.js)) — hermano de
+  `notificarProfesionalAsignado460()`, invoca la acción
+  `notify-professional-document`.
+- `armarMensajeProfesionalDocumento()`
+  ([comunicaciones-logica.js](../supabase/functions/_shared/comunicaciones-logica.js))
+  — arma `{asunto, mensaje}` solo con paciente/tipo de documento/fecha
+  y hora/generado por. Nunca recibe título, contenido ni indicaciones del
+  documento.
+- `manejarNotifyProfessionalDocument()`
+  ([patient-communications/index.ts](../supabase/functions/patient-communications/index.ts))
+  — acción nueva, hermana de `manejarNotifyProfessional`: reutiliza
+  `resolverCuentaProfesional`/`resolverPreferenciaProfesional`/
+  `resolverEmailAuth`/`enviarConResend`/`registrarComunicacion`, misma
+  anti-autonotificación, misma ventana de idempotencia de 2 minutos (ahora
+  correlacionada por `document_id`). No confía en `isSecretary406()` del
+  cliente: valida server-side, contra `cardiolink_user_roles`, que el `uid`
+  autenticado sea un usuario activo con `base_role='secretaria'`
+  (`esSecretariaActiva()`) — si no lo es, no envía nada y responde
+  `{ok:true, omitido:true, motivo:'rol_no_autorizado'}`, igual que
+  cualquier otro caso normal (nunca un error que delate el motivo). También
+  valida server-side que `tipoDocumento`, `profesionalId` y `documentoId`
+  estén presentes (fail-safe: sin `documentoId` no hay `document_id` real
+  que registrar, así que directamente no se envía nada) y que
+  `tipoDocumento` sea únicamente `constancia_atencion`, `certificado` u
+  `orden` (`TIPOS_DOCUMENTO_VALIDOS`). A diferencia del circuito de turnos,
+  no busca nada por `atencionId` (los documentos clínicos no tienen uno):
+  toda la información llega ya resuelta desde el cliente.
+- `document_id` (columna nueva, texto libre, sin FK) en
+  `cardiolink_communications` — usada únicamente por avisos `tipo='document'`
+  para guardar el id real del documento como referencia informativa y para
+  la deduplicación de 2 minutos. Deliberadamente separada de `atencion_id`
+  (que sigue significando exclusivamente "referencia a un turno"): para
+  `tipo='document'`, `atencion_id` queda `null` y `document_id` lleva el id
+  del documento.
+- `supabase/migrations/20260904120000_cardiolink_communications_document_notifications.sql`
+  — dos cambios aditivos: amplía el `CHECK` de
+  `cardiolink_communications.tipo` para aceptar `'document'`, y agrega la
+  columna `document_id`. Sin tablas nuevas, sin tocar filas existentes.
+
+**Qué NO hace:** no adjunta el PDF ni el documento, no incluye el
+contenido clínico/diagnóstico/indicaciones de la constancia, certificado u
+orden, no amplía permisos a ningún otro tipo de documento, no cambia quién
+puede editar un documento existente (`canEditDoc406` sin tocar).
+
+## 11. Cierre — contenido del email al paciente según prestación
+
+Sin cambios de código: se resuelve por completo con datos en
+`cardiolink_prestacion_templates` (`elegirPlantilla()`/`armarMensaje()`,
+ver sección 2, sin tocar). Alcance de este cierre: sólo las prestaciones de
+la actividad cardiológica actual (`consulta`, `holter`, `mapa`,
+`electrocardiograma`, `ecg`, `ecocardiograma doppler`) — el resto del
+catálogo (Diagnóstico por Imágenes, neumonología, neurología, kinesiología)
+sigue cayendo a `_default` a propósito, como una decisión explícita, no un
+olvido.
+
+La fila sembrada `eco` (de `textoWsTurno350()`, un botón de WhatsApp de
+elección manual, no ligado a ninguna prestación real) nunca matcheaba
+`Ecocardiograma Doppler` — el matching de `elegirPlantilla()` es por
+igualdad exacta contra `normalizarPrestacion(atencion.prestacion)`, y
+`normalizarPrestacion('Ecocardiograma Doppler')` da `'ecocardiograma
+doppler'`, no `'eco'`. Se agregó una fila nueva con esa clave exacta; la
+fila `eco` se dejó intacta (fuera de alcance).
+
+**¿Existe una UI en CardioLink para editar esto?** No. Búsqueda confirmada
+por grep en `app.js` y en todos los `cardiolink-*.js` del repo: cero
+referencias a `cardiolink_prestacion_templates` fuera de las Edge
+Functions y las migraciones. Sigue siendo, como ya decía esta misma
+sección 6 antes de este cierre, editable únicamente desde el Table Editor
+de Supabase. `cardiolink-prestaciones-perfil.js` es un módulo distinto (qué
+prestaciones tilda cada profesional en `data.profesionales[].prestaciones`),
+no tiene relación con el contenido de los mensajes.
+
+**Punto mínimo futuro para una UI de edición** (no construido ahora, sólo
+dejado documentado): una pantalla simple en la sección de Configuración,
+visible para Dueño/Admin (y opcionalmente Secretaría autorizada), que
+liste las filas de `cardiolink_prestacion_templates` vía `select` (ya
+permitido por RLS a cualquier rol con `cardiolink_has_communications_access()`)
+y permita editar `asunto_email`/`plantilla_confirmacion`/
+`plantilla_recordatorio`/`plantilla_reprogramacion`/`instrucciones_paciente`
+por fila. Requeriría únicamente: (a) una policy nueva de `update` para esa
+tabla (hoy sólo hay `select` para `authenticated`, ver
+[20260828120000_cardiolink_communications_schema.sql](../supabase/migrations/20260828120000_cardiolink_communications_schema.sql)),
+acotada al mismo rol que se decida habilitar; (b) una pantalla nueva en
+`app.js` (o un módulo aparte, mismo patrón que
+`cardiolink-prestaciones-perfil.js`) que lea/escriba esa tabla directo con
+`supabaseClient` — sin pasar por ninguna Edge Function, porque no hay
+lógica de negocio que proteger ahí, sólo texto. Ninguna indicación médica
+volvería a depender de tocar `app.js`.
