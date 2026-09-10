@@ -671,6 +671,12 @@ async function cerrarPorInactividad() {
   } catch (error) {
     console.error('Error cerrando sesión por inactividad:', error);
   }
+  // UI Interna V1 (iteración 2) - el "paciente actual" (módulo 411B) vive en
+  // sessionStorage, que sobrevive a location.reload(): sin este removeItem,
+  // el próximo usuario que inicie sesión en esta misma pestaña heredaría el
+  // paciente activo del usuario anterior. No toca restoreCurrent411B() ni
+  // ninguna otra lógica de esta función.
+  try { sessionStorage.removeItem('cardiolink_paciente_actual_411b'); } catch (e) {}
   alert('Sesión cerrada por 30 minutos de inactividad. Volvé a iniciar sesión.');
   location.reload();
 }
@@ -680,6 +686,10 @@ async function cerrarSesionSupabase() {
 
   await supabaseClient.auth.signOut();
   localStorage.removeItem("sb-session");
+  // UI Interna V1 (iteración 2) - mismo motivo que cerrarPorInactividad():
+  // evitar que el próximo login en esta pestaña herede el paciente activo
+  // de la sesión que se está cerrando.
+  try { sessionStorage.removeItem('cardiolink_paciente_actual_411b'); } catch (e) {}
 
   location.reload();
 }
@@ -1160,7 +1170,14 @@ function init(){
   on('btnBuscarPaciente','click',buscarPacienteDesdeCarga);
   on('buscarPaciente','keydown',(e)=>{if(e.key==='Enter'){e.preventDefault();buscarPacienteDesdeCarga();}});
   on('buscarPaciente','input',()=>{const q=$('buscarPaciente').value.trim();if(q.length>=3)buscarPacienteDesdeCarga();});
-  on('btnLimpiarBuscarPaciente','click',()=>{if($('buscarPaciente'))$('buscarPaciente').value=''; if($('resultadosPacientes'))$('resultadosPacientes').innerHTML='';});
+  // UI Interna V1 (iteración 2, fix de contexto) - este × antes sólo
+  // limpiaba el texto buscado y la lista de resultados: si ya había un
+  // paciente elegido (usarPaciente()), el banner "Paciente seleccionado" y
+  // los campos precargados (nombre/DNI/teléfono/email/sexo/fecha de
+  // nacimiento/edad/cobertura/nº de afiliado) quedaban intactos. Ahora
+  // también quita esa selección - ver quitarPacienteSeleccionadoCarga().
+  // No toca fecha/hora/profesional/prestación del turno.
+  on('btnLimpiarBuscarPaciente','click',()=>{if($('buscarPaciente'))$('buscarPaciente').value=''; if($('resultadosPacientes'))$('resultadosPacientes').innerHTML=''; quitarPacienteSeleccionadoCarga();});
   on('btnImportarMedicloud','click',abrirImportadorMedicloud);
   on('btnImportarWhatsapp','click',abrirImportadorWhatsapp);
   on('btnNuevoPacienteManual','click',nuevoPacienteManual);
@@ -2010,6 +2027,31 @@ function usarPaciente(id){
  }
  if($('resultadosPacientes'))$('resultadosPacientes').innerHTML='';
  aplicarRegla();
+}
+// UI Interna V1 (iteración 2, fix de contexto) - inverso puntual de
+// usarPaciente(): borra únicamente los campos que usarPaciente() precarga
+// desde la ficha del paciente. No toca fecha/horaInicio/profesional/
+// prestación ni ningún otro dato propio del turno. No tiene ningún vínculo
+// con el "Paciente actual" global (módulo 411B): usarPaciente() nunca llamó
+// a saveCurrent411B(), así que tampoco hace falta tocarlo acá.
+function quitarPacienteSeleccionadoCarga(){
+  if($('pacienteId'))$('pacienteId').value='';
+  if($('paciente'))$('paciente').value='';
+  if($('dni'))$('dni').value='';
+  if($('telefono'))$('telefono').value='';
+  if($('email'))$('email').value='';
+  if($('sexo'))$('sexo').value='';
+  if($('fechaNacimiento'))$('fechaNacimiento').value='';
+  actualizarEdadCarga();
+  if($('obraSocial'))$('obraSocial').value='';
+  if($('numeroAfiliado'))$('numeroAfiliado').value='';
+  // Checkbox dependiente del paciente elegido ("...cobertura habitual DEL
+  // PACIENTE"): sin paciente seleccionado, no corresponde dejarlo tildado.
+  if($('actualizarCoberturaHabitual'))$('actualizarCoberturaHabitual').checked=false;
+  if($('pacienteSeleccionadoBox')){
+    $('pacienteSeleccionadoBox').innerHTML='';
+    $('pacienteSeleccionadoBox').classList.add('hidden');
+  }
 }
 function nuevoPacienteManual(){
  if($('pacienteId'))$('pacienteId').value='';
@@ -10802,6 +10844,13 @@ function patientInfoTextHC(p,coverage){
 
   const STORAGE='cardiolink_paciente_actual_411b';
   let currentKey411B='';
+  // UI Interna V1 (iteración 2, fix de contexto) - true cuando el usuario
+  // limpió explícitamente el paciente actual (botón ×), hasta que se
+  // seleccione uno real de nuevo. Mientras esté en true, getCurrent411B()
+  // no debe re-inferir un paciente desde pacienteSeleccionadoPanelId ni
+  // desde el modal global - esas variables siguen sin tocarse, sólo se
+  // deja de consultarlas por un instante.
+  let limpiadoManualmente411B=false;
   const $b=id=>document.getElementById(id);
   const esc=s=>String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
   function norm(s){return String(s||'').trim().toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g,'');}
@@ -10833,6 +10882,7 @@ function patientInfoTextHC(p,coverage){
 
   function saveCurrent411B(key){
     currentKey411B=String(key||'');
+    limpiadoManualmente411B=!currentKey411B;
     try{if(currentKey411B)sessionStorage.setItem(STORAGE,currentKey411B);else sessionStorage.removeItem(STORAGE);}catch(_){}
     renderCurrent411B();
   }
@@ -10842,6 +10892,7 @@ function patientInfoTextHC(p,coverage){
   function getCurrent411B(){
     let p=patientByKey(currentKey411B);
     if(p)return p;
+    if(limpiadoManualmente411B)return null;
     try{
       const selected=(typeof pacienteSeleccionadoPanelId!=='undefined'?pacienteSeleccionadoPanelId:'')||'';
       if(selected){p=patientByKey(String(selected));if(p){currentKey411B=patientKey(p);try{sessionStorage.setItem(STORAGE,currentKey411B);}catch(_){}return p;}}
@@ -10913,13 +10964,37 @@ function patientInfoTextHC(p,coverage){
     }catch(_){}
     return null;
   }
+  // UI Interna V1 (iteración 2, Parte 2 del fix) - "paciente actual
+  // EXPLÍCITO": lee únicamente currentKey411B, sin ninguno de los
+  // fallbacks de resolveActionPatient411B()/getCurrent411B() (dataset de
+  // la barra, texto mostrado, pacienteSeleccionadoPanelId, modal/ficha
+  // abierta). Sólo la usan las variantes '-fab' de RCTA/Certificado/
+  // Constancia (ver runAction411B) para no inferir silenciosamente un
+  // paciente viejo cuando se dispara desde el FAB. No reemplaza a
+  // resolveActionPatient411B() en ningún otro lado - "Acciones ▾" de la
+  // barra sigue usando el resuelto de siempre, sin cambios.
+  function pacienteActualExplicito411B(){
+    return patientByKey(currentKey411B);
+  }
   function globalActionsHtml411B(){
     const p=resolveActionPatient411B(),secretary=isSecretary();
     let arr=[];
+    // UI Interna V1 (iteración 2, Parte 4 - lista definitiva) - el FAB es
+    // la puerta GLOBAL. "Nuevo paciente"/"Buscar paciente" siempre están;
+    // "Nueva atención"/"Nuevo turno" usa 'attention-blank' (SIEMPRE en
+    // blanco, ver runAction411B()); RCTA/Certificado/Constancia usan los
+    // ids '-fab' (rcta-fab/certificate-fab/constancia-fab): esas variantes
+    // sólo actúan sobre el paciente actual EXPLÍCITO del módulo 411B, sin
+    // los fallbacks históricos (pacienteSeleccionadoPanelId, modal/ficha
+    // abierta) que sí sigue usando "Acciones ▾" de la barra (sin tocar,
+    // sigue usando 'rcta'/'order'/'certificate'/'constancia' normales).
+    // "Nueva evolución" y "Orden médica" quedan fuera del FAB (siguen
+    // disponibles desde "Acciones ▾" cuando hay paciente activo). No se
+    // amplían permisos: Secretaría sigue sin RCTA/Certificado/Orden.
     if(secretary){
-      arr=[['newpatient','Nuevo paciente'],['attention','Nuevo turno / atención'],['constancia','Constancia de atención'],['search','Buscar paciente']];
+      arr=[['newpatient','Nuevo paciente'],['attention-blank','Nuevo turno / atención'],['search','Buscar paciente'],['constancia-fab','Constancia de atención']];
     }else if(isMedical()){
-      arr=[['newpatient','Nuevo paciente'],['attention','Nueva atención'],['evolve','Nueva evolución'],['rcta','RCTA'],['order','Orden médica'],['certificate','Certificado'],['constancia','Constancia'],['search','Buscar paciente']];
+      arr=[['newpatient','Nuevo paciente'],['attention-blank','Nueva atención'],['search','Buscar paciente'],['rcta-fab','RCTA'],['certificate-fab','Certificado'],['constancia-fab','Constancia']];
     }else{
       arr=[['search','Buscar paciente']];
     }
@@ -10930,7 +11005,12 @@ function patientInfoTextHC(p,coverage){
     ensureUI411B();
     const p=getCurrent411B(),bar=$b('currentPatient411B');
     if(!bar)return;
-    if(!p){bar.classList.add('hidden');}
+    if(!p){
+      bar.classList.add('hidden');
+      delete bar.dataset.patientKey411b;
+      const nameEl=bar.querySelector('[data-cp-name411b]');if(nameEl)nameEl.textContent='';
+      const metaEl=bar.querySelector('[data-cp-meta411b]');if(metaEl)metaEl.textContent='';
+    }
     else{
       bar.classList.remove('hidden');
       bar.dataset.patientKey411b=patientKey(p);
@@ -11046,6 +11126,41 @@ function patientInfoTextHC(p,coverage){
   }
 
   function runAction411B(action){
+    // UI Interna V1 (iteración 2, Parte 3/4) - "Nueva atención" global
+    // (Dashboard, FAB) SIEMPRE debe abrir en blanco: se resuelve ANTES de
+    // llamar a resolveActionPatient411B() para esta acción puntual, así
+    // ni siquiera se consulta (y de paso no se "despierta" por su cuenta)
+    // un paciente activo/último paciente. También limpia cualquier
+    // selección que hubiera quedado cargada en Carga de turno/atención
+    // (ver quitarPacienteSeleccionadoCarga(), Parte 2) para que el
+    // formulario quede realmente vacío. No toca fecha/hora/profesional/
+    // prestación si ya estaban elegidos - eso lo respeta
+    // quitarPacienteSeleccionadoCarga() sin cambios. El botón contextual
+    // equivalente sobre el paciente activo sigue siendo 'attention' desde
+    // "Acciones ▾" de la barra, sin tocar.
+    if(action==='attention-blank'){
+      try{if(typeof quitarPacienteSeleccionadoCarga==='function')quitarPacienteSeleccionadoCarga();}catch(_){}
+      return attention411B(null);
+    }
+    // UI Interna V1 (iteración 2, Parte 2 del fix) - variantes de RCTA/
+    // Certificado/Constancia exclusivas del FAB: usan pacienteActualExplicito411B()
+    // (sólo currentKey411B), nunca resolveActionPatient411B() (que puede
+    // inferir desde pacienteSeleccionadoPanelId o un modal/ficha abierta).
+    // Sin paciente actual explícito, mismo mensaje/redirección que ya usa
+    // el resto de las acciones clínicas sin paciente. "Acciones ▾" de la
+    // barra sigue intacta, con 'rcta'/'certificate'/'constancia' normales
+    // más abajo, contextual como siempre.
+    if(action==='rcta-fab'||action==='certificate-fab'||action==='constancia-fab'){
+      const pExplicito=pacienteActualExplicito411B();
+      if(!pExplicito){
+        try{showSection('pacientes');setTimeout(()=>$b('pacientesBuscar')?.focus(),80);}catch(_){}
+        alert('Primero seleccioná un paciente. Te llevo al buscador de Pacientes.');
+        return;
+      }
+      if(action==='rcta-fab')return rcta411B(pExplicito);
+      if(action==='certificate-fab')return doc411B(pExplicito,'certificado');
+      return doc411B(pExplicito,'constancia_atencion');
+    }
     const p=resolveActionPatient411B();
     if(action==='clear')return saveCurrent411B('');
     if(action==='newpatient')return newPatient411B();
@@ -11090,7 +11205,15 @@ function patientInfoTextHC(p,coverage){
     if(a){e.preventDefault();runAction411B(a.dataset.cpAction411b);$b('cpMenu411B')?.classList.add('hidden');$b('globalQuickMenu411B')?.classList.add('hidden');return;}
     const toggle=e.target.closest?.('[data-cp-toggle411b]');
     if(toggle){e.preventDefault();$b('cpMenu411B')?.classList.toggle('hidden');return;}
-    if(e.target.closest?.('#globalQuick411B')){e.preventDefault();resolveActionPatient411B();renderCurrent411B();$b('globalQuickMenu411B')?.classList.toggle('hidden');return;}
+    // UI Interna V1 (iteración 2, Parte 2 del fix) - antes llamaba también
+    // a resolveActionPatient411B() antes de renderCurrent411B(): esa
+    // llamada extra podía, sólo por ABRIR el FAB, inferir (y persistir vía
+    // saveCurrent411B) un paciente desde el dataset stale de la barra o
+    // desde pacienteSeleccionadoPanelId, contaminando qué paciente ve
+    // luego pacienteActualExplicito411B() al elegir RCTA/Certificado/
+    // Constancia. renderCurrent411B() ya llama a getCurrent411B() y
+    // refresca correctamente el título/menú del FAB por su cuenta.
+    if(e.target.closest?.('#globalQuick411B')){e.preventDefault();renderCurrent411B();$b('globalQuickMenu411B')?.classList.toggle('hidden');return;}
     if(!e.target.closest?.('#currentPatient411B')&&!e.target.closest?.('#globalQuickMenu411B')){$b('cpMenu411B')?.classList.add('hidden');$b('globalQuickMenu411B')?.classList.add('hidden');}
     const patientTarget=e.target.closest?.('[data-hc-patient],[data-hc-new],[data-open-hc],[data-patient-open4091],[data-rcta-patient4095]');
     if(patientTarget){
@@ -11137,6 +11260,13 @@ function patientInfoTextHC(p,coverage){
     .global-quick-menu411b button:disabled{opacity:.42;cursor:not-allowed}
     .gq-title411b{padding:8px 10px 6px;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#64748b;font-weight:800;border-bottom:1px solid #e2e8f0;margin-bottom:3px}
     @media(max-width:1180px){.current-patient411b{left:50%;top:12px;bottom:auto;transform:translateX(-50%);max-width:calc(100vw - 24px)}.current-patient-main411b{min-width:180px}.global-quick411b{right:16px;bottom:92px}.global-quick-menu411b{right:16px;bottom:154px}}
+    /* UI Interna V1 (iteración 2) - a partir de 1024px (mismo corte donde
+       .mobile-appbar-370 pasa a display:flex, ver styles.css) el header
+       móvil fijo (top:0, alto 58px + safe-area, z-index:15000) tapaba a
+       esta barra (z-index:12050, top:12px). Se la baja para que quede
+       visible DEBAJO del header, sin tocar su centrado horizontal ni el
+       comportamiento de desktop (regla anterior, >1024px, sigue intacta). */
+    @media(max-width:1024px){.current-patient411b{top:calc(58px + env(safe-area-inset-top) + 10px)}}
   `;
   document.head.appendChild(s);
 })();
