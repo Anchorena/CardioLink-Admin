@@ -48,6 +48,23 @@
       .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   }
 
+  // Comparador canonico de solicitantes/derivantes. Reutiliza el de app.js
+  // (minusculas + sin acentos + ignora "Dr"/"Dra", puntos y espacios
+  // redundantes; NO reordena apellido/nombre). Fallback local defensivo por si
+  // se ejecuta antes de que app.js exponga la funcion.
+  function normCmp411R(v) {
+    try {
+      if (typeof normalizarDerivanteParaComparar === 'function') {
+        return normalizarDerivanteParaComparar(v);
+      }
+    } catch (_) {}
+    return norm(v)
+      .replace(/\b(dr|dra)\.?(?=\s|$)/g, '')
+      .replace(/\./g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
   function digits(v) { return String(v || '').replace(/\D/g, ''); }
 
   function customSolicitantes() {
@@ -59,14 +76,84 @@
     }
   }
 
-  function guardarSolicitanteCustom(nombre) {
+  // Catalogo unico y sincronizado de solicitantes/derivantes: data.medicosDerivantes
+  // (persiste con saveConfig(); el wrapper 298 de app.js lo sincroniza a Supabase).
+  // localStorage['cl_eco_solicitantes_custom'] queda SOLO como lectura legacy:
+  // no se escribe mas ahi; si se reutiliza una entrada que solo vive ahi, se
+  // promueve al catalogo sincronizado.
+  function catalogoSincronizado411R() {
+    try {
+      if (typeof data !== 'undefined' && data && Array.isArray(data.medicosDerivantes)) {
+        return data.medicosDerivantes;
+      }
+    } catch (_) {}
+    return null;
+  }
+
+  function persistirCatalogo411R() {
+    try {
+      if (typeof saveConfig === 'function') saveConfig();
+    } catch (e) {
+      console.warn('411R: no se pudo persistir el catalogo de derivantes:', e);
+    }
+  }
+
+  // Lista de "agregados por vos" para los selectores: catalogo sincronizado +
+  // legacy local, deduplicado con normCmp411R y sin repetir variantes de las
+  // semillas estaticas (COLEGAS_FRECUENTES / ESPECIALIDADES_GENERICAS).
+  function extrasSolicitantes411R() {
+    const sync = catalogoSincronizado411R() || [];
+    const vistos = new Set(
+      [...COLEGAS_FRECUENTES, ...ESPECIALIDADES_GENERICAS].map(normCmp411R)
+    );
+    const out = [];
+    [...sync, ...customSolicitantes()].forEach(nombre => {
+      const n = normCmp411R(nombre);
+      if (!n || vistos.has(n)) return;
+      vistos.add(n);
+      out.push(String(nombre).trim());
+    });
+    return out;
+  }
+
+  // Resuelve el nombre canonico de un solicitante y da de alta lo que falte.
+  //  1. equivalente en COLEGAS_FRECUENTES / ESPECIALIDADES_GENERICAS -> se
+  //     devuelve esa semilla (no hace falta agregarla, ya es global en codigo).
+  //  2. equivalente en data.medicosDerivantes -> se devuelve ese valor.
+  //  3. equivalente solo en el legacy local -> se promueve a
+  //     data.medicosDerivantes + saveConfig() y se devuelve.
+  //  4. no existe en ninguna fuente -> se agrega a data.medicosDerivantes +
+  //     saveConfig() y se devuelve tal cual (trim).
+  function resolverSolicitanteCanonico411R(nombre) {
     nombre = String(nombre || '').trim();
-    if (!nombre) return;
-    const all = [...COLEGAS_FRECUENTES, ...customSolicitantes()];
-    if (all.some(x => norm(x) === norm(nombre))) return;
-    const lista = customSolicitantes();
-    lista.push(nombre);
-    try { localStorage.setItem(CUSTOM_SOLICITANTES_KEY, JSON.stringify(lista)); } catch (_) {}
+    if (!nombre) return '';
+    const n = normCmp411R(nombre);
+
+    const semilla = COLEGAS_FRECUENTES.find(x => normCmp411R(x) === n)
+      || ESPECIALIDADES_GENERICAS.find(x => normCmp411R(x) === n);
+    if (semilla) return semilla;
+
+    const sync = catalogoSincronizado411R();
+    if (sync) {
+      const enSync = sync.find(x => normCmp411R(x) === n);
+      if (enSync) return enSync;
+    }
+
+    const enLegacy = customSolicitantes().find(x => normCmp411R(x) === n);
+    if (enLegacy) {
+      const canon = String(enLegacy).trim();
+      if (sync && !sync.some(x => normCmp411R(x) === n)) {
+        sync.push(canon);
+        persistirCatalogo411R();
+      }
+      return canon;
+    }
+
+    if (sync) {
+      sync.push(nombre);
+      persistirCatalogo411R();
+    }
+    return nombre;
   }
 
   function patientByKey(key) {
@@ -290,11 +377,11 @@
   }
 
   function optionsSolicitanteTurno(selected='') {
-    const selectedNorm = norm(selected);
-    const extras = customSolicitantes();
+    const selectedNorm = normCmp411R(selected);
+    const extras = extrasSolicitantes411R();
     const all = [...COLEGAS_FRECUENTES, ...extras, ...ESPECIALIDADES_GENERICAS];
-    const exists = all.some(x => norm(x) === selectedNorm);
-    const opt = n => `<option value="${esc(n)}" ${norm(n) === selectedNorm ? 'selected' : ''}>${esc(n)}</option>`;
+    const exists = all.some(x => normCmp411R(x) === selectedNorm);
+    const opt = n => `<option value="${esc(n)}" ${normCmp411R(n) === selectedNorm ? 'selected' : ''}>${esc(n)}</option>`;
     let html = `<option value="" ${!selected ? 'selected' : ''}>No consignado</option>`;
     html += `<optgroup label="Colegas frecuentes">${COLEGAS_FRECUENTES.map(opt).join('')}</optgroup>`;
     if (extras.length) html += `<optgroup label="Agregados por vos">${extras.map(opt).join('')}</optgroup>`;
@@ -373,11 +460,10 @@
     const wrapped = function () {
       const record = original.apply(this, arguments);
       if (record && typeof record === 'object') {
-        const solicitante = turnoRequesterValue();
+        const solicitante = resolverSolicitanteCanonico411R(turnoRequesterValue());
         const motivo = String(document.getElementById('turnoMotivo411R')?.value || '').trim();
         record.medicoSolicitante = solicitante;
         record.motivoSolicitud = motivo;
-        if (solicitante) guardarSolicitanteCustom(solicitante);
       }
       return record;
     };
@@ -407,6 +493,9 @@
     if (!a) return;
 
     const selected = String(a.medicoSolicitante || '').trim();
+    const selEnCatalogo = [...COLEGAS_FRECUENTES, ...extrasSolicitantes411R(), ...ESPECIALIDADES_GENERICAS]
+      .some(x => normCmp411R(x) === normCmp411R(selected));
+    const isOtherSel = selected && !selEnCatalogo;
     const formGrid = modal.querySelector('.modal-form-grid');
     const obs = document.getElementById('m_obs')?.closest('div');
     if (!formGrid || !obs) return;
@@ -420,14 +509,9 @@
         <label>Profesional solicitante
           <select id="m_solicitante411R">${optionsSolicitanteTurno(selected)}</select>
         </label>
-        <label id="m_solicitanteOtroWrap411R" style="display:${
-          selected && ![...COLEGAS_FRECUENTES,...customSolicitantes(),...ESPECIALIDADES_GENERICAS].some(x=>norm(x)===norm(selected))
-            ? 'block' : 'none'
-        }">
+        <label id="m_solicitanteOtroWrap411R" style="display:${isOtherSel ? 'block' : 'none'}">
           Otro / no listado
-          <input id="m_solicitanteOtro411R" type="text" value="${
-            esc(selected && ![...COLEGAS_FRECUENTES,...customSolicitantes(),...ESPECIALIDADES_GENERICAS].some(x=>norm(x)===norm(selected)) ? selected : '')
-          }">
+          <input id="m_solicitanteOtro411R" type="text" value="${esc(isOtherSel ? selected : '')}">
         </label>
         <label class="cl-turno-motivo411r">Motivo / indicación
           <input id="m_motivoSolicitud411R" type="text" value="${esc(a.motivoSolicitud || '')}"
@@ -467,10 +551,9 @@
     const wrapped = function (id) {
       const a = attentionById411R(id);
       if (a && document.getElementById('m_referral411R')) {
-        const solicitante = editRequesterValue411R();
+        const solicitante = resolverSolicitanteCanonico411R(editRequesterValue411R());
         a.medicoSolicitante = solicitante;
         a.motivoSolicitud = String(document.getElementById('m_motivoSolicitud411R')?.value || '').trim();
-        if (solicitante) guardarSolicitanteCustom(solicitante);
       }
       return original.apply(this, arguments);
     };
@@ -493,14 +576,14 @@
   }
 
   function requesterOptions(selected) {
-    const extras = customSolicitantes();
+    const extras = extrasSolicitantes411R();
     const allFrequent = COLEGAS_FRECUENTES.slice();
-    const selectedNorm = norm(selected);
+    const selectedNorm = normCmp411R(selected);
     const exists = [...allFrequent, ...extras, ...ESPECIALIDADES_GENERICAS]
-      .some(x => norm(x) === selectedNorm);
+      .some(x => normCmp411R(x) === selectedNorm);
 
     function opt(n) {
-      return `<option value="${esc(n)}" ${norm(n) === selectedNorm ? 'selected' : ''}>${esc(n)}</option>`;
+      return `<option value="${esc(n)}" ${normCmp411R(n) === selectedNorm ? 'selected' : ''}>${esc(n)}</option>`;
     }
 
     let html = `<option value="" ${!selected ? 'selected' : ''}>No consignado / sin solicitante</option>`;
@@ -516,25 +599,38 @@
     if (!modal || document.getElementById('hcSolicitante411R')) return;
 
     const evo = document.getElementById('hcEvolucion');
-    const existing = extractRequester(evo?.value || '');
+    // Prioridad: 1) solicitante ya escrito en la narrativa (evolución
+    // histórica que se está editando) -> se respeta y queda editable, como
+    // siempre. 2) si no hay, y la evolución está vinculada a un turno con
+    // solicitante (dataset expuesto por openEvolutionModalHC en app.js),
+    // ese es el valor: se muestra en SOLO LECTURA y NO se vuelve a escribir
+    // en la narrativa (ver prepareEvolutionBeforeSave). La atención es la
+    // única fuente de verdad en ese escenario.
+    const fromNarrative = extractRequester(evo?.value || '');
+    const fromAtencion = String(modal.dataset.solicitanteAtencion410e || '').trim();
+    const existing = fromNarrative || fromAtencion;
+    const lockedFromAtencion = !fromNarrative && !!fromAtencion;
+    const isOtherExisting = existing && ![...COLEGAS_FRECUENTES, ...extrasSolicitantes411R(), ...ESPECIALIDADES_GENERICAS].some(x => normCmp411R(x) === normCmp411R(existing));
 
     const section = document.createElement('section');
-    section.className = 'cl-requester-card411r';
+    section.className = 'cl-requester-card411r' + (lockedFromAtencion ? ' cl-requester-locked411r' : '');
     section.dataset.clRequesterCard411r = '1';
     section.innerHTML = `
       <div class="cl-requester-title411r">
         <div>
           <h3>Médico que refiere / deriva / solicita</h3>
-          <p class="muted">Opcional. Se utiliza también para la estadística de colegas que derivan estudios.</p>
+          <p class="muted">${lockedFromAtencion
+            ? 'Proviene del turno. Para cambiarlo, editá la atención.'
+            : 'Opcional. Se utiliza también para la estadística de colegas que derivan estudios.'}</p>
         </div>
       </div>
       <div class="cl-requester-grid411r">
         <label>Profesional
-          <select id="hcSolicitante411R">${requesterOptions(existing)}</select>
+          <select id="hcSolicitante411R"${lockedFromAtencion ? ' disabled' : ''}>${requesterOptions(existing)}</select>
         </label>
-        <label id="hcSolicitanteOtroWrap411R" style="display:${existing && ![...COLEGAS_FRECUENTES,...customSolicitantes(),...ESPECIALIDADES_GENERICAS].some(x=>norm(x)===norm(existing)) ? 'block' : 'none'}">
+        <label id="hcSolicitanteOtroWrap411R" style="display:${isOtherExisting ? 'block' : 'none'}">
           Otro / no listado
-          <input id="hcSolicitanteOtro411R" type="text" value="${esc(existing && ![...COLEGAS_FRECUENTES,...customSolicitantes(),...ESPECIALIDADES_GENERICAS].some(x=>norm(x)===norm(existing)) ? existing : '')}" placeholder="Nombre del profesional">
+          <input id="hcSolicitanteOtro411R" type="text" value="${esc(isOtherExisting ? existing : '')}" placeholder="Nombre del profesional"${lockedFromAtencion ? ' disabled' : ''}>
         </label>
       </div>`;
 
@@ -550,16 +646,19 @@
     if (sel) {
       sel.dataset.initial411r = existing || '';
       sel.dataset.touched411r = '0';
-      sel.addEventListener('change', () => {
+      sel.dataset.origen411r = lockedFromAtencion ? 'atencion' : '';
+    }
+    if (!lockedFromAtencion) {
+      sel?.addEventListener('change', () => {
         sel.dataset.touched411r = '1';
         const isOther = sel.value === '__otro__';
         if (otherWrap) otherWrap.style.display = isOther ? 'block' : 'none';
         if (isOther) other?.focus();
       });
+      other?.addEventListener('input', () => {
+        if (sel) sel.dataset.touched411r = '1';
+      });
     }
-    other?.addEventListener('input', () => {
-      if (sel) sel.dataset.touched411r = '1';
-    });
   }
 
   function selectedRequester() {
@@ -575,6 +674,13 @@
   function prepareEvolutionBeforeSave() {
     const evo = document.getElementById('hcEvolucion');
     if (!evo) return;
+    // Si el solicitante proviene del turno (atención), la atención es la
+    // única fuente de verdad: NO se antepone "Médico solicitante:" a la
+    // narrativa, así referralEvents() cuenta un solo evento (el de
+    // atencion.medicoSolicitante) y no queda una segunda fuente que pueda
+    // contradecirlo.
+    const selRef = document.getElementById('hcSolicitante411R');
+    if (selRef && selRef.dataset.origen411r === 'atencion') return;
     const existingInText = extractRequester(evo.value);
     const chosen = selectedRequester();
 
@@ -584,8 +690,8 @@
 
     const body = stripRequesterHeader(evo.value).trimStart();
     if (chosen.name) {
-      guardarSolicitanteCustom(chosen.name);
-      evo.value = `Médico solicitante: ${chosen.name}\n\n${body}`.trimEnd();
+      const canon = resolverSolicitanteCanonico411R(chosen.name);
+      evo.value = `Médico solicitante: ${canon}\n\n${body}`.trimEnd();
     } else if (chosen.touched) {
       evo.value = body;
     }
@@ -915,6 +1021,10 @@
     }
     .cl-requester-grid411r label{font-weight:700}
     .cl-requester-grid411r select,.cl-requester-grid411r input{width:100%;margin-top:5px}
+    .cl-requester-locked411r{border-left:3px solid #9fb8c2}
+    .cl-requester-locked411r select[disabled],.cl-requester-locked411r input[disabled]{
+      background:#eef3f6;color:#334155;cursor:not-allowed;opacity:1
+    }
     .cl-cp-separator411r{
       border-top:1px solid #d8e2ea;margin-top:6px;padding-top:8px;
       font-size:11px;font-weight:800;color:#6b7c8f;text-transform:uppercase;letter-spacing:.06em

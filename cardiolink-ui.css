@@ -264,3 +264,19 @@ body.dark{
 #btnCerrarSesion.cl-listo{
   opacity:1 !important;
 }
+
+/* UI Interna V1 (iteración 4) - contexto del episodio bajo la prestación en
+   Listado (Motivo / Solicitante-derivante). Datos que ya viven en la
+   atención; acá sólo se muestran. Se trunca visualmente a una línea y el
+   texto completo queda en el title (tooltip). No agrega columna. */
+.listado-episodio-412{
+  display:block;
+  max-width:230px;
+  overflow:hidden;
+  text-overflow:ellipsis;
+  white-space:nowrap;
+  color:var(--muted,#64748b);
+  font-size:11px;
+  font-weight:400;
+  line-height:1.5;
+}
