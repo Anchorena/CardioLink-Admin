@@ -3826,9 +3826,11 @@ function seleccionarPacientePanel(id){
     <div class="paciente-ficha-grid">
       <div><span>Cobertura habitual</span><strong>${escapeHtml(p.coberturaHabitual||'s/d')}</strong></div>
       <div><span>Nº afiliado habitual</span><strong>${escapeHtml(p.numeroAfiliadoHabitual||'s/d')}</strong></div>
+      <div><span>Teléfono</span><strong>${escapeHtml(p.telefono||'s/d')}</strong></div>
+      <div><span>Email</span><strong>${escapeHtml(p.email||'s/d')}</strong></div>
       <div><span>Contacto responsable</span><strong>${escapeHtml(p.contactoResponsableNombre||'s/d')}${p.contactoResponsableRelacion?' · '+escapeHtml(p.contactoResponsableRelacion):''}</strong></div>
-      <div><span>Teléfono contacto</span><strong>${escapeHtml(p.contactoResponsableTelefono||'s/d')}</strong></div>
-      <div><span>Email contacto</span><strong>${escapeHtml(p.contactoResponsableEmail||'s/d')}</strong></div>
+      <div><span>Teléfono del responsable</span><strong>${escapeHtml(p.contactoResponsableTelefono||'s/d')}</strong></div>
+      <div><span>Email del responsable</span><strong>${escapeHtml(p.contactoResponsableEmail||'s/d')}</strong></div>
       <div><span>Fecha nacimiento</span><strong>${escapeHtml(p.fechaNacimiento?formatFecha(p.fechaNacimiento):'s/d')}</strong></div>
       <div><span>Sexo</span><strong>${escapeHtml(p.sexo||'s/d')}</strong></div>
       <div><span>Localidad</span><strong>${escapeHtml(p.localidad||'s/d')}</strong></div>
@@ -6234,8 +6236,8 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         <div><span>Teléfono</span><strong>${esc(p.telefono||'s/d')}</strong></div>
         <div><span>Email</span><strong>${esc(p.email||'s/d')}</strong></div>
         <div><span>Contacto responsable</span><strong>${esc(p.contactoResponsableNombre||'s/d')}${p.contactoResponsableRelacion?' · '+esc(p.contactoResponsableRelacion):''}</strong></div>
-        <div><span>Teléfono contacto</span><strong>${esc(p.contactoResponsableTelefono||'s/d')}</strong></div>
-        <div><span>Email contacto</span><strong>${esc(p.contactoResponsableEmail||'s/d')}</strong></div>
+        <div><span>Teléfono del responsable</span><strong>${esc(p.contactoResponsableTelefono||'s/d')}</strong></div>
+        <div><span>Email del responsable</span><strong>${esc(p.contactoResponsableEmail||'s/d')}</strong></div>
         <div><span>Cobertura habitual</span><strong>${esc(p.coberturaHabitual||p.obraSocial||'Incompleto')}</strong></div>
         <div><span>Nº afiliado</span><strong>${esc(p.numeroAfiliadoHabitual||p.numeroAfiliado||'s/d')}</strong></div>
         <div><span>Fecha nacimiento</span><strong>${esc(p.fechaNacimiento?(typeof formatFecha==='function'?formatFecha(p.fechaNacimiento):p.fechaNacimiento):'s/d')}</strong></div>
@@ -6689,8 +6691,8 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         <div><span>Cobertura habitual</span><strong>${esc(coberturaVisible350(p))}</strong></div>
         <div><span>Nº afiliado habitual</span><strong>${esc(p.numeroAfiliadoHabitual||p.numeroAfiliado||'s/d')}</strong></div>
         <div><span>Contacto responsable</span><strong>${esc(p.contactoResponsableNombre||'s/d')}${p.contactoResponsableRelacion?' · '+esc(p.contactoResponsableRelacion):''}</strong></div>
-        <div><span>Teléfono contacto</span><strong>${esc(p.contactoResponsableTelefono||'s/d')}</strong></div>
-        <div><span>Email contacto</span><strong>${esc(p.contactoResponsableEmail||'s/d')}</strong></div>
+        <div><span>Teléfono del responsable</span><strong>${esc(p.contactoResponsableTelefono||'s/d')}</strong></div>
+        <div><span>Email del responsable</span><strong>${esc(p.contactoResponsableEmail||'s/d')}</strong></div>
         <div><span>Fecha nacimiento</span><strong>${esc(p.fechaNacimiento?(typeof formatFecha==='function'?formatFecha(p.fechaNacimiento):p.fechaNacimiento):'s/d')}</strong></div>
         <div><span>Total atenciones</span><strong>${ats.length}</strong></div>
         <div><span>Última atención</span><strong>${ult?esc((typeof formatFecha==='function'?formatFecha(ult.fecha):ult.fecha)+' · '+(ult.prestacion||'')):'s/d'}</strong></div>
@@ -7501,6 +7503,39 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     if(now.getMonth()<mo-1||(now.getMonth()===mo-1&&now.getDate()<d))age--;
     return age>=0&&age<130?String(age):'';
   }
+  // UI Interna V1 (iteración 3) - resuelve el texto de edad para la tarjeta
+  // de Pendientes. Prioridad: 1) a.fechaNacimiento (copia denormalizada en
+  // la atención); 2) si falta, la ficha actual del paciente en
+  // data.pacientes, buscada por a.pacienteId y, como fallback, por DNI
+  // normalizado (NUNCA por nombre). Si tampoco hay fecha válida, devuelve
+  // "Edad s/d" - nunca deja la edad simplemente ausente. No guarda ni
+  // modifica nada, sólo lee al renderizar. idxPac es un Map opcional
+  // (clave 'id:'+id / 'dni:'+dni) armado una sola vez por render para no
+  // hacer un .find() por tarjeta.
+  function edadPendienteEtiqueta383(a,idxPac){
+    let e=edadPendiente383(a&&a.fechaNacimiento);
+    if(e)return e+' años';
+    let pac=null;
+    if(idxPac&&a){
+      if(a.pacienteId)pac=idxPac.get('id:'+a.pacienteId)||null;
+      if(!pac&&a.dni){const d=String(a.dni).replace(/\D/g,'');if(d)pac=idxPac.get('dni:'+d)||null;}
+    }
+    if(pac){e=edadPendiente383(pac.fechaNacimiento);if(e)return e+' años';}
+    return 'Edad s/d';
+  }
+  function indicePacientes383(){
+    const m=new Map();
+    try{
+      const lista=(typeof data!=='undefined'&&data&&Array.isArray(data.pacientes))?data.pacientes:[];
+      lista.forEach(p=>{
+        if(!p)return;
+        if(p.id)m.set('id:'+p.id,p);
+        const d=p.dni?String(p.dni).replace(/\D/g,''):'';
+        if(d&&!m.has('dni:'+d))m.set('dni:'+d,p);
+      });
+    }catch(_){}
+    return m;
+  }
   function renderPendientes383(){
     const box=document.getElementById('pendientesLista383');if(!box)return;
     let list=base383().filter(a=>pendientes383(a).length);
@@ -7513,7 +7548,8 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const desc=document.getElementById('pendOrden383')?.value==='desc';list.sort((a,b)=>(String(a.fecha||'').localeCompare(String(b.fecha||'')))*(desc?-1:1));
     if(!list.length){box.innerHTML=`<div class="empty383">${onlyOverdue383?'No hay pendientes vencidos de más de 7 días.':'No hay pendientes en esta categoría.'}</div>`;return}
     const notice=onlyOverdue383?'<div class="empty383">Mostrando pendientes vencidos de más de 7 días. Elegí una categoría para volver a la vista completa.</div>':'';
-    box.innerHTML=notice+list.map(a=>{const ps=pendientes383(a);const edad383=edadPendiente383(a.fechaNacimiento);return `<article class="pend-card383"><div class="pend-main383"><div class="pend-date383">${esc383(typeof formatFecha==='function'?formatFecha(a.fecha):a.fecha)}${a.horaInicio?' · '+esc383(a.horaInicio):''}</div><h3>${esc383(a.paciente||'Paciente')}${edad383?' · '+esc383(edad383)+' años':''}</h3><p>${esc383(a.prestacion||'')} · ${esc383(a.profesional||'')}</p><p class="muted">${esc383(a.obraSocial||'Sin cobertura')} · DNI ${esc383(a.dni||'s/d')}</p></div><div class="pend-tags383">${ps.map(k=>`<button type="button" class="pend-tag383 p-${k}" onclick="resolverPendiente383('${esc383(a.id)}','${k}')">${esc383(labels383(k))}</button>`).join('')}<button type="button" class="secondary open383" onclick="abrirFichaPacienteDesdePendiente411C('${esc383(a.id)}')">Ficha paciente</button></div></article>`}).join('');
+    const idxPac383=indicePacientes383();
+    box.innerHTML=notice+list.map(a=>{const ps=pendientes383(a);const edad383=edadPendienteEtiqueta383(a,idxPac383);return `<article class="pend-card383"><div class="pend-main383"><div class="pend-date383">${esc383(typeof formatFecha==='function'?formatFecha(a.fecha):a.fecha)}${a.horaInicio?' · '+esc383(a.horaInicio):''}</div><h3>${esc383(a.paciente||'Paciente')} · ${esc383(edad383)}</h3><p>${esc383(a.prestacion||'')} · ${esc383(a.profesional||'')}</p><p class="muted">${esc383(a.obraSocial||'Sin cobertura')} · DNI ${esc383(a.dni||'s/d')}</p></div><div class="pend-tags383">${ps.map(k=>`<button type="button" class="pend-tag383 p-${k}" onclick="resolverPendiente383('${esc383(a.id)}','${k}')">${esc383(labels383(k))}</button>`).join('')}<button type="button" class="secondary open383" onclick="abrirFichaPacienteDesdePendiente411C('${esc383(a.id)}')">Ficha paciente</button></div></article>`}).join('');
   }
   window.renderPendientes383=renderPendientes383;
   window.mostrarPendientesVencidos383=function(){currentTab='todos';onlyOverdue383=true;const search=document.getElementById('pendBuscar383');if(search)search.value='';renderPendientes383();};
