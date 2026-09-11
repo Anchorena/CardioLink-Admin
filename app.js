@@ -1075,7 +1075,11 @@ async function limpiarRegistrosCorruptosManual(){
   const eliminados = limpiarRegistrosCorruptosSilencioso();
   localStorage.setItem(storageAtenciones, JSON.stringify(atenciones));
   if (supabaseClient && usuarioSupabase) {
-    await sincronizarAtencionesSupabase(true);
+    // HOTFIX stale-overwrite (audit de forzar=true): eliminar registros
+    // corruptos no requiere re-subir las atenciones que no cambiaron - el
+    // borrado local ya alcanza (upsert_only nunca borra remoto de todas
+    // formas). Dirty sync sube igual cualquier atencion que sí haya cambiado.
+    await sincronizarAtencionesSupabase(false);
   }
   try { renderTabla(); } catch(e) { console.warn(e); }
   try { if (typeof renderAgenda === 'function') renderAgenda(); } catch(e) { console.warn(e); }
@@ -1884,13 +1888,17 @@ async function guardarAtencion(e){
   // agregan después, ver prestacionesAdicionalesSeleccionadas() arriba).
   // saveAtenciones() sincroniza a Supabase con debounce (programarSyncSupabase,
   // 700ms) - el modal llama a una Edge Function que lee cardiolink_atenciones
-  // remoto, así que hay que forzar la sincronización inmediata antes de
-  // abrirlo (si no, "No se encontró el turno" por una carrera de timing).
+  // remoto, así que hay que sincronizar de inmediato antes de abrirlo (si no,
+  // "No se encontró el turno" por una carrera de timing). HOTFIX
+  // stale-overwrite (audit de forzar=true): no hace falta subir el snapshot
+  // completo para lograrlo - el turno recién creado ya es "dirty" contra el
+  // baseline (id nuevo), así que sincronizarAtencionesSupabase(false) lo sube
+  // igual sin reenviar las demás atenciones que este cliente no tocó.
   try{
     const principal=validos[0];
     if(principal?.id){
       const idParaNotificar=principal.id;
-      (typeof sincronizarAtencionesSupabase==='function'?sincronizarAtencionesSupabase(true):Promise.resolve())
+      (typeof sincronizarAtencionesSupabase==='function'?sincronizarAtencionesSupabase(false):Promise.resolve())
         .catch(e=>console.warn('No se pudo forzar la sincronización antes de notificar:',e))
         .finally(()=>{ window.abrirModalNotificarPaciente460?.(idParaNotificar,'confirmation'); window.notificarProfesionalAsignado460?.(idParaNotificar,'assignment'); });
     }
@@ -3440,6 +3448,15 @@ async function refrescarDesdeSupabaseAutomatico(){
       return;
     }
     await cargarAtencionesDesdeSupabase();
+    // HOTFIX stale-overwrite (C): si otra sesion piso la fila config remota con
+    // una copia vieja, cargarAtencionesDesdeSupabase() acaba de reemplazar `data`
+    // por ese blob viejo. Se vuelve a fusionar la HC desde las tablas
+    // relacionales (cardiolink_hc_evoluciones / cardiolink_hc_resumen /
+    // cardiolink_pacientes) reutilizando cargar410(), que ya hace merge por
+    // id/timestamp. Defensivo: un fallo de la capa clinica no debe romper el
+    // resto del refresco.
+    try{ await window.cardiolinkClinica410?.cargar?.(); }
+    catch(e){ console.warn('Refresco: reconciliacion clinica relacional fallo (se continua):', e); }
     renderTabla();
     renderStats();
     if($('agenda')?.classList.contains('visible'))renderAgenda();
@@ -5540,6 +5557,32 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   const CONFIG_ROW_ID='__cardiolink_config_v1';
   let previewImportPacientes298=[];
 
+  /* HOTFIX stale-overwrite (A): baseline del contenido de cada atencion tal como
+     quedo CONFIRMADO/CARGADO desde Supabase. En un sync normal (forzar=false)
+     solo se re-suben las atenciones nuevas o cuyo contenido cambio respecto de
+     este baseline; las no modificadas NO reciben un updated_at nuevo, asi una
+     sesion con snapshot viejo no puede revertir en Supabase un cambio hecho por
+     otra sesion. Comparacion deterministica (claves ordenadas, sin props
+     tecnicas ni undefined). El baseline representa el payload, nunca el
+     updated_at remoto. Todo encapsulado dentro del bloque 298. */
+  let baselineAtenciones298=new Map();
+  function stableStringify298(v){
+    if(v===null||typeof v!=='object'){ const s=JSON.stringify(v); return s===undefined?'null':s; }
+    if(Array.isArray(v)) return '['+v.map(stableStringify298).join(',')+']';
+    const keys=Object.keys(v).filter(k=>{const x=v[k];return x!==undefined&&typeof x!=='function';}).sort();
+    return '{'+keys.map(k=>JSON.stringify(k)+':'+stableStringify298(v[k])).join(',')+'}';
+  }
+  function snapshotBaselineAtenciones298(lista){
+    const m=new Map();
+    (Array.isArray(lista)?lista:[]).forEach(a=>{ if(a && a.id!=null) m.set(String(a.id), stableStringify298(a)); });
+    baselineAtenciones298=m;
+  }
+  function atencionModificada298(a){
+    if(!a || a.id==null) return true;
+    const prev=baselineAtenciones298.get(String(a.id));
+    return prev===undefined || prev!==stableStringify298(a);
+  }
+
   function d(id){return document.getElementById(id)}
   function esc(v){return String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;')}
   function clean(v){return String(v??'').replace(/<[^>]*>/g,' ').replace(/&nbsp;/gi,' ').replace(/\s+/g,' ').trim()}
@@ -5860,12 +5903,29 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         atenciones=remotas;
         const corruptosEliminados=limpiarRegistrosCorruptosSilencioso();
         localStorage.setItem(storageAtenciones,JSON.stringify(atenciones));
-        if(corruptosEliminados>0){ cargandoDesdeNube=false; await sincronizarAtencionesSupabase(true); cargandoDesdeNube=true; }
+        // HOTFIX stale-overwrite (audit de forzar=true): `atenciones` acaba de
+        // reemplazarse por lo recien bajado de Supabase (remotas), solo se le
+        // quitaron duplicados/corruptos locales - no es un snapshot viejo de
+        // otra sesion. El sync dirty (contra el baseline de la carga anterior)
+        // ya sube cualquier fila que haya cambiado o sea nueva; no hace falta
+        // forzar el snapshot completo.
+        if(corruptosEliminados>0){ cargandoDesdeNube=false; await sincronizarAtencionesSupabase(false); cargandoDesdeNube=true; }
       }else if(Array.isArray(atenciones)&&atenciones.length>0){
+        // ÚNICO CASO QUE CONSERVA forzar=true (bootstrap inicial, aislado):
+        // Supabase confirmó CERO atenciones remotas y existen atenciones
+        // locales - hay que sembrar la nube por primera vez con la base local
+        // completa. No es una operación cotidiana: solo ocurre una vez, la
+        // primera vez que este dispositivo/usuario sincroniza con una base
+        // remota vacía. En cualquier otro escenario NO se debe usar forzar=true.
         cargandoDesdeNube=false; await sincronizarAtencionesSupabase(true); return;
       }else{
         atenciones=[]; localStorage.setItem(storageAtenciones,JSON.stringify(atenciones));
       }
+      // HOTFIX stale-overwrite (A): baseline = estado recien cargado desde
+      // Supabase (rama "remotas" y rama vacia). La rama "migrar locales a la
+      // nube" retorna antes y delega en el sync forzado, que fija su propio
+      // baseline al confirmar el UPSERT.
+      snapshotBaselineAtenciones298(atenciones);
       cargandoDesdeNube=false;
     };
   }
@@ -5881,13 +5941,33 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         localStorage.setItem(storageAtenciones,JSON.stringify(atenciones));
         localStorage.setItem(storageConfig,JSON.stringify(data));
 
-        const rows=atenciones.map(a=>({id:String(a.id),payload:a,updated_at:new Date().toISOString()}));
-        rows.push({id:CONFIG_ROW_ID,payload:{tipoRegistro:'config',version:VERSION_298,config:data,updatedAt:new Date().toISOString()},updated_at:new Date().toISOString()});
+        // HOTFIX stale-overwrite (A): en un sync normal solo se envian las
+        // atenciones nuevas o modificadas respecto del baseline confirmado.
+        // forzar=true conserva su semantica: envia TODAS (migracion inicial,
+        // limpieza de corruptos, "Sincronizar ahora", borrados, etc.).
+        const aEnviar298 = forzar ? atenciones.slice() : atenciones.filter(atencionModificada298);
+
+        // HOTFIX stale-overwrite (B1): la fila CONFIG_ROW_ID ya NO viaja en el
+        // sync de atenciones. La config tiene su propio camino
+        // (saveConfig() -> guardarConfigEnSupabase298()). Resolver un pendiente o
+        // cambiar un estado no debe poder reescribir toda la HC/config.
+
+        // HOTFIX stale-overwrite (A): sin filas dirty en un sync normal el ciclo
+        // se da por terminado OK: no se hace un UPSERT vacio y no se deja
+        // syncPendienteSinConfirmar clavado (el finally lo limpia por
+        // syncConfirmadoOk298).
+        if(!forzar && aEnviar298.length===0){
+          syncConfirmadoOk298=true;
+          syncReintentosFallidos=0;
+          return true;
+        }
+
+        const rows=aEnviar298.map(a=>({id:String(a.id),payload:a,updated_at:new Date().toISOString()}));
 
         const vistos=new Set();
         const finalRows=[];
         rows.forEach((r,idx)=>{
-          if(vistos.has(r.id) && r.id!==CONFIG_ROW_ID) r.id='att_'+Date.now()+'_'+idx+'_'+Math.random().toString(36).slice(2,8);
+          if(vistos.has(r.id)) r.id='att_'+Date.now()+'_'+idx+'_'+Math.random().toString(36).slice(2,8);
           vistos.add(r.id);
           finalRows.push(r);
         });
@@ -5908,15 +5988,25 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         }
 
         // Luego elimina únicamente IDs obsoletos, con protección contra vaciados masivos.
+        // (HOTFIX stale-overwrite A: se pasa el set COMPLETO de ids locales, no
+        // solo el de las filas enviadas en este ciclo, para no alterar la
+        // semantica del argumento. La funcion sigue en modo upsert_only y no
+        // borra nada.)
         const limpieza=await limpiarIdsRemotosObsoletosSeguro(
-          finalRows.map(r=>r.id),
+          atenciones.map(a=>String(a.id)),
           atenciones.length
         );
         if(limpieza?.protegido){
           console.warn('CardioLink protegió la base remota: se omitió una limpieza potencialmente masiva.');
         }
 
-        console.log('Supabase sincronizado de forma segura:',finalRows.length,'registros + config',limpieza?.eliminados?`· ${limpieza.eliminados} obsoletos eliminados`:'' );
+        // HOTFIX stale-overwrite (A): baseline se actualiza SOLO para las
+        // atenciones realmente enviadas y SOLO tras el UPSERT confirmado. Si el
+        // UPSERT hubiera fallado, no se llega hasta aca y el baseline queda
+        // intacto (se reintenta con el backoff existente).
+        aEnviar298.forEach(a=>{ if(a && a.id!=null) baselineAtenciones298.set(String(a.id), stableStringify298(a)); });
+
+        console.log('Supabase sincronizado de forma segura:',finalRows.length,'atencion(es)',limpieza?.eliminados?`· ${limpieza.eliminados} obsoletos eliminados`:'' );
         syncConfirmadoOk298=true;
         syncReintentosFallidos=0;
         return true;
@@ -7247,7 +7337,12 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     });
     data.hcPreparacion={schemaVersion:1,preparadoEn:new Date().toISOString(),versionApp:'4.1.0-hc'};
     try{saveConfig();saveAtenciones();}catch(e){console.warn(e);}
-    try{await sincronizarAtencionesSupabase(true);}catch(e){console.warn('Sincronización HC pendiente:',e);}
+    // HOTFIX stale-overwrite (audit de forzar=true): las atenciones a las que
+    // este mismo bucle les acaba de completar id/atencionId/pacienteId/
+    // profesionalId/hcMeta ya quedan "dirty" contra el baseline (su contenido
+    // cambió) - el sync dirty las sube igual, sin reenviar las que no se
+    // tocaron en esta preparación.
+    try{await sincronizarAtencionesSupabase(false);}catch(e){console.warn('Sincronización HC pendiente:',e);}
     renderHC380();
     alert(`Preparación completada. Pacientes identificados: ${np}. Atenciones identificadas: ${na}. Vínculos a paciente: ${nv}. Profesionales vinculados: ${nprof}.`);
   }
@@ -7386,12 +7481,34 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   }
 
   async function syncNow382(){
+    // HOTFIX stale-overwrite: "Sincronizar ahora" NO es "subir todo mi
+    // snapshot local". Pasos: 1) subir solo lo dirty local (forzar=false);
+    // 2) esperar confirmación; 3) traer lo remoto ya confirmado; 4) reconciliar
+    // la capa clínica relacional (mismo cargar410() que reutiliza C).
     const btn=$('btnSyncNow382');if(btn){btn.disabled=true;btn.textContent='Sincronizando…';}
     try{
+      let ok=true;
       if(typeof sincronizarAtencionesSupabase==='function'){
-        const ok=await sincronizarAtencionesSupabase(true);
-        if(ok!==false)localStorage.setItem('cl_last_sync_382',String(Date.now()));
+        ok=await sincronizarAtencionesSupabase(false);
       }
+      // FAIL-SAFE: ok!==true puede ser error de Supabase, sync ya en curso
+      // (reencolado) o cambios locales que todavía no se confirmaron. En
+      // cualquiera de esos casos NO se trae remoto encima: pisaría en
+      // pantalla cambios locales pendientes de confirmar. Se corta acá sin
+      // llamar cargarAtencionesDesdeSupabase()/cargar410(), sin tocar
+      // cl_last_sync_382 y sin modificar los datos locales.
+      if(ok!==true){
+        alert('La sincronización no quedó confirmada todavía (puede haber un cambio local pendiente o un problema de conexión). Tus datos locales no se modificaron. Esperá unos segundos y volvé a tocar "Sincronizar ahora".');
+        renderHealth382();
+        return;
+      }
+      if(typeof cargarAtencionesDesdeSupabase==='function'){
+        await cargarAtencionesDesdeSupabase();
+      }
+      try{ await window.cardiolinkClinica410?.cargar?.(); }
+      catch(e){ console.warn('Sincronizar ahora: reconciliación clínica relacional falló (se continúa):', e); }
+      try{ renderTabla?.(); renderStats?.(); }catch(e){}
+      localStorage.setItem('cl_last_sync_382',String(Date.now()));
       renderHealth382();
     }catch(e){console.error(e);alert('No se pudo sincronizar. Revisá la conexión o volvé a iniciar sesión.');}
     finally{if(btn){btn.disabled=false;btn.textContent='Sincronizar ahora';}}
@@ -7714,7 +7831,14 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     });
     if(!Array.isArray(data.auditoriaPacientes))data.auditoriaPacientes=[];
     data.auditoriaPacientes.push({tipo:'eliminacion_paciente',pacienteId:p.id||'',paciente:nom,dni:p.dni||'',atencionesEliminadas:relacionados.length,usuario:(typeof usrActual==='function'?usrActual():'administrador'),fecha:new Date().toISOString()});
-    try{saveConfig();saveAtenciones();await (typeof guardarConfigEnSupabase298==='function'?guardarConfigEnSupabase298():Promise.resolve());await (typeof sincronizarAtencionesSupabase==='function'?sincronizarAtencionesSupabase(true):Promise.resolve());}catch(e){console.error(e);alert('Se eliminó localmente, pero la sincronización falló. Volvé a iniciar sesión y sincronizá.');}
+    // HOTFIX stale-overwrite (audit de forzar=true): las atenciones eliminadas
+    // ya se sacaron de `atenciones` arriba - el sync dirty jamás las re-sube
+    // (no están en el array), y las atenciones que sobreviven no cambiaron, así
+    // que tampoco hace falta reenviarlas. (Nota aparte, sin tocar acá: esta baja
+    // masiva no emite un DELETE remoto por id como sí hace eliminarAtencion() -
+    // comportamiento preexistente, upsert_only nunca borra remoto de todas
+    // formas.)
+    try{saveConfig();saveAtenciones();await (typeof guardarConfigEnSupabase298==='function'?guardarConfigEnSupabase298():Promise.resolve());await (typeof sincronizarAtencionesSupabase==='function'?sincronizarAtencionesSupabase(false):Promise.resolve());}catch(e){console.error(e);alert('Se eliminó localmente, pero la sincronización falló. Volvé a iniciar sesión y sincronizá.');}
     try{document.getElementById('qualityModal383')?.classList.add('hidden');document.getElementById('pacienteGlobalModal')?.classList.add('hidden');renderPacientesPanel?.('',true);renderQuality382?.();renderHealth382?.();renderPendientes383?.();}catch(e){}
     const det=document.getElementById('pacienteDetalle');if(det)det.innerHTML='<h3>Paciente eliminado</h3><p class="muted">El registro y sus atenciones vinculadas fueron eliminados.</p>';
     alert(`Paciente eliminado: ${nom}. Registros vinculados eliminados: ${relacionados.length}.`);
@@ -12304,9 +12428,12 @@ function patientInfoTextHC(p,coverage){
         if(tipo){
           // Mismo motivo que en guardarAtencion(): cambiarEstadoAgenda()
           // también guarda vía saveAtenciones(), que sincroniza a Supabase
-          // con debounce (700ms) - forzar la sincronización antes de abrir
-          // el modal evita "No se encontró el turno" por timing.
-          (typeof sincronizarAtencionesSupabase==='function'?sincronizarAtencionesSupabase(true):Promise.resolve())
+          // con debounce (700ms) - sincronizar antes de abrir el modal evita
+          // "No se encontró el turno" por timing. HOTFIX stale-overwrite (audit
+          // de forzar=true): la atención cuyo estado acaba de cambiar ya es
+          // "dirty" contra el baseline, sincronizarAtencionesSupabase(false) la
+          // sube igual sin reenviar las que este cliente no tocó.
+          (typeof sincronizarAtencionesSupabase==='function'?sincronizarAtencionesSupabase(false):Promise.resolve())
             .catch(e=>console.warn('No se pudo forzar la sincronización antes de notificar:',e))
             .finally(()=>{ abrirModalNotificarPaciente460(id,tipo); notificarProfesionalAsignado460(id,tipo); });
         }
@@ -12333,7 +12460,11 @@ function patientInfoTextHC(p,coverage){
       try{
         const despues=(atenciones||[]).find(x=>String(x.id)===String(id));
         if(despues && (despues.fecha!==fechaAntes || despues.horaInicio!==horaAntes)){
-          (typeof sincronizarAtencionesSupabase==='function'?sincronizarAtencionesSupabase(true):Promise.resolve())
+          // HOTFIX stale-overwrite (audit de forzar=true): el turno recién
+          // reprogramado ya es "dirty" contra el baseline (cambió fecha/hora),
+          // sincronizarAtencionesSupabase(false) lo sube igual sin reenviar el
+          // resto de las atenciones que este cliente no tocó.
+          (typeof sincronizarAtencionesSupabase==='function'?sincronizarAtencionesSupabase(false):Promise.resolve())
             .catch(e=>console.warn('No se pudo forzar la sincronización antes de avisar al profesional:',e))
             .finally(()=>{ notificarProfesionalAsignado460(id,'reschedule'); });
         }
