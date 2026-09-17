@@ -10145,14 +10145,20 @@ function patientInfoTextHC(p,coverage){
     if(type==='indicacion_paciente')return {title:'Indicaciones al paciente',body:'Indicaciones:\n1. ___\n2. ___\n3. ___\n\nSignos de alarma: ___\nPróximo control: ___',extra:''};
     return {title:'Documento clínico',body:'',extra:''};
   }
-  function openDocumentModal406(key,docId='',forcedType=''){
+  function openDocumentModal406(key,docId='',forcedType='',prefill=null){
     const p=patient406(key);if(!p)return;ensure406();
     const existing=docId?data.documentosClinicos.find(d=>d.id===docId):null;
     const type=existing?.tipo||forcedType||'receta';
     if(!canIssueDoc406(type)){alert('Tu perfil no tiene permiso para emitir este tipo de documento.');return;}
     if(existing&&!canEditDoc406(existing)){alert('Este documento no puede modificarse con tu perfil o superó las 24 horas.');return;}
     const profId=existing?.profesionalId||(isSecretary406()?responsibleProfId406(p):(currentProfId406()||selectedProfId406())),pr=prof406(profId);if(!pr){alert('No se pudo identificar el profesional responsable de la atención.');return;}
-    const defs=defaultDoc406(type,p);
+    // Pedidos rápidos (Bloque B): prefill opcional, SOLO para documento
+    // nuevo (nunca pisa una edición existente). Se parte siempre de
+    // defaultDoc406() y se sobrescribe únicamente lo que prefill realmente
+    // trae (??, no ||) - así un prefill que sólo manda `contenido` conserva
+    // el título e indicaciones por defecto del tipo de documento.
+    const baseDefs=defaultDoc406(type,p);
+    const defs=(!existing&&prefill)?{title:prefill.titulo??baseDefs.title,body:prefill.contenido??baseDefs.body,extra:prefill.adicional??baseDefs.extra}:baseDefs;
     const modal=document.createElement('div');modal.id='clinicalDocModal406';modal.className='hc-modal-overlay';
     modal.innerHTML=`<div class="hc-modal-card clinical-doc-card406"><div class="hc-modal-head"><div><h2>${existing?'Editar documento':'Nuevo documento clínico'}</h2><p class="muted">${esc406(patientName406(p))} · <span id="docProfLabel406">${esc406(pr.nombre||'')}</span></p></div><button type="button" class="modal-close" data-close-doc406>×</button></div>${isSecretary406()?`<div class="doc-prof-selector406"><label>Profesional responsable<select id="docProfessional406">${(data.profesionales||[]).filter(x=>x.id!=='general').map(x=>`<option value="${esc406(x.id)}" ${String(x.id)===String(profId)?'selected':''}>${esc406(x.nombre)}</option>`).join('')}</select></label><p class="muted">La constancia usará el membrete del profesional seleccionado.</p></div>`:''}<div class="clinical-doc-header406" id="docIdentityPreview406">${identityPreviewHtml406(pr)}</div><div class="hc-modal-grid"><div><label>Tipo de documento</label><select id="docType406">${docTypeOptions406(type)}</select></div><div><label>Fecha</label><input id="docDate406" type="datetime-local" value="${esc406((existing?.fechaHora||new Date().toISOString()).slice(0,16))}"></div><div class="full"><div class="cl-voice-label4094"><label for="docTitle406">Título</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="docTitle406" aria-label="Dictar título del documento">🎤 Dictar</button></div><input id="docTitle406" value="${esc406(existing?.titulo||defs.title)}"></div><div class="full"><div class="cl-voice-label4094"><label id="docBodyLabel406" for="docBody406">Contenido</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="docBody406" aria-label="Dictar contenido del documento">🎤 Dictar</button></div><textarea id="docBody406" rows="8" placeholder="Escribí el contenido del documento">${esc406(existing?.contenido||defs.body)}</textarea></div><div class="full"><div class="cl-voice-label4094"><label for="docExtra406">Indicaciones / aclaraciones adicionales</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="docExtra406" aria-label="Dictar indicaciones adicionales">🎤 Dictar</button></div><textarea id="docExtra406" rows="4">${esc406(existing?.adicional||defs.extra)}</textarea></div><label class="check-row-310 full"><input type="checkbox" id="docIncludeSignature406" ${existing?.incluirFirma===false?'':'checked'}> Incluir firma cargada del profesional</label></div><p class="muted">El documento no se guarda si está vacío. El guardado es manual. Puede editarse durante 24 horas; el Administrador conserva edición sin límite.</p><div class="hc-modal-actions"><button class="secondary" type="button" data-close-doc406>Cancelar</button><button class="secondary" type="button" id="saveDoc406">Guardar</button><button class="primary" type="button" id="savePrintDoc406">Guardar e imprimir</button></div></div>`;
     document.body.appendChild(modal);
@@ -10290,6 +10296,10 @@ function patientInfoTextHC(p,coverage){
   window.printClinicalDocument406=printDocument406;
   window.openClinicalDocument406=openDocumentModal406;
   window.openClinicalDocumentTyped406=(key,type)=>openDocumentModal406(key,'',type||'receta');
+  // Pedidos rápidos (Bloque B): abre un documento NUEVO (docId siempre '')
+  // con contenido precargado. prefill sólo puede traer {titulo,contenido,
+  // adicional} - lo que no se envíe conserva el default de defaultDoc406().
+  window.openClinicalDocumentPrefilled406=(key,type,prefill)=>openDocumentModal406(key,'',type||'orden',prefill);
 })();
 
 

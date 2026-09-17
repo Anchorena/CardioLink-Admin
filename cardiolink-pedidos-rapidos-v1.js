@@ -328,6 +328,167 @@
     renderListaPlantillas411PR();
   }
 
+  /* ---------------------------------------------------------------------
+     BLOQUE B - Picker de "Pedido rápido" desde Ficha del paciente / HC.
+     Usa EXCLUSIVAMENTE data.plantillasPedidos ya persistidas (activo===true,
+     ordenadas por `orden`) - nunca el seed visual de Bloque A. Al terminar,
+     entrega el contenido combinado a la API nueva de app.js
+     (window.openClinicalDocumentPrefilled406) y termina ahí su
+     responsabilidad: fecha, título, indicaciones, firma, profesional
+     responsable, guardado, impresión e historial siguen siendo 100% del
+     módulo documental 406 existente, sin cambios.
+     --------------------------------------------------------------------- */
+
+  // Sólo plantillas REALMENTE guardadas (nunca el seed en memoria de
+  // Bloque A, aunque esté visible en Configuración) - si data.plantillasPedidos
+  // no existe todavía, no hay nada para ofrecer acá.
+  function plantillasActivasOrdenadas411PR() {
+    if (typeof data === 'undefined' || !data || !Array.isArray(data.plantillasPedidos)) return [];
+    return data.plantillasPedidos
+      .filter(p => p && p.activo === true && Array.isArray(p.items) && p.items.length)
+      .slice()
+      .sort((a, b) => (Number(a.orden) || 0) - (Number(b.orden) || 0));
+  }
+
+  // Mismo criterio de nombre ya usado en el resto de la app
+  // (nombreCompleto||paciente||nombre) - no depende de ninguna función
+  // interna del módulo 406 (no expuesta).
+  function nombrePacientePedido411PR(key) {
+    try {
+      const p = (typeof data !== 'undefined' && Array.isArray(data.pacientes)) ? data.pacientes.find(x => String(x.id) === String(key)) : null;
+      return p ? (p.nombreCompleto || p.paciente || p.nombre || 'Paciente') : 'Paciente';
+    } catch (_) { return 'Paciente'; }
+  }
+
+  function cerrarPedidoRapido411PR() {
+    document.getElementById('pedidoRapidoPickerModal411PR')?.remove();
+  }
+
+  // Recalcula el "pedido resultante" desde cero a partir de las plantillas
+  // tildadas en ESTE momento (combinación + deduplicación, misma
+  // normalizarItems411PR de Bloque A). Es intencional que esto REEMPLACE el
+  // contenido actual del textarea: tildar/destildar plantillas siempre
+  // parte de la combinación real de lo tildado - las ediciones manuales del
+  // pedido se hacen DESPUÉS de terminar de elegir plantillas.
+  function recomputarPedidoResultado411PR(contenedor, plantillas) {
+    const idsTildados = new Set(Array.from(contenedor.querySelectorAll('.pedido-rapido-picker-check-411pr:checked')).map(chk => chk.dataset.id));
+    const seleccionadas = plantillas.filter(p => idsTildados.has(p.id));
+    const combinado = seleccionadas.flatMap(p => p.items).join('\n');
+    const textarea = document.getElementById('pedidoRapidoResultado411PR');
+    if (textarea) textarea.value = normalizarItems411PR(combinado).join('\n');
+  }
+
+  function abrirPedidoRapido411PR(patientKey) {
+    cerrarPedidoRapido411PR();
+    const plantillas = plantillasActivasOrdenadas411PR();
+    const nombrePaciente = nombrePacientePedido411PR(patientKey);
+
+    const modal = document.createElement('div');
+    modal.id = 'pedidoRapidoPickerModal411PR';
+    modal.className = 'hc-modal-overlay';
+
+    if (!plantillas.length) {
+      modal.innerHTML = `<div class="hc-modal-card">
+        <div class="hc-modal-head">
+          <h2>Pedido rápido</h2>
+          <button type="button" class="modal-close" data-cerrar-picker-411pr>×</button>
+        </div>
+        <p class="muted">${escapeHtml(nombrePaciente)}</p>
+        <p class="muted">No hay plantillas de pedidos activas. Configuralas primero en Configuración → Documentos e identidad.</p>
+        <div class="hc-modal-actions"><button type="button" class="secondary" data-cerrar-picker-411pr>Cerrar</button></div>
+      </div>`;
+      document.body.appendChild(modal);
+      modal.querySelectorAll('[data-cerrar-picker-411pr]').forEach(btn => { btn.onclick = cerrarPedidoRapido411PR; });
+      return;
+    }
+
+    modal.innerHTML = `<div class="hc-modal-card">
+      <div class="hc-modal-head">
+        <h2>Pedido rápido</h2>
+        <button type="button" class="modal-close" data-cerrar-picker-411pr>×</button>
+      </div>
+      <p class="muted">${escapeHtml(nombrePaciente)}</p>
+      <div class="pedido-rapido-picker-lista-411pr">
+        ${plantillas.map(p => `<label class="pedido-rapido-picker-item-411pr">
+          <input type="checkbox" class="pedido-rapido-picker-check-411pr" data-id="${escapeHtml(p.id)}">
+          ${escapeHtml(p.nombre)} <span class="muted">(${p.items.length})</span>
+        </label>`).join('')}
+      </div>
+      <label class="full">Pedido resultante
+        <textarea id="pedidoRapidoResultado411PR" rows="8" placeholder="Elegí una o varias plantillas arriba, o escribí acá directamente"></textarea>
+      </label>
+      <p class="muted">Podés quitar, editar o agregar ítems a mano antes de continuar - esto no modifica las plantillas guardadas.</p>
+      <div class="hc-modal-actions">
+        <button type="button" class="secondary" data-cerrar-picker-411pr>Cancelar</button>
+        <button type="button" class="primary" id="btnContinuarOrdenMedica411PR">Continuar a Orden médica</button>
+      </div>
+    </div>`;
+    document.body.appendChild(modal);
+    modal.querySelectorAll('[data-cerrar-picker-411pr]').forEach(btn => { btn.onclick = cerrarPedidoRapido411PR; });
+    modal.querySelectorAll('.pedido-rapido-picker-check-411pr').forEach(chk => {
+      chk.onchange = () => recomputarPedidoResultado411PR(modal, plantillas);
+    });
+    document.getElementById('btnContinuarOrdenMedica411PR').onclick = () => {
+      // Punto 7: normalizar y deduplicar NUEVAMENTE justo antes de
+      // continuar (el usuario pudo haber tipeado líneas vacías/duplicadas a
+      // mano después de tildar las plantillas).
+      const items = normalizarItems411PR(document.getElementById('pedidoRapidoResultado411PR')?.value || '');
+      if (!items.length) { alert('Agregá al menos un ítem antes de continuar.'); return; }
+      const texto = items.join('\n');
+      cerrarPedidoRapido411PR();
+      // Única responsabilidad de este módulo: entregar el contenido. Fecha,
+      // título, indicaciones por defecto, profesional responsable, firma,
+      // membrete, guardado, impresión e historial son 100% del módulo 406
+      // existente - no se reimplementa nada de eso acá.
+      if (typeof window.openClinicalDocumentPrefilled406 === 'function') {
+        window.openClinicalDocumentPrefilled406(patientKey, 'orden', { contenido: texto });
+      } else {
+        alert('El módulo de documentos todavía no terminó de cargar. Esperá un instante y volvé a intentar.');
+      }
+    };
+  }
+
+  // Inserta "Pedido rápido" junto a CADA botón [data-new-doc406] existente
+  // (Ficha del paciente y HC ya insertan ese botón - ver app.js,
+  // enhancePatientFicha406/enhanceHC406). Se reutiliza EXACTAMENTE el mismo
+  // patientKey del botón vecino (dataset.newDoc406), así "Pedido rápido"
+  // siempre actúa sobre el paciente correcto sin resolverlo por su cuenta.
+  // Y, al depender de que [data-new-doc406] ya exista, hereda EXACTAMENTE
+  // la misma visibilidad que "+ Documento" hoy (sólo médico/Admin - ver
+  // isMedical406() en app.js) sin necesidad de re-derivar ningún permiso
+  // acá. Para este Bloque B, V1, Secretaría NO ve este botón (ver decisión
+  // explícita: se deja para un bloque aparte, reutilizando su permiso ya
+  // existente para emitir Orden médica en nombre de un profesional).
+  function intentarInyectarBotonesPedidoRapido411PR() {
+    document.querySelectorAll('[data-new-doc406]').forEach(btnDoc => {
+      if (btnDoc.dataset.pedidoRapidoHecho411pr) return;
+      btnDoc.dataset.pedidoRapidoHecho411pr = '1';
+      const key = btnDoc.dataset.newDoc406;
+      if (!key) return;
+      const boton = document.createElement('button');
+      boton.type = 'button';
+      boton.className = 'secondary';
+      boton.textContent = 'Pedido rápido';
+      boton.onclick = () => abrirPedidoRapido411PR(key);
+      btnDoc.insertAdjacentElement('afterend', boton);
+    });
+  }
+
+  // Mismo patrón que ya usa app.js para reaccionar a estos mismos
+  // contenedores (module 406: MutationObserver sobre #pacienteDetalle/
+  // #hcPacienteDetalle) - observers INDEPENDIENTES, sin tocar los ya
+  // existentes, sin polling ni setInterval.
+  function instalarObserversPedidoRapido411PR() {
+    intentarInyectarBotonesPedidoRapido411PR();
+    ['pacienteDetalle', 'hcPacienteDetalle'].forEach(id => {
+      const root = document.getElementById(id);
+      if (root) new MutationObserver(() => intentarInyectarBotonesPedidoRapido411PR()).observe(root, { childList: true, subtree: true });
+    });
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', instalarObserversPedidoRapido411PR);
+  else instalarObserversPedidoRapido411PR();
+  setTimeout(instalarObserversPedidoRapido411PR, 900);
+
   const renderConfigOriginal411PR = typeof renderConfig === 'function' ? renderConfig : null;
   if (renderConfigOriginal411PR && !renderConfigOriginal411PR.__pedidosRapidosV1) {
     const wrapped = function () {
@@ -357,6 +518,9 @@
       body.dark .pedido-rapido-row-411pr{background:#142e3b;border-color:#25465a;color:#f8fafc}
       body.dark .pedido-rapido-actions-411pr button{background:#0f2633;color:#f8fafc}
       @media (max-width:640px){.pedido-rapido-row-411pr{flex-direction:column;align-items:flex-start}.pedido-rapido-actions-411pr{width:100%}}
+      .pedido-rapido-picker-lista-411pr{display:flex;flex-direction:column;gap:6px;margin:14px 0}
+      .pedido-rapido-picker-item-411pr{display:flex;align-items:center;gap:8px;padding:8px 10px;border:1px solid var(--border,#dbe3ea);border-radius:10px;background:var(--panel-alt,#f8fbfc);cursor:pointer;font-size:14px}
+      body.dark .pedido-rapido-picker-item-411pr{background:#142e3b;border-color:#25465a;color:#f8fafc}
     `;
     document.head.appendChild(style);
   }
