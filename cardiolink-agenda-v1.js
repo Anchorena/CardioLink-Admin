@@ -179,7 +179,12 @@
      sólo edite una franja por día.
      --------------------------------------------------------------------- */
   const DIAS_SEMANA_411AG = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
-  const DIAS_LABORALES_411AG = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes']; // UI v1: sólo L-V editable
+  // Los 7 días editables en la tarjeta "Horarios de atención" (antes sólo
+  // L-V, DIAS_LABORALES_411AG). El cálculo de disponibilidad/huecos ya era
+  // agnóstico al día (franjasProfesionalDia411AG/evaluarDisponibilidad411AG/
+  // huecosLibresDia411AG/estadoHorarioProfesionalDia411AG toman `dia` como
+  // string genérico) - lo único hardcodeado a L-V era esta lista de UI.
+  const DIAS_CONFIGURABLES_411AG = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado', 'domingo'];
 
   // Marca TRANSITORIA, sólo en memoria de esta pestaña - nunca se persiste
   // (ni localStorage ni Supabase, no forma parte de ningún payload ni se lee
@@ -831,14 +836,22 @@
     const profId = selPropio ? selPropio.value : '';
     if (!profId) { cuerpo.innerHTML = '<p class="muted">No hay profesionales cargados todavía.</p>'; return; }
     const cfg = (typeof data !== 'undefined' && data.horariosProfesionales && data.horariosProfesionales[profId]) || {};
-    cuerpo.innerHTML = DIAS_LABORALES_411AG.map(dia => {
+    cuerpo.innerHTML = DIAS_CONFIGURABLES_411AG.map(dia => {
       // Distinguir "día sin configurar todavía" (clave ausente: mostrar
       // vacío, sin marcar "No atiende") de "explícitamente marcado No
       // atiende" (clave presente como array vacío) - ver
       // evaluarDisponibilidad411AG(), que depende de esta misma distinción.
       const configurado = Object.prototype.hasOwnProperty.call(cfg, dia);
       const franja = (configurado && Array.isArray(cfg[dia]) && cfg[dia][0]) || ['', ''];
-      const noAtiende = configurado && (!Array.isArray(cfg[dia]) || !cfg[dia].length);
+      // Sábado/domingo sin clave todavía: default puramente VISUAL de "No
+      // atiende" tildado (checkbox + inputs deshabilitados). No escribe nada
+      // en `data`, no llama saveConfig() ni Supabase - sólo cambia lo que se
+      // ve hasta que el usuario guarde explícitamente. Lunes-viernes
+      // conservan el comportamiento de siempre (sin configurar = vacío, sin
+      // tildar). Pasa a existir en `data` recién si guardarHorariosProfesional411AG()
+      // se ejecuta con este checkbox tildado.
+      const esFinDeSemanaSinConfigurar = !configurado && (dia === 'sabado' || dia === 'domingo');
+      const noAtiende = esFinDeSemanaSinConfigurar || (configurado && (!Array.isArray(cfg[dia]) || !cfg[dia].length));
       return `<div class="horario-dia-row-411ag" data-dia="${dia}">
         <span class="horario-dia-label-411ag">${dia.charAt(0).toUpperCase() + dia.slice(1)}</span>
         <input type="text" class="horario-ini-411ag" placeholder="08:00" value="${escapeHtml(franja[0] || '')}" ${noAtiende ? 'disabled' : ''}>
