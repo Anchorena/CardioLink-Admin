@@ -254,11 +254,25 @@
       if (typeof data === 'undefined' || !data) return;
       if (!data.horariosProfesionales || typeof data.horariosProfesionales !== 'object') data.horariosProfesionales = {};
       if (!data.horariosProfesionales.matias) {
+        // Sólo en memoria: esta función corre en el instante mismo de carga
+        // de página, mientras cargarAtencionesDesdeSupabase() puede seguir
+        // en vuelo de forma asíncrona. Ni saveConfig() ni
+        // guardarConfigEnSupabase298() se llaman acá - cualquiera de las dos
+        // podría quedar en carrera con esa carga remota (saveConfig() además
+        // agenda, por su cuenta, una subida a Supabase del blob `data`
+        // COMPLETO ~900ms después - ver wrapper en app.js) y terminar
+        // sobrescribiendo la configuración remota real con un snapshot local
+        // todavía incompleto/desactualizado. Este seed no produce ninguna
+        // escritura local ni remota: sólo deja el valor por defecto
+        // disponible en memoria para esta sesión (huecos libres, advertencia
+        // fuera de horario, etc.). La persistencia definitiva - local y
+        // remota - ocurre únicamente cuando el usuario presiona "Guardar
+        // horarios" (guardarHorariosProfesional411AG), que sí hace
+        // saveConfig() + await guardarConfigEnSupabase298().
         data.horariosProfesionales.matias = {
           lunes: [['08:00', '20:00']], martes: [['08:00', '20:00']], miercoles: [['08:00', '20:00']],
           jueves: [['08:00', '20:00']], viernes: [['08:00', '20:00']]
         };
-        try { saveConfig(); } catch (_) {}
       }
     } catch (_) {}
   }
@@ -792,7 +806,7 @@
     });
   }
 
-  function guardarHorariosProfesional411AG() {
+  async function guardarHorariosProfesional411AG() {
     const selPropio = document.getElementById('cfgHorariosProfesionalSelect411AG');
     const profId = selPropio ? selPropio.value : '';
     if (!profId) { alert('Elegí un profesional primero.'); return; }
@@ -812,7 +826,33 @@
       else if (ini && fin) nuevo[dia] = [[ini, fin]];
     });
     data.horariosProfesionales[profId] = nuevo;
-    try { saveConfig(); alert('Horarios guardados.'); } catch (e) { console.warn('Agenda V1: no se pudo guardar los horarios:', e); }
+    // HOTFIX (Production): saveConfig() sola persiste en localStorage al
+    // instante, pero la subida real a Supabase queda diferida 900ms por el
+    // wrapper de saveConfig en app.js - tiempo de sobra para perderse si se
+    // cierra/navega apenas se confirma el alert() de éxito. Se espera
+    // (await) el resultado REAL de guardarConfigEnSupabase298() (ya
+    // existente en app.js, no se modifica - sube el mismo blob `data`
+    // completo que ya sube cualquier otro guardado de configuración) antes
+    // de avisar: nunca se afirma que quedó sincronizado en la nube sin
+    // haberlo confirmado.
+    try {
+      saveConfig();
+    } catch (e) {
+      console.warn('Agenda V1: no se pudo guardar los horarios localmente:', e);
+      alert('No se pudieron guardar los horarios.');
+      return;
+    }
+    let sincronizado = false;
+    try {
+      sincronizado = await window.guardarConfigEnSupabase298?.();
+    } catch (e) {
+      console.warn('Agenda V1: no se pudo sincronizar los horarios con Supabase:', e);
+    }
+    if (sincronizado) {
+      alert('Horarios guardados.');
+    } else {
+      alert('Los horarios quedaron guardados en este dispositivo, pero no se pudieron sincronizar con la nube todavía. Revisá la conexión y volvé a presionar "Guardar horarios".');
+    }
   }
 
   function asegurarCardHorarios411AG() {
