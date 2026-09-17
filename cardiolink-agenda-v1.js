@@ -181,6 +181,26 @@
   const DIAS_SEMANA_411AG = ['domingo', 'lunes', 'martes', 'miercoles', 'jueves', 'viernes', 'sabado'];
   const DIAS_LABORALES_411AG = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes']; // UI v1: sólo L-V editable
 
+  // Marca TRANSITORIA, sólo en memoria de esta pestaña - nunca se persiste
+  // (ni localStorage ni Supabase, no forma parte de ningún payload ni se lee
+  // de ninguno). Sirve ÚNICAMENTE para que el resumen visual de "Día agenda"
+  // (renderEncabezadoDia411AG) no muestre como "horario configurado" un
+  // valor que en realidad es sólo el seed de fallback en memoria de
+  // asegurarHorarioDefaultMatias411AG(). No cambia en absoluto el cálculo
+  // real de disponibilidad/huecos, que sigue usando esas horas exactamente
+  // igual que hoy - esto es puramente presentación.
+  //
+  // Guarda la REFERENCIA EXACTA del objeto creado por el seed (no sólo el id
+  // del profesional): si cargarAtencionesDesdeSupabase() reemplaza `data`
+  // con la configuración remota real (incluido un data.horariosProfesionales
+  // .matias legítimo, ya guardado antes por el usuario), esa referencia deja
+  // de coincidir automáticamente - sin esto, un horario REAL cargado desde
+  // Supabase podría quedar marcado erróneamente como "seed en memoria". Se
+  // limpia (profesional ya "configurado" de verdad) apenas el usuario guarda
+  // explícitamente desde guardarHorariosProfesional411AG(). Sólo existe seed
+  // para Matías por ahora - no hace falta un Map genérico todavía.
+  let horarioSeedMatiasRef411AG = null;
+
   function minutosAHora411AG(mins) {
     const hh = Math.floor(mins / 60) % 24;
     const mm = mins % 60;
@@ -238,6 +258,35 @@
     return horaDentroDeFranjas411AG(horaTexto, franjas);
   }
 
+  // Clasificación de un día para el resumen visual de "Día agenda" (NO es un
+  // cálculo de disponibilidad nuevo: mismo criterio ya usado arriba en
+  // evaluarDisponibilidad411AG - clave ausente vs presente-vacía vs con
+  // franjas reales - sólo que acá se necesita el estado completo, no una
+  // comparación puntual de hora). Si el objeto ACTUAL de
+  // data.horariosProfesionales.matias es exactamente la misma referencia que
+  // dejó el seed en memoria (horarioSeedMatiasRef411AG), se reporta como
+  // "sin_configurar" a propósito: el cálculo real de huecos más abajo sigue
+  // usando esas horas igual que siempre, esto es sólo para no afirmar en el
+  // resumen que hay "horario configurado" cuando en realidad nadie lo guardó
+  // todavía. Comparar por REFERENCIA (no por id de profesional) es lo que
+  // hace que, si cargarAtencionesDesdeSupabase() reemplaza `data` con la
+  // configuración remota real (incluido un horario legítimo ya guardado
+  // antes), la comparación deje de coincidir sola - sin marca manual que
+  // limpiar en ese momento.
+  function estadoHorarioProfesionalDia411AG(profesionalId, dia) {
+    let cfg = null;
+    try {
+      cfg = (typeof data !== 'undefined' && data && data.horariosProfesionales) ? data.horariosProfesionales[profesionalId] : null;
+    } catch (_) { cfg = null; }
+    if (profesionalId === 'matias' && horarioSeedMatiasRef411AG && cfg === horarioSeedMatiasRef411AG) {
+      return { estado: 'sin_configurar', franjas: [] };
+    }
+    if (!cfg || !dia || !Object.prototype.hasOwnProperty.call(cfg, dia)) return { estado: 'sin_configurar', franjas: [] };
+    const franjas = Array.isArray(cfg[dia]) ? cfg[dia] : [];
+    if (!franjas.length) return { estado: 'no_atiende', franjas: [] };
+    return { estado: 'configurado', franjas };
+  }
+
   // Punto 5: advertencia NO bloqueante. Devuelve true si hay que continuar
   // (dentro de horario, sin config, o el usuario confirmó igual) y false si
   // el usuario eligió no continuar.
@@ -273,6 +322,7 @@
           lunes: [['08:00', '20:00']], martes: [['08:00', '20:00']], miercoles: [['08:00', '20:00']],
           jueves: [['08:00', '20:00']], viernes: [['08:00', '20:00']]
         };
+        horarioSeedMatiasRef411AG = data.horariosProfesionales.matias;
       }
     } catch (_) {}
   }
@@ -826,6 +876,14 @@
       else if (ini && fin) nuevo[dia] = [[ini, fin]];
     });
     data.horariosProfesionales[profId] = nuevo;
+    // A partir de acá el profesional queda "configurado" de verdad (guardado
+    // explícito del usuario) - ya no es el seed transitorio en memoria, sin
+    // importar si la sincronización remota de abajo termina fallando (el
+    // guardado local ya es una decisión real del usuario, no un fallback).
+    // La reasignación de arriba (`= nuevo`) ya rompe por sí sola la igualdad
+    // de referencia con horarioSeedMatiasRef411AG; se limpia explícitamente
+    // igual, para no dejar colgada una referencia vieja en memoria.
+    if (profId === 'matias') horarioSeedMatiasRef411AG = null;
     // HOTFIX (Production): saveConfig() sola persiste en localStorage al
     // instante, pero la subida real a Supabase queda diferida 900ms por el
     // wrapper de saveConfig en app.js - tiempo de sobra para perderse si se
@@ -1176,7 +1234,34 @@
     const atendidos = items.filter(it => estadoTurno411AG(it.anchor) === 'atendido').length;
     const pendientes = total - atendidos;
     const resumen = total ? `${total} turno${total === 1 ? '' : 's'} · ${atendidos} atendido${atendidos === 1 ? '' : 's'} · ${pendientes} pendiente${pendientes === 1 ? '' : 's'}` : 'Sin turnos para esta fecha.';
-    encabezado.innerHTML = `<strong>${escapeHtml(diaLabel)} ${escapeHtml(fechaLabel)}</strong><span>${escapeHtml(profLabel)}</span><span class="muted">${escapeHtml(resumen)}</span>`;
+
+    // Resumen compacto de horario/disponibilidad del día - sólo con un
+    // profesional puntual elegido (igual que huecos/"+ Dar turno" ya sólo
+    // aplican con un profesional puntual). Reutiliza EXACTAMENTE
+    // franjasProfesionalDia411AG/huecosLibresDia411AG (misma llamada, mismos
+    // argumentos, que ya hace renderTimelineDia411AG para dibujar los
+    // bloques LIBRE de abajo) - no se calcula disponibilidad de nuevo.
+    let horarioHTML = '';
+    if (profesionalId) {
+      const { estado, franjas } = estadoHorarioProfesionalDia411AG(profesionalId, dia);
+      let horarioTexto = 'Sin horario configurado';
+      let disponibleTexto = null;
+      if (estado === 'no_atiende') {
+        horarioTexto = 'No atiende';
+      } else if (estado === 'configurado') {
+        horarioTexto = franjas.map(f => `${f && f[0]}–${f && f[1]}`).join(' · ');
+        const huecos = huecosLibresDia411AG(profesionalId, fecha, items);
+        disponibleTexto = huecos.length
+          ? huecos.map(([ini, fin]) => `${minutosAHora411AG(ini)}–${minutosAHora411AG(fin)}`).join(' · ')
+          : 'Sin horarios libres';
+      }
+      horarioHTML = `<div class="dia-horario-resumen-411ag">
+        <span class="dia-horario-fila-411ag"><span class="dia-horario-label-411ag">Horario del día</span>${escapeHtml(horarioTexto)}</span>
+        ${disponibleTexto ? `<span class="dia-horario-fila-411ag"><span class="dia-horario-label-411ag">Disponible</span>${escapeHtml(disponibleTexto)}</span>` : ''}
+      </div>`;
+    }
+
+    encabezado.innerHTML = `<strong>${escapeHtml(diaLabel)} ${escapeHtml(fechaLabel)}</strong><span>${escapeHtml(profLabel)}</span><span class="muted">${escapeHtml(resumen)}</span>${horarioHTML}`;
   }
 
   function renderTimelineDia411AG(fecha, profesionalId, items, itemsVisibles) {
@@ -1316,6 +1401,13 @@
       .agenda-dia-411ag{margin-top:10px}
       .dia-agenda-encabezado-411ag{display:flex;flex-wrap:wrap;align-items:baseline;gap:6px 14px;padding:10px 16px;border:1px solid var(--border,#dbe3ea);border-radius:14px;background:var(--panel-alt,#f8fbfc);margin-bottom:10px}
       .dia-agenda-encabezado-411ag strong{font-size:15px}
+      /* Resumen compacto de horario/disponibilidad - máximo dos líneas,
+         jerarquía secundaria (sin tarjeta propia, sin botones). */
+      .dia-horario-resumen-411ag{flex-basis:100%;display:flex;flex-direction:column;gap:2px;font-size:12px;color:var(--muted,#64748b)}
+      .dia-horario-fila-411ag{display:block}
+      .dia-horario-label-411ag{display:inline-block;min-width:104px;font-weight:700;color:var(--text,#0f172a)}
+      body.dark .dia-horario-resumen-411ag{color:#cbd5e1}
+      body.dark .dia-horario-label-411ag{color:#f8fafc}
       .dia-agenda-cuerpo-411ag{display:flex;flex-direction:column;gap:6px}
       .dia-turno-411ag{display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:6px 14px;border-radius:12px;border:1px solid #dbe3ee;border-left:6px solid #6366f1;background:#f1f5ff}
       .dia-turno-411ag.estado-confirmado{border-left-color:#2dd4bf;background:#ecfeff}
