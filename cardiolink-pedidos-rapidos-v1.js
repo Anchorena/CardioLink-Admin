@@ -16,6 +16,18 @@
      administra las plantillas (crear/editar/activar/ordenar/eliminar).
      La integración con el paciente/documento es el Bloque B.
 
+   Bloque B.2 (Secretaría, agregado más abajo en este mismo archivo): agrega
+   un punto de entrada adicional a "Pedido rápido" en la Ficha administrativa
+   para Secretaría (gate: esSecretaria(), global ya existente), reutilizando
+   EXACTAMENTE el mismo picker/abrirPedidoRapido411PR y el mismo módulo 406
+   ya usados por médico/Admin - sin tocar app.js ni HC. Implementado
+   envolviendo seleccionarPacientePanel(id) una vez (mismo patrón ya
+   probado que usan los módulos 386/HC-access/402/406/4095 de app.js sobre
+   esta misma barra de acciones) - NO con un MutationObserver: una primera
+   versión con observer tuvo un bug de guion de más en el selector
+   anti-duplicado que causó un bucle de inserciones infinito (ver historial
+   de commits/QA de este bloque).
+
    Estructura de datos (plana, sin relaciones entre plantillas):
      data.plantillasPedidos = [
        { id, nombre, activo, orden, items: [string, ...] }, ...
@@ -456,9 +468,8 @@
   // Y, al depender de que [data-new-doc406] ya exista, hereda EXACTAMENTE
   // la misma visibilidad que "+ Documento" hoy (sólo médico/Admin - ver
   // isMedical406() en app.js) sin necesidad de re-derivar ningún permiso
-  // acá. Para este Bloque B, V1, Secretaría NO ve este botón (ver decisión
-  // explícita: se deja para un bloque aparte, reutilizando su permiso ya
-  // existente para emitir Orden médica en nombre de un profesional).
+  // acá. Sin cambios respecto del Bloque B: médico/Admin siguen viendo
+  // exactamente este mismo botón, de esta misma forma.
   function intentarInyectarBotonesPedidoRapido411PR() {
     document.querySelectorAll('[data-new-doc406]').forEach(btnDoc => {
       if (btnDoc.dataset.pedidoRapidoHecho411pr) return;
@@ -476,8 +487,9 @@
 
   // Mismo patrón que ya usa app.js para reaccionar a estos mismos
   // contenedores (module 406: MutationObserver sobre #pacienteDetalle/
-  // #hcPacienteDetalle) - observers INDEPENDIENTES, sin tocar los ya
-  // existentes, sin polling ni setInterval.
+  // #hcPacienteDetalle) - observer INDEPENDIENTE, sin tocar los ya
+  // existentes, sin polling ni setInterval. SIN CAMBIOS respecto del
+  // Bloque B: sigue siendo el único mecanismo para médico/Admin.
   function instalarObserversPedidoRapido411PR() {
     intentarInyectarBotonesPedidoRapido411PR();
     ['pacienteDetalle', 'hcPacienteDetalle'].forEach(id => {
@@ -488,6 +500,101 @@
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', instalarObserversPedidoRapido411PR);
   else instalarObserversPedidoRapido411PR();
   setTimeout(instalarObserversPedidoRapido411PR, 900);
+
+  /* ---------------------------------------------------------------------
+     BLOQUE B.2 - Secretaría. Punto de entrada SEPARADO del de arriba: no
+     depende de [data-new-doc406] (ese botón no existe para Secretaría -
+     enhancePatientFicha406 lo quita explícitamente para !isMedical406()).
+     Actúa EXCLUSIVAMENTE sobre la Ficha administrativa (#pacienteDetalle) -
+     nunca sobre HC (#hcPacienteDetalle): Secretaría no tiene ni debe tener
+     ningún punto de entrada documental en HC.
+
+     BUG DE QA CORREGIDO ACÁ (2 causas, ambas en este mismo bloque, ninguna
+     en app.js):
+     1) La primera versión leía window.pacienteSeleccionadoPanelId. Esa
+        variable se declara con `let` en app.js (línea ~917) - un top-level
+        `let`/`const` de un <script> clásico NUNCA se vuelve propiedad de
+        `window` (a diferencia de `var`/funciones declaradas), aunque sí
+        queda visible como identificador libre para scripts posteriores del
+        mismo documento (mismo motivo por el que este archivo ya lee
+        `data`/`atenciones` sin el prefijo `window.`). Leerlo con `window.`
+        daba siempre `undefined` -> el botón nunca se insertaba.
+     2) Al cambiar por un MutationObserver + un dataset marcador
+        (`data-pedido-rapido-secretaria-…`) para no depender de esa
+        variable, el guard anti-duplicado comparaba contra un string de
+        atributo con un guion de más ("secretaria-411pr" en vez del
+        "secretaria411pr" real que genera `dataset.pedidoRapidoSecretaria
+        411pr` - el algoritmo camelCase->kebab-case de `dataset` sólo
+        inserta guiones antes de mayúsculas, nunca antes de dígitos). El
+        guard nunca encontraba el botón ya insertado, así que CADA
+        inserción disparaba una nueva mutación de #pacienteDetalle, que el
+        propio MutationObserver volvía a procesar, insertando otro botón:
+        bucle infinito de inserciones que congelaba la pestaña.
+
+     FIX DEFINITIVO: se abandona el MutationObserver para este botón (no
+     hace falta: no depende de que aparezca [data-new-doc406], que es lo
+     único asíncrono que médico/Admin necesitaba esperar) y en su lugar se
+     envuelve seleccionarPacientePanel(id) UNA vez, igual que ya hacen de
+     forma independiente y ya probada los módulos 386 (eliminar paciente),
+     HC-access, notas privadas (402), documental (406) y RCTA (4095) sobre
+     esta misma .paciente-ficha-actions - mismo patrón exacto, sin
+     inventar un mecanismo nuevo. Cada llamada a seleccionarPacientePanel
+     reconstruye .paciente-ficha-actions desde cero, así que no hace falta
+     ninguna limpieza de botones viejos: simplemente no se copian al nuevo
+     render. El id del paciente llega DIRECTO como argumento del wrap - no
+     hace falta leer ninguna variable global.
+     --------------------------------------------------------------------- */
+  function insertarPedidoRapidoSecretaria411PR(id) {
+    if (!(typeof esSecretaria === 'function' && esSecretaria())) return;
+    const root = document.getElementById('pacienteDetalle');
+    if (!root) return;
+    const actions = root.querySelector('.paciente-ficha-actions');
+    if (!actions) return;
+    // Evita duplicar si ya existe el botón de médico/Admin (no debería
+    // coexistir con esSecretaria()=true, se deja como resguardo explícito)
+    // o si esta ficha ya tiene el suyo propio. Chequeo por PROPIEDAD de
+    // dataset (no por selector de atributo escrito a mano) para no repetir
+    // la causa 2) del bug de arriba.
+    if (actions.querySelector('[data-new-doc406]')) return;
+    if (Array.from(actions.children).some(el => el.dataset && el.dataset.pedidoRapidoSecretaria411pr)) return;
+    const key = id || '';
+    if (!key) return;
+    const boton = document.createElement('button');
+    boton.type = 'button';
+    boton.className = 'secondary';
+    boton.dataset.pedidoRapidoSecretaria411pr = key;
+    boton.textContent = 'Pedido rápido';
+    boton.onclick = () => abrirPedidoRapido411PR(boton.dataset.pedidoRapidoSecretaria411pr);
+    actions.appendChild(boton);
+  }
+
+  function wrapPatientPedidoRapidoSecretaria411PR() {
+    const old = window.seleccionarPacientePanel;
+    if (typeof old !== 'function' || old.__pedidosRapidosSecretariaV1) return;
+    const w = function (id) {
+      const r = old.apply(this, arguments);
+      // setTimeout(...,0) UNA sola vez por selección de paciente - mismo
+      // criterio exacto que ya usan wrapPatient406/wrapPatientRcta4095 en
+      // app.js para esta misma barra de acciones. No es un observer, no se
+      // re-dispara por su propia escritura en el DOM: no hay riesgo de
+      // bucle.
+      setTimeout(() => {
+        try { insertarPedidoRapidoSecretaria411PR(id); }
+        catch (e) { console.warn('Pedido rápido (Secretaría): no se pudo insertar el botón:', e); }
+      }, 0);
+      return r;
+    };
+    w.__pedidosRapidosSecretariaV1 = true;
+    window.seleccionarPacientePanel = seleccionarPacientePanel = w;
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', wrapPatientPedidoRapidoSecretaria411PR);
+  else wrapPatientPedidoRapidoSecretaria411PR();
+  // Mismo resguardo de timing que ya tenía el bloque de arriba (900ms): por
+  // si seleccionarPacientePanel todavía no existía en window cuando corrió
+  // este archivo. wrapPatientPedidoRapidoSecretaria411PR() es idempotente
+  // (guard old.__pedidosRapidosSecretariaV1), así que llamarla de nuevo acá
+  // no duplica nada si ya se había envuelto.
+  setTimeout(wrapPatientPedidoRapidoSecretaria411PR, 900);
 
   const renderConfigOriginal411PR = typeof renderConfig === 'function' ? renderConfig : null;
   if (renderConfigOriginal411PR && !renderConfigOriginal411PR.__pedidosRapidosV1) {
