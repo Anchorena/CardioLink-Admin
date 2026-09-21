@@ -36,6 +36,7 @@ import {
   emailValido,
   elegirPlantilla,
   armarMensaje,
+  armarHtmlEmailTurno,
   resolverDestinatarios,
   armarMensajeProfesional,
   armarMensajeProfesionalDocumento
@@ -176,6 +177,39 @@ async function obtenerPlantilla(admin, prestacion) {
   return elegirPlantilla(data, prestacion);
 }
 
+// Comunicaciones V1.2 (identidad del profesional en el email). La
+// identidad de cada profesional (nombre/especialidades/matrícula/color/
+// logo) vive en data.profesionales[] de app.js - el mismo blob de
+// configuración que ya usa el módulo documental 406 para membretes. Ese
+// blob completo se sincroniza como UNA fila más de cardiolink_atenciones
+// (id='__cardiolink_config_v1', ver app.js guardarConfigEnSupabase298) -
+// no existe una tabla relacional de profesionales, así que se lee de ahí
+// con el mismo cliente service_role que ya usa el resto de esta función.
+// Nunca se crea una segunda fuente de verdad para esto.
+const CONFIG_ROW_ID = '__cardiolink_config_v1';
+
+async function obtenerConfig(admin) {
+  const { data, error } = await admin
+    .from('cardiolink_atenciones')
+    .select('payload')
+    .eq('id', CONFIG_ROW_ID)
+    .limit(1);
+  if (error) throw error;
+  return (data && data.length && data[0].payload && data[0].payload.config) || null;
+}
+
+// El profesional SIEMPRE se resuelve por atencion.profesionalId (el id
+// real asignado al turno) - nunca por el usuario que dispara el envío
+// (que puede ser Secretaría notificando en nombre de otro profesional),
+// nunca por "el profesional activo" de ninguna sesión. Sin profesionalId
+// o sin match en el catálogo, devuelve null: el caller ya sabe degradar
+// (armarHtmlEmailTurno no rompe el email si profesional es null).
+function resolverProfesionalDelTurno(config, atencion) {
+  const profesionalId = atencion && atencion.profesionalId;
+  if (!config || !Array.isArray(config.profesionales) || !profesionalId) return null;
+  return config.profesionales.find((p) => p && String(p.id) === String(profesionalId)) || null;
+}
+
 // No confiar en "tipo" tal como llega del cliente: se valida contra el
 // mismo enum del CHECK de cardiolink_communications antes de componer o
 // insertar nada. Sin este chequeo, un tipo inválido igual quedaría
@@ -188,14 +222,36 @@ async function componer(admin, atencionId, tipo) {
   if (!TIPOS_VALIDOS.includes(tipo)) return { error: 'Tipo de comunicación inválido.', status: 400 };
   const atencion = await obtenerAtencion(admin, atencionId);
   if (!atencion) return { error: 'No se encontró el turno.' };
-  const [template, direccionConsultorio, paciente] = await Promise.all([
+  const [template, direccionConsultorio, paciente, config] = await Promise.all([
     obtenerPlantilla(admin, atencion.prestacion),
     obtenerDireccionConsultorio(admin),
-    obtenerPaciente(admin, atencion.pacienteId)
+    obtenerPaciente(admin, atencion.pacienteId),
+    obtenerConfig(admin)
   ]);
   const contacto = resolverDestinatarios(atencion, paciente);
   const { asunto, mensaje } = armarMensaje({ tipo, atencion, template, direccionConsultorio });
-  return { atencion, asunto, mensaje, contacto };
+  // template/direccionConsultorio/profesional/especialidades se devuelven
+  // además de asunto/mensaje (Comunicaciones V1.2, Bloque A):
+  // manejarSendEmail los necesita, ya resueltos acá, para armar el html
+  // sin repetir las mismas consultas. manejarPreview/manejarLogWhatsapp no
+  // cambian: siguen leyendo sólo lo que ya leían (asunto/mensaje/contacto),
+  // estos campos nuevos quedan sin usar ahí, no rompen nada.
+  return {
+    atencion,
+    asunto,
+    mensaje,
+    contacto,
+    template,
+    direccionConsultorio,
+    profesional: resolverProfesionalDelTurno(config, atencion),
+    especialidades: (config && config.especialidades) || null,
+    // config se devuelve además (Comunicaciones V1.2, ajuste branding
+    // CardioLink): armarHtmlEmailTurno lo usa para resolverBrandingCardioLink()
+    // internamente - config.brandingCardioLink hoy no existe en ningún
+    // lado todavía, así que esto no cambia nada en runtime, sólo deja el
+    // dato disponible para cuando exista.
+    config
+  };
 }
 
 async function manejarPreview(admin, body) {
@@ -222,17 +278,36 @@ async function registrarComunicacion(admin, fila) {
   if (error) throw error;
 }
 
-async function enviarConResend(destinatario, asunto, mensaje) {
+// Comunicaciones V1.2, Bloque A: `html` es un 4º parámetro OPCIONAL. Si no
+// se pasa (patient-reminders-24h tiene su propia copia de esta función, sin
+// tocar, y sigue llamándola con 3 argumentos), el body de Resend queda
+// exactamente igual que antes de este bloque - `text` siempre viaja, nunca
+// deja de ser el fallback real: la mayoría de los clientes de correo
+// eligen `html` cuando está presente, pero cualquiera que no pueda
+// renderizarlo (o un proveedor que sólo soporte texto) sigue mostrando el
+// mismo mensaje de siempre.
+// Comunicaciones V1.2 (identidad del profesional, ajuste CID): 5º
+// parámetro OPCIONAL `attachments`, formato Resend tal cual
+// (content/filename/contentType/contentId - confirmado contra la
+// referencia oficial de la API, mismos nombres que espera el endpoint
+// REST). Sólo se agrega la clave `attachments` al body si realmente hay
+// al menos uno - un array vacío u omitido deja el request idéntico al de
+// antes de este ajuste. patient-reminders-24h tiene su propia copia de
+// esta función, sin tocar, y sigue llamándola con 3 argumentos.
+async function enviarConResend(destinatario, asunto, mensaje, html, attachments) {
   const apiKey = Deno.env.get('RESEND_API_KEY');
   const remitente = Deno.env.get('RESEND_FROM_EMAIL');
   if (!apiKey || !remitente) {
     return { ok: false, motivo: 'Proveedor de email no configurado (falta RESEND_API_KEY o RESEND_FROM_EMAIL en la Edge Function).' };
   }
   try {
+    const cuerpoEmail = { from: remitente, to: [destinatario], subject: asunto, text: mensaje };
+    if (html) cuerpoEmail.html = html;
+    if (Array.isArray(attachments) && attachments.length) cuerpoEmail.attachments = attachments;
     const respuesta = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: remitente, to: [destinatario], subject: asunto, text: mensaje })
+      body: JSON.stringify(cuerpoEmail)
     });
     const cuerpo = await respuesta.json().catch(() => ({}));
     if (!respuesta.ok) {
@@ -256,7 +331,38 @@ async function manejarSendEmail(admin, body, uid) {
     return errorResponse('Ni el paciente ni su contacto responsable tienen un email válido cargado.', 409);
   }
 
-  const resultado = await enviarConResend(r.contacto.email, r.asunto, r.mensaje);
+  // Comunicaciones V1.2, Bloque A: html es exclusivamente una presentación
+  // adicional del MISMO mensaje/variables que ya resolvió componer() más
+  // arriba (r.atencion/r.template/r.direccionConsultorio) - si por
+  // cualquier motivo armarHtmlEmailTurno lanzara una excepción, el envío
+  // sigue con el texto plano de siempre (r.mensaje), nunca se cae la
+  // acción completa por un problema puramente de presentación.
+  // armarHtmlEmailTurno ahora devuelve { html, attachments } (Bloque A,
+  // ajuste CID) - attachments sólo trae algo cuando el profesional tiene
+  // un logo en base64 válido (ver procesarLogoBase64/resolverLogoProfesional
+  // en comunicaciones-logica.js). Cualquier excepción acá (dato de
+  // profesional corrupto, etc.) degrada al mismo camino de siempre: texto
+  // plano, sin adjuntos, el envío nunca se corta por esto.
+  let htmlMensaje = null;
+  let adjuntosMensaje = [];
+  try {
+    const armado = armarHtmlEmailTurno({
+      tipo,
+      atencion: r.atencion,
+      template: r.template,
+      direccionConsultorio: r.direccionConsultorio,
+      profesional: r.profesional,
+      especialidades: r.especialidades,
+      config: r.config
+    });
+    htmlMensaje = armado.html;
+    adjuntosMensaje = armado.attachments || [];
+  } catch (_error) {
+    htmlMensaje = null;
+    adjuntosMensaje = [];
+  }
+
+  const resultado = await enviarConResend(r.contacto.email, r.asunto, r.mensaje, htmlMensaje, adjuntosMensaje);
   const fila = {
     paciente_id: r.contacto.pacienteId || null,
     atencion_id: String(atencionId),

@@ -189,6 +189,318 @@ function formatearFechaCorta(fechaISO) {
 }
 
 // -----------------------------------------------------------------------
+// Comunicaciones V1.2, Bloque A — versión HTML del email al paciente.
+// Función NUEVA y AISLADA: armarMensaje() (texto plano, de arriba) no se
+// toca ni se reemplaza - sigue siendo la única fuente de texto para
+// WhatsApp y el fallback `text` del email. Esta función sólo arma un
+// `html` adicional para el mismo envío, con los MISMOS datos/variables
+// que ya resuelve armarMensaje() (paciente/fecha/hora/profesional/
+// prestacion/direccion/instrucciones) - no reformula ni agrega ningún
+// dato nuevo, sólo lo presenta con identidad visual.
+//
+// Compatibilidad de email: tabla + estilos inline (nada de <style> en
+// <head> ni CSS externo, que Outlook/Gmail suelen ignorar o recortar),
+// sin JavaScript, ancho fijo con max-width para verse bien tanto en
+// clientes de escritorio como en el celular. Todo el texto dinámico se
+// escapa (escaparHtml) antes de insertarse - paciente/profesional/
+// prestación pueden venir de datos cargados por Secretaría, nunca deben
+// interpretarse como HTML.
+//
+// Logo: URL pública HTTPS estable, ya usada y auditada en runtime (200 OK)
+// para este mismo bloque - es el isologo real de portal/ (Portal Público
+// V1), servido por GitHub Pages, el mismo hosting donde ya vive el resto
+// de la app. Nunca localhost/blob/ruta relativa/base64 gigante.
+// -----------------------------------------------------------------------
+
+// -----------------------------------------------------------------------
+// Branding de CardioLink (Comunicaciones V1.2, Bloque A - ajuste final):
+// identidad de LA PLATAFORMA (nombre/logo/colores) - NO la identidad del
+// profesional (nombre/color/especialidades/matrícula/logo propio siguen
+// resolviéndose exactamente igual que antes, sin tocar). Único lugar con
+// los defaults reales: cambiar el logo, el nombre o los colores de
+// CardioLink en el futuro es tocar ÚNICAMENTE este objeto (o, más
+// adelante, escribir config.brandingCardioLink) - nunca el HTML del
+// email ni patient-communications/index.ts.
+// -----------------------------------------------------------------------
+const BRANDING_CARDIOLINK_DEFECTO = Object.freeze({
+  nombre: 'CardioLink',
+  logoUrl: 'https://anchorena.github.io/CardioLink-Admin/portal/assets/branding/isologo.png',
+  // Color oficial ya usado en el resto de la app (ej. printDocument406 en
+  // app.js usa este mismo valor como color por defecto de documentos).
+  colorPrimario: '#174b5c',
+  // Acento secundario YA existente en este mismo template (el borde del
+  // bloque de instrucciones) - no es un color nuevo, sólo se centraliza.
+  colorSecundario: '#0f9f93'
+});
+
+function colorHexValido(color) {
+  return /^#[0-9a-f]{6}$/i.test(String(color || '')) ? color : null;
+}
+
+// `config` es el mismo blob de configuración de app.js (payload.config de
+// la fila '__cardiolink_config_v1' de cardiolink_atenciones - el mismo
+// que ya se lee para resolver el profesional del turno, ver
+// obtenerConfig() en patient-communications/index.ts). No existe hoy
+// ninguna sección de branding propio ahí: se deja preparado leyendo
+// primero config?.brandingCardioLink (objeto opcional, todavía sin
+// escritor en app.js ni UI - no hace falta ninguna migración para esto,
+// es JSON libre) y cayendo campo por campo a BRANDING_CARDIOLINK_DEFECTO.
+// El día que exista esa sección (parcial o completa), esta función ya la
+// respeta sin que haga falta tocar ninguna otra línea de este bloque.
+export function resolverBrandingCardioLink(config) {
+  const propio = (config && config.brandingCardioLink) || {};
+  return {
+    nombre: (typeof propio.nombre === 'string' && propio.nombre.trim()) || BRANDING_CARDIOLINK_DEFECTO.nombre,
+    logoUrl: (typeof propio.logoUrl === 'string' && propio.logoUrl.trim()) || BRANDING_CARDIOLINK_DEFECTO.logoUrl,
+    colorPrimario: colorHexValido(propio.colorPrimario) || BRANDING_CARDIOLINK_DEFECTO.colorPrimario,
+    colorSecundario: colorHexValido(propio.colorSecundario) || BRANDING_CARDIOLINK_DEFECTO.colorSecundario
+  };
+}
+
+const TITULOS_EMAIL_TURNO = Object.freeze({
+  confirmation: 'Tu turno está confirmado',
+  reminder: 'Recordatorio de tu turno',
+  reschedule: 'Tu turno fue reprogramado',
+  cancellation: 'Tu turno fue cancelado',
+  manual: 'Información de tu turno'
+});
+
+function escaparHtml(valor) {
+  return String(valor == null ? '' : valor).replace(/[&<>"']/g, (caracter) => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[caracter]));
+}
+
+// Mismo criterio de validación que ya usa app.js (printDocument406) para
+// colorDocumento antes de insertarlo en un <style>/atributo - nunca se
+// vuelca un valor sin sanitizar a HTML. Si no hay color configurado o el
+// valor guardado no matchea (dato viejo/corrupto), se usa el color
+// estándar de CardioLink - nunca se deja sin color ni se usa el valor
+// crudo sin validar.
+// Mismo comportamiento exacto que antes de centralizar el branding: si el
+// profesional no tiene un color válido configurado, cae al color primario
+// de CardioLink - sólo que ahora ese valor de respaldo sale del único
+// lugar centralizado (BRANDING_CARDIOLINK_DEFECTO), no de una constante
+// aparte duplicada.
+function colorProfesionalValido(color) {
+  return colorHexValido(color) || BRANDING_CARDIOLINK_DEFECTO.colorPrimario;
+}
+
+// Mismo cálculo exacto que specialities406() en app.js (especialidadIds
+// cruzado contra data.especialidades[], con fallback a area/especialidad
+// sueltos) - no se reinventa el criterio, sólo se replica en el lado
+// server porque acá no existe la función de app.js.
+function especialidadesProfesional(profesional, especialidades) {
+  const ids = Array.isArray(profesional && profesional.especialidadIds) ? profesional.especialidadIds : [];
+  const catalogo = Array.isArray(especialidades) ? especialidades : [];
+  const nombres = ids.map((id) => {
+    const e = catalogo.find((x) => x && x.id === id);
+    return e && e.nombre;
+  }).filter(Boolean);
+  if (nombres.length) return nombres.join(' · ');
+  return (profesional && (profesional.area || profesional.especialidad)) || '';
+}
+
+// Logo del profesional para EMAIL, revisión: un <img src="data:..."> no es
+// confiable en email (Gmail y varios otros clientes bloquean o recortan
+// data URIs por política antispam) - PERO logoDocumentoData (base64) es
+// exactamente donde vive el logo cuando un profesional lo sube desde
+// CardioLink (compressImage406 en app.js), así que ignorarlo por completo
+// dejaría a la mayoría de los profesionales sin su logo real en el email.
+// Solución: en vez de insertar el data URI en el HTML, se envía como
+// ADJUNTO inline por Content-ID (CID) a Resend - el HTML sólo referencia
+// "cid:professional-logo", nunca el base64 crudo. Esto sí es soportado de
+// forma estable por los clientes de correo (es la misma técnica que usan
+// las firmas de email corporativas con logo incrustado).
+//
+// logoDocumento (campo de texto libre, ver app.js:9302) sigue aceptándose
+// como <img> remoto normal SÓLO si es una URL https:// real (nunca la
+// ruta relativa por defecto 'icons/icon-192.png') - se probó y funciona
+// igual que el logo de CardioLink, sin necesitar CID.
+const MIME_LOGO_PERMITIDOS = Object.freeze(['image/png', 'image/jpeg', 'image/webp']);
+// ~1.5MB decodificados: generoso para un logo, muy por debajo del límite
+// real de Resend (40MB por email, TODOS los adjuntos ya codificados en
+// Base64) - un logo de este tamaño nunca arriesga ese límite ni infla el
+// email de forma notoria.
+const LOGO_BASE64_MAX_BYTES = 1500000;
+
+function extensionParaMimeLogo(mime) {
+  if (mime === 'image/jpeg') return 'jpg';
+  if (mime === 'image/webp') return 'webp';
+  return 'png';
+}
+
+// Valida ESTRICTAMENTE la forma de un data URI de imagen antes de tratarlo
+// como adjunto: sólo los 3 MIME esperados (nunca SVG - puede contener
+// <script>/<foreignObject> - ni ningún otro tipo, nunca HTML), sólo
+// caracteres válidos de Base64, y un límite de tamaño razonable (calculado
+// sobre el LARGO del string, sin decodificar nada primero). Cualquier cosa
+// que no matchee devuelve null - el caller trata null exactamente igual
+// que "no hay logo": nunca lanza, nunca bloquea el envío del email.
+function procesarLogoBase64(dataUri) {
+  const valor = String(dataUri || '');
+  const match = valor.match(/^data:(image\/(?:png|jpeg|webp));base64,([A-Za-z0-9+/]+={0,2})$/i);
+  if (!match) return null;
+  const mime = match[1].toLowerCase();
+  const base64 = match[2];
+  if (!MIME_LOGO_PERMITIDOS.includes(mime)) return null;
+  const bytesAproximados = Math.floor((base64.length * 3) / 4);
+  if (bytesAproximados <= 0 || bytesAproximados > LOGO_BASE64_MAX_BYTES) return null;
+  return { mime, base64, extension: extensionParaMimeLogo(mime) };
+}
+
+function logoProfesionalUrlHttps(profesional) {
+  const valor = String((profesional && profesional.logoDocumento) || '').trim();
+  return /^https:\/\//i.test(valor) ? valor : '';
+}
+
+// Resuelve CÓMO mostrar el logo del profesional, en el orden pedido
+// explícitamente: A) base64 válido -> CID (agrega el adjunto a la lista
+// `attachments` que recibe por referencia); B) sin base64 pero con URL
+// https:// -> <img> remoto normal (NO se sube a CID: ver nota de robustez
+// en armarHtmlEmailTurno); C) ninguno de los dos -> '' (sin imagen, texto
+// solamente). Nunca lanza una excepción por un dato mal formado.
+function resolverLogoProfesional(profesional, attachments) {
+  if (!profesional) return '';
+  const procesado = procesarLogoBase64(profesional.logoDocumentoData);
+  if (procesado) {
+    attachments.push({
+      content: procesado.base64,
+      filename: `professional-logo.${procesado.extension}`,
+      contentType: procesado.mime,
+      contentId: 'professional-logo'
+    });
+    return 'cid:professional-logo';
+  }
+  return logoProfesionalUrlHttps(profesional);
+}
+
+// Devuelve { html, attachments }. `attachments` sigue el formato de
+// adjuntos de Resend (content/filename/contentType/contentId) - vacío
+// (`[]`) cuando no hay ningún logo en base64 válido, así el caller
+// (manejarSendEmail) puede omitir por completo la clave `attachments` del
+// body cuando no hace falta, sin ninguna rama especial acá.
+export function armarHtmlEmailTurno({ tipo, atencion, template, direccionConsultorio, profesional, especialidades, config }) {
+  // Única fuente de identidad de CardioLink para todo este template: ni
+  // el logo, ni el nombre, ni los colores de la plataforma están sueltos
+  // en ningún otro lado de esta función - todo sale de `branding`.
+  const branding = resolverBrandingCardioLink(config);
+  const titulo = TITULOS_EMAIL_TURNO[tipo] || TITULOS_EMAIL_TURNO.manual;
+  const paciente = escaparHtml((atencion && atencion.paciente) || 'paciente');
+  const prestacion = escaparHtml((atencion && atencion.prestacion) || 'turno');
+  const fecha = escaparHtml(atencion && atencion.fecha ? formatearFechaCorta(atencion.fecha) : '');
+  const hora = escaparHtml(atencion && atencion.horaInicio ? `${atencion.horaInicio} hs` : '');
+  const direccion = direccionConsultorio ? escaparHtml(direccionConsultorio) : '';
+  const instrucciones = (template && template.instrucciones_paciente)
+    ? escaparHtml(String(template.instrucciones_paciente).trim())
+    : '';
+
+  // Identidad del profesional: SIEMPRE la del professional_id real del
+  // turno (atencion.profesionalId, ya resuelto por el caller antes de
+  // llamar acá - esta función nunca infiere quién es el profesional).
+  // Degradación seria: sin profesional resuelto, se usa el nombre suelto
+  // que ya traía la atención (atencion.profesional, snapshot de texto) y
+  // no se muestra ningún bloque de marca/especialidad/matrícula - nunca
+  // se rompe el email por falta de datos de un profesional.
+  const nombreProfesional = escaparHtml((profesional && profesional.nombre) || (atencion && atencion.profesional) || '');
+  const colorProfesional = colorProfesionalValido(profesional && profesional.colorDocumento);
+  const especialidadesTexto = profesional ? escaparHtml(especialidadesProfesional(profesional, especialidades)) : '';
+  const matriculas = profesional
+    ? [profesional.matriculaNacional, profesional.matriculaProvincial].filter(Boolean).map(escaparHtml).join(' · ')
+    : '';
+  const attachments = [];
+  const logoProfesional = resolverLogoProfesional(profesional, attachments);
+
+  const filaDireccion = direccion
+    ? `<tr><td colspan="2" style="padding:4px 0;color:#475569;font-size:14px;font-family:Arial,Helvetica,sans-serif;">📍 ${direccion}</td></tr>`
+    : '';
+  const bloqueInstrucciones = instrucciones
+    ? `<tr><td colspan="2" style="padding-top:18px;">
+        <div style="background-color:#f0f9fb;border-left:4px solid ${branding.colorSecundario};border-radius:6px;padding:14px 16px;color:#0f172a;font-size:14px;line-height:1.5;font-family:Arial,Helvetica,sans-serif;">
+          <strong style="display:block;margin-bottom:4px;color:${branding.colorSecundario};">Instrucciones</strong>${instrucciones}
+        </div>
+      </td></tr>`
+    : '';
+
+  // Tarjeta de identidad del profesional: fondo SIEMPRE claro (#ffffff),
+  // texto SIEMPRE oscuro para contraste - el color del profesional se usa
+  // únicamente como acento (borde izquierdo + nombre), nunca como fondo
+  // completo, tal como se pidió explícitamente. Si no hay ningún dato de
+  // profesional resuelto, este bloque completo no se renderiza (sin nombre
+  // vacío, sin tarjeta fantasma).
+  const bloqueProfesional = nombreProfesional
+    ? `<tr><td style="padding:0 24px;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border:1px solid #e2e8f0;border-left:4px solid ${colorProfesional};border-radius:8px;">
+          <tr>
+            ${logoProfesional ? `<td width="56" style="padding:14px 0 14px 14px;"><img src="${escaparHtml(logoProfesional)}" width="44" height="44" alt="" style="display:block;border:0;border-radius:6px;object-fit:contain;"></td>` : ''}
+            <td style="padding:14px 16px;">
+              <div style="font-size:16px;font-weight:bold;color:${colorProfesional};font-family:Arial,Helvetica,sans-serif;">${nombreProfesional}</div>
+              ${especialidadesTexto ? `<div style="font-size:13px;color:#475569;margin-top:2px;font-family:Arial,Helvetica,sans-serif;">${especialidadesTexto}</div>` : ''}
+              ${matriculas ? `<div style="font-size:12px;color:#94a3b8;margin-top:2px;font-family:Arial,Helvetica,sans-serif;">${matriculas}</div>` : ''}
+            </td>
+          </tr>
+        </table>
+      </td></tr>
+      <tr><td style="height:18px;line-height:18px;font-size:1px;">&nbsp;</td></tr>`
+    : '';
+
+  // Tabla anidada (patrón estándar de email HTML): máxima compatibilidad
+  // con Outlook (que usa el motor de render de Word, no un navegador real)
+  // y clientes que recortan <style>. Ancho fijo 480px con max-width para
+  // que en el celular ocupe el 100% del viewport sin desbordar.
+  //
+  // Logo CardioLink: se mantiene como <img> remoto normal (NO como
+  // adjunto CID vía `path`), a propósito. Un adjunto por `path` exige que
+  // Resend descargue esa URL en el momento de enviar CADA email - si
+  // GitHub Pages tuviera una caída puntual, eso arriesgaría el envío
+  // COMPLETO del correo (texto incluido) por un problema puramente de
+  // logo. Un <img src="https://…"> normal, en cambio, sólo puede fallar
+  // en mostrarse a sí mismo (icono roto/oculto hasta "mostrar imágenes"),
+  // nunca impide que el resto del email llegue - la opción más robusta
+  // para "el branding nunca debe impedir el envío", ya cumplida y
+  // verificada (200 OK) desde la primera versión de este bloque.
+  const html = `<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>${escaparHtml(titulo)}</title>
+</head>
+<body style="margin:0;padding:0;background-color:#f1f5f9;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#f1f5f9;padding:24px 0;font-family:Arial,Helvetica,sans-serif;">
+<tr><td align="center">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:480px;width:100%;background-color:#ffffff;border-radius:12px;overflow:hidden;">
+<tr><td align="center" style="background-color:${branding.colorPrimario};padding:24px 20px;">
+<img src="${escaparHtml(branding.logoUrl)}" width="56" height="56" alt="${escaparHtml(branding.nombre)}" style="display:block;border:0;border-radius:8px;margin:0 auto;">
+<div style="color:#ffffff;font-size:18px;font-weight:bold;margin-top:8px;font-family:Arial,Helvetica,sans-serif;">${escaparHtml(branding.nombre)}</div>
+</td></tr>
+<tr><td style="padding:24px 24px 0 24px;">
+<h1 style="margin:0 0 18px 0;font-size:20px;color:${branding.colorPrimario};text-align:center;font-family:Arial,Helvetica,sans-serif;">${escaparHtml(titulo)}</h1>
+</td></tr>
+${bloqueProfesional}
+<tr><td style="padding:0 24px 8px 24px;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;color:#0f172a;font-family:Arial,Helvetica,sans-serif;">
+<tr><td style="padding:4px 0;width:110px;color:#64748b;">Paciente</td><td style="padding:4px 0;font-weight:bold;">${paciente}</td></tr>
+<tr><td style="padding:4px 0;color:#64748b;">Fecha</td><td style="padding:4px 0;font-weight:bold;">${fecha}</td></tr>
+<tr><td style="padding:4px 0;color:#64748b;">Hora</td><td style="padding:4px 0;font-weight:bold;">${hora}</td></tr>
+<tr><td style="padding:4px 0;color:#64748b;">Prestación</td><td style="padding:4px 0;font-weight:bold;">${prestacion}</td></tr>
+${filaDireccion}
+${bloqueInstrucciones}
+</table>
+</td></tr>
+<tr><td style="padding:20px 24px 24px 24px;border-top:1px solid #e2e8f0;color:#94a3b8;font-size:11px;text-align:center;font-family:Arial,Helvetica,sans-serif;">
+Este es un mensaje automático de ${escaparHtml(branding.nombre)}. Ante cualquier consulta, comunicate con el consultorio.
+</td></tr>
+</table>
+</td></tr>
+</table>
+</body>
+</html>`;
+
+  return { html, attachments };
+}
+
+// -----------------------------------------------------------------------
 // Aviso automático al profesional asignado (circuito distinto del de
 // paciente: sin plantillas configurables por prestación, formato fijo
 // solo con datos administrativos - nunca HC, evoluciones ni observaciones
