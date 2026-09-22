@@ -287,12 +287,13 @@ async function registrarComunicacion(admin, fila) {
 // renderizarlo (o un proveedor que sólo soporte texto) sigue mostrando el
 // mismo mensaje de siempre.
 // Comunicaciones V1.2 (identidad del profesional, ajuste CID): 5º
-// parámetro OPCIONAL `attachments`, formato Resend tal cual
-// (content/filename/contentType/contentId - confirmado contra la
-// referencia oficial de la API, mismos nombres que espera el endpoint
-// REST). Sólo se agrega la clave `attachments` al body si realmente hay
-// al menos uno - un array vacío u omitido deja el request idéntico al de
-// antes de este ajuste. patient-reminders-24h tiene su propia copia de
+// parámetro OPCIONAL `attachments`, formato REST de Resend tal cual
+// (content/filename/content_type/content_id - snake_case, corregido tras
+// QA real en Gmail: este endpoint (fetch() directo, sin el SDK oficial de
+// Node) no reconoce contentType/contentId en camelCase, esos son los
+// nombres del SDK). Sólo se agrega la clave `attachments` al body si
+// realmente hay al menos uno - un array vacío u omitido deja el request
+// idéntico al de antes de este ajuste. patient-reminders-24h tiene su propia copia de
 // esta función, sin tocar, y sigue llamándola con 3 argumentos.
 async function enviarConResend(destinatario, asunto, mensaje, html, attachments) {
   const apiKey = Deno.env.get('RESEND_API_KEY');

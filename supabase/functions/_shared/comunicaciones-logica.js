@@ -360,6 +360,15 @@ function logoProfesionalUrlHttps(profesional) {
 // https:// -> <img> remoto normal (NO se sube a CID: ver nota de robustez
 // en armarHtmlEmailTurno); C) ninguno de los dos -> '' (sin imagen, texto
 // solamente). Nunca lanza una excepción por un dato mal formado.
+// QA en STAGING (Gmail real) confirmó que el JSON REST de Resend
+// (https://api.resend.com/emails, el endpoint que llama enviarConResend
+// via fetch() directo - NO el SDK oficial de Node) espera los campos de
+// adjunto en snake_case (`content_type`, `content_id`), no en camelCase
+// (`contentType`/`contentId`, que sí son los nombres del SDK). Con
+// camelCase, Resend no reconocía el content_id: el logo llegaba como
+// adjunto suelto descargable en vez de incrustarse en el <img
+// src="cid:...">  del HTML. `content`/`filename` no cambian: esos sí
+// coinciden en ambas convenciones.
 function resolverLogoProfesional(profesional, attachments) {
   if (!profesional) return '';
   const procesado = procesarLogoBase64(profesional.logoDocumentoData);
@@ -367,16 +376,16 @@ function resolverLogoProfesional(profesional, attachments) {
     attachments.push({
       content: procesado.base64,
       filename: `professional-logo.${procesado.extension}`,
-      contentType: procesado.mime,
-      contentId: 'professional-logo'
+      content_type: procesado.mime,
+      content_id: 'professional-logo'
     });
     return 'cid:professional-logo';
   }
   return logoProfesionalUrlHttps(profesional);
 }
 
-// Devuelve { html, attachments }. `attachments` sigue el formato de
-// adjuntos de Resend (content/filename/contentType/contentId) - vacío
+// Devuelve { html, attachments }. `attachments` sigue el formato REST de
+// Resend (content/filename/content_type/content_id) - vacío
 // (`[]`) cuando no hay ningún logo en base64 válido, así el caller
 // (manejarSendEmail) puede omitir por completo la clave `attachments` del
 // body cuando no hace falta, sin ninguna rama especial acá.
