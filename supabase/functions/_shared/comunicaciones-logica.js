@@ -425,7 +425,7 @@ export function armarHtmlEmailTurno({ tipo, atencion, template, direccionConsult
     : '';
   const bloqueInstrucciones = instrucciones
     ? `<tr><td colspan="2" style="padding-top:18px;">
-        <div style="background-color:#f0f9fb;border-left:4px solid ${branding.colorSecundario};border-radius:6px;padding:14px 16px;color:#0f172a;font-size:14px;line-height:1.5;font-family:Arial,Helvetica,sans-serif;">
+        <div style="background-color:#f0f9fb;border-left:4px solid ${branding.colorSecundario};border-radius:6px;padding:14px 16px;color:#0f172a;font-size:15px;line-height:1.5;font-family:Arial,Helvetica,sans-serif;">
           <strong style="display:block;margin-bottom:4px;color:${branding.colorSecundario};">Instrucciones</strong>${instrucciones}
         </div>
       </td></tr>`
@@ -441,11 +441,11 @@ export function armarHtmlEmailTurno({ tipo, atencion, template, direccionConsult
     ? `<tr><td style="padding:0 24px;">
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background-color:#ffffff;border:1px solid #e2e8f0;border-left:4px solid ${colorProfesional};border-radius:8px;">
           <tr>
-            ${logoProfesional ? `<td width="56" style="padding:14px 0 14px 14px;"><img src="${escaparHtml(logoProfesional)}" width="44" height="44" alt="" style="display:block;border:0;border-radius:6px;object-fit:contain;"></td>` : ''}
+            ${logoProfesional ? `<td width="96" style="padding:14px 0 14px 14px;"><img src="${escaparHtml(logoProfesional)}" width="80" height="80" alt="" style="display:block;border:0;border-radius:6px;object-fit:contain;"></td>` : ''}
             <td style="padding:14px 16px;">
-              <div style="font-size:16px;font-weight:bold;color:${colorProfesional};font-family:Arial,Helvetica,sans-serif;">${nombreProfesional}</div>
-              ${especialidadesTexto ? `<div style="font-size:13px;color:#475569;margin-top:2px;font-family:Arial,Helvetica,sans-serif;">${especialidadesTexto}</div>` : ''}
-              ${matriculas ? `<div style="font-size:12px;color:#94a3b8;margin-top:2px;font-family:Arial,Helvetica,sans-serif;">${matriculas}</div>` : ''}
+              <div style="font-size:18px;font-weight:bold;color:${colorProfesional};font-family:Arial,Helvetica,sans-serif;">${nombreProfesional}</div>
+              ${especialidadesTexto ? `<div style="font-size:15px;color:#475569;margin-top:2px;font-family:Arial,Helvetica,sans-serif;">${especialidadesTexto}</div>` : ''}
+              ${matriculas ? `<div style="font-size:13px;color:#94a3b8;margin-top:2px;font-family:Arial,Helvetica,sans-serif;">${matriculas}</div>` : ''}
             </td>
           </tr>
         </table>
@@ -484,11 +484,11 @@ export function armarHtmlEmailTurno({ tipo, atencion, template, direccionConsult
 <div style="color:#ffffff;font-size:18px;font-weight:bold;margin-top:8px;font-family:Arial,Helvetica,sans-serif;">${escaparHtml(branding.nombre)}</div>
 </td></tr>
 <tr><td style="padding:24px 24px 0 24px;">
-<h1 style="margin:0 0 18px 0;font-size:20px;color:${branding.colorPrimario};text-align:center;font-family:Arial,Helvetica,sans-serif;">${escaparHtml(titulo)}</h1>
+<h1 style="margin:0 0 18px 0;font-size:22px;color:${branding.colorPrimario};text-align:center;font-family:Arial,Helvetica,sans-serif;">${escaparHtml(titulo)}</h1>
 </td></tr>
 ${bloqueProfesional}
 <tr><td style="padding:0 24px 8px 24px;">
-<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;color:#0f172a;font-family:Arial,Helvetica,sans-serif;">
+<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:15px;color:#0f172a;font-family:Arial,Helvetica,sans-serif;">
 <tr><td style="padding:4px 0;width:110px;color:#64748b;">Paciente</td><td style="padding:4px 0;font-weight:bold;">${paciente}</td></tr>
 <tr><td style="padding:4px 0;color:#64748b;">Fecha</td><td style="padding:4px 0;font-weight:bold;">${fecha}</td></tr>
 <tr><td style="padding:4px 0;color:#64748b;">Hora</td><td style="padding:4px 0;font-weight:bold;">${hora}</td></tr>
