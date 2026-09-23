@@ -145,11 +145,15 @@
     boton.addEventListener('click', async function () {
       boton.disabled = true;
       boton.textContent = 'Procesando…';
-      var motivo = ($('ctMotivo').value || '').trim();
 
+      // Decisión de producto: el paciente NO ingresa motivo de cancelación
+      // (flujo simple ver turno -> confirmar -> cancelado). No se envía
+      // `motivo` en este request; el backend conserva soporte defensivo
+      // para `body.motivo` por compatibilidad, pero este frontend nunca lo
+      // manda.
       var resultadoConfirmar;
       try {
-        resultadoConfirmar = await llamarFuncion({ action: 'confirmar', token: token, motivo: motivo });
+        resultadoConfirmar = await llamarFuncion({ action: 'confirmar', token: token });
       } catch (_error) {
         boton.disabled = false;
         boton.textContent = 'CONFIRMAR CANCELACIÓN';
