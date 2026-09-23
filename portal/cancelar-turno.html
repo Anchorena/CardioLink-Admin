@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1">
+<meta name="robots" content="noindex">
+<!-- El token viaja por fragmento (#token=...), nunca por query string: el
+     fragmento no se envía al servidor HTTP ni queda en el header Referer.
+     Igual se agrega no-referrer explícito por las dudas de que algún
+     recurso externo llegara a cargarse desde acá (hoy no carga ninguno). -->
+<meta name="referrer" content="no-referrer">
+<title>Cancelar turno — CardioLink</title>
+<!-- Comunicaciones V1.2, Bloque B1: página autocontenida a propósito, sin
+     depender de portal.css ni de assets/branding/ - el logo/branding
+     CardioLink de esta página se incorpora en un paso separado (ver
+     comentario de branding en cancelar-turno.js). Sin recursos externos,
+     sin trackers, sin analytics, sin fuentes/CDNs de terceros. -->
+<style>
+  :root{color-scheme:light}
+  *{box-sizing:border-box}
+  body{margin:0;background:#f1f5f9;font-family:Arial,Helvetica,sans-serif;color:#0f172a;display:flex;justify-content:center;padding:32px 16px}
+  main{width:100%;max-width:440px;background:#ffffff;border-radius:12px;padding:28px 24px;box-shadow:0 1px 3px rgba(15,23,42,.08)}
+  h1{margin:0 0 4px;font-size:19px;color:#174b5c;text-align:center}
+  h2{margin:0 0 18px;font-size:15px;color:#475569;text-align:center;font-weight:400}
+  dl{margin:0 0 20px;padding:14px 16px;background:#f8fafc;border-radius:8px}
+  dl div{display:flex;justify-content:space-between;gap:12px;padding:4px 0;font-size:14px}
+  dl dt{color:#64748b}
+  dl dd{margin:0;font-weight:700;text-align:right}
+  label{display:block;font-size:13px;color:#475569;margin-bottom:6px}
+  textarea{width:100%;min-height:70px;border:1px solid #cbd5e1;border-radius:8px;padding:10px;font-family:inherit;font-size:14px;resize:vertical}
+  button{width:100%;margin-top:16px;padding:12px;border:0;border-radius:8px;background:#c0392b;color:#fff;font-size:15px;font-weight:700;cursor:pointer}
+  button:disabled{opacity:.6;cursor:default}
+  .cancelar-turno-mensaje{font-size:14px;line-height:1.5;text-align:center;padding:8px 0}
+  .cancelar-turno-mensaje.error{color:#b91c1c}
+  .cancelar-turno-mensaje.ok{color:#0f6b4a}
+  [hidden]{display:none!important}
+</style>
+</head>
+<body>
+<main id="cancelarTurnoRoot">
+  <h1>CardioLink</h1>
+  <h2>Cancelar turno</h2>
+  <div id="cancelarTurnoCargando" class="cancelar-turno-mensaje">Cargando información del turno…</div>
+  <div id="cancelarTurnoError" class="cancelar-turno-mensaje error" hidden></div>
+
+  <div id="cancelarTurnoDatos" hidden>
+    <dl>
+      <div><dt>Paciente</dt><dd id="ctPaciente"></dd></div>
+      <div><dt>Fecha</dt><dd id="ctFecha"></dd></div>
+      <div><dt>Hora</dt><dd id="ctHora"></dd></div>
+      <div><dt>Prestación</dt><dd id="ctPrestacion"></dd></div>
+      <div><dt>Profesional</dt><dd id="ctProfesional"></dd></div>
+    </dl>
+    <label for="ctMotivo">Motivo de cancelación (opcional)</label>
+    <textarea id="ctMotivo" maxlength="300" placeholder="Contanos brevemente el motivo, si querés"></textarea>
+    <button type="button" id="ctBotonConfirmar">CONFIRMAR CANCELACIÓN</button>
+  </div>
+
+  <div id="cancelarTurnoExito" class="cancelar-turno-mensaje ok" hidden></div>
+</main>
+<script src="cancelar-turno.js"></script>
+</body>
+</html>

@@ -17,9 +17,21 @@
 # ademas que pase cardiolink_has_communications_access() via RPC) en vez
 # de la capa de plataforma. Alineado con lo que ya esta funcionando en
 # Production.
+#
+# appointment-cancellation-public (Comunicaciones V1.2, Bloque B1): mismo
+# motivo que las dos anteriores. Es una funcion PUBLICA (el paciente la
+# llama sin ningun login de CardioLink), asi que jamas podria llevar un JWT
+# de Supabase - verify_jwt=false NO significa "sin seguridad": la unica
+# puerta de entrada real es el token HMAC propio (ver
+# _shared/token-cancelacion.js), verificado desde cero en cada accion.
+# Funcion completamente separada de portal-gateway a proposito (Bloque B0):
+# no se toca portal-gateway para nada de esto.
 
 [functions.patient-reminders-24h]
 verify_jwt = false
 
 [functions.patient-communications]
+verify_jwt = false
+
+[functions.appointment-cancellation-public]
 verify_jwt = false
