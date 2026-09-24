@@ -5583,6 +5583,36 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     return prev===undefined || prev!==stableStringify298(a);
   }
 
+  /* B1.5 - PROTECCIÓN DE CONCURRENCIA DE LA MISMA ATENCIÓN: baseline paralelo
+     de la VERSIÓN remota (updated_at) de cada atención tal como esta sesión la
+     cargó/confirmó por última vez desde Supabase. baselineAtenciones298 (arriba)
+     evita subir filas sin cambios locales; esto además evita que una fila que
+     SÍ cambió localmente pise, con un upsert ciego, un cambio remoto posterior
+     al snapshot de esta sesión (ej.: una cancelación pública vía
+     appointment-cancellation-public mientras Secretaría tenía la misma fila
+     abierta). Sin baselineVersion para un id -> se trata como atención nueva
+     (nunca hubo una fila remota que proteger). Ver uso en
+     sincronizarAtencionesSupabase más abajo. */
+  let baselineVersionAtenciones298=new Map();
+  function snapshotBaselineVersionAtenciones298(filas){
+    const m=new Map();
+    (Array.isArray(filas)?filas:[]).forEach(r=>{ if(r && r.id!=null && r.updated_at) m.set(String(r.id), r.updated_at); });
+    baselineVersionAtenciones298=m;
+  }
+  // Aviso corto y no bloqueante cuando una atención se actualiza con la
+  // versión remota tras un conflicto de concurrencia. Reutiliza el mismo
+  // elemento/clase #toast300 (.toast300 en styles.css) que ya usa el resto de
+  // la app, con una copia local mínima porque toast300() vive en otro bloque
+  // (IIFE) y no es accesible desde acá - no se toca ni se expone ese bloque.
+  function avisoConcurrencia298(msg){
+    try{
+      let t=document.getElementById('toast300');
+      if(!t){ t=document.createElement('div'); t.id='toast300'; t.className='toast300'; document.body.appendChild(t); }
+      t.textContent=msg; t.classList.add('show');
+      clearTimeout(t._tm); t._tm=setTimeout(()=>t.classList.remove('show'),3200);
+    }catch(e){}
+  }
+
   function d(id){return document.getElementById(id)}
   function esc(v){return String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;')}
   function clean(v){return String(v??'').replace(/<[^>]*>/g,' ').replace(/&nbsp;/gi,' ').replace(/\s+/g,' ').trim()}
@@ -5897,7 +5927,16 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       if(cfgRow?.payload?.config){
         try{ data=normalizarConfigCritica(cfgRow.payload.config); localStorage.setItem(storageConfig,JSON.stringify(data)); }catch(e){console.warn('Config remota inválida:',e);}
       }
-      const remotas=(rows||[]).filter(r=>r.id!==CONFIG_ROW_ID && r.payload?.tipoRegistro!=='config').map(r=>r.payload).filter(Boolean);
+      // B1.5: se conserva la fila cruda (con updated_at), no solo el payload -
+      // antes ese updated_at se descartaba acá y ya no quedaba disponible en
+      // ningún lado para proteger contra un upsert ciego posterior.
+      const filasAtencion298=(rows||[]).filter(r=>r.id!==CONFIG_ROW_ID && r.payload?.tipoRegistro!=='config');
+      const remotas=filasAtencion298.map(r=>r.payload).filter(Boolean);
+      // Se fija ACÁ, antes de cualquier sync posterior en este mismo ciclo de
+      // carga (incluida la limpieza de corruptos más abajo), para que el
+      // próximo compare-and-swap compare siempre contra lo realmente
+      // confirmado remoto en este momento.
+      snapshotBaselineVersionAtenciones298(filasAtencion298);
       cargandoDesdeNube=true;
       if(remotas.length>0){
         atenciones=remotas;
@@ -5962,36 +6001,191 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
           return true;
         }
 
-        const rows=aEnviar298.map(a=>({id:String(a.id),payload:a,updated_at:new Date().toISOString()}));
+        const now298=new Date().toISOString();
 
-        const vistos=new Set();
-        const finalRows=[];
-        rows.forEach((r,idx)=>{
-          if(vistos.has(r.id)) r.id='att_'+Date.now()+'_'+idx+'_'+Math.random().toString(36).slice(2,8);
-          vistos.add(r.id);
-          finalRows.push(r);
-        });
+        if(forzar){
+          // Comportamiento histórico SIN CAMBIOS: forzar=true sigue siendo
+          // siempre un volcado completo ya autorizado (bootstrap con base
+          // remota vacía, limpieza de corruptos, "Sincronizar ahora" tras
+          // corrupción) - nunca compara contra baselineVersionAtenciones298.
+          // No se introduce ningún uso nuevo de forzar=true (B1.5, punto 5).
+          const rows=aEnviar298.map(a=>({id:String(a.id),payload:a,updated_at:now298}));
 
-        // SINCRONIZACIÓN SEGURA: primero UPSERT. Nunca DELETE ALL antes de guardar.
-        const {error:upErr}=await supabaseClient
-          .from('cardiolink_atenciones')
-          .upsert(finalRows,{onConflict:'id'});
-        if(upErr){
-          console.error(upErr);
-          alert('No se pudo sincronizar con Supabase: '+upErr.message);
-          // No quedó confirmado: se reencola con el mismo mecanismo que ya
-          // usa este bloque para pedidos concurrentes (ver finally), en vez
-          // de darlo por sincronizado.
-          syncAtencionesPendiente=true;
-          syncReintentosFallidos++;
-          return false;
+          const vistos=new Set();
+          const finalRows=[];
+          rows.forEach((r,idx)=>{
+            if(vistos.has(r.id)) r.id='att_'+Date.now()+'_'+idx+'_'+Math.random().toString(36).slice(2,8);
+            vistos.add(r.id);
+            finalRows.push(r);
+          });
+
+          // SINCRONIZACIÓN SEGURA: primero UPSERT. Nunca DELETE ALL antes de guardar.
+          const {error:upErr}=await supabaseClient
+            .from('cardiolink_atenciones')
+            .upsert(finalRows,{onConflict:'id'});
+          if(upErr){
+            console.error(upErr);
+            alert('No se pudo sincronizar con Supabase: '+upErr.message);
+            syncAtencionesPendiente=true;
+            syncReintentosFallidos++;
+            return false;
+          }
+
+          const limpieza=await limpiarIdsRemotosObsoletosSeguro(
+            atenciones.map(a=>String(a.id)),
+            atenciones.length
+          );
+          if(limpieza?.protegido){
+            console.warn('CardioLink protegió la base remota: se omitió una limpieza potencialmente masiva.');
+          }
+
+          // Baseline de contenido Y baseline de versión remota (B1.5) se fijan
+          // juntos, SOLO tras el UPSERT confirmado - así el próximo sync
+          // normal ya puede usar el UPDATE condicionado en vez de tratar
+          // estas filas como si nunca hubieran tenido versión remota.
+          aEnviar298.forEach(a=>{
+            if(!a || a.id==null) return;
+            baselineAtenciones298.set(String(a.id), stableStringify298(a));
+            baselineVersionAtenciones298.set(String(a.id), now298);
+          });
+
+          console.log('Supabase sincronizado de forma segura:',finalRows.length,'atencion(es)',limpieza?.eliminados?`· ${limpieza.eliminados} obsoletos eliminados`:'' );
+          syncConfirmadoOk298=true;
+          syncReintentosFallidos=0;
+          return true;
         }
 
-        // Luego elimina únicamente IDs obsoletos, con protección contra vaciados masivos.
-        // (HOTFIX stale-overwrite A: se pasa el set COMPLETO de ids locales, no
-        // solo el de las filas enviadas en este ciclo, para no alterar la
-        // semantica del argumento. La funcion sigue en modo upsert_only y no
-        // borra nada.)
+        // ===== B1.5 - concurrencia optimista (sync normal, forzar=false) =====
+        // Una atención "existente" (ya tiene versión remota confirmada en
+        // baselineVersionAtenciones298, fijada al cargarla desde Supabase)
+        // NUNCA se sube con upsert ciego: se actualiza condicionada a que su
+        // updated_at remoto siga siendo el mismo que esta sesión cargó. Si
+        // Secretaría/el paciente/otra pestaña ya la modificaron mientras tanto
+        // (ej.: una cancelación pública vía appointment-cancellation-public),
+        // el UPDATE afecta 0 filas y NUNCA se reintenta a ciegas: se relee la
+        // fila remota y gana ella siempre - incluido el caso de un turno ya
+        // cancelado por el paciente, que jamás puede "revivir" por una edición
+        // hecha sobre un snapshot local viejo. Una atención sin
+        // baselineVersion (nunca confirmada remota) se trata como nueva y
+        // sigue el upsert normal (punto 4: no hay versión remota que proteger).
+        const nuevas298=[];
+        const existentes298=[];
+        aEnviar298.forEach(a=>{
+          if(a && a.id!=null && baselineVersionAtenciones298.has(String(a.id))) existentes298.push(a);
+          else nuevas298.push(a);
+        });
+
+        const conflictos298=[];
+
+        for(const a of existentes298){
+          const idStr=String(a.id);
+          const baselineVersion=baselineVersionAtenciones298.get(idStr);
+          const {data:actualizadas,error:updErr}=await supabaseClient
+            .from('cardiolink_atenciones')
+            .update({payload:a, updated_at:now298})
+            .eq('id',idStr)
+            .eq('updated_at',baselineVersion)
+            .select('id, updated_at');
+          if(updErr){
+            console.error(updErr);
+            alert('No se pudo sincronizar con Supabase: '+updErr.message);
+            // No quedó confirmado (ni esta fila ni ninguna atención nueva que
+            // todavía no se haya enviado): se reencola, igual que el resto
+            // del mecanismo. El baseline de las filas YA confirmadas en este
+            // mismo ciclo (antes de este error) queda intacto: sí se
+            // escribieron de verdad.
+            syncAtencionesPendiente=true;
+            syncReintentosFallidos++;
+            return false;
+          }
+          if(Array.isArray(actualizadas) && actualizadas.length>0){
+            baselineAtenciones298.set(idStr, stableStringify298(a));
+            baselineVersionAtenciones298.set(idStr, actualizadas[0].updated_at || now298);
+          }else{
+            // 0 filas afectadas: la condición updated_at=baseline no
+            // matcheó - hubo un cambio remoto después de que esta sesión
+            // cargó la fila. NO se reintenta un segundo UPDATE a ciegas
+            // sobre esta versión: se relee más abajo y gana el remoto.
+            conflictos298.push(idStr);
+          }
+        }
+
+        if(nuevas298.length){
+          const rows=nuevas298.map(a=>({id:String(a.id),payload:a,updated_at:now298}));
+          const vistos=new Set();
+          const finalRows=[];
+          rows.forEach((r,idx)=>{
+            if(vistos.has(r.id)) r.id='att_'+Date.now()+'_'+idx+'_'+Math.random().toString(36).slice(2,8);
+            vistos.add(r.id);
+            finalRows.push(r);
+          });
+          // Atención nueva -> no hay versión remota previa que proteger
+          // (punto 4): se conserva el upsert normal.
+          const {error:upErr}=await supabaseClient
+            .from('cardiolink_atenciones')
+            .upsert(finalRows,{onConflict:'id'});
+          if(upErr){
+            console.error(upErr);
+            alert('No se pudo sincronizar con Supabase: '+upErr.message);
+            syncAtencionesPendiente=true;
+            syncReintentosFallidos++;
+            return false;
+          }
+          nuevas298.forEach(a=>{
+            if(!a || a.id==null) return;
+            baselineAtenciones298.set(String(a.id), stableStringify298(a));
+            baselineVersionAtenciones298.set(String(a.id), now298);
+          });
+        }
+
+        if(conflictos298.length){
+          const {data:filasConflicto,error:errConflicto}=await supabaseClient
+            .from('cardiolink_atenciones')
+            .select('id,payload,updated_at')
+            .in('id',conflictos298);
+          if(errConflicto){
+            // No se pudo releer: la(s) fila(s) en conflicto quedan tal como
+            // estaban (sin tocar su baseline) y se reintentan en el próximo
+            // ciclo natural - nunca se pisa remoto a ciegas ni se inventa un
+            // resultado.
+            console.warn('No se pudo releer atencion(es) en conflicto:',errConflicto.message);
+          }else{
+            const encontradas298=new Set();
+            (filasConflicto||[]).forEach(fila=>{
+              if(!fila || fila.id==null || !fila.payload) return;
+              const idStr=String(fila.id);
+              encontradas298.add(idStr);
+              const idx=atenciones.findIndex(x=>x && String(x.id)===idStr);
+              // Prioridad: se preserva SIEMPRE el dato remoto más nuevo, sin
+              // excepción - incluye especialmente estadoTurno==='cancelado' +
+              // canceladoPor==='Paciente (email)': esta rama nunca vuelve a
+              // subir el snapshot local viejo por encima de esa cancelación.
+              if(idx>=0) atenciones[idx]=fila.payload; else atenciones.push(fila.payload);
+              baselineAtenciones298.set(idStr, stableStringify298(fila.payload));
+              baselineVersionAtenciones298.set(idStr, fila.updated_at);
+            });
+            // Fila EXISTENTE (tenía baselineVersion) en conflicto que, al
+            // releer, YA NO EXISTE remotamente: se interpreta como eliminada
+            // por otra sesión mientras esta tenía un snapshot viejo - NUNCA
+            // se recrea. Se quita del array local y de localStorage, y se
+            // borran AMBOS baselines (payload y versión), para que el
+            // próximo ciclo no vuelva a intentar subirla ni como UPDATE
+            // condicionado (ya no podría matchear nada) ni como upsert de
+            // "atención nueva" (eso la resucitaría, que es justo lo que no
+            // debe pasar).
+            conflictos298.forEach(idStr=>{
+              if(encontradas298.has(idStr)) return;
+              const idx=atenciones.findIndex(x=>x && String(x.id)===idStr);
+              if(idx>=0) atenciones.splice(idx,1);
+              baselineAtenciones298.delete(idStr);
+              baselineVersionAtenciones298.delete(idStr);
+            });
+            try{ localStorage.setItem(storageAtenciones,JSON.stringify(atenciones)); }catch(e){}
+            try{ renderTabla?.(); renderStats?.(); }catch(e){}
+            avisoConcurrencia298('Este turno fue modificado desde otra sesión y se actualizó con la versión más reciente.');
+          }
+        }
+
         const limpieza=await limpiarIdsRemotosObsoletosSeguro(
           atenciones.map(a=>String(a.id)),
           atenciones.length
@@ -6000,13 +6194,12 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
           console.warn('CardioLink protegió la base remota: se omitió una limpieza potencialmente masiva.');
         }
 
-        // HOTFIX stale-overwrite (A): baseline se actualiza SOLO para las
-        // atenciones realmente enviadas y SOLO tras el UPSERT confirmado. Si el
-        // UPSERT hubiera fallado, no se llega hasta aca y el baseline queda
-        // intacto (se reintenta con el backoff existente).
-        aEnviar298.forEach(a=>{ if(a && a.id!=null) baselineAtenciones298.set(String(a.id), stableStringify298(a)); });
-
-        console.log('Supabase sincronizado de forma segura:',finalRows.length,'atencion(es)',limpieza?.eliminados?`· ${limpieza.eliminados} obsoletos eliminados`:'' );
+        console.log(
+          'Supabase sincronizado de forma segura:',
+          (existentes298.length-conflictos298.length)+nuevas298.length,'atencion(es) confirmada(s)',
+          conflictos298.length?`· ${conflictos298.length} en conflicto (se adoptó la versión remota)`:'',
+          limpieza?.eliminados?`· ${limpieza.eliminados} obsoletos eliminados`:''
+        );
         syncConfirmadoOk298=true;
         syncReintentosFallidos=0;
         return true;
