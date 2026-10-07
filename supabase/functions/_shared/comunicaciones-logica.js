@@ -389,7 +389,13 @@ function resolverLogoProfesional(profesional, attachments) {
 // (`[]`) cuando no hay ningún logo en base64 válido, así el caller
 // (manejarSendEmail) puede omitir por completo la clave `attachments` del
 // body cuando no hace falta, sin ninguna rama especial acá.
-export function armarHtmlEmailTurno({ tipo, atencion, template, direccionConsultorio, profesional, especialidades, config }) {
+//
+// Comunicaciones V1.2, Bloque B2: `cancelUrl` es un parámetro OPCIONAL más
+// (la URL pública de cancelación, YA armada con el token firmado por el
+// caller - esta función nunca genera tokens, nunca conoce el secret, sólo
+// recibe una URL lista para usar o no recibe nada). Sin `cancelUrl`, el
+// email queda exactamente igual que antes de este bloque.
+export function armarHtmlEmailTurno({ tipo, atencion, template, direccionConsultorio, profesional, especialidades, config, cancelUrl }) {
   // Única fuente de identidad de CardioLink para todo este template: ni
   // el logo, ni el nombre, ni los colores de la plataforma están sueltos
   // en ningún otro lado de esta función - todo sale de `branding`.
@@ -428,6 +434,28 @@ export function armarHtmlEmailTurno({ tipo, atencion, template, direccionConsult
         <div style="background-color:#f0f9fb;border-left:4px solid ${branding.colorSecundario};border-radius:6px;padding:14px 16px;color:#0f172a;font-size:15px;line-height:1.5;font-family:Arial,Helvetica,sans-serif;">
           <strong style="display:block;margin-bottom:4px;color:${branding.colorSecundario};">Instrucciones</strong>${instrucciones}
         </div>
+      </td></tr>`
+    : '';
+
+  // Comunicaciones V1.2, Bloque B2: botón "Cancelar turno". Sólo se muestra
+  // si el caller resolvió un cancelUrl Y el tipo es uno de los tres donde
+  // tiene sentido ofrecer cancelar (confirmation/reschedule/reminder) -
+  // nunca en cancellation (ya está cancelado) ni en manual (mensaje libre,
+  // no necesariamente sobre un turno vigente). Sin cancelUrl, no se
+  // renderiza ni el bloque ni un espacio vacío: `bloqueCancelacion` queda
+  // como string vacía, igual que el resto de los bloques opcionales de
+  // este template. Botón secundario y discreto a propósito (borde gris,
+  // texto en el color secundario de marca, sin fondo rojo/agresivo) -
+  // cancelar no es la acción principal del email.
+  const bloqueCancelacion = (cancelUrl && ['confirmation', 'reschedule', 'reminder'].includes(tipo))
+    ? `<tr><td style="padding:20px 24px 0 24px;border-top:1px solid #e2e8f0;">
+        <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+          <tr><td align="center" style="padding-top:16px;">
+            <div style="font-size:14px;color:#475569;font-family:Arial,Helvetica,sans-serif;margin-bottom:10px;">¿No podés asistir?</div>
+            <a href="${escaparHtml(cancelUrl)}" style="display:inline-block;padding:10px 22px;border:1px solid #cbd5e1;border-radius:6px;color:${branding.colorSecundario};font-size:13px;font-weight:bold;text-decoration:none;font-family:Arial,Helvetica,sans-serif;">Cancelar turno</a>
+            <div style="font-size:12px;color:#94a3b8;font-family:Arial,Helvetica,sans-serif;margin-top:10px;">Podés cancelar este turno desde este enlace.</div>
+          </td></tr>
+        </table>
       </td></tr>`
     : '';
 
@@ -497,6 +525,7 @@ ${filaDireccion}
 ${bloqueInstrucciones}
 </table>
 </td></tr>
+${bloqueCancelacion}
 <tr><td style="padding:20px 24px 24px 24px;border-top:1px solid #e2e8f0;color:#94a3b8;font-size:11px;text-align:center;font-family:Arial,Helvetica,sans-serif;">
 Este es un mensaje automático de ${escaparHtml(branding.nombre)}. Ante cualquier consulta, comunicate con el consultorio.
 </td></tr>

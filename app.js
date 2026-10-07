@@ -7772,10 +7772,29 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     else if(isOsde383(a)){a.noAplicaFirmaBono=true;a.noAplicaCopiaFacturacion=true;}
     else {if(a.noAplicaFirmaBono==='auto')delete a.noAplicaFirmaBono;if(a.noAplicaCopiaFacturacion==='auto')delete a.noAplicaCopiaFacturacion;}
   }
+  // Comunicaciones V1.2, Bloque B3: ¿esta atención es una cancelación hecha
+  // por el PACIENTE desde el email (nunca por Secretaría/profesional/otro
+  // origen - ver wrap 460c de cambiarEstadoAgenda, que graba el nombre del
+  // usuario real en canceladoPor para una cancelación hecha desde la
+  // Agenda)? Se usa tanto para el pendiente activo como para la pestaña
+  // "Cancelados por paciente" (que debe mostrar también los ya resueltos,
+  // por eso esta función NO mira pendienteCancelacionResuelto).
+  function esCancelacionPaciente383(a){
+    return !!a && String(a.estadoTurno||a.estado||'')==='cancelado' && a.canceladoPor==='Paciente (email)';
+  }
   function pendientes383(a){
     if(!a||typeof a!=='object'||(typeof esMensajeInterno==='function'&&esMensajeInterno(a)))return [];
     const estadoTurno383=String(a.estadoTurno||a.estado||'').toLowerCase();
-    if(estadoTurno383==='ausente'||estadoTurno383==='cancelado')return [];
+    if(estadoTurno383==='cancelado'){
+      // B3: mientras no se haya resuelto desde Secretaría, una cancelación
+      // del paciente SIGUE siendo un pendiente propio (cancelado_paciente) -
+      // se evalúa ANTES del corte general de abajo, que sigue aplicando sin
+      // cambios para cualquier otro cancelado (Secretaría/profesional/otro
+      // origen) y para 'ausente'.
+      if(esCancelacionPaciente383(a) && a.pendienteCancelacionResuelto!==true) return ['cancelado_paciente'];
+      return [];
+    }
+    if(estadoTurno383==='ausente')return [];
     applyNA383(a);
     const out=[];
     const requiereFirma=!!(a.bonoConsulta||a.bonoEstudio);
@@ -7790,8 +7809,8 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   }
   window.pendientesDeAtencion383=pendientes383;
   function base383(){try{return typeof atencionesPerfil==='function'?atencionesPerfil().filter(a=>!(typeof esMensajeInterno==='function'&&esMensajeInterno(a))):atenciones}catch{return atenciones||[]}}
-  function labels383(k){return {firma:'Falta firma / bono',copia:'Falta copia facturación',informe:'Falta informe',entrega:'Falta imprimir / enviar',retiro:'Pendiente de retiro',autorizacion:'Falta autorización'}[k]||k}
-  function counts383(list){const c={todos:0,firma:0,copia:0,informe:0,entrega:0,retiro:0,autorizacion:0};list.forEach(a=>{const p=pendientes383(a);if(p.length)c.todos++;p.forEach(k=>c[k]++)});return c}
+  function labels383(k){return {firma:'Falta firma / bono',copia:'Falta copia facturación',informe:'Falta informe',entrega:'Falta imprimir / enviar',retiro:'Pendiente de retiro',autorizacion:'Falta autorización',cancelado_paciente:'Cancelado por el paciente'}[k]||k}
+  function counts383(list){const c={todos:0,firma:0,copia:0,informe:0,entrega:0,retiro:0,autorizacion:0,cancelado_paciente:0};list.forEach(a=>{const p=pendientes383(a);if(p.length)c.todos++;p.forEach(k=>c[k]++)});return c}
   function overdue383(a){try{return typeof diasAntiguedadPendiente411C==='function'&&diasAntiguedadPendiente411C(a)>7}catch(e){return false}}
   function esc383(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
   // UI Interna V1 - Bloque 6: edad para la tarjeta de Pendientes, a partir
@@ -7846,24 +7865,94 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     }catch(_){}
     return m;
   }
+  // BUG B3 (fix): #agendaModal vive anidado dentro de <section id="agenda">
+  // (ver index.html), que usa el mismo patrón .section{display:none}/
+  // .section.visible{display:block} que el resto de la navegación. Llamado
+  // directamente desde Pendientes (otra sección), abrirAgendaModal()
+  // igual encontraba la atención y quitaba su propia clase "hidden", pero
+  // el modal quedaba con tamaño {0,0,0,0} y sin pintarse en pantalla,
+  // porque su ancestro #agenda seguía sin "visible" - exactamente el mismo
+  // mecanismo que ya resuelve "Dar otro turno" (showSection('carga')) antes
+  // de usar su propio destino. Función aparte (en vez de encadenar
+  // "showSection(...);abrirAgendaModal(...)" directo en el onclick) para
+  // no depender de múltiples sentencias dentro de un único atributo
+  // inline - un solo call, mismo patrón que el resto de los botones de
+  // esta tarjeta. No toca abrirAgendaModal ni showSection.
+  function reprogramarDesdePendienteCancelacion383(id){
+    showSection('agenda');
+    abrirAgendaModal(id);
+  }
+  window.reprogramarDesdePendienteCancelacion383=reprogramarDesdePendienteCancelacion383;
+  // B3: tarjeta dedicada para el pendiente "cancelado_paciente" - reutiliza
+  // las mismas clases (pend-card383/pend-main383/pend-date383/pend-tags383)
+  // que el resto de Pendientes, sin ningún layout nuevo. Se usa tanto para
+  // el activo (con las 3 acciones) como para el resuelto (con el estado y,
+  // si existen, quién/cuándo lo resolvió) - la MISMA función para ambos
+  // casos, distinguidos sólo por pendienteCancelacionResuelto.
+  function tarjetaCancelacionPaciente383(a){
+    const resuelto=a.pendienteCancelacionResuelto===true;
+    const estadoHtml=resuelto
+      ? `<p class="muted">Resuelto${a.pendienteCancelacionResueltoPor?' por '+esc383(a.pendienteCancelacionResueltoPor):''}${a.pendienteCancelacionResueltoEn?' · '+esc383(fechaHoraAuditoria(a.pendienteCancelacionResueltoEn)):''}</p>`
+      : '';
+    // Activo: las 3 acciones de B3, todas sobre flujos ya existentes (ver
+    // abrirAgendaModal/nuevaAtencionDesdePaciente, sin modal nuevo). Ninguna
+    // de las dos primeras marca el pendiente como resuelto - sólo "Cerrar
+    // pendiente" lo hace. Resuelto: sin botones de acción, sólo el estado.
+    const acciones=resuelto
+      ? `<span class="pend-tag383 p-cancelado_paciente" style="cursor:default">Resuelto</span>`
+      : `<button type="button" class="secondary" onclick="reprogramarDesdePendienteCancelacion383('${esc383(a.id)}')">Reprogramar</button>`
+        +(a.pacienteId?`<button type="button" class="secondary" onclick="nuevaAtencionDesdePaciente('${esc383(a.pacienteId)}')">Dar otro turno</button>`:'')
+        +`<button type="button" class="pend-tag383 p-cancelado_paciente" onclick="cerrarPendienteCancelacion383('${esc383(a.id)}')">Cerrar pendiente</button>`;
+    return `<article class="pend-card383${resuelto?' resuelto383':''}"><div class="pend-main383"><div class="pend-date383">${esc383(typeof formatFecha==='function'?formatFecha(a.fecha):a.fecha)}${a.horaInicio?' · '+esc383(a.horaInicio):''}</div><h3>${esc383(a.paciente||'Paciente')}</h3><p>${esc383(a.prestacion||'')} · ${esc383(a.profesional||'')}</p><p class="muted">Motivo: ${esc383(a.motivoCancelacion||'Cancelado por el paciente')}</p>${estadoHtml}</div><div class="pend-tags383">${acciones}<button type="button" class="secondary open383" onclick="abrirFichaPacienteDesdePendiente411C('${esc383(a.id)}')">Ficha paciente</button></div></article>`;
+  }
   function renderPendientes383(){
     const box=document.getElementById('pendientesLista383');if(!box)return;
-    let list=base383().filter(a=>pendientes383(a).length);
+    // B3: "Cancelados por paciente" es la única pestaña que debe mostrar
+    // TAMBIÉN los ya resueltos - pendientes383() les devuelve [] en cuanto
+    // pendienteCancelacionResuelto es true (igual que a cualquier otro tipo
+    // ya resuelto), así que esta pestaña usa su propio filtro directo en
+    // vez del genérico "tiene al menos un pendiente activo".
+    let list=currentTab==='cancelado_paciente'
+      ? base383().filter(esCancelacionPaciente383)
+      : base383().filter(a=>pendientes383(a).length);
     const c=counts383(base383());
     document.querySelectorAll('#pendientesTabs383 [data-pendtab]').forEach(b=>{const k=b.dataset.pendtab;b.classList.toggle('active',k===currentTab);const s=b.querySelector('span');if(s)s.textContent=c[k]||0});
     const nav=document.getElementById('badgePendientesNav383');if(nav){nav.textContent=c.todos;nav.classList.toggle('zero',!c.todos)}
-    if(currentTab!=='todos')list=list.filter(a=>pendientes383(a).includes(currentTab));
+    if(currentTab!=='todos'&&currentTab!=='cancelado_paciente')list=list.filter(a=>pendientes383(a).includes(currentTab));
     if(onlyOverdue383)list=list.filter(overdue383);
     const q=norm(document.getElementById('pendBuscar383')?.value);if(q)list=list.filter(a=>norm([a.paciente,a.dni,a.prestacion,a.obraSocial,a.profesional].join(' ')).includes(q));
     const desc=document.getElementById('pendOrden383')?.value==='desc';list.sort((a,b)=>(String(a.fecha||'').localeCompare(String(b.fecha||'')))*(desc?-1:1));
     if(!list.length){box.innerHTML=`<div class="empty383">${onlyOverdue383?'No hay pendientes vencidos de más de 7 días.':'No hay pendientes en esta categoría.'}</div>`;return}
     const notice=onlyOverdue383?'<div class="empty383">Mostrando pendientes vencidos de más de 7 días. Elegí una categoría para volver a la vista completa.</div>':'';
     const idxPac383=indicePacientes383();
-    box.innerHTML=notice+list.map(a=>{const ps=pendientes383(a);const edad383=edadPendienteEtiqueta383(a,idxPac383);return `<article class="pend-card383"><div class="pend-main383"><div class="pend-date383">${esc383(typeof formatFecha==='function'?formatFecha(a.fecha):a.fecha)}${a.horaInicio?' · '+esc383(a.horaInicio):''}</div><h3>${esc383(a.paciente||'Paciente')} · ${esc383(edad383)}</h3><p>${esc383(a.prestacion||'')} · ${esc383(a.profesional||'')}</p><p class="muted">${esc383(a.obraSocial||'Sin cobertura')} · DNI ${esc383(a.dni||'s/d')}</p></div><div class="pend-tags383">${ps.map(k=>`<button type="button" class="pend-tag383 p-${k}" onclick="resolverPendiente383('${esc383(a.id)}','${k}')">${esc383(labels383(k))}</button>`).join('')}<button type="button" class="secondary open383" onclick="abrirFichaPacienteDesdePendiente411C('${esc383(a.id)}')">Ficha paciente</button></div></article>`}).join('');
+    box.innerHTML=notice+list.map(a=>{
+      if(esCancelacionPaciente383(a))return tarjetaCancelacionPaciente383(a);
+      const ps=pendientes383(a);const edad383=edadPendienteEtiqueta383(a,idxPac383);return `<article class="pend-card383"><div class="pend-main383"><div class="pend-date383">${esc383(typeof formatFecha==='function'?formatFecha(a.fecha):a.fecha)}${a.horaInicio?' · '+esc383(a.horaInicio):''}</div><h3>${esc383(a.paciente||'Paciente')} · ${esc383(edad383)}</h3><p>${esc383(a.prestacion||'')} · ${esc383(a.profesional||'')}</p><p class="muted">${esc383(a.obraSocial||'Sin cobertura')} · DNI ${esc383(a.dni||'s/d')}</p></div><div class="pend-tags383">${ps.map(k=>`<button type="button" class="pend-tag383 p-${k}" onclick="resolverPendiente383('${esc383(a.id)}','${k}')">${esc383(labels383(k))}</button>`).join('')}<button type="button" class="secondary open383" onclick="abrirFichaPacienteDesdePendiente411C('${esc383(a.id)}')">Ficha paciente</button></div></article>`;
+    }).join('');
   }
   window.renderPendientes383=renderPendientes383;
   window.mostrarPendientesVencidos383=function(){currentTab='todos';onlyOverdue383=true;const search=document.getElementById('pendBuscar383');if(search)search.value='';renderPendientes383();};
   function audit383(a,k){a.auditoriaPendientes=Array.isArray(a.auditoriaPendientes)?a.auditoriaPendientes:[];let u={};try{u=perfilUsuarioActual()||{}}catch{}a.auditoriaPendientes.push({tipo:k,accion:'resuelto',fecha:new Date().toISOString(),usuario:u.nombre||u.usuario||'usuario'});}
+  // B3: cierre del pendiente "cancelado_paciente". Única acción de las 3
+  // que efectivamente marca el pendiente como resuelto - Reprogramar/Dar
+  // otro turno sólo navegan a flujos existentes, sin tocar estos campos.
+  // Guarda quién/cuándo en los 3 campos nuevos del payload (sin tabla
+  // nueva, sin migración) y deja traza en auditoriaPendientes (mismo
+  // array/formato que audit383 ya usa para el resto de los tipos).
+  function cerrarPendienteCancelacion383(id){
+    const a=(atenciones||[]).find(x=>String(x.id)===String(id));if(!a)return;
+    if(!confirm('¿Cerrar este pendiente de cancelación?'))return;
+    const prev=JSON.parse(JSON.stringify(a));
+    let u={};try{u=perfilUsuarioActual()||{}}catch{}
+    a.pendienteCancelacionResuelto=true;
+    a.pendienteCancelacionResueltoEn=new Date().toISOString();
+    a.pendienteCancelacionResueltoPor=u.nombre||u.usuario||'usuario';
+    audit383(a,'cancelado_paciente');
+    try{saveAtenciones();renderTabla?.();renderStats?.();renderAgenda?.()}catch(e){console.error(e)}
+    renderPendientes383();
+    undo383={id,prev};toastUndo383('Pendiente de cancelación cerrado');
+  }
+  window.cerrarPendienteCancelacion383=cerrarPendienteCancelacion383;
   function resolverPendiente383(id,k){
     const a=(atenciones||[]).find(x=>String(x.id)===String(id));if(!a)return;
     const prev=JSON.parse(JSON.stringify(a));

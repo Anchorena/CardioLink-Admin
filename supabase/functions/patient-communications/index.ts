@@ -41,6 +41,11 @@ import {
   armarMensajeProfesional,
   armarMensajeProfesionalDocumento
 } from '../_shared/comunicaciones-logica.js';
+// Comunicaciones V1.2, Bloque B2: mismo módulo puro que ya usa
+// appointment-cancellation-public para VERIFICAR el token - acá sólo se usa
+// crearTokenCancelacion (firmar), nunca verificarTokenCancelacion. No se
+// toca token-cancelacion.js para nada de este bloque.
+import { crearTokenCancelacion } from '../_shared/token-cancelacion.js';
 
 // -----------------------------------------------------------------------
 // CORS. Mismo patrón que portal-gateway/index.ts (esOrigenLocal +
@@ -320,6 +325,53 @@ async function enviarConResend(destinatario, asunto, mensaje, html, attachments)
   }
 }
 
+// Comunicaciones V1.2, Bloque B2: botón "Cancelar turno" en el email.
+// Tipos donde tiene sentido ofrecer cancelar - nunca en 'cancellation' (ya
+// está cancelado) ni en 'manual' (mensaje libre, no necesariamente sobre un
+// turno vigente). Debe coincidir exactamente con la lista que usa
+// armarHtmlEmailTurno en comunicaciones-logica.js para decidir si renderiza
+// el bloque - si algún día difieren, el peor caso es un cancelUrl que
+// armarHtmlEmailTurno simplemente ignora (nunca al revés: nunca un botón
+// sin URL real detrás).
+const TIPOS_CON_CANCELACION = ['confirmation', 'reschedule', 'reminder'];
+
+// Sólo acepta http:// o https:// explícito - nunca un valor tipo
+// "localhost:9002" sin protocolo (evita construir una URL ambigua/rota) ni,
+// por supuesto, cualquier otro esquema (javascript:, data:, etc.).
+function baseUrlCancelacionValida() {
+  const valor = String(Deno.env.get('APPOINTMENT_CANCELLATION_PUBLIC_URL') || '').trim();
+  if (!/^https?:\/\//i.test(valor)) return null;
+  return valor;
+}
+
+// Genera la URL pública de cancelación firmando el token EXCLUSIVAMENTE con
+// datos reales ya leídos de cardiolink_atenciones (nunca con nada que venga
+// del navegador - esta función ni siquiera recibe un `body` de request).
+// Fail-safe total y a propósito: CUALQUIER motivo (falta la env var, es
+// inválida, falta el secret, crearTokenCancelacion devuelve ok:false, tipo
+// no corresponde) devuelve null y jamás lanza - manejarSendEmail nunca debe
+// dejar de enviar el email por esto, sólo se degrada a "sin botón". Nunca
+// loguea el secret, el token ni la URL completa (ver catch: sólo se traga
+// el error, no se imprime nada de lo que pudiera contener).
+async function resolverCancelUrl(tipo, atencionId, atencion) {
+  if (!TIPOS_CON_CANCELACION.includes(tipo)) return null;
+  const baseUrl = baseUrlCancelacionValida();
+  if (!baseUrl) return null;
+  const secret = Deno.env.get('APPOINTMENT_CANCEL_TOKEN_SECRET');
+  if (!secret) return null;
+  try {
+    const resultado = await crearTokenCancelacion({
+      atencionId,
+      fecha: atencion && atencion.fecha,
+      horaInicio: atencion && atencion.horaInicio
+    }, secret);
+    if (!resultado.ok) return null;
+    return `${baseUrl}#token=${encodeURIComponent(resultado.token)}`;
+  } catch (_error) {
+    return null;
+  }
+}
+
 async function manejarSendEmail(admin, body, uid) {
   const { atencionId, tipo } = body || {};
   if (!atencionId || !tipo) return errorResponse('Faltan atencionId/tipo.', 400);
@@ -344,6 +396,15 @@ async function manejarSendEmail(admin, body, uid) {
   // en comunicaciones-logica.js). Cualquier excepción acá (dato de
   // profesional corrupto, etc.) degrada al mismo camino de siempre: texto
   // plano, sin adjuntos, el envío nunca se corta por esto.
+  // Comunicaciones V1.2, Bloque B2: cancelUrl se resuelve ACÁ, con datos
+  // reales ya leídos de Supabase (r.atencion.fecha/horaInicio, atencionId
+  // validado arriba) - nunca con nada que el navegador pudiera mandar en
+  // `body`. resolverCancelUrl nunca lanza y nunca loguea nada: cualquier
+  // problema (falta env var/secret, turno vencido, tipo sin botón) degrada
+  // a `cancelUrl = null`, que armarHtmlEmailTurno interpreta como "sin
+  // botón" - el email se sigue enviando siempre.
+  const cancelUrl = await resolverCancelUrl(tipo, String(atencionId), r.atencion);
+
   let htmlMensaje = null;
   let adjuntosMensaje = [];
   try {
@@ -354,7 +415,8 @@ async function manejarSendEmail(admin, body, uid) {
       direccionConsultorio: r.direccionConsultorio,
       profesional: r.profesional,
       especialidades: r.especialidades,
-      config: r.config
+      config: r.config,
+      cancelUrl
     });
     htmlMensaje = armado.html;
     adjuntosMensaje = armado.attachments || [];
