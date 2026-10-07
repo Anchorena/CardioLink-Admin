@@ -5583,6 +5583,36 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     return prev===undefined || prev!==stableStringify298(a);
   }
 
+  /* B1.5 - PROTECCIÓN DE CONCURRENCIA DE LA MISMA ATENCIÓN: baseline paralelo
+     de la VERSIÓN remota (updated_at) de cada atención tal como esta sesión la
+     cargó/confirmó por última vez desde Supabase. baselineAtenciones298 (arriba)
+     evita subir filas sin cambios locales; esto además evita que una fila que
+     SÍ cambió localmente pise, con un upsert ciego, un cambio remoto posterior
+     al snapshot de esta sesión (ej.: una cancelación pública vía
+     appointment-cancellation-public mientras Secretaría tenía la misma fila
+     abierta). Sin baselineVersion para un id -> se trata como atención nueva
+     (nunca hubo una fila remota que proteger). Ver uso en
+     sincronizarAtencionesSupabase más abajo. */
+  let baselineVersionAtenciones298=new Map();
+  function snapshotBaselineVersionAtenciones298(filas){
+    const m=new Map();
+    (Array.isArray(filas)?filas:[]).forEach(r=>{ if(r && r.id!=null && r.updated_at) m.set(String(r.id), r.updated_at); });
+    baselineVersionAtenciones298=m;
+  }
+  // Aviso corto y no bloqueante cuando una atención se actualiza con la
+  // versión remota tras un conflicto de concurrencia. Reutiliza el mismo
+  // elemento/clase #toast300 (.toast300 en styles.css) que ya usa el resto de
+  // la app, con una copia local mínima porque toast300() vive en otro bloque
+  // (IIFE) y no es accesible desde acá - no se toca ni se expone ese bloque.
+  function avisoConcurrencia298(msg){
+    try{
+      let t=document.getElementById('toast300');
+      if(!t){ t=document.createElement('div'); t.id='toast300'; t.className='toast300'; document.body.appendChild(t); }
+      t.textContent=msg; t.classList.add('show');
+      clearTimeout(t._tm); t._tm=setTimeout(()=>t.classList.remove('show'),3200);
+    }catch(e){}
+  }
+
   function d(id){return document.getElementById(id)}
   function esc(v){return String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;')}
   function clean(v){return String(v??'').replace(/<[^>]*>/g,' ').replace(/&nbsp;/gi,' ').replace(/\s+/g,' ').trim()}
@@ -5897,7 +5927,16 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       if(cfgRow?.payload?.config){
         try{ data=normalizarConfigCritica(cfgRow.payload.config); localStorage.setItem(storageConfig,JSON.stringify(data)); }catch(e){console.warn('Config remota inválida:',e);}
       }
-      const remotas=(rows||[]).filter(r=>r.id!==CONFIG_ROW_ID && r.payload?.tipoRegistro!=='config').map(r=>r.payload).filter(Boolean);
+      // B1.5: se conserva la fila cruda (con updated_at), no solo el payload -
+      // antes ese updated_at se descartaba acá y ya no quedaba disponible en
+      // ningún lado para proteger contra un upsert ciego posterior.
+      const filasAtencion298=(rows||[]).filter(r=>r.id!==CONFIG_ROW_ID && r.payload?.tipoRegistro!=='config');
+      const remotas=filasAtencion298.map(r=>r.payload).filter(Boolean);
+      // Se fija ACÁ, antes de cualquier sync posterior en este mismo ciclo de
+      // carga (incluida la limpieza de corruptos más abajo), para que el
+      // próximo compare-and-swap compare siempre contra lo realmente
+      // confirmado remoto en este momento.
+      snapshotBaselineVersionAtenciones298(filasAtencion298);
       cargandoDesdeNube=true;
       if(remotas.length>0){
         atenciones=remotas;
@@ -5962,36 +6001,191 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
           return true;
         }
 
-        const rows=aEnviar298.map(a=>({id:String(a.id),payload:a,updated_at:new Date().toISOString()}));
+        const now298=new Date().toISOString();
 
-        const vistos=new Set();
-        const finalRows=[];
-        rows.forEach((r,idx)=>{
-          if(vistos.has(r.id)) r.id='att_'+Date.now()+'_'+idx+'_'+Math.random().toString(36).slice(2,8);
-          vistos.add(r.id);
-          finalRows.push(r);
-        });
+        if(forzar){
+          // Comportamiento histórico SIN CAMBIOS: forzar=true sigue siendo
+          // siempre un volcado completo ya autorizado (bootstrap con base
+          // remota vacía, limpieza de corruptos, "Sincronizar ahora" tras
+          // corrupción) - nunca compara contra baselineVersionAtenciones298.
+          // No se introduce ningún uso nuevo de forzar=true (B1.5, punto 5).
+          const rows=aEnviar298.map(a=>({id:String(a.id),payload:a,updated_at:now298}));
 
-        // SINCRONIZACIÓN SEGURA: primero UPSERT. Nunca DELETE ALL antes de guardar.
-        const {error:upErr}=await supabaseClient
-          .from('cardiolink_atenciones')
-          .upsert(finalRows,{onConflict:'id'});
-        if(upErr){
-          console.error(upErr);
-          alert('No se pudo sincronizar con Supabase: '+upErr.message);
-          // No quedó confirmado: se reencola con el mismo mecanismo que ya
-          // usa este bloque para pedidos concurrentes (ver finally), en vez
-          // de darlo por sincronizado.
-          syncAtencionesPendiente=true;
-          syncReintentosFallidos++;
-          return false;
+          const vistos=new Set();
+          const finalRows=[];
+          rows.forEach((r,idx)=>{
+            if(vistos.has(r.id)) r.id='att_'+Date.now()+'_'+idx+'_'+Math.random().toString(36).slice(2,8);
+            vistos.add(r.id);
+            finalRows.push(r);
+          });
+
+          // SINCRONIZACIÓN SEGURA: primero UPSERT. Nunca DELETE ALL antes de guardar.
+          const {error:upErr}=await supabaseClient
+            .from('cardiolink_atenciones')
+            .upsert(finalRows,{onConflict:'id'});
+          if(upErr){
+            console.error(upErr);
+            alert('No se pudo sincronizar con Supabase: '+upErr.message);
+            syncAtencionesPendiente=true;
+            syncReintentosFallidos++;
+            return false;
+          }
+
+          const limpieza=await limpiarIdsRemotosObsoletosSeguro(
+            atenciones.map(a=>String(a.id)),
+            atenciones.length
+          );
+          if(limpieza?.protegido){
+            console.warn('CardioLink protegió la base remota: se omitió una limpieza potencialmente masiva.');
+          }
+
+          // Baseline de contenido Y baseline de versión remota (B1.5) se fijan
+          // juntos, SOLO tras el UPSERT confirmado - así el próximo sync
+          // normal ya puede usar el UPDATE condicionado en vez de tratar
+          // estas filas como si nunca hubieran tenido versión remota.
+          aEnviar298.forEach(a=>{
+            if(!a || a.id==null) return;
+            baselineAtenciones298.set(String(a.id), stableStringify298(a));
+            baselineVersionAtenciones298.set(String(a.id), now298);
+          });
+
+          console.log('Supabase sincronizado de forma segura:',finalRows.length,'atencion(es)',limpieza?.eliminados?`· ${limpieza.eliminados} obsoletos eliminados`:'' );
+          syncConfirmadoOk298=true;
+          syncReintentosFallidos=0;
+          return true;
         }
 
-        // Luego elimina únicamente IDs obsoletos, con protección contra vaciados masivos.
-        // (HOTFIX stale-overwrite A: se pasa el set COMPLETO de ids locales, no
-        // solo el de las filas enviadas en este ciclo, para no alterar la
-        // semantica del argumento. La funcion sigue en modo upsert_only y no
-        // borra nada.)
+        // ===== B1.5 - concurrencia optimista (sync normal, forzar=false) =====
+        // Una atención "existente" (ya tiene versión remota confirmada en
+        // baselineVersionAtenciones298, fijada al cargarla desde Supabase)
+        // NUNCA se sube con upsert ciego: se actualiza condicionada a que su
+        // updated_at remoto siga siendo el mismo que esta sesión cargó. Si
+        // Secretaría/el paciente/otra pestaña ya la modificaron mientras tanto
+        // (ej.: una cancelación pública vía appointment-cancellation-public),
+        // el UPDATE afecta 0 filas y NUNCA se reintenta a ciegas: se relee la
+        // fila remota y gana ella siempre - incluido el caso de un turno ya
+        // cancelado por el paciente, que jamás puede "revivir" por una edición
+        // hecha sobre un snapshot local viejo. Una atención sin
+        // baselineVersion (nunca confirmada remota) se trata como nueva y
+        // sigue el upsert normal (punto 4: no hay versión remota que proteger).
+        const nuevas298=[];
+        const existentes298=[];
+        aEnviar298.forEach(a=>{
+          if(a && a.id!=null && baselineVersionAtenciones298.has(String(a.id))) existentes298.push(a);
+          else nuevas298.push(a);
+        });
+
+        const conflictos298=[];
+
+        for(const a of existentes298){
+          const idStr=String(a.id);
+          const baselineVersion=baselineVersionAtenciones298.get(idStr);
+          const {data:actualizadas,error:updErr}=await supabaseClient
+            .from('cardiolink_atenciones')
+            .update({payload:a, updated_at:now298})
+            .eq('id',idStr)
+            .eq('updated_at',baselineVersion)
+            .select('id, updated_at');
+          if(updErr){
+            console.error(updErr);
+            alert('No se pudo sincronizar con Supabase: '+updErr.message);
+            // No quedó confirmado (ni esta fila ni ninguna atención nueva que
+            // todavía no se haya enviado): se reencola, igual que el resto
+            // del mecanismo. El baseline de las filas YA confirmadas en este
+            // mismo ciclo (antes de este error) queda intacto: sí se
+            // escribieron de verdad.
+            syncAtencionesPendiente=true;
+            syncReintentosFallidos++;
+            return false;
+          }
+          if(Array.isArray(actualizadas) && actualizadas.length>0){
+            baselineAtenciones298.set(idStr, stableStringify298(a));
+            baselineVersionAtenciones298.set(idStr, actualizadas[0].updated_at || now298);
+          }else{
+            // 0 filas afectadas: la condición updated_at=baseline no
+            // matcheó - hubo un cambio remoto después de que esta sesión
+            // cargó la fila. NO se reintenta un segundo UPDATE a ciegas
+            // sobre esta versión: se relee más abajo y gana el remoto.
+            conflictos298.push(idStr);
+          }
+        }
+
+        if(nuevas298.length){
+          const rows=nuevas298.map(a=>({id:String(a.id),payload:a,updated_at:now298}));
+          const vistos=new Set();
+          const finalRows=[];
+          rows.forEach((r,idx)=>{
+            if(vistos.has(r.id)) r.id='att_'+Date.now()+'_'+idx+'_'+Math.random().toString(36).slice(2,8);
+            vistos.add(r.id);
+            finalRows.push(r);
+          });
+          // Atención nueva -> no hay versión remota previa que proteger
+          // (punto 4): se conserva el upsert normal.
+          const {error:upErr}=await supabaseClient
+            .from('cardiolink_atenciones')
+            .upsert(finalRows,{onConflict:'id'});
+          if(upErr){
+            console.error(upErr);
+            alert('No se pudo sincronizar con Supabase: '+upErr.message);
+            syncAtencionesPendiente=true;
+            syncReintentosFallidos++;
+            return false;
+          }
+          nuevas298.forEach(a=>{
+            if(!a || a.id==null) return;
+            baselineAtenciones298.set(String(a.id), stableStringify298(a));
+            baselineVersionAtenciones298.set(String(a.id), now298);
+          });
+        }
+
+        if(conflictos298.length){
+          const {data:filasConflicto,error:errConflicto}=await supabaseClient
+            .from('cardiolink_atenciones')
+            .select('id,payload,updated_at')
+            .in('id',conflictos298);
+          if(errConflicto){
+            // No se pudo releer: la(s) fila(s) en conflicto quedan tal como
+            // estaban (sin tocar su baseline) y se reintentan en el próximo
+            // ciclo natural - nunca se pisa remoto a ciegas ni se inventa un
+            // resultado.
+            console.warn('No se pudo releer atencion(es) en conflicto:',errConflicto.message);
+          }else{
+            const encontradas298=new Set();
+            (filasConflicto||[]).forEach(fila=>{
+              if(!fila || fila.id==null || !fila.payload) return;
+              const idStr=String(fila.id);
+              encontradas298.add(idStr);
+              const idx=atenciones.findIndex(x=>x && String(x.id)===idStr);
+              // Prioridad: se preserva SIEMPRE el dato remoto más nuevo, sin
+              // excepción - incluye especialmente estadoTurno==='cancelado' +
+              // canceladoPor==='Paciente (email)': esta rama nunca vuelve a
+              // subir el snapshot local viejo por encima de esa cancelación.
+              if(idx>=0) atenciones[idx]=fila.payload; else atenciones.push(fila.payload);
+              baselineAtenciones298.set(idStr, stableStringify298(fila.payload));
+              baselineVersionAtenciones298.set(idStr, fila.updated_at);
+            });
+            // Fila EXISTENTE (tenía baselineVersion) en conflicto que, al
+            // releer, YA NO EXISTE remotamente: se interpreta como eliminada
+            // por otra sesión mientras esta tenía un snapshot viejo - NUNCA
+            // se recrea. Se quita del array local y de localStorage, y se
+            // borran AMBOS baselines (payload y versión), para que el
+            // próximo ciclo no vuelva a intentar subirla ni como UPDATE
+            // condicionado (ya no podría matchear nada) ni como upsert de
+            // "atención nueva" (eso la resucitaría, que es justo lo que no
+            // debe pasar).
+            conflictos298.forEach(idStr=>{
+              if(encontradas298.has(idStr)) return;
+              const idx=atenciones.findIndex(x=>x && String(x.id)===idStr);
+              if(idx>=0) atenciones.splice(idx,1);
+              baselineAtenciones298.delete(idStr);
+              baselineVersionAtenciones298.delete(idStr);
+            });
+            try{ localStorage.setItem(storageAtenciones,JSON.stringify(atenciones)); }catch(e){}
+            try{ renderTabla?.(); renderStats?.(); }catch(e){}
+            avisoConcurrencia298('Este turno fue modificado desde otra sesión y se actualizó con la versión más reciente.');
+          }
+        }
+
         const limpieza=await limpiarIdsRemotosObsoletosSeguro(
           atenciones.map(a=>String(a.id)),
           atenciones.length
@@ -6000,13 +6194,12 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
           console.warn('CardioLink protegió la base remota: se omitió una limpieza potencialmente masiva.');
         }
 
-        // HOTFIX stale-overwrite (A): baseline se actualiza SOLO para las
-        // atenciones realmente enviadas y SOLO tras el UPSERT confirmado. Si el
-        // UPSERT hubiera fallado, no se llega hasta aca y el baseline queda
-        // intacto (se reintenta con el backoff existente).
-        aEnviar298.forEach(a=>{ if(a && a.id!=null) baselineAtenciones298.set(String(a.id), stableStringify298(a)); });
-
-        console.log('Supabase sincronizado de forma segura:',finalRows.length,'atencion(es)',limpieza?.eliminados?`· ${limpieza.eliminados} obsoletos eliminados`:'' );
+        console.log(
+          'Supabase sincronizado de forma segura:',
+          (existentes298.length-conflictos298.length)+nuevas298.length,'atencion(es) confirmada(s)',
+          conflictos298.length?`· ${conflictos298.length} en conflicto (se adoptó la versión remota)`:'',
+          limpieza?.eliminados?`· ${limpieza.eliminados} obsoletos eliminados`:''
+        );
         syncConfirmadoOk298=true;
         syncReintentosFallidos=0;
         return true;
@@ -7579,10 +7772,29 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     else if(isOsde383(a)){a.noAplicaFirmaBono=true;a.noAplicaCopiaFacturacion=true;}
     else {if(a.noAplicaFirmaBono==='auto')delete a.noAplicaFirmaBono;if(a.noAplicaCopiaFacturacion==='auto')delete a.noAplicaCopiaFacturacion;}
   }
+  // Comunicaciones V1.2, Bloque B3: ¿esta atención es una cancelación hecha
+  // por el PACIENTE desde el email (nunca por Secretaría/profesional/otro
+  // origen - ver wrap 460c de cambiarEstadoAgenda, que graba el nombre del
+  // usuario real en canceladoPor para una cancelación hecha desde la
+  // Agenda)? Se usa tanto para el pendiente activo como para la pestaña
+  // "Cancelados por paciente" (que debe mostrar también los ya resueltos,
+  // por eso esta función NO mira pendienteCancelacionResuelto).
+  function esCancelacionPaciente383(a){
+    return !!a && String(a.estadoTurno||a.estado||'')==='cancelado' && a.canceladoPor==='Paciente (email)';
+  }
   function pendientes383(a){
     if(!a||typeof a!=='object'||(typeof esMensajeInterno==='function'&&esMensajeInterno(a)))return [];
     const estadoTurno383=String(a.estadoTurno||a.estado||'').toLowerCase();
-    if(estadoTurno383==='ausente'||estadoTurno383==='cancelado')return [];
+    if(estadoTurno383==='cancelado'){
+      // B3: mientras no se haya resuelto desde Secretaría, una cancelación
+      // del paciente SIGUE siendo un pendiente propio (cancelado_paciente) -
+      // se evalúa ANTES del corte general de abajo, que sigue aplicando sin
+      // cambios para cualquier otro cancelado (Secretaría/profesional/otro
+      // origen) y para 'ausente'.
+      if(esCancelacionPaciente383(a) && a.pendienteCancelacionResuelto!==true) return ['cancelado_paciente'];
+      return [];
+    }
+    if(estadoTurno383==='ausente')return [];
     applyNA383(a);
     const out=[];
     const requiereFirma=!!(a.bonoConsulta||a.bonoEstudio);
@@ -7597,8 +7809,8 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   }
   window.pendientesDeAtencion383=pendientes383;
   function base383(){try{return typeof atencionesPerfil==='function'?atencionesPerfil().filter(a=>!(typeof esMensajeInterno==='function'&&esMensajeInterno(a))):atenciones}catch{return atenciones||[]}}
-  function labels383(k){return {firma:'Falta firma / bono',copia:'Falta copia facturación',informe:'Falta informe',entrega:'Falta imprimir / enviar',retiro:'Pendiente de retiro',autorizacion:'Falta autorización'}[k]||k}
-  function counts383(list){const c={todos:0,firma:0,copia:0,informe:0,entrega:0,retiro:0,autorizacion:0};list.forEach(a=>{const p=pendientes383(a);if(p.length)c.todos++;p.forEach(k=>c[k]++)});return c}
+  function labels383(k){return {firma:'Falta firma / bono',copia:'Falta copia facturación',informe:'Falta informe',entrega:'Falta imprimir / enviar',retiro:'Pendiente de retiro',autorizacion:'Falta autorización',cancelado_paciente:'Cancelado por el paciente'}[k]||k}
+  function counts383(list){const c={todos:0,firma:0,copia:0,informe:0,entrega:0,retiro:0,autorizacion:0,cancelado_paciente:0};list.forEach(a=>{const p=pendientes383(a);if(p.length)c.todos++;p.forEach(k=>c[k]++)});return c}
   function overdue383(a){try{return typeof diasAntiguedadPendiente411C==='function'&&diasAntiguedadPendiente411C(a)>7}catch(e){return false}}
   function esc383(s){return String(s??'').replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]))}
   // UI Interna V1 - Bloque 6: edad para la tarjeta de Pendientes, a partir
@@ -7653,24 +7865,94 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     }catch(_){}
     return m;
   }
+  // BUG B3 (fix): #agendaModal vive anidado dentro de <section id="agenda">
+  // (ver index.html), que usa el mismo patrón .section{display:none}/
+  // .section.visible{display:block} que el resto de la navegación. Llamado
+  // directamente desde Pendientes (otra sección), abrirAgendaModal()
+  // igual encontraba la atención y quitaba su propia clase "hidden", pero
+  // el modal quedaba con tamaño {0,0,0,0} y sin pintarse en pantalla,
+  // porque su ancestro #agenda seguía sin "visible" - exactamente el mismo
+  // mecanismo que ya resuelve "Dar otro turno" (showSection('carga')) antes
+  // de usar su propio destino. Función aparte (en vez de encadenar
+  // "showSection(...);abrirAgendaModal(...)" directo en el onclick) para
+  // no depender de múltiples sentencias dentro de un único atributo
+  // inline - un solo call, mismo patrón que el resto de los botones de
+  // esta tarjeta. No toca abrirAgendaModal ni showSection.
+  function reprogramarDesdePendienteCancelacion383(id){
+    showSection('agenda');
+    abrirAgendaModal(id);
+  }
+  window.reprogramarDesdePendienteCancelacion383=reprogramarDesdePendienteCancelacion383;
+  // B3: tarjeta dedicada para el pendiente "cancelado_paciente" - reutiliza
+  // las mismas clases (pend-card383/pend-main383/pend-date383/pend-tags383)
+  // que el resto de Pendientes, sin ningún layout nuevo. Se usa tanto para
+  // el activo (con las 3 acciones) como para el resuelto (con el estado y,
+  // si existen, quién/cuándo lo resolvió) - la MISMA función para ambos
+  // casos, distinguidos sólo por pendienteCancelacionResuelto.
+  function tarjetaCancelacionPaciente383(a){
+    const resuelto=a.pendienteCancelacionResuelto===true;
+    const estadoHtml=resuelto
+      ? `<p class="muted">Resuelto${a.pendienteCancelacionResueltoPor?' por '+esc383(a.pendienteCancelacionResueltoPor):''}${a.pendienteCancelacionResueltoEn?' · '+esc383(fechaHoraAuditoria(a.pendienteCancelacionResueltoEn)):''}</p>`
+      : '';
+    // Activo: las 3 acciones de B3, todas sobre flujos ya existentes (ver
+    // abrirAgendaModal/nuevaAtencionDesdePaciente, sin modal nuevo). Ninguna
+    // de las dos primeras marca el pendiente como resuelto - sólo "Cerrar
+    // pendiente" lo hace. Resuelto: sin botones de acción, sólo el estado.
+    const acciones=resuelto
+      ? `<span class="pend-tag383 p-cancelado_paciente" style="cursor:default">Resuelto</span>`
+      : `<button type="button" class="secondary" onclick="reprogramarDesdePendienteCancelacion383('${esc383(a.id)}')">Reprogramar</button>`
+        +(a.pacienteId?`<button type="button" class="secondary" onclick="nuevaAtencionDesdePaciente('${esc383(a.pacienteId)}')">Dar otro turno</button>`:'')
+        +`<button type="button" class="pend-tag383 p-cancelado_paciente" onclick="cerrarPendienteCancelacion383('${esc383(a.id)}')">Cerrar pendiente</button>`;
+    return `<article class="pend-card383${resuelto?' resuelto383':''}"><div class="pend-main383"><div class="pend-date383">${esc383(typeof formatFecha==='function'?formatFecha(a.fecha):a.fecha)}${a.horaInicio?' · '+esc383(a.horaInicio):''}</div><h3>${esc383(a.paciente||'Paciente')}</h3><p>${esc383(a.prestacion||'')} · ${esc383(a.profesional||'')}</p><p class="muted">Motivo: ${esc383(a.motivoCancelacion||'Cancelado por el paciente')}</p>${estadoHtml}</div><div class="pend-tags383">${acciones}<button type="button" class="secondary open383" onclick="abrirFichaPacienteDesdePendiente411C('${esc383(a.id)}')">Ficha paciente</button></div></article>`;
+  }
   function renderPendientes383(){
     const box=document.getElementById('pendientesLista383');if(!box)return;
-    let list=base383().filter(a=>pendientes383(a).length);
+    // B3: "Cancelados por paciente" es la única pestaña que debe mostrar
+    // TAMBIÉN los ya resueltos - pendientes383() les devuelve [] en cuanto
+    // pendienteCancelacionResuelto es true (igual que a cualquier otro tipo
+    // ya resuelto), así que esta pestaña usa su propio filtro directo en
+    // vez del genérico "tiene al menos un pendiente activo".
+    let list=currentTab==='cancelado_paciente'
+      ? base383().filter(esCancelacionPaciente383)
+      : base383().filter(a=>pendientes383(a).length);
     const c=counts383(base383());
     document.querySelectorAll('#pendientesTabs383 [data-pendtab]').forEach(b=>{const k=b.dataset.pendtab;b.classList.toggle('active',k===currentTab);const s=b.querySelector('span');if(s)s.textContent=c[k]||0});
     const nav=document.getElementById('badgePendientesNav383');if(nav){nav.textContent=c.todos;nav.classList.toggle('zero',!c.todos)}
-    if(currentTab!=='todos')list=list.filter(a=>pendientes383(a).includes(currentTab));
+    if(currentTab!=='todos'&&currentTab!=='cancelado_paciente')list=list.filter(a=>pendientes383(a).includes(currentTab));
     if(onlyOverdue383)list=list.filter(overdue383);
     const q=norm(document.getElementById('pendBuscar383')?.value);if(q)list=list.filter(a=>norm([a.paciente,a.dni,a.prestacion,a.obraSocial,a.profesional].join(' ')).includes(q));
     const desc=document.getElementById('pendOrden383')?.value==='desc';list.sort((a,b)=>(String(a.fecha||'').localeCompare(String(b.fecha||'')))*(desc?-1:1));
     if(!list.length){box.innerHTML=`<div class="empty383">${onlyOverdue383?'No hay pendientes vencidos de más de 7 días.':'No hay pendientes en esta categoría.'}</div>`;return}
     const notice=onlyOverdue383?'<div class="empty383">Mostrando pendientes vencidos de más de 7 días. Elegí una categoría para volver a la vista completa.</div>':'';
     const idxPac383=indicePacientes383();
-    box.innerHTML=notice+list.map(a=>{const ps=pendientes383(a);const edad383=edadPendienteEtiqueta383(a,idxPac383);return `<article class="pend-card383"><div class="pend-main383"><div class="pend-date383">${esc383(typeof formatFecha==='function'?formatFecha(a.fecha):a.fecha)}${a.horaInicio?' · '+esc383(a.horaInicio):''}</div><h3>${esc383(a.paciente||'Paciente')} · ${esc383(edad383)}</h3><p>${esc383(a.prestacion||'')} · ${esc383(a.profesional||'')}</p><p class="muted">${esc383(a.obraSocial||'Sin cobertura')} · DNI ${esc383(a.dni||'s/d')}</p></div><div class="pend-tags383">${ps.map(k=>`<button type="button" class="pend-tag383 p-${k}" onclick="resolverPendiente383('${esc383(a.id)}','${k}')">${esc383(labels383(k))}</button>`).join('')}<button type="button" class="secondary open383" onclick="abrirFichaPacienteDesdePendiente411C('${esc383(a.id)}')">Ficha paciente</button></div></article>`}).join('');
+    box.innerHTML=notice+list.map(a=>{
+      if(esCancelacionPaciente383(a))return tarjetaCancelacionPaciente383(a);
+      const ps=pendientes383(a);const edad383=edadPendienteEtiqueta383(a,idxPac383);return `<article class="pend-card383"><div class="pend-main383"><div class="pend-date383">${esc383(typeof formatFecha==='function'?formatFecha(a.fecha):a.fecha)}${a.horaInicio?' · '+esc383(a.horaInicio):''}</div><h3>${esc383(a.paciente||'Paciente')} · ${esc383(edad383)}</h3><p>${esc383(a.prestacion||'')} · ${esc383(a.profesional||'')}</p><p class="muted">${esc383(a.obraSocial||'Sin cobertura')} · DNI ${esc383(a.dni||'s/d')}</p></div><div class="pend-tags383">${ps.map(k=>`<button type="button" class="pend-tag383 p-${k}" onclick="resolverPendiente383('${esc383(a.id)}','${k}')">${esc383(labels383(k))}</button>`).join('')}<button type="button" class="secondary open383" onclick="abrirFichaPacienteDesdePendiente411C('${esc383(a.id)}')">Ficha paciente</button></div></article>`;
+    }).join('');
   }
   window.renderPendientes383=renderPendientes383;
   window.mostrarPendientesVencidos383=function(){currentTab='todos';onlyOverdue383=true;const search=document.getElementById('pendBuscar383');if(search)search.value='';renderPendientes383();};
   function audit383(a,k){a.auditoriaPendientes=Array.isArray(a.auditoriaPendientes)?a.auditoriaPendientes:[];let u={};try{u=perfilUsuarioActual()||{}}catch{}a.auditoriaPendientes.push({tipo:k,accion:'resuelto',fecha:new Date().toISOString(),usuario:u.nombre||u.usuario||'usuario'});}
+  // B3: cierre del pendiente "cancelado_paciente". Única acción de las 3
+  // que efectivamente marca el pendiente como resuelto - Reprogramar/Dar
+  // otro turno sólo navegan a flujos existentes, sin tocar estos campos.
+  // Guarda quién/cuándo en los 3 campos nuevos del payload (sin tabla
+  // nueva, sin migración) y deja traza en auditoriaPendientes (mismo
+  // array/formato que audit383 ya usa para el resto de los tipos).
+  function cerrarPendienteCancelacion383(id){
+    const a=(atenciones||[]).find(x=>String(x.id)===String(id));if(!a)return;
+    if(!confirm('¿Cerrar este pendiente de cancelación?'))return;
+    const prev=JSON.parse(JSON.stringify(a));
+    let u={};try{u=perfilUsuarioActual()||{}}catch{}
+    a.pendienteCancelacionResuelto=true;
+    a.pendienteCancelacionResueltoEn=new Date().toISOString();
+    a.pendienteCancelacionResueltoPor=u.nombre||u.usuario||'usuario';
+    audit383(a,'cancelado_paciente');
+    try{saveAtenciones();renderTabla?.();renderStats?.();renderAgenda?.()}catch(e){console.error(e)}
+    renderPendientes383();
+    undo383={id,prev};toastUndo383('Pendiente de cancelación cerrado');
+  }
+  window.cerrarPendienteCancelacion383=cerrarPendienteCancelacion383;
   function resolverPendiente383(id,k){
     const a=(atenciones||[]).find(x=>String(x.id)===String(id));if(!a)return;
     const prev=JSON.parse(JSON.stringify(a));
