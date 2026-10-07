@@ -41,6 +41,14 @@
 
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2.45.4';
 import { verificarTokenCancelacion } from '../_shared/token-cancelacion.js';
+// Bloque B4: se reutiliza EXCLUSIVAMENTE la selección de destinatario ya
+// existente (resolverDestinatarios/emailValido) - misma lógica que ya usa
+// patient-communications, nunca una segunda forma de elegir a quién
+// escribirle. El texto de este email es propio de esta función (la
+// confirmación de cancelación iniciada por el paciente es un caso distinto
+// del aviso de cancelación que dispara Secretaría vía armarMensaje), así
+// que no se toca ni se reutiliza armarMensaje/PLANTILLAS_RESPALDO para esto.
+import { resolverDestinatarios, emailValido } from '../_shared/comunicaciones-logica.js';
 
 // -----------------------------------------------------------------------
 // CORS: mismo patrón restrictivo ya usado por portal-gateway y
@@ -109,6 +117,111 @@ async function verificarToken(token) {
   const secret = Deno.env.get('APPOINTMENT_CANCEL_TOKEN_SECRET');
   if (!secret) return { ok: false, motivo: 'Servicio no disponible en este momento.' };
   return verificarTokenCancelacion(token, secret);
+}
+
+// -----------------------------------------------------------------------
+// Bloque B4: email automático de confirmación al paciente, inmediatamente
+// DESPUÉS de que el UPDATE de la cancelación ya se confirmó (ver
+// manejarConfirmar). Nunca se llama antes del UPDATE exitoso, y un fallo
+// acá jamás debe revertir ni tocar de nuevo la cancelación ya guardada -
+// por eso toda esta sección sólo registra el resultado (sent/failed) y
+// nunca lanza hacia manejarConfirmar.
+// -----------------------------------------------------------------------
+
+// Mismo criterio exacto que patient-communications#obtenerPaciente (sin
+// duplicar esa función entre Edge Functions distintas, mismo patrón ya
+// establecido para helpers chicos de este tipo en el proyecto).
+async function obtenerPacienteParaCancelacion(admin, pacienteId) {
+  if (!pacienteId) return null;
+  const { data, error } = await admin
+    .from('cardiolink_pacientes')
+    .select('id, nombre_completo, email, telefono, contacto_responsable_nombre, contacto_responsable_telefono, contacto_responsable_email')
+    .eq('id', String(pacienteId))
+    .limit(1);
+  if (error) return null; // nunca bloquea la confirmación de cancelación por esto
+  return data && data.length ? data[0] : null;
+}
+
+function formatearFechaCortaB4(fechaISO) {
+  const m = String(fechaISO || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return String(fechaISO || '');
+  return `${m[3]}/${m[2]}/${m[1]}`;
+}
+
+// Texto exacto pedido para este email - sin botón de cancelación (el turno
+// ya está cancelado), sin HTML, sólo texto plano.
+function armarEmailConfirmacionCancelacion(atencion) {
+  const paciente = (atencion && atencion.paciente) || 'paciente';
+  const fecha = atencion && atencion.fecha ? formatearFechaCortaB4(atencion.fecha) : '';
+  const hora = (atencion && atencion.horaInicio) || '';
+  const profesional = (atencion && atencion.profesional) || '';
+  const mensaje = `Hola ${paciente}:\n\nTe confirmamos que el turno del ${fecha} a las ${hora}, con ${profesional}, fue cancelado correctamente a solicitud tuya.\n\nSi necesitás solicitar un nuevo turno o reprogramarlo, podés comunicarte por WhatsApp al número del consultorio o acercarte personalmente.\n\nMuchas gracias.\n\nCardioLink\nPlataforma integral de gestión médica`;
+  return { asunto: 'Tu turno fue cancelado', mensaje };
+}
+
+// Copia local mínima de enviarConResend (mismo patrón ya usado: cada Edge
+// Function que envía email tiene su propia copia chica de este helper -
+// ver patient-communications/patient-reminders-24h). Sólo texto, sin html
+// ni adjuntos: este email nunca lleva botón ni enlace de cancelación.
+async function enviarConResend(destinatario, asunto, mensaje) {
+  const apiKey = Deno.env.get('RESEND_API_KEY');
+  const remitente = Deno.env.get('RESEND_FROM_EMAIL');
+  if (!apiKey || !remitente) {
+    return { ok: false, motivo: 'Proveedor de email no configurado.' };
+  }
+  try {
+    const respuesta = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: remitente, to: [destinatario], subject: asunto, text: mensaje })
+    });
+    const cuerpo = await respuesta.json().catch(() => ({}));
+    if (!respuesta.ok) {
+      return { ok: false, motivo: (cuerpo && cuerpo.message) ? String(cuerpo.message).slice(0, 300) : `Resend respondió ${respuesta.status}.` };
+    }
+    return { ok: true, providerMessageId: cuerpo && cuerpo.id ? String(cuerpo.id) : null };
+  } catch (_error) {
+    return { ok: false, motivo: 'No se pudo contactar al proveedor de email.' };
+  }
+}
+
+// Se llama UNA sola vez, exclusivamente desde la rama de éxito real del
+// UPDATE condicionado (nunca desde la rama yaCancelado). Nunca lanza: lo
+// peor que puede pasar es que no se registre nada y quede sólo el log
+// seguro - la cancelación en sí ya quedó confirmada antes de llegar acá.
+async function notificarCancelacionAlPaciente(admin, atencionActualizada, atencionId) {
+  try {
+    const paciente = await obtenerPacienteParaCancelacion(admin, atencionActualizada.pacienteId);
+    const contacto = resolverDestinatarios(atencionActualizada, paciente);
+    if (!emailValido(contacto.email || '')) return; // sin canal cargado: no es un error, no hay nada que enviar
+
+    const { asunto, mensaje } = armarEmailConfirmacionCancelacion(atencionActualizada);
+    const resultado = await enviarConResend(contacto.email, asunto, mensaje);
+
+    await admin.from('cardiolink_communications').insert({
+      paciente_id: contacto.pacienteId || null,
+      atencion_id: atencionId,
+      tipo: 'cancellation',
+      canal: 'email',
+      destinatario: contacto.email,
+      recipient_source: contacto.emailFuente,
+      recipient_name: contacto.emailNombre || null,
+      subject: asunto,
+      message: mensaje,
+      status: resultado.ok ? 'sent' : 'failed',
+      provider: 'resend',
+      provider_message_id: resultado.ok ? resultado.providerMessageId : null,
+      error_message: resultado.ok ? null : resultado.motivo,
+      sent_at: resultado.ok ? new Date().toISOString() : null,
+      // Sin usuario autenticado (función pública): mismo criterio ya
+      // documentado para el proceso automático de patient-reminders-24h.
+      created_by: null
+    });
+  } catch (error) {
+    // Nunca debe afectar la respuesta de la cancelación ya confirmada -
+    // ver manejarConfirmar: esta función nunca lanza hacia arriba.
+    logErrorSeguro('notificar_cancelacion', error);
+  }
 }
 
 // cardiolink_atenciones guarda, además de las atenciones reales, UNA fila
@@ -278,6 +391,15 @@ async function manejarConfirmar(admin, body, corsHeaders) {
     if (updateError) throw updateError;
 
     if (Array.isArray(actualizadas) && actualizadas.length) {
+      // Bloque B4: EXCLUSIVAMENTE acá, justo después del UPDATE ya
+      // confirmado (nunca antes, nunca en la rama yaCancelado de arriba -
+      // eso es lo que garantiza la idempotencia: un reintento sobre el
+      // mismo turno ya cancelado por este canal nunca vuelve a pasar por
+      // acá). Se espera (await) para que un error de red real quede
+      // contenido dentro de notificarCancelacionAlPaciente - la función ya
+      // no lanza nada hacia afuera, así que esto nunca puede convertir una
+      // cancelación exitosa en un 500.
+      await notificarCancelacionAlPaciente(admin, payloadActualizado, String(verificacion.payload.atencionId));
       return jsonResponse({ ok: true, cancelado: true }, 200, corsHeaders);
     }
     // 0 filas actualizadas: concurrencia real. El for reintenta UNA vez
