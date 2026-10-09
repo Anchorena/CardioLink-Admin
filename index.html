@@ -11,7 +11,7 @@
 <link rel="manifest" href="manifest.webmanifest?v=40096">
 <link rel="apple-touch-icon" href="icons/icon-192.png?v=40096">
 <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png?v=40096">
-<link rel="stylesheet" href="styles.css?v=40097">
+<link rel="stylesheet" href="styles.css?v=40097-fase6-branding-pdf">
 <link rel="stylesheet" href="cardiolink-ui.css?v=1">
 <link rel="stylesheet" href="cardiolink-dashboard-v1.css?v=1">
 <link rel="stylesheet" href="cardiolink-finanzas-v5.css?v=4a">
@@ -867,6 +867,40 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
         <button type="button" data-config-group="sistema" data-config-v1-legacy-trigger="sistema" tabindex="-1">Actualizar sistema</button>
       </div>
       <div class="config-grid">
+        <!-- Fase 6, Bloque 6B: identidad de LA PLATAFORMA (nombre/slogan/
+             colores/logos de CardioLink) - separada a propósito de "Mi
+             membrete y firma" (docProfFields402), que es la identidad de
+             cada profesional y vive en otro lugar (modal de HC). Se
+             clasifica en la pestaña "Documentos e identidad" vía
+             CARD_SECTIONS en cardiolink-config-v1.js (no hay FALLBACK_SECTIONS
+             para 'documentos', por eso el id se registra ahí explícito en vez
+             de usar data-config-group-card). Gateada a admin, igual que el
+             resto de la configuración de alcance general. -->
+        <div id="cfgIdentidadCardioLink500" data-config-access="admin">
+          <h3>Identidad CardioLink</h3>
+          <p class="muted">Identidad de la plataforma CardioLink (nombre, colores y logos oficiales) — distinta de "Mi membrete y firma", que es la identidad propia de cada profesional en sus documentos.</p>
+          <label>Nombre</label><input id="brand500Nombre" placeholder="CardioLink">
+          <label>Descriptor / slogan</label><input id="brand500Slogan" placeholder="Plataforma integral de gestión médica">
+          <div class="identidad-colores-grid500">
+            <div><label>Color primario</label><input type="color" id="brand500ColorPrimario"></div>
+            <div><label>Azul</label><input type="color" id="brand500ColorAzul"></div>
+            <div><label>Turquesa</label><input type="color" id="brand500ColorSecundario"></div>
+            <div><label>Cyan</label><input type="color" id="brand500ColorCyan"></div>
+            <div><label>Fondo claro</label><input type="color" id="brand500FondoClaro"></div>
+          </div>
+          <h4>Assets de marca</h4>
+          <p class="muted">Los archivos finales todavía no están disponibles: por ahora sólo se puede indicar la ruta/URL de cada uno. Mientras un asset no exista, se muestra el isologo actual como referencia.</p>
+          <div class="identidad-assets-grid500">
+            <div class="identidad-asset-item500"><label>Logo principal (fondo claro)</label><input type="text" id="brand500AssetLogoPrincipalClaro" placeholder="ruta o URL"><div class="identidad-asset-preview500"><img id="brand500PreviewLogoPrincipalClaro" alt=""><span class="identidad-asset-status500" id="brand500StatusLogoPrincipalClaro"></span></div></div>
+            <div class="identidad-asset-item500"><label>Logo principal (fondo oscuro)</label><input type="text" id="brand500AssetLogoPrincipalOscuro" placeholder="ruta o URL"><div class="identidad-asset-preview500"><img id="brand500PreviewLogoPrincipalOscuro" alt=""><span class="identidad-asset-status500" id="brand500StatusLogoPrincipalOscuro"></span></div></div>
+            <div class="identidad-asset-item500"><label>Logo horizontal (fondo claro)</label><input type="text" id="brand500AssetLogoHorizontalClaro" placeholder="ruta o URL"><div class="identidad-asset-preview500"><img id="brand500PreviewLogoHorizontalClaro" alt=""><span class="identidad-asset-status500" id="brand500StatusLogoHorizontalClaro"></span></div></div>
+            <div class="identidad-asset-item500"><label>Logo horizontal (fondo oscuro)</label><input type="text" id="brand500AssetLogoHorizontalOscuro" placeholder="ruta o URL"><div class="identidad-asset-preview500"><img id="brand500PreviewLogoHorizontalOscuro" alt=""><span class="identidad-asset-status500" id="brand500StatusLogoHorizontalOscuro"></span></div></div>
+            <div class="identidad-asset-item500"><label>Isologo (fondo claro)</label><input type="text" id="brand500AssetIsologoClaro" placeholder="ruta o URL"><div class="identidad-asset-preview500"><img id="brand500PreviewIsologoClaro" alt=""><span class="identidad-asset-status500" id="brand500StatusIsologoClaro"></span></div></div>
+            <div class="identidad-asset-item500"><label>Isologo (fondo oscuro)</label><input type="text" id="brand500AssetIsologoOscuro" placeholder="ruta o URL"><div class="identidad-asset-preview500"><img id="brand500PreviewIsologoOscuro" alt=""><span class="identidad-asset-status500" id="brand500StatusIsologoOscuro"></span></div></div>
+          </div>
+          <button class="primary" id="btnGuardarIdentidadCardioLink500">Guardar identidad CardioLink</button>
+        </div>
+
         <div id="cfgValoresProfesionalV1A" data-config-group-card="coberturas" data-config-access="commercial">
           <h3>Valores por profesional</h3>
           <label>Profesional</label><select id="cfgProfesionalValores"></select>
@@ -1056,10 +1090,12 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<!-- Fase 6 / Bloque 6E.2: PDF real (vectorial, texto seleccionable) para Orden/Certificado/Constancia. Mismo patrón de carga que chart.js/xlsx. -->
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 <script src="cardiolink-finanzas-v5.js?v=4b2"></script>
 <!-- Solicitudes de turno se carga antes de app.js: app.js conecta el cliente Supabase principal, igual que con Finanzas 5. -->
 <script src="cardiolink-solicitudes-turno.js?v=solicitudes-turno-2"></script>
-<script src="app.js?v=40097-solicitudes-turno1"></script>
+<script src="app.js?v=40097-solicitudes-turno1-fase6-branding-pdf"></script>
 <script src="cardiolink-auth-guard.js?v=2"></script>
 <script src="cardiolink-clear-patient-fix.js?v=1"></script>
 <script src="cardiolink-pendientes-alertas.js?v=1"></script>
@@ -1070,9 +1106,11 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
 <script src="cardiolink-hc-referidos.js?v=3"></script>
 <script src="cardiolink-prestaciones-perfil.js?v=1"></script>
 <!-- Configuración V1A se carga después de los editores existentes para reorganizar su presentación sin reemplazar handlers. -->
-<script src="cardiolink-config-v1.js?v=1a"></script>
+<script src="cardiolink-config-v1.js?v=1a-fase6-branding-pdf"></script>
 <script src="cardiolink-dashboard-v1.js?v=1"></script>
 <script src="cardiolink-agenda-v1.js?v=1"></script>
 <script src="cardiolink-pedidos-rapidos-v1.js?v=1"></script>
+<!-- Fase 6 / Bloque 6D: documentos y estudios en PDF reales en la ficha del paciente (Storage privado + metadata), módulo independiente. -->
+<script src="cardiolink-documentos-pdf-v1.js?v=2"></script>
 </body>
 </html>

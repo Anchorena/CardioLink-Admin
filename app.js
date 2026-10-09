@@ -958,12 +958,183 @@ if(!Array.isArray(data.colocadores)) data.colocadores=['Geraldine','Secretaría'
 if(!Array.isArray(data.medicosDerivantes)) data.medicosDerivantes=[];
 if(!Array.isArray(data.motivosConsulta)) data.motivosConsulta=[];
 if(!data.reglasOS) data.reglasOS=structuredClone(defaults.reglasOS);
+// Fase 6, Bloque 6B: branding central de la plataforma. Config vieja sin
+// este campo (la inmensa mayoría de lo ya guardado) sigue cargando normal -
+// se le crea el objeto vacío acá mismo, junto al resto de los campos
+// retrocompatibles de esta zona, y getBrandingCardioLink() (más abajo)
+// completa cualquier valor faltante con los defaults oficiales.
+if(!data.brandingCardioLink || typeof data.brandingCardioLink!=='object') data.brandingCardioLink={};
 let atenciones=loadAtenciones();
 limpiarPrestacionesCompuestasConfig();
 let editandoId=null;
 let guardarYContinuar=false;
 const $=id=>document.getElementById(id);
 
+/* ===== Fase 6, Bloque 6B - Identidad CardioLink (branding central) =====
+   Único lugar con los defaults de marca de LA PLATAFORMA (nombre/slogan/
+   colores/logos) consumidos del lado cliente. Mismo criterio de defaults
+   que BRANDING_CARDIOLINK_DEFECTO/resolverBrandingCardioLink en
+   supabase/functions/_shared/comunicaciones-logica.js (Comunicaciones
+   V1.2) - ESE archivo no se toca acá (runtime distinto, Deno vs
+   navegador); esto sólo refleja el mismo criterio para que ambos lados
+   coincidan el día que compartan config.brandingCardioLink de verdad.
+   Persistencia: data.brandingCardioLink, mismo pipeline que el resto de
+   `data` (saveConfig() -> guardarConfigEnSupabase298(), fila
+   __cardiolink_config_v1 ya existente) - sin tabla nueva, sin migración. */
+(function(){
+  const BRANDING_CARDIOLINK_DEFECTO500=Object.freeze({
+    nombre:'CardioLink',
+    slogan:'Plataforma integral de gestión médica',
+    colorPrimario:'#082D5B',
+    colorAzul:'#1565C0',
+    colorSecundario:'#00BFA5',
+    colorCyan:'#4DD0E1',
+    fondoClaro:'#F4F9FC',
+    logoPrincipalClaro:'',
+    logoPrincipalOscuro:'',
+    logoHorizontalClaro:'',
+    logoHorizontalOscuro:'',
+    isologoClaro:'',
+    isologoOscuro:''
+  });
+  // Fallback visual ÚNICO para cualquier asset de marca todavía sin
+  // definir: el isologo que YA se usa hoy como marca CardioLink (mismo
+  // archivo que resolverBrandingCardioLink usa como logoUrl por defecto en
+  // los emails) - nunca se inventa un asset nuevo acá.
+  const ASSET_FALLBACK_VISUAL500='portal/assets/branding/isologo.png';
+  function colorHexValido500(c){return /^#[0-9a-f]{6}$/i.test(String(c||''))?c:null;}
+
+  // Único helper del lado cliente para leer branding de CardioLink - nunca
+  // repartir estas constantes/este merge en otra función. Siempre
+  // defaults + lo guardado en data.brandingCardioLink, campo por campo:
+  // config vieja sin ningún campo (o sin el campo todavía) sigue
+  // funcionando exactamente igual que antes de este bloque.
+  function getBrandingCardioLink(){
+    const propio=(data&&typeof data.brandingCardioLink==='object'&&data.brandingCardioLink)||{};
+    const out={};
+    Object.keys(BRANDING_CARDIOLINK_DEFECTO500).forEach(k=>{
+      const v=propio[k];
+      if(k==='colorPrimario'||k==='colorAzul'||k==='colorSecundario'||k==='colorCyan'||k==='fondoClaro'){
+        out[k]=colorHexValido500(v)||BRANDING_CARDIOLINK_DEFECTO500[k];
+      }else{
+        out[k]=(typeof v==='string'&&v.trim())?v.trim():BRANDING_CARDIOLINK_DEFECTO500[k];
+      }
+    });
+    return out;
+  }
+  window.getBrandingCardioLink=getBrandingCardioLink;
+
+  // Consumo en app (Bloque 6B, punto 4): sólo donde es seguro y no cambia
+  // nada visualmente mientras el branding siga en sus defaults de fábrica.
+  function aplicarBrandingCardioLinkCSS500(){
+    try{
+      const b=getBrandingCardioLink();
+      const root=document.documentElement.style;
+      root.setProperty('--cardiolink-navy',b.colorPrimario);
+      root.setProperty('--cardiolink-blue',b.colorAzul);
+      root.setProperty('--cardiolink-teal',b.colorSecundario);
+      root.setProperty('--cardiolink-cyan',b.colorCyan);
+      root.setProperty('--cardiolink-background',b.fondoClaro);
+    }catch(e){}
+  }
+  // Sólo reemplaza el texto "CardioLink" del encabezado (sidebar + barra
+  // móvil) - nunca toca el <span> de versión, que varias funciones ya
+  // existentes (version298/version321/version350/version360, etc.) siguen
+  // actualizando por su cuenta. Con el nombre en su default ("CardioLink"),
+  // el resultado es BYTE A BYTE el mismo texto que ya mostraba la app antes
+  // de este bloque - cero regresión visual mientras no se edite el nombre.
+  function aplicarNombreCardioLinkEnHeader500(){
+    try{
+      const nombre=getBrandingCardioLink().nombre;
+      [document.querySelector('.sidebar .brand-main'),document.querySelector('.mobile-app-title-370')].forEach(el=>{
+        if(!el)return;
+        const textNode=Array.from(el.childNodes).find(n=>n.nodeType===3);
+        if(textNode)textNode.textContent=nombre+' Admin ';
+      });
+    }catch(e){}
+  }
+
+  const ASSET_FIELDS500=[
+    ['logoPrincipalClaro','LogoPrincipalClaro'],
+    ['logoPrincipalOscuro','LogoPrincipalOscuro'],
+    ['logoHorizontalClaro','LogoHorizontalClaro'],
+    ['logoHorizontalOscuro','LogoHorizontalOscuro'],
+    ['isologoClaro','IsologoClaro'],
+    ['isologoOscuro','IsologoOscuro']
+  ];
+
+  // UI de la sección "Identidad CardioLink" (punto 3 del bloque): el
+  // archivo final todavía no existe para la mayoría de estos campos, así
+  // que esto es sólo texto (ruta/URL) + preview + fallback visual al
+  // isologo actual - nada de carga de archivo ni Storage todavía.
+  function renderPreviewsIdentidad500(){
+    ASSET_FIELDS500.forEach(([,sufijo])=>{
+      const input=document.getElementById('brand500Asset'+sufijo);
+      const img=document.getElementById('brand500Preview'+sufijo);
+      const status=document.getElementById('brand500Status'+sufijo);
+      if(!input||!img||!status)return;
+      const valor=input.value.trim();
+      img.src=valor||ASSET_FALLBACK_VISUAL500;
+      status.textContent=valor?'':'Asset pendiente — usando isologo actual';
+    });
+  }
+
+  function cargarFormularioIdentidad500(){
+    const b=getBrandingCardioLink();
+    const set=(id,val)=>{const el=document.getElementById(id);if(el)el.value=val;};
+    set('brand500Nombre',b.nombre);
+    set('brand500Slogan',b.slogan);
+    set('brand500ColorPrimario',b.colorPrimario);
+    set('brand500ColorAzul',b.colorAzul);
+    set('brand500ColorSecundario',b.colorSecundario);
+    set('brand500ColorCyan',b.colorCyan);
+    set('brand500FondoClaro',b.fondoClaro);
+    ASSET_FIELDS500.forEach(([campo,sufijo])=>set('brand500Asset'+sufijo,b[campo]));
+    renderPreviewsIdentidad500();
+  }
+
+  function guardarIdentidad500(){
+    const val=id=>document.getElementById(id)?.value||'';
+    data.brandingCardioLink={
+      nombre:val('brand500Nombre').trim()||BRANDING_CARDIOLINK_DEFECTO500.nombre,
+      slogan:val('brand500Slogan').trim(),
+      colorPrimario:colorHexValido500(val('brand500ColorPrimario'))||BRANDING_CARDIOLINK_DEFECTO500.colorPrimario,
+      colorAzul:colorHexValido500(val('brand500ColorAzul'))||BRANDING_CARDIOLINK_DEFECTO500.colorAzul,
+      colorSecundario:colorHexValido500(val('brand500ColorSecundario'))||BRANDING_CARDIOLINK_DEFECTO500.colorSecundario,
+      colorCyan:colorHexValido500(val('brand500ColorCyan'))||BRANDING_CARDIOLINK_DEFECTO500.colorCyan,
+      fondoClaro:colorHexValido500(val('brand500FondoClaro'))||BRANDING_CARDIOLINK_DEFECTO500.fondoClaro,
+      logoPrincipalClaro:val('brand500AssetLogoPrincipalClaro').trim(),
+      logoPrincipalOscuro:val('brand500AssetLogoPrincipalOscuro').trim(),
+      logoHorizontalClaro:val('brand500AssetLogoHorizontalClaro').trim(),
+      logoHorizontalOscuro:val('brand500AssetLogoHorizontalOscuro').trim(),
+      isologoClaro:val('brand500AssetIsologoClaro').trim(),
+      isologoOscuro:val('brand500AssetIsologoOscuro').trim()
+    };
+    saveConfig();
+    aplicarBrandingCardioLinkCSS500();
+    aplicarNombreCardioLinkEnHeader500();
+    renderPreviewsIdentidad500();
+    alert('Identidad CardioLink guardada.');
+  }
+
+  function bindIdentidad500(){
+    document.getElementById('btnGuardarIdentidadCardioLink500')?.addEventListener('click',guardarIdentidad500);
+    ASSET_FIELDS500.forEach(([,sufijo])=>{
+      document.getElementById('brand500Asset'+sufijo)?.addEventListener('input',renderPreviewsIdentidad500);
+    });
+  }
+
+  function initIdentidad500(){
+    aplicarBrandingCardioLinkCSS500();
+    aplicarNombreCardioLinkEnHeader500();
+    if(document.getElementById('cfgIdentidadCardioLink500')){
+      cargarFormularioIdentidad500();
+      bindIdentidad500();
+    }
+  }
+  if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',initIdentidad500);
+  else initIdentidad500();
+})();
 
 function literalInvalido(v){
   const s=String(v??'').trim().toLowerCase();
@@ -1203,7 +1374,12 @@ function init(){
 
   on('btnPaginaAnterior','click',()=>{if(paginaListado>1){paginaListado--;renderTabla();}});
   on('btnPaginaSiguiente','click',()=>{paginaListado++;renderTabla();});
-  on('btnPrint','click',()=>{setPrintMeta();document.body.classList.toggle('print-money',!!$('incluirValoresImpresion')?.checked);window.print();setTimeout(()=>document.body.classList.remove('print-money'),500)});
+  // Fase 6, Bloque 6C: ya NO imprime la UI del navegador (window.print()
+  // de la pantalla actual, con sidebar/filtros ocultos por CSS) - abre un
+  // documento propio e independiente, con TODO el conjunto filtrado
+  // (filtrar(), la misma fuente que ya usa el listado en pantalla - no se
+  // reconstruye ningún filtro en paralelo), no sólo la página visible.
+  on('btnPrint','click',generarReporteListadoFiltrado);
   on('btnExportExcel','click',exportarCSV);
 
   const vc=valoresColocacion();
@@ -2797,7 +2973,86 @@ function verDineroPeriodo(){
   res.textContent=`Ingreso del perfil ${perfilObj().nombre} (${desdeTxt} a ${hastaTxt}) — Particular ${money(r.particular)} | Copagos ${money(r.copago)} | Total ${money(r.total)} | Registros ${datos.length}`;
 }
 function ocultarDineroPeriodo(){$('dineroPeriodoResultado').textContent='';$('claveDinero').value=''}
-function setPrintMeta(){$('printMeta').textContent=`Perfil: ${perfilObj().nombre} | Registros: ${filtrar().length} | ${formatFecha(todayISO())}`}
+// Fase 6, Bloque 6C: reemplaza al botón "Imprimir / PDF" del listado.
+// setPrintMeta() (la función que estaba acá, sólo usada por el viejo
+// window.print() de la pantalla) quedó sin ningún otro caller al sacar
+// ese camino - se quitó en vez de dejarla huérfana.
+//
+// Reutiliza filtrar() (misma fuente que ya arma el listado en pantalla -
+// nunca se reconstruyen filtros en paralelo) para traer TODO el conjunto
+// filtrado, no sólo la página visible de la paginación. Abre un documento
+// nuevo e independiente (igual que printDocument406/printHC402): nunca
+// imprime la UI real (sidebar/navegación/usuario conectado/paginador),
+// arma su propio HTML de reporte desde cero.
+function generarReporteListadoFiltrado(){
+  const datos=filtrar();
+  // Mismo checkbox "Incluir valores" que ya usa exportarCSV() - oculto por
+  // defecto (sin atributo checked en el HTML): sin tildar, NINGUNA columna
+  // ni total monetario entra al reporte. Nunca se recalculan los montos:
+  // dineroVisible(a) es la misma función de caja que ya usa toda la app.
+  const incluirValores=!!$('incluirValoresImpresion')?.checked;
+  const branding=(typeof getBrandingCardioLink==='function')?getBrandingCardioLink():{nombre:'CardioLink',slogan:'Plataforma integral de gestión médica'};
+
+  const desde=$('fDesde')?.value||'',hasta=$('fHasta')?.value||'';
+  const periodoTxt=(desde||hasta)?`${desde?formatFecha(desde):'(sin desde)'} – ${hasta?formatFecha(hasta):'(sin hasta)'}`:'Todo el historial';
+  const filtrosActivos=[
+    ['Profesional',$('fProfesional')?.value||''],
+    ['Cobertura',$('fOS')?.value||''],
+    ['Prestación',$('fPrestacion')?.value||''],
+    ['Paciente',$('fPaciente')?.value||''],
+    ['Destino',$('fDestino')?.value||'']
+  ].filter(([,v])=>v);
+
+  let totalParticular=0,totalCopago=0,totalGeneral=0;
+  const filas=datos.map(a=>{
+    const m=incluirValores?dineroVisible(a):null;
+    if(m){totalParticular+=m.particular;totalCopago+=m.copago;totalGeneral+=m.total;}
+    const e=evaluarEstado(a);
+    const money406=incluirValores?`<td class="money-col">${escapeHtml(money(m.particular))}</td><td class="money-col">${escapeHtml(money(m.copago))}</td><td class="money-col">${escapeHtml(money(m.total))}</td>`:'';
+    return `<tr><td>${escapeHtml(formatFecha(a.fecha))}</td><td>${escapeHtml(a.horaInicio||'')}</td><td>${escapeHtml(a.paciente||'')}</td><td>${escapeHtml(prestacionListado(a))}</td><td>${escapeHtml(a.profesional||'')}</td><td>${escapeHtml(a.obraSocial||'')}</td>${money406}<td>${escapeHtml(e.txt)}</td></tr>`;
+  }).join('');
+
+  const colSpanVacio=incluirValores?10:7;
+  const w=window.open('','_blank');
+  if(!w){alert('El navegador bloqueó la ventana del reporte.');return;}
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Reporte de atenciones</title><style>
+    @page{size:A4 landscape;margin:14mm 12mm 16mm}
+    *{box-sizing:border-box}
+    body{font-family:Arial,Helvetica,sans-serif;color:#111827;margin:0;font-size:12px}
+    .rep-head{text-align:center;border-bottom:3px solid #082D5B;padding-bottom:10px;margin-bottom:14px}
+    .rep-brand{font-size:18px;font-weight:800;color:#082D5B}
+    .rep-slogan{font-size:11px;color:#475569}
+    .rep-title{text-transform:uppercase;letter-spacing:.06em;font-size:15px;margin:10px 0 4px;color:#082D5B}
+    .rep-meta{font-size:11px;color:#475569;margin-bottom:6px}
+    .rep-filtros{font-size:11px;color:#475569;margin-bottom:14px}
+    .rep-filtros span{display:inline-block;margin-right:14px}
+    table{width:100%;border-collapse:collapse;font-size:11px;page-break-inside:auto}
+    tr{page-break-inside:avoid}
+    thead{display:table-header-group}
+    th,td{border:1px solid #cbd5e1;padding:4px 6px;text-align:left}
+    th{background:#f1f5f9}
+    .money-col{text-align:right}
+    tfoot td{font-weight:700;background:#f8fafc}
+    .rep-footer{margin-top:10px;font-size:10px;color:#94a3b8;display:flex;justify-content:space-between}
+  </style></head><body>
+    <div class="rep-head">
+      <div class="rep-brand">${escapeHtml(branding.nombre)}</div>
+      <div class="rep-slogan">${escapeHtml(branding.slogan)}</div>
+      <div class="rep-title">Reporte de atenciones</div>
+    </div>
+    <div class="rep-meta">Período: ${escapeHtml(periodoTxt)} · Generado: ${escapeHtml(formatFecha(todayISO()))} ${escapeHtml(new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}))} · Registros: ${datos.length}</div>
+    ${filtrosActivos.length?`<div class="rep-filtros">${filtrosActivos.map(([k,v])=>`<span><strong>${escapeHtml(k)}:</strong> ${escapeHtml(v)}</span>`).join('')}</div>`:''}
+    <table>
+      <thead><tr><th>Fecha</th><th>Hora</th><th>Paciente</th><th>Prestación</th><th>Profesional</th><th>Cobertura</th>${incluirValores?'<th class="money-col">Particular</th><th class="money-col">Copago</th><th class="money-col">Total</th>':''}<th>Estado</th></tr></thead>
+      <tbody>${filas||`<tr><td colspan="${colSpanVacio}">No hay registros para los filtros aplicados.</td></tr>`}</tbody>
+      ${incluirValores?`<tfoot><tr><td colspan="6">Totales</td><td class="money-col">${escapeHtml(money(totalParticular))}</td><td class="money-col">${escapeHtml(money(totalCopago))}</td><td class="money-col">${escapeHtml(money(totalGeneral))}</td><td></td></tr></tfoot>`:''}
+    </table>
+    <div class="rep-footer"><span>${escapeHtml(branding.nombre)} · ${escapeHtml(branding.slogan)}</span><span>Documento generado desde ${escapeHtml(branding.nombre)}</span></div>
+    <script>window.onload=()=>setTimeout(()=>window.print(),250)<\/script>
+  </body></html>`);
+  w.document.close();
+}
+window.generarReporteListadoFiltrado=generarReporteListadoFiltrado;
 function exportarCSV(){const datos=filtrar();if(!datos.length){alert('No hay datos');return}const r=resumen(datos);const incluirValoresExport=!!$('incluirValoresImpresion')?.checked;const filas=[['CardioLink Admin v4.1.0-hc'],['Perfil',perfilObj().nombre],['Consultas',r.consultas],['Estudios',r.estudios],[],['Fecha','Paciente','OS','Profesional','Prestación','Consulta a','Estudio a','Tipo','Forma','Particular visible','Copago visible','Total visible','Estado']];datos.forEach(a=>{const m=dineroVisible(a),e=evaluarEstado(a);filas.push([formatFecha(a.fecha),a.paciente,a.obraSocial,a.profesional,prestacionListado(a),a.consultaA,a.prestacionA,a.tipoCobro,a.formaPago,incluirValoresExport?m.particular:'',incluirValoresExport?m.copago:'',incluirValoresExport?m.total:'',e.txt])});const csv=filas.map(r=>r.map(c=>`"${String(c??'').replaceAll('"','""')}"`).join(';')).join('\n');const blob=new Blob(['\ufeff'+csv],{type:'text/csv'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_listado.csv';a.click()}
 function exportarBackup(){if(!exigirConfigAdministrativa('Tu perfil no puede exportar backups completos.'))return;const b={app:'CardioLink Admin',version:'4.1.0-hc',fechaExportacion:new Date().toISOString(),config:data,atenciones};const blob=new Blob([JSON.stringify(b,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download='CardioLink_Admin_backup.json';a.click()}
 function importarBackup(){if(!exigirRestaurarBackup())return;const inp=$('inputImportBackup');if(!inp.files[0]){alert('Elegí archivo');return}if(!confirm('Reemplaza la base actual. ¿Continuar?'))return;const rd=new FileReader();rd.onload=e=>{try{const b=JSON.parse(e.target.result);if(!b.config||!b.atenciones)throw new Error();data=b.config;atenciones=b.atenciones;saveConfig();saveAtenciones();refreshSelects();renderConfig();cambiarPerfil('general');alert('Backup importado')}catch{alert('Backup inválido')}};rd.readAsText(inp.files[0])}
@@ -9287,6 +9542,11 @@ function patientInfoTextHC(p,coverage){
       </details>`;
     })();
     const overlay=document.createElement('div');overlay.id='hcEvolutionModal';overlay.className='hc-modal-overlay';overlay.dataset.summaryBaseline409=JSON.stringify({antecedentes:sum.antecedentes||'',alergias:sum.alergias||'',medicacion:sum.medicacion||'',alertas:sum.alertas||''});
+    // Bloque 6D.2 - id real de la evolución (vacío si todavía no existe,
+    // caso "Nueva evolución"). cardiolink-documentos-pdf-v1.js (otro
+    // módulo) lo lee para precargar/vincular adjuntos; no hay otra forma
+    // de que ese módulo independiente sepa qué evolución se está editando.
+    overlay.dataset.hcEvolutionId=existing?.id||'';
     // UI Interna V1 (iteración 4) - solicitante/derivante ya resuelto de la
     // atención vinculada (misma prioridad que el "Contexto del turno" y el
     // Listado: medicoSolicitante || derivante). Lo lee cardiolink-hc-referidos.js
@@ -9353,7 +9613,7 @@ function patientInfoTextHC(p,coverage){
       if(!sigueExistiendo)$hc('hcEvolutionModal')?.remove();
     });
   }
-  function saveEvolutionHC(p,existing,atencionId){
+  async function saveEvolutionHC(p,existing,atencionId){
     if(!requireClinicalHC())return;
     const motivo=$hc('hcMotivo')?.value.trim()||'',evolucion=$hc('hcEvolucion')?.value.trim()||'',diagnostico=$hc('hcDiagnostico')?.value.trim()||'',conducta=$hc('hcConducta')?.value.trim()||'';
     const pesoKg=numHC($hc('hcPeso410')?.value),tallaCm=numHC($hc('hcTalla410')?.value),imc=imcHC(pesoKg,tallaCm),taSistolica=numHC($hc('hcTas410')?.value),taDiastolica=numHC($hc('hcTad410')?.value),frecuenciaCardiaca=numHC($hc('hcFc410')?.value),sato2=numHC($hc('hcSat410')?.value);
@@ -9365,16 +9625,35 @@ function patientInfoTextHC(p,coverage){
     if(!hasEvolution&&!summaryChanged){alert('No hay datos nuevos para guardar.');return;}
     ensureHC();const prof=profesionalHC(),now=new Date().toISOString(),key=patientKeyHC(p);
     if(summaryChanged)data.resumenesClinicos[key]={...resumenHC(p),...summaryNow,actualizadoEn:now,actualizadoPor:prof.nombre};
+    // Bloque 6D.2 - capturamos el id REAL de la evolución (generado ahora
+    // mismo si es nueva) para poder vincular los adjuntos pendientes más
+    // abajo, una vez que esta fila exista también en Supabase.
+    let evolutionIdFinal='';
     if(existing){
       if(!hasEvolution){alert('Una evolución existente no puede quedar completamente vacía.');return;}
       Object.assign(existing,{motivo,evolucion,diagnostico,conducta,pesoKg,tallaCm,imc,taSistolica,taDiastolica,frecuenciaCardiaca,sato2,actualizadoEn:now,actualizadoPor:prof.nombre});
+      evolutionIdFinal=existing.id;
     }else if(hasEvolution){
-      data.evolucionesClinicas.push({id:'evo_'+Date.now()+'_'+Math.floor(Math.random()*10000),pacienteId:key,dni:p.dni||'',pacienteNombre:nombrePacientePanel?.(p)||p.nombreCompleto||'',atencionId:atencionId||'',fechaHora:now,profesionalId:prof.id,profesionalNombre:prof.nombre,motivo,evolucion,diagnostico,conducta,pesoKg,tallaCm,imc,taSistolica,taDiastolica,frecuenciaCardiaca,sato2,creadoEn:now});
+      evolutionIdFinal='evo_'+Date.now()+'_'+Math.floor(Math.random()*10000);
+      data.evolucionesClinicas.push({id:evolutionIdFinal,pacienteId:key,dni:p.dni||'',pacienteNombre:nombrePacientePanel?.(p)||p.nombreCompleto||'',atencionId:atencionId||'',fechaHora:now,profesionalId:prof.id,profesionalNombre:prof.nombre,motivo,evolucion,diagnostico,conducta,pesoKg,tallaCm,imc,taSistolica,taDiastolica,frecuenciaCardiaca,sato2,creadoEn:now});
     }
     saveConfig();try{programarSyncSupabase?.();}catch(e){}
-    // v4.1.0-hc: copia clínica relacional adicional en Supabase.
-    // La HC local/config sigue siendo compatible durante esta fase de transición.
-    try{window.cardiolinkClinica410?.sincronizarPacienteCompleto?.(p);}catch(e){console.warn('No se pudo sincronizar la capa clínica relacional:',e);}
+    // v4.1.0-hc: copia clínica relacional adicional en Supabase. Bloque
+    // 6D.2: ahora se espera (antes era fire-and-forget) porque la fila de
+    // cardiolink_hc_evoluciones tiene que existir en Supabase ANTES de
+    // intentar vincularle documentos (evolution_id es FK a esa tabla). La
+    // HC local/config sigue siendo compatible durante esta fase de transición.
+    try{await window.cardiolinkClinica410?.sincronizarPacienteCompleto?.(p);}catch(e){console.warn('No se pudo sincronizar la capa clínica relacional:',e);}
+    // Bloque 6D.2 - vincular los documentos adjuntos pendientes (subidos
+    // durante esta sesión del modal, o ya vinculados si se está editando)
+    // a esta evolución. Hook expuesto por cardiolink-documentos-pdf-v1.js
+    // (módulo independiente - no puede verse desde este IIFE de otra
+    // forma). Si ese módulo no está cargado, o si la vinculación falla,
+    // la evolución YA quedó guardada: nunca se deshace nada por esto, el
+    // documento simplemente queda independiente (el propio hook avisa).
+    if(hasEvolution&&evolutionIdFinal){
+      try{await window.vincularAdjuntosPendientesEvolucionV1?.(evolutionIdFinal);}catch(e){console.warn('No se pudieron vincular los adjuntos pendientes a la evolución:',e);}
+    }
     // Al guardar una evolución vinculada, el turno se considera finalizado y pasa a "Atendido".
     if(hasEvolution&&atencionId){
       try{
@@ -9395,7 +9674,19 @@ function patientInfoTextHC(p,coverage){
     if(!requireClinicalHC())return;
     const p=patientByKeyHC(key);if(!p)return;const s=resumenHC(p),o=document.createElement('div');o.id='hcSummaryModal';o.className='hc-modal-overlay';o.innerHTML=`<div class="hc-modal-card"><div class="hc-modal-head"><div><h2>Resumen clínico</h2><p class="muted">${escHC(nombrePacientePanel?.(p)||p.nombreCompleto||'')}</p></div><button class="modal-close" data-hc-close-summary>×</button></div><div class="hc-modal-grid"><div><div class="cl-voice-label4094"><label for="hcSumAntecedentes">Antecedentes</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAntecedentes" aria-label="Dictar antecedentes">🎤 Dictar</button></div><textarea id="hcSumAntecedentes">${escHC(s.antecedentes||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcSumAlergias">Alergias</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAlergias" aria-label="Dictar alergias">🎤 Dictar</button></div><textarea id="hcSumAlergias">${escHC(s.alergias||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcSumMedicacion">Medicación habitual</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumMedicacion" aria-label="Dictar medicación habitual">🎤 Dictar</button></div><textarea id="hcSumMedicacion">${escHC(s.medicacion||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcSumAlertas">Alertas clínicas</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAlertas" aria-label="Dictar alertas clínicas">🎤 Dictar</button></div><textarea id="hcSumAlertas">${escHC(s.alertas||'')}</textarea></div></div><div class="hc-modal-actions"><button class="secondary" data-hc-close-summary>Cancelar</button><button class="primary" id="hcSaveSummary">Guardar resumen</button></div></div>`;document.body.appendChild(o);$hc('hcSaveSummary').onclick=()=>{ensureHC();data.resumenesClinicos[patientKeyHC(p)]={antecedentes:$hc('hcSumAntecedentes').value.trim(),alergias:$hc('hcSumAlergias').value.trim(),medicacion:$hc('hcSumMedicacion').value.trim(),alertas:$hc('hcSumAlertas').value.trim(),actualizadoEn:new Date().toISOString()};saveConfig();try{programarSyncSupabase?.();}catch(e){}try{window.cardiolinkClinica410?.sincronizarPacienteCompleto?.(p);}catch(e){console.warn('No se pudo sincronizar el resumen clínico relacional:',e);}o.remove();renderDetailHC(patientKeyHC(p));};
   }
-  function printHC(key){const p=patientByKeyHC(key);if(!p)return;const s=resumenHC(p),tl=timelineHC(p);const w=window.open('','_blank');if(!w)return;w.document.write(`<html><head><title>Historia clínica - ${escHC(nombrePacientePanel?.(p)||p.nombreCompleto||'')}</title><style>body{font-family:Arial,sans-serif;margin:32px;color:#111}h1{margin-bottom:4px}.muted{color:#555}.box{border:1px solid #bbb;border-radius:10px;padding:12px;margin:12px 0}.event{border-left:4px solid #174b5c;padding:8px 14px;margin:14px 0;page-break-inside:avoid}label{font-size:11px;text-transform:uppercase;color:#555;font-weight:bold}p{white-space:pre-wrap}</style></head><body><h1>${escHC(nombrePacientePanel?.(p)||p.nombreCompleto||'')}</h1><div class="muted">DNI ${escHC(p.dni||'s/d')} · Fecha de emisión ${escHC(fmtDateTimeHC(new Date().toISOString()))}</div><div class="box"><strong>Antecedentes:</strong> ${escHC(s.antecedentes||'s/d')}<br><strong>Alergias:</strong> ${escHC(s.alergias||'s/d')}<br><strong>Medicación:</strong> ${escHC(s.medicacion||'s/d')}</div>${tl.map(x=>x.type==='evolution'?`<div class="event"><h3>Evolución clínica · ${escHC(fmtDateTimeHC(x.obj.fechaHora))}</h3><div>${escHC(x.obj.profesionalNombre||'')}</div>${x.obj.motivo?`<p><label>Motivo</label><br>${escHC(x.obj.motivo)}</p>`:''}${x.obj.evolucion?`<p><label>Evolución</label><br>${escHC(x.obj.evolucion)}</p>`:''}${x.obj.diagnostico?`<p><label>Diagnóstico</label><br>${escHC(x.obj.diagnostico)}</p>`:''}${x.obj.conducta?`<p><label>Conducta</label><br>${escHC(x.obj.conducta)}</p>`:''}</div>`:`<div class="event"><h3>${escHC(x.obj.prestacion||'Atención')} · ${escHC(formatFecha?.(x.obj.fecha)||x.obj.fecha||'')}</h3><div>${escHC(x.obj.profesional||'')} · ${escHC(x.obj.obraSocial||'')}</div></div>`).join('')}</body></html>`);w.document.close();setTimeout(()=>w.print(),300);}
+  // Fase 6, Bloque 6C: printHC() (historia clínica, versión vieja de este
+  // bloque) se eliminó por estar comprobadamente muerta, no por sospecha.
+  // El listener de abajo (document.addEventListener('click',...), fase de
+  // burbuja) y el de printHC402 (otro bloque más adelante en el archivo,
+  // mismo [data-hc-print], fase de CAPTURA + stopImmediatePropagation())
+  // compiten por el mismo click - la fase de captura SIEMPRE corre primero
+  // y corta la propagación antes de que este listener llegue a ejecutarse,
+  // sin importar rol/permiso. Verificado con un click real disparado en un
+  // entorno de prueba: sólo printHC402 llega a abrir ventana. printHC402
+  // (función hermana, mismo archivo) ya tiene las mejoras de este bloque -
+  // ver su propio comentario. La rama "else if(t.dataset.hcPrint)" del
+  // listener de abajo también se quitó, para no dejar una referencia
+  // colgante a esta función.
   function addPatientButtonHC(){
     const old=window.seleccionarPacientePanel;if(typeof old!=='function'||old.__hcWrapped)return;
     const wrapped=function(id){const r=old.apply(this,arguments);setTimeout(()=>{const actions=document.querySelector('#pacienteDetalle .paciente-ficha-actions');if(!canAccessClinicalHC()){actions?.querySelectorAll('[data-open-hc]').forEach(x=>x.remove());return;}if(actions&&!actions.querySelector('[data-open-hc]')){const b=document.createElement('button');b.className='primary';b.type='button';b.dataset.openHc=id;b.textContent='Historia clínica';actions.prepend(b);}},0);return r};wrapped.__hcWrapped=true;window.seleccionarPacientePanel=wrapped;
@@ -9457,7 +9748,7 @@ function patientInfoTextHC(p,coverage){
           if(typeof seleccionarPacientePanel==='function')seleccionarPacientePanel(key);
           document.getElementById('pacienteDetalle')?.scrollIntoView({behavior:'smooth',block:'start'});
         },60);
-      }else if(t.dataset.hcEdit){const ev=data.evolucionesClinicas.find(x=>x.id===t.dataset.hcEdit);if(ev)openEvolutionModalHC(ev.pacienteId,ev.id,ev.atencionId||'');}else if(t.dataset.hcDelete411b1){eliminarEvolucionHCProtegida411B1(t.dataset.hcDelete411b1);}else if(t.dataset.hcEditSummary)editSummaryHC(t.dataset.hcEditSummary);else if(t.dataset.hcEditPatient409)openPatientEditHC(t.dataset.hcEditPatient409,t.dataset.hcEditContext409||'detail');else if(t.dataset.hcPrint)printHC(t.dataset.hcPrint);else if(t.hasAttribute('data-hc-close'))$hc('hcEvolutionModal')?.remove();else if(t.hasAttribute('data-hc-close-summary'))$hc('hcSummaryModal')?.remove();else if(t.hasAttribute('data-hc-close-patient409'))$hc('hcPatientEditModal409')?.remove();else if(t.dataset.openHc){showSection('hc');setTimeout(()=>renderDetailHC(t.dataset.openHc),40);}
+      }else if(t.dataset.hcEdit){const ev=data.evolucionesClinicas.find(x=>x.id===t.dataset.hcEdit);if(ev)openEvolutionModalHC(ev.pacienteId,ev.id,ev.atencionId||'');}else if(t.dataset.hcDelete411b1){eliminarEvolucionHCProtegida411B1(t.dataset.hcDelete411b1);}else if(t.dataset.hcEditSummary)editSummaryHC(t.dataset.hcEditSummary);else if(t.dataset.hcEditPatient409)openPatientEditHC(t.dataset.hcEditPatient409,t.dataset.hcEditContext409||'detail');else if(t.hasAttribute('data-hc-close'))$hc('hcEvolutionModal')?.remove();else if(t.hasAttribute('data-hc-close-summary'))$hc('hcSummaryModal')?.remove();else if(t.hasAttribute('data-hc-close-patient409'))$hc('hcPatientEditModal409')?.remove();else if(t.dataset.openHc){showSection('hc');setTimeout(()=>renderDetailHC(t.dataset.openHc),40);}
     });
     // Mostrar pacientes desde el ingreso y volver a calcular tras la sincronización inicial.
     if(canAccessClinicalHC()){setTimeout(()=>renderSearchHC(false),50);setTimeout(()=>renderSearchHC(false),900);setTimeout(()=>renderSearchHC(false),2200);}
@@ -9533,7 +9824,11 @@ function patientInfoTextHC(p,coverage){
       if(!data.conveniosPorProfesional[p.id].some(c=>norm402(c?.obraSocial)==='particular'))data.conveniosPorProfesional[p.id].push(defaultConv402(p.id,'Particular'));
       if(!Array.isArray(data.arancelesPorProfesional[p.id]))data.arancelesPorProfesional[p.id]=[];
       if(p.marcaDocumento===undefined)p.marcaDocumento=p.id==='matias'?'Consultorio Médico RM':p.nombre;
-      if(p.logoDocumento===undefined)p.logoDocumento='icons/icon-192.png';
+      // Fase 6, Bloque 6C: ya NO se siembra icons/icon-192.png acá (ese es
+      // el ícono PWA, nunca el logo de este profesional) - sin logo
+      // propio cargado, el campo queda vacío y el documento muestra sólo
+      // membrete en texto (ver getLogo406/printHC402).
+      if(p.logoDocumento===undefined)p.logoDocumento='';
       if(p.telefonoDocumento===undefined)p.telefonoDocumento='';
       if(p.emailDocumento===undefined)p.emailDocumento='';
       if(p.direccionDocumento===undefined)p.direccionDocumento='';
@@ -9562,7 +9857,7 @@ function patientInfoTextHC(p,coverage){
     const block=document.createElement('div');block.id='docProfFields402';block.className='doc-prof-fields-402';
     block.innerHTML=`<h4>Encabezado de documentos</h4><p class="muted">Estos datos se usan en la Historia Clínica impresa y futuros informes.</p>
       <label>Marca / consultorio<input id="docMarca402" placeholder="Ej. Consultorio Médico RM"></label>
-      <label>Logo (ruta o URL)<input id="docLogo402" placeholder="icons/icon-192.png"></label>
+      <label>Logo (ruta o URL)<input id="docLogo402" placeholder="https://..."></label>
       <label>Matrícula nacional<input id="docMN402" placeholder="M.N. ..."></label>
       <label>Matrícula provincial<input id="docMP402" placeholder="M.P. ..."></label>
       <label>Teléfono<input id="docTelefono402" placeholder="Teléfono / WhatsApp"></label>
@@ -9581,7 +9876,9 @@ function patientInfoTextHC(p,coverage){
     if(!canMedical402()){alert('Tu perfil no puede modificar datos para documentos clínicos.');return;}
     ensure402();const p=prof402($402('cfgProfEditar310')?.value||currentProfessionalId402()||'matias');if(!p)return;
     p.marcaDocumento=$402('docMarca402')?.value.trim()||p.nombre;
-    p.logoDocumento=$402('docLogo402')?.value.trim()||'icons/icon-192.png';
+    // Fase 6, Bloque 6C: dejar el campo en blanco significa "sin logo
+    // propio" - ya no se guarda icons/icon-192.png como si fuera uno.
+    p.logoDocumento=$402('docLogo402')?.value.trim()||'';
     p.matriculaNacional=$402('docMN402')?.value.trim()||'';p.matriculaProvincial=$402('docMP402')?.value.trim()||'';
     p.telefonoDocumento=$402('docTelefono402')?.value.trim()||'';p.emailDocumento=$402('docEmail402')?.value.trim()||'';
     p.direccionDocumento=$402('docDireccion402')?.value.trim()||'';p.redesDocumento=$402('docRedes402')?.value.trim()||'';
@@ -9677,17 +9974,78 @@ function patientInfoTextHC(p,coverage){
   function attentionsForPatient402(p){try{return typeof atencionesPacienteGlobal==='function'?atencionesPacienteGlobal(p):[];}catch(e){return [];}}
   function fmtDT402(v){try{return new Intl.DateTimeFormat('es-AR',{dateStyle:'short',timeStyle:'short'}).format(new Date(v));}catch(e){return v||'';}}
   function fmtD402(v){try{return typeof formatFecha==='function'?formatFecha(v):v;}catch(e){return v||'';}}
-  function printHC402(key){
+  // Fase 6, Bloque 6C: ÉSTA es la implementación de impresión de HC
+  // realmente activa (verificado empíricamente: el listener de
+  // [data-hc-print] de este bloque llama a printHC402 y corta la
+  // propagación - la función printHC() más arriba en el archivo, de un
+  // bloque anterior, quedó inalcanzable en la práctica y no se tocó más
+  // que eso para no mantener dos motores de impresión de HC; ver informe).
+  async function printHC402(key){
     if(!canMedical402()){alert('Tu perfil no puede imprimir historias clínicas.');return;}
     const p=patient402(key);if(!p)return;ensure402();
+    // Bloque 6D.2 (impresión) - abrir la ventana ANTES de cualquier
+    // await: los navegadores sólo permiten window.open() de forma
+    // síncrona dentro del gesto de click del usuario. Si se abriera
+    // después de esperar la consulta de documentos, el bloqueador de
+    // popups la descartaría en silencio. Se escribe el contenido recién
+    // al final, una vez resuelto todo - escribir en una ventana ya
+    // abierta no tiene ese problema.
+    const w=window.open('','_blank');if(!w)return;
     const pid=currentProfessionalId402()||'matias',pr=prof402(pid)||prof402('matias')||{},summary=data.resumenesClinicos?.[patientKey402(p)]||{};
     const ev=evolutions402(p).map(x=>({type:'evolution',date:x.fechaHora,obj:x})),ats=attentionsForPatient402(p).map(x=>({type:'attention',date:(x.fecha||'')+'T'+(x.horaInicio||'00:00'),obj:x}));
-    const timeline=[...ev,...ats].sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
-    let logo=pr.logoDocumentoData||pr.logoDocumento||'icons/icon-192.png';try{if(!/^data:image\//i.test(logo))logo=new URL(logo,location.href).href;}catch(e){}const signature=(pr.mostrarFirmaDocumento!==false?(pr.firmaDocumentoData||''):'');
+    // Documentos/estudios PDF reales (ver cardiolink-documentos-pdf-v1.js,
+    // módulo independiente que expone este helper vía window porque vive
+    // en otro IIFE). Bloque 6D.2 - vínculo REAL por evolution_id (columna
+    // dedicada con FK a cardiolink_hc_evoluciones, ver migración
+    // 20261007120000): ya NO se usa attention_id como sustituto. Si el
+    // módulo no está cargado, la HC se imprime igual, solo sin esta
+    // sección (degradación segura).
+    let documentosHC402=[];
+    try{if(typeof window.obtenerDocumentosParaImpresionHC402==='function')documentosHC402=await window.obtenerDocumentosParaImpresionHC402(p.id)||[];}catch(e){console.warn('No se pudieron obtener documentos para la impresión de HC:',e);}
+    const docsVinculadosHC402=(evolutionId)=>!evolutionId?[]:documentosHC402.filter(d=>d.evolution_id&&String(d.evolution_id)===String(evolutionId));
+    const docsConsumidosHC402=new Set();
+    ev.forEach(x=>{docsVinculadosHC402(x.obj.id).forEach(d=>docsConsumidosHC402.add(d.id));});
+    // NO duplicar: un documento vinculado a una evolución aparece sólo
+    // dentro de ella (más abajo); el resto se incorpora como evento
+    // cronológico independiente ("Estudio incorporado").
+    const docsIndependientesHC402=documentosHC402.filter(d=>!docsConsumidosHC402.has(d.id)).map(d=>({type:'document',date:d.document_date,obj:d}));
+    const timeline=[...ev,...ats,...docsIndependientesHC402].sort((a,b)=>String(b.date||'').localeCompare(String(a.date||'')));
+    // Bloque 6D.3 - "Imagen clínica": en impresión se registra SOLO como
+    // texto (título/descripción/fecha/profesional), nunca se incrusta la
+    // fotografía (punto 20 de la tarea: mejora futura, no implementada
+    // ahora). Se distingue de los demás document_type (que siguen
+    // mostrando nombre de archivo, sin cambios respecto a 6D.2).
+    const esImagenClinicaHC402=(d)=>d?.document_type==='Imagen clínica';
+    const renderEventoHC402=(x)=>{
+      if(x.type==='evolution'){
+        const docsEv=docsVinculadosHC402(x.obj.id);
+        return `<article class="event"><h3>Evolución clínica · ${esc402(fmtDT402(x.obj.fechaHora))}</h3><div class="event-meta">${esc402(x.obj.profesionalNombre||'')}</div>${x.obj.motivo?`<p><label>Motivo</label><br>${esc402(x.obj.motivo)}</p>`:''}${x.obj.evolucion?`<p><label>Evolución / examen</label><br>${esc402(x.obj.evolucion)}</p>`:''}${x.obj.diagnostico?`<p><label>Impresión diagnóstica</label><br>${esc402(x.obj.diagnostico)}</p>`:''}${x.obj.conducta?`<p><label>Conducta / plan</label><br>${esc402(x.obj.conducta)}</p>`:''}${docsEv.length?`<div class="hc-doc-linked-402"><label>Estudios / documentos asociados</label>${docsEv.map(d=>esImagenClinicaHC402(d)?`<p class="hc-doc-linked-item-402">${esc402(fmtD402(d.document_date))} · Imagen clínica · <strong>${esc402(d.title)}</strong>${d.description?' · '+esc402(d.description):''}${d.professional_id?' · '+esc402(profName402(d.professional_id)):''}</p>`:`<p class="hc-doc-linked-item-402">${esc402(fmtD402(d.document_date))} · ${esc402(d.document_type)} · <strong>${esc402(d.title)}</strong>${d.professional_id?' · '+esc402(profName402(d.professional_id)):''} · <span class="muted">${esc402(d.original_filename)}</span></p>`).join('')}</div>`:''}</article>`;
+      }
+      if(x.type==='document'){
+        const d=x.obj;
+        const esImg=esImagenClinicaHC402(d);
+        return `<article class="event"><h3>${esImg?'Imagen clínica incorporada':'Estudio incorporado'} · ${esc402(fmtD402(d.document_date))}</h3><div class="event-meta">${esc402(d.document_type)}${d.professional_id?' · '+esc402(profName402(d.professional_id)):''}</div><p><label>Título</label><br>${esc402(d.title)}</p>${esImg&&d.description?`<p><label>Descripción</label><br>${esc402(d.description)}</p>`:''}</article>`;
+      }
+      return `<article class="event"><h3>${esc402(x.obj.prestacion||'Atención')} · ${esc402(fmtD402(x.obj.fecha))}</h3><div class="event-meta">${esc402(x.obj.profesional||'')} · ${esc402(x.obj.obraSocial||'')}</div>${x.obj.observaciones?`<p><label>Observaciones</label><br>${esc402(x.obj.observaciones)}</p>`:''}</article>`;
+    };
+    // Ya NO cae a icons/icon-192.png (ídem printDocument406): sin logo
+    // propio, el membrete del profesional queda sólo en texto.
+    let logo=pr.logoDocumentoData||pr.logoDocumento||'';
+    try{if(logo&&!/^data:image\//i.test(logo)&&!/^https?:/i.test(logo)&&!/^blob:/i.test(logo))logo=new URL(logo,location.href).href;}catch(e){}
+    const signature=(pr.mostrarFirmaDocumento!==false?(pr.firmaDocumentoData||''):'');
     const contacts=[pr.telefonoDocumento,pr.emailDocumento,pr.direccionDocumento,pr.redesDocumento].filter(Boolean).map(esc402).join(' · ');
     const licenses=[pr.matriculaNacional,pr.matriculaProvincial].filter(Boolean).map(esc402).join(' · ');
-    const w=window.open('','_blank');if(!w)return;
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Historia clínica - ${esc402(patientName402(p))}</title><style>@page{size:A4;margin:18mm 16mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#111827;margin:0;font-size:13px}.doc-head{display:grid;grid-template-columns:72px 1fr;gap:16px;align-items:center;border-bottom:3px solid #174b5c;padding-bottom:12px;margin-bottom:18px}.doc-logo{width:68px;height:68px;object-fit:contain;border-radius:12px}.brand{font-size:21px;font-weight:800;color:#174b5c}.doctor{font-size:17px;font-weight:800;margin-top:3px}.meta,.contact{color:#475569;line-height:1.45}.patient{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:12px}.patient h1{margin:0 0 4px;font-size:25px}.box{border:1px solid #cbd5e1;border-radius:10px;padding:11px 13px;margin:12px 0;background:#f8fafc}.event{border-left:4px solid #174b5c;padding:8px 14px;margin:15px 0;page-break-inside:avoid}.event h3{margin:0 0 6px;font-size:16px}.event-meta{color:#475569;margin-bottom:8px}label{font-size:10px;text-transform:uppercase;color:#64748b;font-weight:800;letter-spacing:.04em}p{white-space:pre-wrap;margin:4px 0 9px;line-height:1.45}.hc-signature{margin:42px 0 18px auto;width:270px;text-align:center;page-break-inside:avoid}.hc-signature img{max-width:230px;max-height:90px;object-fit:contain;display:block;margin:0 auto 4px}.hc-signature-line{border-top:1px solid #334155;padding-top:5px;font-weight:700}.hc-signature-meta{font-size:10px;color:#475569;line-height:1.35}.footer{position:fixed;bottom:0;left:0;right:0;border-top:1px solid #cbd5e1;padding-top:6px;color:#64748b;font-size:10px;display:flex;justify-content:space-between}</style></head><body><header class="doc-head"><img class="doc-logo" src="${esc402(logo)}"><div><div class="brand">${esc402(pr.marcaDocumento||'CardioLink')}</div><div class="doctor">${esc402(pr.nombre||'Profesional')}</div><div class="meta">${esc402(specialities402(pr))}${licenses?' · '+licenses:''}</div>${contacts?`<div class="contact">${contacts}</div>`:''}</div></header><section class="patient"><div><h1>${esc402(patientName402(p))}</h1><div class="meta">DNI ${esc402(p.dni||'s/d')} · ${esc402(p.fechaNacimiento?'Fecha de nacimiento '+fmtD402(p.fechaNacimiento):'Fecha de nacimiento s/d')} · ${esc402(p.coberturaHabitual||'Cobertura s/d')}</div></div><div class="meta">Emisión: ${esc402(fmtDT402(new Date().toISOString()))}</div></section><div class="box"><strong>Antecedentes:</strong> ${esc402(summary.antecedentes||'s/d')}<br><strong>Alergias:</strong> ${esc402(summary.alergias||'s/d')}<br><strong>Medicación habitual:</strong> ${esc402(summary.medicacion||'s/d')}</div>${timeline.map(x=>x.type==='evolution'?`<article class="event"><h3>Evolución clínica · ${esc402(fmtDT402(x.obj.fechaHora))}</h3><div class="event-meta">${esc402(x.obj.profesionalNombre||'')}</div>${x.obj.motivo?`<p><label>Motivo</label><br>${esc402(x.obj.motivo)}</p>`:''}${x.obj.evolucion?`<p><label>Evolución / examen</label><br>${esc402(x.obj.evolucion)}</p>`:''}${x.obj.diagnostico?`<p><label>Impresión diagnóstica</label><br>${esc402(x.obj.diagnostico)}</p>`:''}${x.obj.conducta?`<p><label>Conducta / plan</label><br>${esc402(x.obj.conducta)}</p>`:''}</article>`:`<article class="event"><h3>${esc402(x.obj.prestacion||'Atención')} · ${esc402(fmtD402(x.obj.fecha))}</h3><div class="event-meta">${esc402(x.obj.profesional||'')} · ${esc402(x.obj.obraSocial||'')}</div>${x.obj.observaciones?`<p><label>Observaciones</label><br>${esc402(x.obj.observaciones)}</p>`:''}</article>`).join('')}<section class="hc-signature">${signature?`<img src="${esc402(signature)}">`:''}<div class="hc-signature-line">${esc402(pr.nombre||'Profesional')}</div><div class="hc-signature-meta">${esc402(specialities402(pr))}<br>${licenses}</div></section><footer class="footer"><span>${esc402(pr.marcaDocumento||'CardioLink')}</span><span>Documento emitido desde CardioLink v${VERSION_402}</span></footer></body></html>`);
+    // Edad: calculada de p.fechaNacimiento, un campo que YA existe en el
+    // paciente (no se inventa ningún campo clínico nuevo).
+    let edad='';
+    const mNac=/^(\d{4})-(\d{2})-(\d{2})/.exec(String(p.fechaNacimiento||''));
+    if(mNac){const y=+mNac[1],mo=+mNac[2],d2=+mNac[3],dt=new Date(y,mo-1,d2),hoy=new Date();if(dt.getFullYear()===y&&dt.getMonth()===mo-1&&dt.getDate()===d2){let a2=hoy.getFullYear()-y;if(hoy.getMonth()<mo-1||(hoy.getMonth()===mo-1&&hoy.getDate()<d2))a2--;if(a2>=0&&a2<130)edad=a2+' años';}}
+    // Identidad CardioLink (la PLATAFORMA) separada de la del profesional -
+    // discreta, sólo en el pie, nunca reemplazando "CardioLink" por la
+    // marca del profesional ni viceversa (Bloque 6B/6C, punto 1).
+    const brandingCL402=(typeof getBrandingCardioLink==='function')?getBrandingCardioLink():{nombre:'CardioLink',slogan:'Plataforma integral de gestión médica'};
+    const headCols402=logo?'72px 1fr':'1fr';
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Historia clínica - ${esc402(patientName402(p))}</title><style>@page{size:A4;margin:18mm 16mm}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#111827;margin:0;font-size:13px}.doc-head{display:grid;grid-template-columns:${headCols402};gap:16px;align-items:center;border-bottom:3px solid #174b5c;padding-bottom:12px;margin-bottom:18px}.doc-logo{width:68px;height:68px;object-fit:contain;border-radius:12px}.brand{font-size:21px;font-weight:800;color:#174b5c}.doctor{font-size:17px;font-weight:800;margin-top:3px}.meta,.contact{color:#475569;line-height:1.45}.cardiolink-id{text-align:right;font-size:10px;color:#94a3b8;margin-bottom:8px}.patient{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;margin-bottom:12px;page-break-inside:avoid}.patient h1{margin:0 0 4px;font-size:25px}.box{border:1px solid #cbd5e1;border-radius:10px;padding:11px 13px;margin:12px 0;background:#f8fafc;page-break-inside:avoid}.event{border-left:4px solid #174b5c;padding:8px 14px;margin:15px 0;page-break-inside:avoid}.event h3{margin:0 0 6px;font-size:16px}.event-meta{color:#475569;margin-bottom:8px}.hc-doc-linked-402{margin-top:8px;padding-top:6px;border-top:1px dashed #cbd5e1}.hc-doc-linked-402 label{display:block;margin-bottom:4px}.hc-doc-linked-item-402{margin:2px 0;font-size:12px;line-height:1.4;color:#334155}label{font-size:10px;text-transform:uppercase;color:#64748b;font-weight:800;letter-spacing:.04em}p{white-space:pre-wrap;margin:4px 0 9px;line-height:1.45}.hc-signature{margin:42px 0 18px auto;width:270px;text-align:center;page-break-inside:avoid}.hc-signature img{max-width:230px;max-height:90px;object-fit:contain;display:block;margin:0 auto 4px}.hc-signature-line{border-top:1px solid #334155;padding-top:5px;font-weight:700}.hc-signature-meta{font-size:10px;color:#475569;line-height:1.35}.footer{position:fixed;bottom:0;left:0;right:0;border-top:1px solid #cbd5e1;padding-top:6px;color:#64748b;font-size:10px;display:flex;justify-content:space-between}</style></head><body><header class="doc-head">${logo?`<img class="doc-logo" src="${esc402(logo)}">`:''}<div><div class="brand">${esc402(pr.marcaDocumento||pr.nombre||'')}</div><div class="doctor">${esc402(pr.nombre||'Profesional')}</div><div class="meta">${esc402(specialities402(pr))}${licenses?' · '+licenses:''}</div>${contacts?`<div class="contact">${contacts}</div>`:''}</div></header><div class="cardiolink-id">${esc402(brandingCL402.nombre)}${brandingCL402.slogan?' · '+esc402(brandingCL402.slogan):''}</div><section class="patient"><div><h1>${esc402(patientName402(p))}</h1><div class="meta">DNI ${esc402(p.dni||'s/d')}${edad?' · '+esc402(edad):(p.fechaNacimiento?'':' · Fecha de nacimiento s/d')}${p.fechaNacimiento?' · '+esc402(fmtD402(p.fechaNacimiento)):''} · ${esc402(p.coberturaHabitual||'Cobertura s/d')}</div></div><div class="meta">Emisión: ${esc402(fmtDT402(new Date().toISOString()))}</div></section><div class="box"><strong>Antecedentes:</strong> ${esc402(summary.antecedentes||'s/d')}<br><strong>Alergias:</strong> ${esc402(summary.alergias||'s/d')}<br><strong>Medicación habitual:</strong> ${esc402(summary.medicacion||'s/d')}</div>${timeline.map(renderEventoHC402).join('')}<section class="hc-signature">${signature?`<img src="${esc402(signature)}">`:''}<div class="hc-signature-line">${esc402(pr.nombre||'Profesional')}</div><div class="hc-signature-meta">${esc402(specialities402(pr))}<br>${licenses}</div></section><footer class="footer"><span>${esc402(brandingCL402.nombre)}${brandingCL402.slogan?' · '+esc402(brandingCL402.slogan):''}</span><span>Fecha de impresión: ${esc402(fmtDT402(new Date().toISOString()))}</span></footer></body></html>`);
     w.document.close();setTimeout(()=>w.print(),350);
   }
 
@@ -10281,7 +10639,11 @@ function patientInfoTextHC(p,coverage){
     if(!Array.isArray(data.documentosClinicos))data.documentosClinicos=[];
     (data.profesionales||[]).filter(p=>p.id!=='general').forEach(p=>{
       if(p.marcaDocumento===undefined)p.marcaDocumento=p.id==='matias'?'Consultorio Médico RM':p.nombre;
-      if(p.logoDocumento===undefined)p.logoDocumento='icons/icon-192.png';
+      // Fase 6, Bloque 6C: ya NO se siembra icons/icon-192.png acá (ese es
+      // el ícono PWA, nunca el logo de este profesional) - sin logo
+      // propio cargado, el campo queda vacío y el documento muestra sólo
+      // membrete en texto (ver getLogo406/printHC402).
+      if(p.logoDocumento===undefined)p.logoDocumento='';
       if(p.logoDocumentoData===undefined)p.logoDocumentoData='';
       if(p.firmaDocumentoData===undefined)p.firmaDocumentoData='';
       if(p.telefonoDocumento===undefined)p.telefonoDocumento='';
@@ -10301,7 +10663,11 @@ function patientInfoTextHC(p,coverage){
     document.querySelectorAll('.print-title h2').forEach(el=>el.textContent=`CardioLink Admin v${VERSION_406}`);
   }
 
-  function getLogo406(p){return p?.logoDocumentoData||p?.logoDocumento||'icons/icon-192.png';}
+  // Fase 6, Bloque 6C: ya NO cae a icons/icon-192.png (ese es el ícono PWA,
+  // nunca fue el logo de este profesional) - sin logo propio cargado, el
+  // documento queda con membrete en texto solamente (nombre/especialidad/
+  // matrícula/contacto), sin ninguna imagen de reemplazo inventada.
+  function getLogo406(p){return p?.logoDocumentoData||p?.logoDocumento||'';}
   function getSignature406(p){return p?.firmaDocumentoData||'';}
   function resolveImage406(src){
     if(!src)return '';
@@ -10522,19 +10888,64 @@ function patientInfoTextHC(p,coverage){
       }catch(e){console.warn('No se pudo avisar al profesional sobre el documento generado:',e);}
     }
     $406('clinicalDocModal406')?.remove();enhanceHC406();enhancePatientFicha406();if(printAfter)printDocument406(doc.id,formatoImpresion);
+    // Ajuste 6E.2 (Secretaría) - "Guardar PDF"/"Enviar" sólo tienen
+    // sentido con un documento YA guardado (source_document_id real):
+    // se ofrecen en este modal chico posterior al guardado, no en el
+    // listado clínico (ese sigue oculto para Secretaría sin cambios,
+    // enhancePatientFicha406/isMedical406() intactos). Mismo criterio que
+    // la lista: sólo para los 3 tipos compactos.
+    if(esTipoCompacto406(doc.tipo))abrirModalPostGuardadoDoc406(doc.id);
+  }
+  function cerrarModalPostGuardadoDoc406(){document.getElementById('docPostSaveModal406')?.remove();}
+  function abrirModalPostGuardadoDoc406(docId){
+    cerrarModalPostGuardadoDoc406();
+    const d=data.documentosClinicos.find(x=>x.id===docId);if(!d)return;
+    const modal=document.createElement('div');modal.id='docPostSaveModal406';modal.className='hc-modal-overlay';
+    modal.innerHTML=`<div class="hc-modal-card"><div class="hc-modal-head"><div><h2>Documento guardado</h2><p class="muted">${esc406(d.titulo||docLabel406(d.tipo))}</p></div><button class="modal-close" type="button" data-close-postsave406>×</button></div><div class="hc-modal-actions"><button class="secondary" type="button" data-postsave-imprimir406="${esc406(docId)}">Imprimir</button><button class="secondary" type="button" data-postsave-guardarpdf406="${esc406(docId)}">Guardar PDF</button><button class="primary" type="button" data-postsave-enviar406="${esc406(docId)}">Enviar</button></div></div>`;
+    document.body.appendChild(modal);
+  }
+  // Bloque 6E.2 - ÚNICA fuente de contenido para un documento clínico
+  // (principio del bloque: "una fuente de contenido, no dos templates
+  // divergentes"). Antes de este bloque, este cálculo vivía inline al
+  // principio de printDocument406; se extrae tal cual (mismo resultado,
+  // cero cambios de comportamiento) para que generarPdfDocumento406()
+  // (jsPDF, más abajo) consuma EXACTAMENTE los mismos datos resueltos -
+  // paciente, profesional, logo, firma, branding, formato - en vez de
+  // tener su propia lógica de resolución en paralelo. Devuelve datos
+  // CRUDOS (sin escapar HTML): cada renderer (HTML o jsPDF) decide su
+  // propio escapado/codificación.
+  function resolverDatosDocumento406(id,formato){
+    ensure406();const d=data.documentosClinicos.find(x=>x.id===id);if(!d)return null;
+    if(!canIssueDoc406(d.tipo))return {error:'Tu perfil no puede acceder a este documento.'};
+    const p=patient406(d.pacienteId)||patients406().find(x=>String(x.dni||'').replace(/\D/g,'')===String(d.dni||'').replace(/\D/g,''))||{},pr=prof406(d.profesionalId)||{},color=/^#[0-9a-f]{6}$/i.test(pr.colorDocumento||'')?pr.colorDocumento:'#174b5c';
+    const logo=resolveImage406(getLogo406(pr)),sig=d.incluirFirma!==false&&pr.mostrarFirmaDocumento!==false?resolveImage406(getSignature406(pr)):'';
+    const contacts=[pr.telefonoDocumento,pr.emailDocumento,pr.direccionDocumento,pr.redesDocumento].filter(Boolean).join(' · '),licenses=[pr.matriculaNacional,pr.matriculaProvincial].filter(Boolean).join(' · ');
+    // Fase 6, Bloque 6C: identidad de CardioLink (la PLATAFORMA) separada de
+    // la del profesional de arriba - discreta, sólo en el pie, nunca
+    // compitiendo con el encabezado profesional. Preferentemente el logo
+    // horizontal claro (fondo del documento es blanco) cuando ese asset ya
+    // exista; mientras no exista (6B: campos todavía vacíos), texto
+    // nombre+slogan, nunca un ícono inventado.
+    const brandingCL406=(typeof getBrandingCardioLink==='function')?getBrandingCardioLink():{nombre:'CardioLink',slogan:'Plataforma integral de gestión médica',logoHorizontalClaro:''};
+    const cardioLogo406=brandingCL406.logoHorizontalClaro?resolveImage406(brandingCL406.logoHorizontalClaro):'';
+    const fechaImpresion406=fmtDT406(new Date().toISOString());
+    // Bloque E - el formato SÓLO afecta el CSS de impresión/maquetado: ningún
+    // dato de `d` se lee ni se escribe distinto según el formato, y nada de
+    // esto se persiste (ni en `d`, ni en `data`). A4 conserva EXACTAMENTE
+    // los mismos valores que ya tenía antes de este bloque.
+    const fmt=resolverFormatoImpresion406(d.tipo,formato),isA5=fmt==='A5';
+    return {d,p,pr,color,logo,sig,contacts,licenses,brandingCL406,cardioLogo406,fechaImpresion406,fmt,isA5};
   }
   function printDocument406(id,formato){
-    ensure406();const d=data.documentosClinicos.find(x=>x.id===id);if(!d)return;if(!canIssueDoc406(d.tipo)){alert('Tu perfil no puede imprimir este documento.');return;}const p=patient406(d.pacienteId)||patients406().find(x=>String(x.dni||'').replace(/\D/g,'')===String(d.dni||'').replace(/\D/g,''))||{},pr=prof406(d.profesionalId)||{},color=/^#[0-9a-f]{6}$/i.test(pr.colorDocumento||'')?pr.colorDocumento:'#174b5c';
-    const logo=resolveImage406(getLogo406(pr)),sig=d.incluirFirma!==false&&pr.mostrarFirmaDocumento!==false?resolveImage406(getSignature406(pr)):'';
-    const contacts=[pr.telefonoDocumento,pr.emailDocumento,pr.direccionDocumento,pr.redesDocumento].filter(Boolean).map(esc406).join(' · '),licenses=[pr.matriculaNacional,pr.matriculaProvincial].filter(Boolean).map(esc406).join(' · ');
-    // Bloque E - el formato SÓLO afecta el CSS de impresión de acá abajo:
-    // ningún dato de `d` se lee ni se escribe distinto según el formato, y
-    // nada de esto se persiste (ni en `d`, ni en `data`). A4 conserva
-    // EXACTAMENTE los mismos valores que ya tenía antes de este bloque.
-    const fmt=resolverFormatoImpresion406(d.tipo,formato),isA5=fmt==='A5';
+    const datos406=resolverDatosDocumento406(id,formato);
+    if(!datos406)return;
+    if(datos406.error){alert(datos406.error);return;}
+    const {d,p,pr,color,logo,sig,contacts,licenses,brandingCL406,cardioLogo406,fechaImpresion406,fmt,isA5}=datos406;
     const pageCss=isA5?'@page{size:A5;margin:10mm 9mm 12mm}':'@page{size:A4;margin:18mm 16mm 20mm}';
     const baseFontSize=isA5?'12px':'14px';
-    const headCols=isA5?'52px 1fr':'78px 1fr';
+    // Sin logo propio cargado, la columna del logo no debe dejar un hueco
+    // vacío: el membrete pasa a ser sólo texto, a todo el ancho.
+    const headCols=logo?(isA5?'52px 1fr':'78px 1fr'):'1fr';
     const headGap=isA5?'10px':'16px';
     const headPadBottom=isA5?'8px':'12px';
     const headMarginBottom=isA5?'14px':'24px';
@@ -10560,9 +10971,156 @@ function patientInfoTextHC(p,coverage){
     const sigMetaFontSize=isA5?'9.5px':'11px';
     const footerFontSize=isA5?'7.5px':'9px';
     const w=window.open('','_blank');if(!w)return;
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc406(d.titulo)} - ${esc406(patientName406(p)||d.pacienteNombre)}</title><style>${pageCss}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#111827;margin:0;font-size:${baseFontSize}}.doc-head{display:grid;grid-template-columns:${headCols};gap:${headGap};align-items:center;border-bottom:3px solid ${color};padding-bottom:${headPadBottom};margin-bottom:${headMarginBottom}}.doc-logo{width:${logoSize};height:${logoSize};object-fit:contain}.brand{font-size:${brandFontSize};font-weight:800;color:${color}}.doctor{font-size:${doctorFontSize};font-weight:800;margin-top:3px}.meta,.contact{color:#475569;line-height:1.45}.doc-title{text-align:center;text-transform:uppercase;letter-spacing:.08em;font-size:${titleFontSize};margin:${titleMargin};color:${color}}.patient-box{border:1px solid #cbd5e1;border-radius:10px;padding:${patientBoxPad};margin-bottom:${patientBoxMarginBottom};display:grid;grid-template-columns:1fr auto;gap:14px}.patient-name{font-size:${patientNameFontSize};font-weight:800}.body{${bodyMinHeight}font-size:${bodyFontSize};line-height:${bodyLineHeight};white-space:pre-wrap}.extra{margin-top:${extraMarginTop};padding-top:${extraPadTop};border-top:1px solid #e2e8f0;white-space:pre-wrap;line-height:1.55}.signature{margin-top:${sigMarginTop};margin-left:auto;width:${sigWidth};text-align:center;page-break-inside:avoid}.signature img{max-width:${sigImgMaxWidth};max-height:${sigImgMaxHeight};object-fit:contain;display:block;margin:0 auto 4px}.sig-line{border-top:1px solid #334155;padding-top:5px;font-weight:700}.sig-meta{font-size:${sigMetaFontSize};color:#475569;line-height:1.35}.footer{position:fixed;bottom:0;left:0;right:0;border-top:1px solid #cbd5e1;padding-top:6px;color:#64748b;font-size:${footerFontSize};display:flex;justify-content:space-between;gap:12px}</style></head><body><header class="doc-head">${logo?`<img class="doc-logo" src="${esc406(logo)}">`:''}<div><div class="brand">${esc406(pr.marcaDocumento||pr.nombre||'')}</div><div class="doctor">${esc406(pr.nombre||d.profesionalNombre||'')}</div><div class="meta">${esc406(specialities406(pr))}${licenses?' · '+licenses:''}</div>${contacts?`<div class="contact">${contacts}</div>`:''}</div></header><h1 class="doc-title">${esc406(d.titulo||docLabel406(d.tipo))}</h1><section class="patient-box"><div><div class="patient-name">${esc406(patientName406(p)||d.pacienteNombre||'Paciente')}</div><div class="meta">DNI ${esc406(p.dni||d.dni||'s/d')}${p.coberturaHabitual?' · '+esc406(p.coberturaHabitual):''}</div></div><div class="meta">${esc406(fmtDT406(d.fechaHora))}</div></section><main class="body">${esc406(d.contenido||'')}</main>${d.adicional?`<section class="extra">${esc406(d.adicional)}</section>`:''}<section class="signature">${sig?`<img src="${esc406(sig)}">`:''}<div class="sig-line">${esc406(pr.nombre||d.profesionalNombre||'')}</div><div class="sig-meta">${esc406(specialities406(pr))}<br>${licenses}</div></section><footer class="footer"><span>${esc406(pr.marcaDocumento||'CardioLink')}</span><span>Firma gráfica. Documento emitido desde CardioLink v${VERSION_406}</span></footer></body></html>`);
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc406(d.titulo)} - ${esc406(patientName406(p)||d.pacienteNombre)}</title><style>${pageCss}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#111827;margin:0;font-size:${baseFontSize}}.doc-head{display:grid;grid-template-columns:${headCols};gap:${headGap};align-items:center;border-bottom:3px solid ${color};padding-bottom:${headPadBottom};margin-bottom:${headMarginBottom}}.doc-logo{width:${logoSize};height:${logoSize};object-fit:contain}.brand{font-size:${brandFontSize};font-weight:800;color:${color}}.doctor{font-size:${doctorFontSize};font-weight:800;margin-top:3px}.meta,.contact{color:#475569;line-height:1.45}.doc-title{text-align:center;text-transform:uppercase;letter-spacing:.08em;font-size:${titleFontSize};margin:${titleMargin};color:${color}}.patient-box{border:1px solid #cbd5e1;border-radius:10px;padding:${patientBoxPad};margin-bottom:${patientBoxMarginBottom};display:grid;grid-template-columns:1fr auto;gap:14px}.patient-name{font-size:${patientNameFontSize};font-weight:800}.body{${bodyMinHeight}font-size:${bodyFontSize};line-height:${bodyLineHeight};white-space:pre-wrap}.extra{margin-top:${extraMarginTop};padding-top:${extraPadTop};border-top:1px solid #e2e8f0;white-space:pre-wrap;line-height:1.55}.signature{margin-top:${sigMarginTop};margin-left:auto;width:${sigWidth};text-align:center;page-break-inside:avoid}.signature img{max-width:${sigImgMaxWidth};max-height:${sigImgMaxHeight};object-fit:contain;display:block;margin:0 auto 4px}.sig-line{border-top:1px solid #334155;padding-top:5px;font-weight:700}.sig-meta{font-size:${sigMetaFontSize};color:#475569;line-height:1.35}.footer{position:fixed;bottom:0;left:0;right:0;border-top:1px solid #cbd5e1;padding-top:6px;color:#64748b;font-size:${footerFontSize};display:flex;justify-content:space-between;gap:12px}</style></head><body><header class="doc-head">${logo?`<img class="doc-logo" src="${esc406(logo)}">`:''}<div><div class="brand">${esc406(pr.marcaDocumento||pr.nombre||'')}</div><div class="doctor">${esc406(pr.nombre||d.profesionalNombre||'')}</div><div class="meta">${esc406(specialities406(pr))}${licenses?' · '+esc406(licenses):''}</div>${contacts?`<div class="contact">${esc406(contacts)}</div>`:''}</div></header><h1 class="doc-title">${esc406(d.titulo||docLabel406(d.tipo))}</h1><section class="patient-box"><div><div class="patient-name">${esc406(patientName406(p)||d.pacienteNombre||'Paciente')}</div><div class="meta">DNI ${esc406(p.dni||d.dni||'s/d')}${p.coberturaHabitual?' · '+esc406(p.coberturaHabitual):''}</div></div><div class="meta">${esc406(fmtDT406(d.fechaHora))}</div></section><main class="body">${esc406(d.contenido||'')}</main>${d.adicional?`<section class="extra">${esc406(d.adicional)}</section>`:''}<section class="signature">${sig?`<img src="${esc406(sig)}">`:''}<div class="sig-line">${esc406(pr.nombre||d.profesionalNombre||'')}</div><div class="sig-meta">${esc406(specialities406(pr))}<br>${esc406(licenses)}</div></section><footer class="footer"><span>${cardioLogo406?`<img src="${esc406(cardioLogo406)}" style="height:16px;vertical-align:middle;object-fit:contain">`:esc406(brandingCL406.nombre)+(brandingCL406.slogan?' · '+esc406(brandingCL406.slogan):'')}</span><span>Fecha de impresión: ${esc406(fechaImpresion406)}</span></footer></body></html>`);
     w.document.close();setTimeout(()=>w.print(),350);
   }
+
+  // ---------------------------------------------------------------------
+  // Bloque 6E.2 - PDF real (vectorial) para Orden/Certificado/Constancia.
+  // Único punto donde se dibuja el PDF; consume EXACTAMENTE los mismos
+  // datos que printDocument406 vía resolverDatosDocumento406() - nunca una
+  // segunda resolución de paciente/profesional/firma/branding. No
+  // reutiliza el motor HTML (jsPDF no puede renderizar el HTML/CSS
+  // existente como vector): es un renderer de dibujo nuevo, pero sobre la
+  // MISMA fuente de datos (principio del bloque).
+  // ---------------------------------------------------------------------
+  async function cargarImagenComoDataUrl406(src){
+    if(!src)return null;
+    if(/^data:/i.test(src))return src;
+    try{
+      const resp=await fetch(src);
+      const blob=await resp.blob();
+      return await new Promise((resolve,reject)=>{
+        const reader=new FileReader();
+        reader.onload=()=>resolve(reader.result);
+        reader.onerror=reject;
+        reader.readAsDataURL(blob);
+      });
+    }catch(e){return null;}
+  }
+  function formatoImagenDesdeDataUrl406(dataUrl){
+    const m=/^data:image\/(png|jpe?g|webp)/i.exec(dataUrl||'');
+    if(!m)return 'PNG';
+    const ext=m[1].toLowerCase();
+    return ext==='jpg'||ext==='jpeg'?'JPEG':(ext==='webp'?'WEBP':'PNG');
+  }
+  async function generarPdfBlobDocumento406(datos406){
+    const jsPDFCtor=window.jspdf?.jsPDF;
+    if(!jsPDFCtor)throw new Error('jsPDF no está disponible en esta página.');
+    const {d,p,pr,color,logo,sig,contacts,licenses,brandingCL406,fechaImpresion406,isA5}=datos406;
+    const pdf=new jsPDFCtor({unit:'mm',format:isA5?'a5':'a4'});
+    const pageW=pdf.internal.pageSize.getWidth(),pageH=pdf.internal.pageSize.getHeight();
+    const mX=isA5?9:16,mTop=isA5?10:18,mBottom=isA5?12:20;
+    const rgb=/^#([0-9a-f]{2})([0-9a-f]{2})([0-9a-f]{2})$/i.exec(color)||[0,'17','4b','5c'];
+    const col={r:parseInt(rgb[1],16),g:parseInt(rgb[2],16),b:parseInt(rgb[3],16)};
+    let y=mTop;
+    const logoSize=isA5?14:18;
+    let textX=mX;
+    if(logo){
+      try{
+        const imgData=await cargarImagenComoDataUrl406(logo);
+        if(imgData){pdf.addImage(imgData,formatoImagenDesdeDataUrl406(imgData),mX,y-2,logoSize,logoSize,undefined,'FAST');textX=mX+logoSize+(isA5?3:4);}
+      }catch(e){}
+    }
+    pdf.setTextColor(col.r,col.g,col.b);pdf.setFont('helvetica','bold');pdf.setFontSize(isA5?13:16);
+    pdf.text(pr.marcaDocumento||pr.nombre||'',textX,y+2);
+    pdf.setFontSize(isA5?10:12);
+    pdf.text(pr.nombre||d.profesionalNombre||'',textX,y+7);
+    pdf.setFont('helvetica','normal');pdf.setFontSize(isA5?8:9);pdf.setTextColor(71,85,105);
+    const especialidadTxt=(typeof specialities406==='function'?specialities406(pr):'')||'';
+    let metaY=y+11;
+    if(especialidadTxt||licenses){pdf.text([especialidadTxt,licenses].filter(Boolean).join(' · '),textX,metaY);metaY+=4;}
+    if(contacts){pdf.text(contacts,textX,metaY);metaY+=4;}
+    y=Math.max(metaY,y+(logo?logoSize-2:8))+2;
+    pdf.setDrawColor(col.r,col.g,col.b);pdf.setLineWidth(0.7);
+    pdf.line(mX,y,pageW-mX,y);
+    y+=isA5?7:10;
+    pdf.setTextColor(col.r,col.g,col.b);pdf.setFont('helvetica','bold');pdf.setFontSize(isA5?11:14);
+    pdf.text(String(d.titulo||docLabel406(d.tipo)||'').toUpperCase(),pageW/2,y,{align:'center'});
+    y+=isA5?8:11;
+    pdf.setDrawColor(203,213,225);pdf.setLineWidth(0.3);
+    const boxH=isA5?11:13;
+    pdf.roundedRect(mX,y,pageW-mX*2,boxH,1.5,1.5);
+    pdf.setTextColor(15,23,42);pdf.setFont('helvetica','bold');pdf.setFontSize(isA5?10:12);
+    pdf.text(String((typeof patientName406==='function'?patientName406(p):'')||d.pacienteNombre||'Paciente'),mX+3,y+boxH/2-1);
+    pdf.setFont('helvetica','normal');pdf.setFontSize(isA5?8:9);pdf.setTextColor(71,85,105);
+    pdf.text('DNI '+(p.dni||d.dni||'s/d')+(p.coberturaHabitual?' · '+p.coberturaHabitual:''),mX+3,y+boxH/2+3.5);
+    pdf.text(String(fmtDT406(d.fechaHora)||''),pageW-mX-3,y+boxH/2+1,{align:'right'});
+    y+=boxH+(isA5?6:9);
+    pdf.setTextColor(17,24,39);pdf.setFont('helvetica','normal');pdf.setFontSize(isA5?10:11);
+    const bodyW=pageW-mX*2;
+    const bodyLines=pdf.splitTextToSize(String(d.contenido||''),bodyW);
+    pdf.text(bodyLines,mX,y);
+    y+=bodyLines.length*(isA5?4.3:5.2)+4;
+    if(d.adicional){
+      pdf.setDrawColor(226,232,240);pdf.setLineWidth(0.2);pdf.line(mX,y,pageW-mX,y);y+=5;
+      const extraLines=pdf.splitTextToSize(String(d.adicional),bodyW);
+      pdf.text(extraLines,mX,y);
+      y+=extraLines.length*(isA5?4.3:5.2);
+    }
+    const sigW=isA5?45:60;
+    const sigY=Math.max(y+(isA5?14:20),pageH-mBottom-(isA5?24:32));
+    const sigX=pageW-mX-sigW;
+    if(sig){
+      try{
+        const sigData=await cargarImagenComoDataUrl406(sig);
+        if(sigData)pdf.addImage(sigData,formatoImagenDesdeDataUrl406(sigData),sigX+sigW/2-15,sigY-11,30,10,undefined,'FAST');
+      }catch(e){}
+    }
+    pdf.setDrawColor(51,65,85);pdf.setLineWidth(0.3);
+    pdf.line(sigX,sigY,sigX+sigW,sigY);
+    pdf.setFont('helvetica','bold');pdf.setFontSize(isA5?9:10);pdf.setTextColor(17,24,39);
+    pdf.text(String(pr.nombre||d.profesionalNombre||''),sigX+sigW/2,sigY+4,{align:'center'});
+    pdf.setFont('helvetica','normal');pdf.setFontSize(isA5?7:8);pdf.setTextColor(71,85,105);
+    if(especialidadTxt)pdf.text(especialidadTxt,sigX+sigW/2,sigY+7.5,{align:'center'});
+    pdf.setFontSize(isA5?6.5:7.5);pdf.setTextColor(100,116,139);
+    pdf.text(String(brandingCL406.nombre||'CardioLink')+(brandingCL406.slogan?' · '+brandingCL406.slogan:''),mX,pageH-6);
+    pdf.text('Fecha de impresión: '+String(fechaImpresion406||''),pageW-mX,pageH-6,{align:'right'});
+    return pdf.output('blob');
+  }
+  async function hashContenidoDocumento406(d){
+    const payload=JSON.stringify({titulo:d.titulo||'',contenido:d.contenido||'',adicional:d.adicional||'',profesionalId:d.profesionalId||'',fechaHora:d.fechaHora||''});
+    try{
+      const bytes=new TextEncoder().encode(payload);
+      const digest=await crypto.subtle.digest('SHA-256',bytes);
+      return Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,'0')).join('');
+    }catch(e){return payload;}
+  }
+  const TIPO_PDF_ARCHIVO_POR_DOC406={orden:'Orden',certificado:'Certificado',constancia_atencion:'Constancia'};
+  // Expuesto para cardiolink-documentos-pdf-v1.js (módulo independiente,
+  // 6D/6E.1): genera el PDF real + un descriptor con TODO lo necesario
+  // para archivarlo en cardiolink_patient_documents, sin que ese módulo
+  // tenga que resolver paciente/profesional/contenido por su cuenta (una
+  // sola fuente de contenido, también entre módulos). No toca Storage ni
+  // Supabase acá - sólo genera el Blob y los metadatos descriptivos.
+  window.generarPdfDocumentoGenerado406=async function(docId,formato){
+    const datos406=resolverDatosDocumento406(docId,formato);
+    if(!datos406)return {ok:false,error:'No se encontró el documento.'};
+    if(datos406.error)return {ok:false,error:datos406.error};
+    const {d,p}=datos406;
+    const tipoArchivo=TIPO_PDF_ARCHIVO_POR_DOC406[d.tipo];
+    if(!tipoArchivo)return {ok:false,error:'Este tipo de documento todavía no admite Guardar PDF/Enviar (6E.2 V1: sólo Orden/Certificado/Constancia).'};
+    const patientRealId=p?.id||'';
+    if(!patientRealId)return {ok:false,error:'El paciente de este documento todavía no tiene un identificador real (sincronizalo desde la ficha antes de archivar el PDF).'};
+    let blob;
+    try{blob=await generarPdfBlobDocumento406(datos406);}
+    catch(e){return {ok:false,error:'No se pudo generar el PDF: '+(e?.message||e)};}
+    const contentHash=await hashContenidoDocumento406(d);
+    return {
+      ok:true,
+      blob,
+      patientId:patientRealId,
+      documentType:tipoArchivo,
+      title:d.titulo||docLabel406(d.tipo),
+      description:d.adicional||null,
+      professionalId:d.profesionalId||null,
+      documentDate:String(d.fechaHora||'').slice(0,10)||new Date().toISOString().slice(0,10),
+      originalFilename:(d.titulo||docLabel406(d.tipo)||'documento').replace(/[^a-z0-9áéíóúñ\s_-]/gi,'').trim().replace(/\s+/g,'_').slice(0,80)+'.pdf',
+      sourceDocumentId:d.id,
+      sourceContentHash:contentHash
+    };
+  };
+
   // Bloque E - mini-selector de formato para reimprimir desde el historial
   // (docsSection406, botón [data-print-doc406]): sólo se muestra para los
   // tipos compactos (orden/certificado/constancia_atencion). Para el resto
@@ -10584,7 +11142,7 @@ function patientInfoTextHC(p,coverage){
   }
   function docsSection406(p){
     const docs=docsForPatient406(p);
-    return `<section class="clinical-docs406" data-docs-section406><div class="clinical-docs-head406"><div><h3>Documentos clínicos e informes rápidos</h3><p class="muted">Recetas, órdenes, certificados, informes breves e indicaciones emitidas para este paciente.</p></div>${isMedical406()?`<button class="primary" type="button" data-new-doc406="${esc406(patientKey406(p))}">+ Nuevo documento</button>`:''}</div><div class="clinical-doc-list406">${docs.length?docs.map(d=>`<article class="clinical-doc-row406"><div><strong>${esc406(d.titulo||docLabel406(d.tipo))}</strong><span>${esc406(fmtDT406(d.fechaHora))} · ${esc406(d.profesionalNombre||'')}</span></div><div class="clinical-doc-actions406">${canEditDoc406(d)?`<button class="secondary small-btn" type="button" data-edit-doc406="${esc406(d.id)}" data-doc-patient406="${esc406(patientKey406(p))}">Editar</button>`:''}<button class="secondary small-btn" type="button" data-print-doc406="${esc406(d.id)}">Imprimir</button></div></article>`).join(''):'<p class="muted">Todavía no hay documentos emitidos.</p>'}</div></section>`;
+    return `<section class="clinical-docs406" data-docs-section406><div class="clinical-docs-head406"><div><h3>Documentos clínicos e informes rápidos</h3><p class="muted">Recetas, órdenes, certificados, informes breves e indicaciones emitidas para este paciente.</p></div>${isMedical406()?`<button class="primary" type="button" data-new-doc406="${esc406(patientKey406(p))}">+ Nuevo documento</button>`:''}</div><div class="clinical-doc-list406">${docs.length?docs.map(d=>`<article class="clinical-doc-row406"><div><strong>${esc406(d.titulo||docLabel406(d.tipo))}</strong><span>${esc406(fmtDT406(d.fechaHora))} · ${esc406(d.profesionalNombre||'')}</span></div><div class="clinical-doc-actions406">${canEditDoc406(d)?`<button class="secondary small-btn" type="button" data-edit-doc406="${esc406(d.id)}" data-doc-patient406="${esc406(patientKey406(p))}">Editar</button>`:''}<button class="secondary small-btn" type="button" data-print-doc406="${esc406(d.id)}">Imprimir</button>${esTipoCompacto406(d.tipo)?`<button class="secondary small-btn" type="button" data-pdf2-guardar406="${esc406(d.id)}">Guardar PDF</button><button class="secondary small-btn" type="button" data-pdf2-enviar406="${esc406(d.id)}">Enviar</button>`:''}</div></article>`).join(''):'<p class="muted">Todavía no hay documentos emitidos.</p>'}</div></section>`;
   }
   function enhanceHC406(){
     ensure406();const root=$406('hcPacienteDetalle');if(!root)return;if(!isMedical406()){root.querySelectorAll('[data-docs-section406],[data-new-doc406]').forEach(x=>x.remove());return;}const key=root.querySelector('[data-hc-new]')?.dataset.hcNew;if(!key)return;const p=patient406(key);if(!p)return;
@@ -10641,6 +11199,26 @@ function patientInfoTextHC(p,coverage){
     const nd=e.target.closest?.('[data-new-doc406]');if(nd){openDocumentModal406(nd.dataset.newDoc406);return;}
     const ed=e.target.closest?.('[data-edit-doc406]');if(ed){openDocumentModal406(ed.dataset.docPatient406,ed.dataset.editDoc406);return;}
     const pd=e.target.closest?.('[data-print-doc406]');if(pd){elegirFormatoEImprimir406(pd.dataset.printDoc406);return;}
+    // Bloque 6E.2 - "Guardar PDF"/"Enviar" en Orden/Certificado/Constancia:
+    // la orquestación (Storage/metadata/dedup/modal de envío) vive en
+    // cardiolink-documentos-pdf-v1.js (módulo independiente, 6D/6E.1), que
+    // expone estos dos hooks - acá sólo se despacha el click, sin lógica
+    // nueva de Supabase en este archivo.
+    const pdfGuardar=e.target.closest?.('[data-pdf2-guardar406]');
+    if(pdfGuardar){window.guardarPdfDocumentoGenerado406?.(pdfGuardar.dataset.pdf2Guardar406,pdfGuardar);return;}
+    const pdfEnviar=e.target.closest?.('[data-pdf2-enviar406]');
+    if(pdfEnviar){window.enviarPdfDocumentoGenerado406?.(pdfEnviar.dataset.pdf2Enviar406,pdfEnviar);return;}
+    // Ajuste 6E.2 (Secretaría) - modal chico posterior al guardado, misma
+    // orquestación que el listado clínico (mismos hooks, ningún código
+    // nuevo de archivado/envío): única superficie donde Secretaría puede
+    // llegar a estas acciones, sin tocar el listado oculto.
+    const psImprimir=e.target.closest?.('[data-postsave-imprimir406]');
+    if(psImprimir){elegirFormatoEImprimir406(psImprimir.dataset.postsaveImprimir406);return;}
+    const psGuardarPdf=e.target.closest?.('[data-postsave-guardarpdf406]');
+    if(psGuardarPdf){window.guardarPdfDocumentoGenerado406?.(psGuardarPdf.dataset.postsaveGuardarpdf406,psGuardarPdf);return;}
+    const psEnviar=e.target.closest?.('[data-postsave-enviar406]');
+    if(psEnviar){window.enviarPdfDocumentoGenerado406?.(psEnviar.dataset.postsaveEnviar406,psEnviar);return;}
+    if(e.target.closest?.('[data-close-postsave406]')){cerrarModalPostGuardadoDoc406();return;}
     if(e.target.closest?.('[data-close-doc406]')){$406('clinicalDocModal406')?.remove();return;}
     if(e.target.closest?.('[data-close-print-format406]')){cerrarPrintFormatModal406();return;}
     // Bloque E - toggle de formato compartido entre el selector del modal
@@ -11632,55 +12210,14 @@ function patientInfoTextHC(p,coverage){
     if(typeof window.openClinicalDocumentTyped406==='function')window.openClinicalDocumentTyped406(k,type);
     else if(typeof window.openClinicalDocument406==='function')window.openClinicalDocument406(k);
   }
-  function printConstancia411B(p){
-    const ats=(typeof atencionesPacienteGlobal==='function'?atencionesPacienteGlobal(p):[]).filter(a=>a&&!String(a.tipoRegistro||'').includes('mensaje'));
-    const a=ats[0]||null;
-    const fecha=a?.fecha?(typeof formatFecha==='function'?formatFecha(a.fecha):a.fecha):new Date().toLocaleDateString('es-AR');
-    const prest=a?.prestacion||'atención';
-
-    const profesionales=(window.data?.profesionales||[]);
-    let pr=profesionales.find(x=>String(x.id||'')===String(a?.profesionalId||''));
-    if(!pr&&a?.profesional)pr=profesionales.find(x=>String(x.nombre||'').trim()===String(a.profesional||'').trim());
-    if(!pr)pr=profesionales.find(x=>x.id==='matias')||profesionales.find(x=>x.id!=='general')||{};
-
-    let logo=pr.logoDocumentoData||pr.logoDocumento||'icons/icon-192.png';
-    try{if(logo&&!/^data:image\//i.test(logo)&&!/^https?:/i.test(logo)&&!/^blob:/i.test(logo))logo=new URL(logo,location.href).href;}catch(e){}
-
-    const marca=pr.marcaDocumento||'CardioLink';
-    const medico=pr.nombre||a?.profesional||'Profesional';
-    const especialidades=(()=>{
-      const ids=Array.isArray(pr.especialidadIds)?pr.especialidadIds:[];
-      const names=ids.map(id=>(window.data?.especialidades||[]).find(e=>e.id===id)?.nombre).filter(Boolean);
-      return names.length?names.join(' · '):(pr.area||pr.especialidad||'');
-    })();
-    const matriculas=[pr.matriculaNacional,pr.matriculaProvincial].filter(Boolean).join(' · ');
-    const contacto=[pr.direccionDocumento,pr.telefonoDocumento,pr.emailDocumento].filter(Boolean).join(' · ');
-    const color=/^#[0-9a-f]{6}$/i.test(pr.colorDocumento||'')?pr.colorDocumento:'#174b5c';
-
-    const w=window.open('','_blank');if(!w){alert('El navegador bloqueó la constancia.');return;}
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>Constancia de atención</title><style>
-      @page{size:A4;margin:18mm 16mm 20mm}*{box-sizing:border-box}
-      body{font-family:Arial,Helvetica,sans-serif;color:#111827;margin:0;font-size:14px;line-height:1.55}
-      .head{display:grid;grid-template-columns:78px 1fr;gap:16px;align-items:center;border-bottom:3px solid ${color};padding-bottom:12px;margin-bottom:28px}
-      .logo{width:74px;height:74px;object-fit:contain}.brand{font-size:23px;font-weight:800;color:${color}}
-      .doctor{font-size:17px;font-weight:800;margin-top:2px}.meta{color:#475569;line-height:1.45}
-      .title{text-align:center;text-transform:uppercase;letter-spacing:.07em;color:${color};font-size:20px;margin:26px 0 24px}
-      .patient{border:1px solid #cbd5e1;border-radius:11px;padding:12px 14px;margin-bottom:28px;background:#f8fafc}
-      .patient strong{font-size:18px}.body{font-size:17px;min-height:300px;line-height:1.7}
-      .sig{margin-top:72px;width:310px;margin-left:auto;text-align:center;border-top:1px solid #334155;padding-top:7px;font-weight:700}
-      .sig small{display:block;color:#475569;font-weight:400;line-height:1.4}
-      .footer{position:fixed;bottom:0;left:0;right:0;border-top:1px solid #cbd5e1;padding-top:6px;color:#64748b;font-size:9px;display:flex;justify-content:space-between;gap:12px}
-    </style></head><body>
-      <header class="head">${logo?`<img class="logo" src="${esc(logo)}">`:''}<div><div class="brand">${esc(marca)}</div><div class="doctor">${esc(medico)}</div>${especialidades?`<div class="meta">${esc(especialidades)}</div>`:''}${matriculas?`<div class="meta">${esc(matriculas)}</div>`:''}${contacto?`<div class="meta">${esc(contacto)}</div>`:''}</div></header>
-      <h1 class="title">Constancia de atención</h1>
-      <section class="patient"><strong>${esc(patientName(p))}</strong><div class="meta">DNI ${esc(p.dni||'s/d')} · Fecha de atención: ${esc(fecha)}</div></section>
-      <main class="body">Se deja constancia de que <strong>${esc(patientName(p))}</strong>, DNI <strong>${esc(p.dni||'s/d')}</strong>, fue atendido/a en este consultorio el día <strong>${esc(fecha)}</strong>${a?` por <strong>${esc(medico)}</strong>, por ${esc(prest)}`:''}.<br><br>Se extiende la presente a solicitud del interesado/a.</main>
-      <section class="sig">${esc(medico)}${especialidades?`<small>${esc(especialidades)}</small>`:''}${matriculas?`<small>${esc(matriculas)}</small>`:''}</section>
-      <footer class="footer"><span>${esc(marca)}</span><span>Constancia emitida administrativamente desde CardioLink</span></footer>
-      <script>window.onload=()=>setTimeout(()=>window.print(),250)<\/script>
-    </body></html>`);
-    w.document.close();
-  }
+  // Fase 6, Bloque 6C: printConstancia411B() se eliminó por estar
+  // comprobadamente muerta. Re-confirmado: cero callers en todo el repo
+  // (grep exhaustivo, incluido onclick/strings) - el botón real de
+  // "Constancia" (FAB y "Acciones ▾") llama doc411B(p,'constancia_atencion')
+  // → openClinicalDocumentTyped406 → el mismo printDocument406() que ya
+  // emite el resto de los documentos clínicos. Mantenerla hubiera sido
+  // sostener dos motores distintos para el mismo documento, exactamente lo
+  // que este bloque buscaba evitar.
   function whatsapp411B(p){
     if(!p)return;let digits=String(p.telefono||'').replace(/\D/g,'');if(!digits){alert('El paciente no tiene teléfono cargado.');return;}
     if(digits.startsWith('0'))digits=digits.replace(/^0+/,'');

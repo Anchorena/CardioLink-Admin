@@ -615,3 +615,150 @@ export function armarMensajeProfesionalDocumento({ tipoDocumento, pacienteNombre
     mensaje: lineas.join('\n')
   };
 }
+
+// -----------------------------------------------------------------------
+// Bloque 6E.1 — Envío digital de documentos/estudios YA ALMACENADOS en
+// public.cardiolink_patient_documents (PDFs e imágenes clínicas) al
+// paciente o a su contacto responsable. Funciones puras, mismo patrón que
+// el resto de este archivo (sin red, sin Supabase): la Edge Function
+// patient-document-delivery las usa para componer asunto/mensaje, nunca
+// para decidir destinatario (eso sigue siendo resolverDestinatarios(),
+// reutilizada tal cual con atencion=null - un documento/estudio no está
+// atado a una atención).
+// -----------------------------------------------------------------------
+
+export function armarMensajeEnvioDocumento({ nombreDestinatario, tipoDocumento, titulo, fechaDocumento, brandingNombre, brandingSlogan }) {
+  const nombrePila = String(nombreDestinatario || '').trim().split(/\s+/)[0] || '';
+  const fecha = fechaDocumento ? formatearFechaCorta(fechaDocumento) : '';
+  const lineas = [
+    `Hola${nombrePila ? ' ' + nombrePila : ''}.`,
+    '',
+    'Te enviamos el siguiente documento:',
+    '',
+    titulo || '',
+    tipoDocumento || '',
+    fecha,
+    '',
+    brandingNombre || 'CardioLink',
+    brandingSlogan || 'Plataforma integral de gestión médica'
+  ];
+  return {
+    asunto: `CardioLink — ${tipoDocumento || 'Documento'}${titulo ? ': ' + titulo : ''}`,
+    mensaje: lineas.join('\n')
+  };
+}
+
+// Ajuste WhatsApp (posterior a 6E.1): plantilla OFICIAL, fija, pedida
+// textualmente. `enlaceCorto` es siempre el enlace corto propio de
+// CardioLink (cardiolink.com.ar/d/TOKEN o, mientras no exista ese
+// routing, la URL directa de la Edge Function pública
+// patient-document-open) - NUNCA el signed URL crudo de Supabase
+// Storage, ni acá ni en lo que se persiste en cardiolink_communications:
+// este mismo texto, con este mismo enlace corto, es seguro de guardar tal
+// cual (el enlace corto no expone ningún token de Storage).
+// Bug QA real: professional_nombre a veces YA incluye el título ("Dr."/
+// "Dra.", con o sin punto) - anteponer "Dr." sin condición producía
+// "realizado por el Dr. Dr. ...". Esta función sólo decide cómo armar la
+// FRASE del mensaje; nunca toca el nombre guardado en la base. Si el
+// nombre ya trae título, se respeta tal cual (y se ajusta el artículo
+// el/la según corresponda) - nunca se antepone un segundo "Dr."/"Dra.".
+function resolverTratamientoProfesionalV1(nombreCrudo) {
+  const nombre = String(nombreCrudo || '').trim();
+  if (!nombre) return null;
+  const m = /^(dra?)\.?\s+(.+)$/i.exec(nombre);
+  if (m) {
+    const esFemenino = /^dra$/i.test(m[1]);
+    return { articulo: esFemenino ? 'la' : 'el', nombreCompleto: `${esFemenino ? 'Dra.' : 'Dr.'} ${m[2].trim()}` };
+  }
+  return { articulo: 'el', nombreCompleto: `Dr. ${nombre}` };
+}
+
+export function armarMensajeWhatsappDocumentoOficial({ nombreDestinatario, estudio, profesionalNombre, enlaceCorto }) {
+  const nombrePila = String(nombreDestinatario || '').trim().split(/\s+/)[0] || '';
+  const tituloEstudio = estudio || 'estudio';
+  const tratamiento = resolverTratamientoProfesionalV1(profesionalNombre);
+  const intro = tratamiento
+    ? `Te enviamos el estudio “${tituloEstudio}”, realizado por ${tratamiento.articulo} ${tratamiento.nombreCompleto}, a través de nuestra plataforma CardioLink.`
+    : `Te enviamos el estudio “${tituloEstudio}” a través de nuestra plataforma CardioLink.`;
+  const lineas = [
+    `📎 Hola${nombrePila ? ' ' + nombrePila : ''}.`,
+    '',
+    intro,
+    '',
+    'Ver o descargar documento:',
+    enlaceCorto || '',
+    '',
+    'El enlace estará disponible durante 7 días.',
+    '',
+    'Recomendamos guardar el informe, adjuntarlo a sus estudios previos y llevarlo al médico solicitante.',
+    '',
+    'Ante dudas sobre la interpretación o el resultado, recomendamos realizar una consulta médica. Este es un canal informativo y no se responderán por esta vía consultas relacionadas con la interpretación del estudio.',
+    '',
+    'Gracias por su confianza 🙌'
+  ];
+  return lineas.join('\n');
+}
+
+// Bloque 6E.2 - plantilla WhatsApp específica para documentos GENERADOS
+// desde CardioLink (Orden/Certificado/Constancia, document_type ya en
+// catálogo limpio - ver punto 8 de la tarea). Distinta de
+// armarMensajeWhatsappDocumentoOficial (esa es para estudios/documentos
+// YA ALMACENADOS de 6E.1, con el texto "el estudio..." que no corresponde
+// acá - punto 15 de la tarea: "NO usar la plantilla clínica de 'estudio'
+// literalmente para un certificado"). Reutiliza
+// resolverTratamientoProfesionalV1 (misma corrección Dr./Dra. de 6E.1,
+// nunca "Dr. Dr.").
+const PLANTILLA_TIPO_DOC_GENERADO_V1 = Object.freeze({
+  Orden: { articulo: 'una', sustantivo: 'orden', participio: 'emitida' },
+  Certificado: { articulo: 'un', sustantivo: 'certificado', participio: 'emitido' },
+  Constancia: { articulo: 'una', sustantivo: 'constancia', participio: 'emitida' }
+});
+export function armarMensajeWhatsappDocumentoGenerado({ nombreDestinatario, tipoDocumento, profesionalNombre, enlaceCorto }) {
+  const nombrePila = String(nombreDestinatario || '').trim().split(/\s+/)[0] || '';
+  const plantilla = PLANTILLA_TIPO_DOC_GENERADO_V1[tipoDocumento] || { articulo: 'un', sustantivo: 'documento', participio: 'emitido' };
+  const tratamiento = resolverTratamientoProfesionalV1(profesionalNombre);
+  const intro = tratamiento
+    ? `Te enviamos ${plantilla.articulo} ${plantilla.sustantivo} ${plantilla.participio} por ${tratamiento.articulo} ${tratamiento.nombreCompleto} a través de nuestra plataforma CardioLink.`
+    : `Te enviamos ${plantilla.articulo} ${plantilla.sustantivo} a través de nuestra plataforma CardioLink.`;
+  const lineas = [
+    `Hola${nombrePila ? ' ' + nombrePila : ''}.`,
+    '',
+    intro,
+    '',
+    'Ver o descargar documento:',
+    enlaceCorto || '',
+    '',
+    'El enlace estará disponible durante 7 días.',
+    '',
+    'Gracias por su confianza 🙌'
+  ];
+  return lineas.join('\n');
+}
+
+// Aviso automático al profesional cuando SECRETARÍA envía (no genera: ya
+// estaba almacenado) un documento/estudio/imagen clínica suyo al paciente.
+// Mismo criterio que armarMensajeProfesionalDocumento (nunca contenido
+// clínico, nunca el archivo) pero distinto evento: acá no se "generó en su
+// nombre", se "envió" algo que ya existía. No se reutiliza
+// armarMensajeProfesionalDocumento tal cual porque su catálogo de tipos
+// (certificado/orden) y su título ("Nuevo documento generado en tu
+// nombre") no corresponden a este caso - mismo archivo, mismo estilo,
+// función hermana nueva en vez de forzar una reutilización que cambiaría
+// el significado de un texto ya aprobado.
+export function armarMensajeProfesionalEnvioDocumento({ pacienteNombre, tipoDocumento, titulo, fechaDocumento, canal, generadoPor }) {
+  const etiquetaCanal = canal === 'whatsapp' ? 'WhatsApp' : (canal === 'email' ? 'Email' : 'Email / WhatsApp');
+  const lineas = [
+    'Documento enviado a paciente',
+    '',
+    `Paciente: ${pacienteNombre || ''}`,
+    `Documento: ${tipoDocumento || ''}${titulo ? ' / ' + titulo : ''}`,
+    `Fecha del documento: ${fechaDocumento ? formatearFechaCorta(fechaDocumento) : ''}`,
+    `Enviado por: ${generadoPor || 'Secretaría'}`,
+    `Canal: ${etiquetaCanal}`,
+    `Fecha y hora: ${formatearFechaHoraCorta(new Date().toISOString())}`
+  ];
+  return {
+    asunto: 'CardioLink — Documento enviado a paciente',
+    mensaje: lineas.join('\n')
+  };
+}

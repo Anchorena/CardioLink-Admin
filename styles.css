@@ -1,4 +1,4 @@
-:root{--bg:#f2f5f7;--card:#fff;--text:#111827;--muted:#4b5563;--line:#e5e7eb;--primary:#123f56;--input:#fff}
+:root{--bg:#f2f5f7;--card:#fff;--text:#111827;--muted:#4b5563;--line:#e5e7eb;--primary:#123f56;--input:#fff;--cardiolink-navy:#082D5B;--cardiolink-blue:#1565C0;--cardiolink-teal:#00BFA5;--cardiolink-cyan:#4DD0E1;--cardiolink-background:#F4F9FC}
 body.dark{--bg:#0f172a;--card:#1e293b;--text:#e5e7eb;--muted:#94a3b8;--line:#334155;--primary:#0e7490;--input:#0f172a}
 *{box-sizing:border-box}body{margin:0;font-family:Arial,sans-serif;background:var(--bg);color:var(--text);display:flex;min-height:100vh}
 .sidebar{width:260px;background:#123f56;color:white;padding:24px 18px;position:fixed;top:0;bottom:0;left:0}
@@ -2342,3 +2342,54 @@ body.dark #hcEvolutionModal button.secondary:hover{background:#31505f}
 
 /* ===== CardioLink Admin v4.0.9.6 · hotfix de rendimiento ===== */
 .patients-directory-row409{content-visibility:auto;contain-intrinsic-size:72px}
+
+/* ===== Fase 6, Bloque 6B - Identidad CardioLink (branding central) =====
+   Acotado al card #cfgIdentidadCardioLink500 - no redefine nada global. */
+#cfgIdentidadCardioLink500 h3{color:var(--cardiolink-navy)}
+#cfgIdentidadCardioLink500 h4{margin-top:18px;color:var(--cardiolink-navy);font-size:14px}
+.identidad-colores-grid500{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin:8px 0 4px}
+.identidad-colores-grid500 input[type="color"]{width:100%;height:36px;padding:2px;border:1px solid var(--line);border-radius:6px}
+.identidad-assets-grid500{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:14px;margin:10px 0 16px}
+.identidad-asset-item500{border:1px solid var(--line);border-radius:10px;padding:10px;background:var(--cardiolink-background)}
+.identidad-asset-preview500{display:flex;align-items:center;gap:8px;margin-top:6px}
+.identidad-asset-preview500 img{width:44px;height:44px;object-fit:contain;border-radius:6px;background:#fff;border:1px solid var(--line)}
+.identidad-asset-status500{font-size:11px;color:var(--muted)}
+
+/* Fase 6 / Bloque 6D - Documentos y estudios (PDF reales en la ficha del
+   paciente). Mismo lenguaje visual que .clinical-docs406 (documentos de
+   texto generados por CardioLink), sin compartir clases: son dos
+   secciones distintas y no deben mezclarse. */
+.pdf-docs-v1{border:1px solid var(--border,#dbe3ec);border-radius:18px;padding:18px;margin:18px 0;background:var(--card,#fff)}
+.pdf-docs-head-v1{display:flex;align-items:flex-start;justify-content:space-between;gap:14px;margin-bottom:12px}
+.pdf-docs-head-v1 h3{margin:0 0 3px}
+.pdf-doc-list-v1{display:flex;flex-direction:column;gap:9px}
+.pdf-doc-row-v1{display:flex;justify-content:space-between;gap:12px;align-items:center;border:1px solid var(--border,#e2e8f0);border-radius:13px;padding:12px 14px;background:var(--soft,#f8fafc)}
+.pdf-doc-row-v1>div:first-child{display:flex;flex-direction:column;gap:3px}
+.pdf-doc-row-v1 span{color:var(--muted,#64748b);font-size:13px}
+.pdf-doc-actions-v1{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+@media(max-width:640px){
+  .pdf-docs-head-v1,.pdf-doc-row-v1{align-items:stretch;flex-direction:column}
+  .pdf-doc-actions-v1{justify-content:flex-start}
+}
+
+/* Bloque 6D.2 - "Estudios / documentos adjuntos" (modal Nueva evolución,
+   lista de adjuntos pendientes antes de guardar) y bloque anidado
+   "Estudios / documentos asociados" dentro de cada evolución ya guardada
+   (línea de tiempo on-screen de Historia Clínica). Reutiliza las mismas
+   clases .pdf-docs-v1/.pdf-doc-row-v1 de arriba para los adjuntos
+   pendientes; el bloque anidado es más compacto (una línea por doc). */
+.pdf-docs-pending-v1{margin:16px 0}
+.pdf-evo-linked-v1{margin-top:10px;padding-top:8px;border-top:1px dashed var(--border,#e2e8f0)}
+.pdf-doc-linked-item-v1{margin:4px 0;font-size:13px;line-height:1.5;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+
+/* Bloque 6D.3 - "Tomar imagen clínica" (cámara/webcam/fallback de
+   archivo). Reutiliza .hc-modal-overlay/.hc-modal-card/.hc-modal-actions
+   ya existentes para el resto de los modales de CardioLink. */
+.pdf-cam-video-v1{display:block;width:100%;max-height:60vh;object-fit:contain;background:#000;border-radius:10px}
+.pdf-cam-thumb-v1{display:block;width:140px;max-height:140px;object-fit:contain;border-radius:8px;border:1px solid var(--border,#e2e8f0);margin-bottom:12px}
+.pdf-doc-linked-img-v1{display:block;margin:6px 0;font-size:13px;line-height:1.5}
+.pdf-doc-linked-img-v1 button{margin-top:4px}
+
+/* Bloque 6E.1 - modal "Enviar documento". */
+.pdf-enviar-canales-v1{display:flex;gap:16px;flex-wrap:wrap;margin-top:4px}
+.pdf-enviar-canales-v1 label{display:flex;align-items:center;gap:6px;font-size:13px;text-transform:none;font-weight:400;color:inherit;letter-spacing:normal}

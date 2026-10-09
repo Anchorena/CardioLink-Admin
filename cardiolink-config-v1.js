@@ -18,6 +18,11 @@
   ]);
 
   const CARD_SECTIONS = Object.freeze({
+    // Fase 6, Bloque 6B: identidad de la PLATAFORMA, separada a propósito
+    // de docProfFields402 (identidad del profesional, reubicada más abajo
+    // por ensureIdentityCard). No hay entrada en FALLBACK_SECTIONS para
+    // 'documentos', por eso se clasifica acá por id explícito.
+    cfgIdentidadCardioLink500: 'documentos',
     cfgProfesionalesBasicoV1A: 'profesionales',
     cfgEspecialidades310: 'profesionales',
     cfgPerfilProfesional310: 'profesionales',
@@ -316,7 +321,10 @@
   function sectionHasContent(doc, section) {
     const body = doc.querySelector(`[data-config-v1-body="${section}"]`);
     if (!body) return false;
-    if (section === 'documentos') return !!doc.getElementById('docProfFields402');
+    // Bloque 6B: la pestaña debe seguir disponible por la identidad de
+    // CardioLink aunque todavía no haya un profesional seleccionado (antes
+    // sólo miraba docProfFields402, que no existe hasta elegir perfil).
+    if (section === 'documentos') return !!doc.getElementById('docProfFields402') || !!doc.getElementById('cfgIdentidadCardioLink500');
     if (section === 'ayuda') return true;
     return Array.from(body.children).some(card => !card.dataset.configV1Generated && isVisibleCard(card));
   }

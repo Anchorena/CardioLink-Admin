@@ -35,3 +35,22 @@ verify_jwt = false
 
 [functions.appointment-cancellation-public]
 verify_jwt = false
+
+# patient-document-delivery (Fase 6 / Bloque 6E.1): mismo motivo que
+# patient-communications. La verificacion real es interna (autenticar()
+# valida el JWT con auth.getUser(); la autorizacion fina por documento
+# queda delegada a la RLS de cardiolink_patient_documents/storage.objects
+# usando un cliente atado a ese mismo JWT - ver comentario en el propio
+# index.ts). NO desplegada en Production todavia, solo STAGING para QA.
+[functions.patient-document-delivery]
+verify_jwt = false
+
+# patient-document-open (ajuste WhatsApp, posterior a 6E.1): funcion
+# PUBLICA, igual que appointment-cancellation-public - quien toca el
+# enlace desde WhatsApp nunca tiene sesion de CardioLink, asi que jamas
+# podria llevar un JWT de Supabase. La unica puerta de entrada real es el
+# token opaco propio (ver cardiolink_document_access_links), validado
+# desde cero en cada request. NO desplegada en Production todavia, solo
+# STAGING para QA.
+[functions.patient-document-open]
+verify_jwt = false
