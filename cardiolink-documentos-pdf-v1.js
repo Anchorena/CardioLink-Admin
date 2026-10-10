@@ -905,6 +905,19 @@
         if(error)throw error;
       }catch(e){fallos.push(id);console.warn('No se pudo desvincular el documento '+id+' de la evolución:',e);}
     }
+    // Bug UI Fase 7 - hasta acá el evolution_id ya quedó actualizado en
+    // Supabase, pero ninguna lista en pantalla se enteraba: ni Ficha del
+    // paciente ni Historia Clínica volvían a pedir los datos (dependía
+    // por completo de que el guardado de la evolución reconstruyera HC
+    // desde cero - Ficha nunca se tocaba). Mismo patientId que ya resuelve
+    // inyectarBotonEvolucionPdfV1 para este mismo modal (atributo que ya
+    // existe en el banner, "Editar ficha") - no se agrega estado nuevo,
+    // sólo se reutiliza. cargarYRenderizarListaPdfV1 ya actualiza todos
+    // los contenedores que coincidan (Ficha y HC a la vez, estén o no
+    // montados en este momento) - mismo mecanismo que ya usan subirPdfV1/
+    // adjuntarImagenV1/guardarPdfDocumentoGenerado406.
+    const patientKey=modal.querySelector('[data-hc-edit-patient409]')?.dataset.hcEditPatient409||'';
+    if(patientKey){try{await cargarYRenderizarListaPdfV1({id:patientKey});}catch(e){console.warn('No se pudo refrescar la lista de documentos tras vincular/desvincular:',e);}}
     if(fallos.length)alert('La evolución se guardó, pero '+fallos.length+' documento(s) no se pudieron vincular/desvincular y quedaron como estudios independientes del paciente.');
   }
   window.vincularAdjuntosPendientesEvolucionV1=vincularAdjuntosPendientesEvolucionV1;

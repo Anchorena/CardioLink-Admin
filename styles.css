@@ -2078,6 +2078,37 @@ body.dark .agenda-patient-evolve-403:hover{background:rgba(157,177,255,.12);colo
    examen físico es el centro de la pantalla: más alto, tipografía más
    cómoda para escribir/dictar. */
 .hc-evolution-grid-408 .hc-main-evolution-408 textarea{min-height:280px;font-size:15.5px;line-height:1.5}
+
+/* FASE 7 - UI Interna V1, Bloque 1: Nueva evolución en dos columnas
+   (contexto clínico a la izquierda / escritura a la derecha) cuando hay
+   ancho suficiente; una sola columna si no. .hc-evo-layout-410f/
+   .hc-evo-context-col/.hc-evo-write-col son clases nuevas y exclusivas
+   de este modal (openEvolutionModalHC, app.js) - no se toca ninguna
+   regla genérica (.hc-modal-grid, etc.) compartida con otros modales de
+   HC. Mismo breakpoint (900px) que ya usan en este mismo modal
+   .hc-modal-grid/.hc-patient-data-408/.hc-vitals-grid410, para que todo
+   el modal colapse a una columna junto, de forma coherente. */
+.hc-evo-layout-410f{display:grid;grid-template-columns:minmax(260px,320px) minmax(0,1fr);gap:16px;align-items:start;margin-top:12px}
+.hc-evo-context-col,.hc-evo-write-col{min-width:0}
+/* Las grillas de signos vitales / datos permanentes vuelven a angostarse
+   porque ahora conviven en una columna más chica que el ancho total del
+   modal - scopeado a .hc-evo-context-col para no afectar esas mismas
+   clases si se usaran en cualquier otro lugar. */
+.hc-evo-context-col .hc-vitals-grid410{grid-template-columns:repeat(2,minmax(0,1fr))}
+.hc-evo-context-col .hc-permanent-grid409{grid-template-columns:1fr}
+@media(max-width:900px){
+  .hc-evo-layout-410f{grid-template-columns:1fr}
+  .hc-evo-context-col .hc-vitals-grid410{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .hc-evo-context-col .hc-permanent-grid409{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:800px){
+  .hc-evo-context-col .hc-permanent-grid409{grid-template-columns:1fr}
+}
+@media(max-width:520px){
+  .hc-evo-layout-410f{gap:12px}
+  .hc-evo-context-col .hc-vitals-grid410{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
 @media(max-width:1100px){.patients-directory-head409,.patients-directory-row409{grid-template-columns:minmax(200px,1.4fr) 110px 80px minmax(135px,1fr) minmax(140px,1fr)}.patients-directory-head409>div:last-child,.patients-directory-row409>div:last-child{display:none}}
 @media(max-width:800px){
   .patients-directory-head409{display:none}
