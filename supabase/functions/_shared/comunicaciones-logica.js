@@ -674,14 +674,19 @@ function resolverTratamientoProfesionalV1(nombreCrudo) {
 }
 
 export function armarMensajeWhatsappDocumentoOficial({ nombreDestinatario, estudio, profesionalNombre, enlaceCorto }) {
-  const nombrePila = String(nombreDestinatario || '').trim().split(/\s+/)[0] || '';
+  // Bug QA real (hotfix Fase 6): acá se truncaba al primer nombre
+  // (.split(/\s+/)[0]) - el saludo debe usar el nombre completo que ya
+  // recibe la función, tal cual llega (sin tocar cómo se resuelve si el
+  // destinatario es paciente o contacto responsable, eso sigue siendo
+  // responsabilidad exclusiva del caller).
+  const nombreCompleto = String(nombreDestinatario || '').trim();
   const tituloEstudio = estudio || 'estudio';
   const tratamiento = resolverTratamientoProfesionalV1(profesionalNombre);
   const intro = tratamiento
     ? `Te enviamos el estudio “${tituloEstudio}”, realizado por ${tratamiento.articulo} ${tratamiento.nombreCompleto}, a través de nuestra plataforma CardioLink.`
     : `Te enviamos el estudio “${tituloEstudio}” a través de nuestra plataforma CardioLink.`;
   const lineas = [
-    `📎 Hola${nombrePila ? ' ' + nombrePila : ''}.`,
+    `📎 Hola${nombreCompleto ? ' ' + nombreCompleto : ''}.`,
     '',
     intro,
     '',
@@ -714,14 +719,16 @@ const PLANTILLA_TIPO_DOC_GENERADO_V1 = Object.freeze({
   Constancia: { articulo: 'una', sustantivo: 'constancia', participio: 'emitida' }
 });
 export function armarMensajeWhatsappDocumentoGenerado({ nombreDestinatario, tipoDocumento, profesionalNombre, enlaceCorto }) {
-  const nombrePila = String(nombreDestinatario || '').trim().split(/\s+/)[0] || '';
+  // Mismo ajuste que armarMensajeWhatsappDocumentoOficial (ver comentario
+  // ahí): nombre completo, sin truncar al primer nombre.
+  const nombreCompleto = String(nombreDestinatario || '').trim();
   const plantilla = PLANTILLA_TIPO_DOC_GENERADO_V1[tipoDocumento] || { articulo: 'un', sustantivo: 'documento', participio: 'emitido' };
   const tratamiento = resolverTratamientoProfesionalV1(profesionalNombre);
   const intro = tratamiento
     ? `Te enviamos ${plantilla.articulo} ${plantilla.sustantivo} ${plantilla.participio} por ${tratamiento.articulo} ${tratamiento.nombreCompleto} a través de nuestra plataforma CardioLink.`
     : `Te enviamos ${plantilla.articulo} ${plantilla.sustantivo} a través de nuestra plataforma CardioLink.`;
   const lineas = [
-    `Hola${nombrePila ? ' ' + nombrePila : ''}.`,
+    `Hola${nombreCompleto ? ' ' + nombreCompleto : ''}.`,
     '',
     intro,
     '',
