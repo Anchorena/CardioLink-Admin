@@ -182,15 +182,19 @@ let backendRolCargado=false;
 let backendRolConsultaFinalizada=false;
 let backendEsAdminOwner=false;
 let backendTieneAccesoTurnos=false;
+let backendPendientesIdentidadV1=null;
+let pendientesOperacionEnCursoV1=false;
 async function cargarPermisoBackendRoles(){
   if(!supabaseClient || !usuarioSupabase) return; // todavía antes del login: ni empezó la consulta
   backendRolConsultaFinalizada=false;
   try{
-    const [adminOwner,appointmentRequests]=await Promise.all([
+    const [adminOwner,appointmentRequests,pendientesIdentidad]=await Promise.all([
       supabaseClient.rpc('cardiolink_es_admin_u_owner'),
-      supabaseClient.rpc('cardiolink_has_appointment_requests_access')
+      supabaseClient.rpc('cardiolink_has_appointment_requests_access'),
+      supabaseClient.rpc('cardiolink_identidad_pendientes_v1')
     ]);
-    if(adminOwner.error||appointmentRequests.error) throw (adminOwner.error||appointmentRequests.error);
+    if(adminOwner.error||appointmentRequests.error||pendientesIdentidad.error) throw (adminOwner.error||appointmentRequests.error||pendientesIdentidad.error);
+    backendPendientesIdentidadV1=pendientesIdentidad.data||null;
     backendEsAdminOwner=adminOwner.data===true;
     backendTieneAccesoTurnos=appointmentRequests.data===true;
     backendRolCargado=true;
@@ -201,7 +205,7 @@ async function cargarPermisoBackendRoles(){
     // sin rol backend confirmado" como permisos mínimos hasta poder
     // determinarlo (no rompe el modo local sin Supabase, que no entra acá).
     console.warn('No se pudo confirmar el rol backend (cardiolink_user_roles):',e);
-    backendRolCargado=false;backendEsAdminOwner=false;backendTieneAccesoTurnos=false;
+    backendRolCargado=false;backendEsAdminOwner=false;backendTieneAccesoTurnos=false;backendPendientesIdentidadV1=null;
   }finally{
     // Corre tanto en éxito como en error (nunca si se volvió antes por
     // falta de supabaseClient/usuarioSupabase): la consulta ya terminó,
@@ -302,7 +306,7 @@ function seccionPermitida(section){
   if(esMatiasDuenio()) return true;
   if(esAdminComun()) return true;
   if(esSecretaria()) return ['dashboard','pendientes383','carga','agenda','mensajes','pacientes','listado','estadisticas','instructivos','solicitudesTurno'].includes(section);
-  if(esMedico()) return ['dashboard','carga','agenda','mensajes','pacientes','hc','listado','estadisticas','instructivos'].includes(section);
+  if(esMedico()) return ['dashboard','pendientes383','carga','agenda','mensajes','pacientes','hc','listado','estadisticas','instructivos'].includes(section);
   return section==='dashboard';
 }
 // Fix mínimo (carrera de permisos en el boot): distingue "todavía no
@@ -7386,7 +7390,8 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     a.actualizadoEn=new Date().toISOString();
   }
   function marcarPendientesVisiblesResueltos350(){
-    let lista=[]; try{lista=filtrar().filter(a=>typeof esPendienteAdministrativo==='function'?esPendienteAdministrativo(a):true);}catch(e){lista=[];}
+    if(esMedico()){alert('Resolvé los pendientes individualmente desde Pendientes.');return;}
+    let lista=[] try{lista=filtrar().filter(a=>typeof esPendienteAdministrativo==='function'?esPendienteAdministrativo(a):true);}catch(e){lista=[];}
     if(!lista.length){alert('No hay pendientes visibles para marcar.');return;}
     if(!confirm(`Vas a marcar como resueltos ${lista.length} registro(s) visibles según el filtro actual. ¿Continuar?`))return;
     lista.forEach(resolverPendiente);
@@ -8063,7 +8068,42 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     return out;
   }
   window.pendientesDeAtencion383=pendientes383;
-  function base383(){try{return typeof atencionesPerfil==='function'?atencionesPerfil().filter(a=>!(typeof esMensajeInterno==='function'&&esMensajeInterno(a))):atenciones}catch{return atenciones||[]}}
+  function base383(){
+    // Pendientes médicos: exclusivamente professional_id autenticado en backend.
+    // cajaPerfil es un destino económico: nunca autoriza ver un pendiente clínico.
+    if(esMedico()){
+      const i=backendPendientesIdentidadV1;
+      if(!backendRolCargado||i?.role!=='medico'||!i?.professional_id)return [];
+      return (atenciones||[]).filter(a=>a?.profesionalId===i.professional_id && !esMensajeInterno(a));
+    }
+    try{return typeof atencionesPerfil==='function'?atencionesPerfil().filter(a=>!(typeof esMensajeInterno==='function'&&esMensajeInterno(a))):atenciones}catch{return []}
+  }
+  async function actualizarPendienteMedicoV1(id,tipo,operacion){
+    const i=backendPendientesIdentidadV1;
+    const registro=(atenciones||[]).find(a=>String(a.id)===String(id));
+    if(!esMedico()||!backendRolCargado||i?.role!=='medico'||!i?.professional_id||
+       !registro||registro.profesionalId!==i.professional_id||pendientesOperacionEnCursoV1){
+      alert('No autorizado para este pendiente.');return false;
+    }
+    pendientesOperacionEnCursoV1=true;
+    try{
+      const {data:actualizado,error}=await supabaseClient.rpc('cardiolink_pendiente_mutar_v1',{
+        p_id:String(id),p_tipo:tipo,p_operacion:operacion
+      });
+      if(error)throw error;
+      const pos=atenciones.findIndex(a=>String(a.id)===String(id));
+      if(pos>=0)atenciones[pos]=actualizado;
+      // No llamar saveAtenciones(): reenvía TODA la colección y pisaría
+      // modificaciones concurrentes de otros usuarios.
+      localStorage.setItem(storageAtenciones,JSON.stringify(atenciones));
+      renderPendientes383();renderTabla?.();renderStats?.();
+      return true;
+    }catch(e){
+      console.error('Pendiente médico no guardado',e);
+      alert('No se pudo guardar el pendiente: '+(e.message||'Error'));
+      return false;
+    }finally{pendientesOperacionEnCursoV1=false;}
+  }
   function labels383(k){return {firma:'Falta firma / bono',copia:'Falta copia facturación',informe:'Falta informe',entrega:'Falta imprimir / enviar',retiro:'Pendiente de retiro',autorizacion:'Falta autorización',cancelado_paciente:'Cancelado por el paciente'}[k]||k}
   function counts383(list){const c={todos:0,firma:0,copia:0,informe:0,entrega:0,retiro:0,autorizacion:0,cancelado_paciente:0};list.forEach(a=>{const p=pendientes383(a);if(p.length)c.todos++;p.forEach(k=>c[k]++)});return c}
   function overdue383(a){try{return typeof diasAntiguedadPendiente411C==='function'&&diasAntiguedadPendiente411C(a)>7}catch(e){return false}}
@@ -8194,7 +8234,13 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   // Guarda quién/cuándo en los 3 campos nuevos del payload (sin tabla
   // nueva, sin migración) y deja traza en auditoriaPendientes (mismo
   // array/formato que audit383 ya usa para el resto de los tipos).
-  function cerrarPendienteCancelacion383(id){
+  async function cerrarPendienteCancelacion383(id){
+    if(esMedico()){
+      if(!confirm('¿Cerrar este pendiente de cancelación?'))return;
+      const ok=await actualizarPendienteMedicoV1(id,'cancelado_paciente','resolver');
+      if(ok){undo383={id,tipo:'cancelado_paciente',medicoV1:true};toastUndo383('Pendiente de cancelación cerrado')}
+      return;
+    }
     const a=(atenciones||[]).find(x=>String(x.id)===String(id));if(!a)return;
     if(!confirm('¿Cerrar este pendiente de cancelación?'))return;
     const prev=JSON.parse(JSON.stringify(a));
@@ -8208,7 +8254,12 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     undo383={id,prev};toastUndo383('Pendiente de cancelación cerrado');
   }
   window.cerrarPendienteCancelacion383=cerrarPendienteCancelacion383;
-  function resolverPendiente383(id,k){
+  async function resolverPendiente383(id,k){
+    if(esMedico()){
+      const ok=await actualizarPendienteMedicoV1(id,k,'resolver');
+      if(ok){undo383={id,tipo:k,medicoV1:true};toastUndo383(labels383(k)+' resuelto')}
+      return;
+    }
     const a=(atenciones||[]).find(x=>String(x.id)===String(id));if(!a)return;
     const prev=JSON.parse(JSON.stringify(a));
     if(k==='firma')a.bonoFirmado=true;
@@ -8222,7 +8273,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   }
   window.resolverPendiente383=resolverPendiente383;
   function toastUndo383(msg){let t=document.getElementById('undoToast383');if(!t){t=document.createElement('div');t.id='undoToast383';t.className='undo-toast383';document.body.appendChild(t)}t.innerHTML=`<span>${esc383(msg)}</span><button type="button" onclick="deshacerPendiente383()">Deshacer</button>`;t.classList.add('show');clearTimeout(t._tm);t._tm=setTimeout(()=>{t.classList.remove('show');undo383=null},6500)}
-  window.deshacerPendiente383=function(){if(!undo383)return;const i=(atenciones||[]).findIndex(x=>String(x.id)===String(undo383.id));if(i>=0){atenciones[i]=undo383.prev;saveAtenciones();renderPendientes383();renderTabla?.();renderStats?.()}document.getElementById('undoToast383')?.classList.remove('show');undo383=null};
+  window.deshacerPendiente383=async function(){if(!undo383)return;if(undo383.medicoV1){const u=undo383;undo383=null;await actualizarPendienteMedicoV1(u.id,u.tipo,'deshacer');document.getElementById('undoToast383')?.classList.remove('show');return;}const i=(atenciones||[]).findIndex(x=>String(x.id)===String(undo383.id));if(i>=0){atenciones[i]=undo383.prev;saveAtenciones();renderPendientes383();renderTabla?.();renderStats?.()}document.getElementById('undoToast383')?.classList.remove('show');undo383=null};
 
   // Un único cálculo para dashboard/listados nuevos.
   const oldEval=typeof evaluarEstado==='function'?evaluarEstado:null;
