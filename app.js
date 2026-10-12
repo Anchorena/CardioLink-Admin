@@ -184,6 +184,10 @@ let backendEsAdminOwner=false;
 let backendTieneAccesoTurnos=false;
 let backendPendientesIdentidadV1=null;
 let pendientesOperacionEnCursoV1=false;
+// Fail-closed: sólo owner/admin (backend) o secretaría (backend) pueden sembrar
+// la nube desde la caché local o forzar un volcado masivo. Médico, o cualquier
+// sesión cuyo rol no se pudo confirmar (RPC caída/sin migrar), nunca.
+function sincronizacionMasivaPermitidaV1(){ return backendEsAdminOwner===true || backendTieneAccesoTurnos===true; }
 async function cargarPermisoBackendRoles(){
   if(!supabaseClient || !usuarioSupabase) return; // todavía antes del login: ni empezó la consulta
   backendRolConsultaFinalizada=false;
@@ -191,10 +195,13 @@ async function cargarPermisoBackendRoles(){
     const [adminOwner,appointmentRequests,pendientesIdentidad]=await Promise.all([
       supabaseClient.rpc('cardiolink_es_admin_u_owner'),
       supabaseClient.rpc('cardiolink_has_appointment_requests_access'),
-      supabaseClient.rpc('cardiolink_identidad_pendientes_v1')
+      // Aislada a propósito: si esta RPC aún no existe (migración sin aplicar)
+      // o falla, NO debe invalidar la detección de owner/admin/secretaría.
+      supabaseClient.rpc('cardiolink_identidad_pendientes_v1').then(r=>r,e=>({data:null,error:e}))
     ]);
-    if(adminOwner.error||appointmentRequests.error||pendientesIdentidad.error) throw (adminOwner.error||appointmentRequests.error||pendientesIdentidad.error);
-    backendPendientesIdentidadV1=pendientesIdentidad.data||null;
+    if(adminOwner.error||appointmentRequests.error) throw (adminOwner.error||appointmentRequests.error);
+    if(pendientesIdentidad.error) console.warn('No se pudo confirmar la identidad de Pendientes (cardiolink_identidad_pendientes_v1):',pendientesIdentidad.error);
+    backendPendientesIdentidadV1=pendientesIdentidad.error?null:(pendientesIdentidad.data||null);
     backendEsAdminOwner=adminOwner.data===true;
     backendTieneAccesoTurnos=appointmentRequests.data===true;
     backendRolCargado=true;
@@ -772,7 +779,7 @@ async function cargarAtencionesDesdeSupabase() {
       await sincronizarAtencionesSupabase(true);
       cargandoDesdeNube = true;
     }
-  } else if (backendPendientesIdentidadV1?.role === 'medico') {
+  } else if (!sincronizacionMasivaPermitidaV1()) {
     // Un médico sin registros visibles NO debe reinsertar registros locales
     // posiblemente ajenos o antiguos. Sincronización clínica segura.
     atenciones = [];
@@ -6218,7 +6225,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         // ya sube cualquier fila que haya cambiado o sea nueva; no hace falta
         // forzar el snapshot completo.
         if(corruptosEliminados>0){ cargandoDesdeNube=false; await sincronizarAtencionesSupabase(false); cargandoDesdeNube=true; }
-      }else if(backendPendientesIdentidadV1?.role==='medico'){
+      }else if(!sincronizacionMasivaPermitidaV1()){
         // RLS puede devolver cero filas aunque la tabla tenga atenciones de
         // otros profesionales. Jamás usar la copia local como bootstrap médico.
         atenciones=[];
@@ -6245,9 +6252,10 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   if(typeof sincronizarAtencionesSupabase==='function'){
     window.sincronizarAtencionesSupabase = sincronizarAtencionesSupabase = async function(forzar=false){
       if(!supabaseClient || !usuarioSupabase) return false;
-      // Médico: nunca permitir un volcado masivo forzado desde caché local.
-      // Los cambios ordinarios siguen el guardado condicionado por versión.
-      if(forzar && backendPendientesIdentidadV1?.role==='medico'){
+      // Médico (o rol no confirmado): nunca permitir un volcado masivo forzado
+      // desde caché local. Los cambios ordinarios siguen el guardado
+      // condicionado por versión.
+      if(forzar && !sincronizacionMasivaPermitidaV1()){
         console.warn('Sincronización forzada deshabilitada para perfil médico.');
         return false;
       }
