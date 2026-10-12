@@ -7391,7 +7391,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   }
   function marcarPendientesVisiblesResueltos350(){
     if(esMedico()){alert('Resolvé los pendientes individualmente desde Pendientes.');return;}
-    let lista=[] try{lista=filtrar().filter(a=>typeof esPendienteAdministrativo==='function'?esPendienteAdministrativo(a):true);}catch(e){lista=[];}
+    let lista=[]; try{lista=filtrar().filter(a=>typeof esPendienteAdministrativo==='function'?esPendienteAdministrativo(a):true);}catch(e){lista=[];}
     if(!lista.length){alert('No hay pendientes visibles para marcar.');return;}
     if(!confirm(`Vas a marcar como resueltos ${lista.length} registro(s) visibles según el filtro actual. ¿Continuar?`))return;
     lista.forEach(resolverPendiente);
