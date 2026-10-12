@@ -232,6 +232,7 @@ function rolBaseUsuarioActual(){
     return (rolLocal==='duenio'||rolLocal==='admin'||rolLocal==='secretaria') ? 'sin_configurar' : rolLocal;
   }
   if(backendEsAdminOwner) return rolLocal; // owner/admin: sin cambios
+  if(backendPendientesIdentidadV1?.role==='medico') return 'medico'; // identidad médica autoritativa
   if(backendTieneAccesoTurnos) return 'secretaria'; // fuerza secretaria aunque el alias/local diga otra cosa
   // Ni admin/owner ni secretaria según backend. No hay RPC acá que
   // distinga médico de una cuenta sin fila en cardiolink_user_roles -
@@ -273,7 +274,10 @@ function exigirConfigAdministrativa(mensaje='Tu perfil no puede modificar esta c
   alert(mensaje);
   return false;
 }
-function profesionalIdUsuarioActual(){ return perfilUsuarioActual().profesionalId || ''; }
+function profesionalIdUsuarioActual(){
+  if(usuarioSupabase && backendRolCargado && backendPendientesIdentidadV1?.role==='medico') return backendPendientesIdentidadV1.professional_id || '';
+  return perfilUsuarioActual().profesionalId || '';
+}
 function nombreUsuarioAuditoria(){
   const u=perfilUsuarioActual();
   return `${u.nombre || u.usuario || usuarioActualNombreCorto()} (${usuarioActualNombreCorto()})`;
