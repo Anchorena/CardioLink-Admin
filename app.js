@@ -6218,6 +6218,11 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         // ya sube cualquier fila que haya cambiado o sea nueva; no hace falta
         // forzar el snapshot completo.
         if(corruptosEliminados>0){ cargandoDesdeNube=false; await sincronizarAtencionesSupabase(false); cargandoDesdeNube=true; }
+      }else if(backendPendientesIdentidadV1?.role==='medico'){
+        // RLS puede devolver cero filas aunque la tabla tenga atenciones de
+        // otros profesionales. Jamás usar la copia local como bootstrap médico.
+        atenciones=[];
+        localStorage.setItem(storageAtenciones,JSON.stringify(atenciones));
       }else if(Array.isArray(atenciones)&&atenciones.length>0){
         // ÚNICO CASO QUE CONSERVA forzar=true (bootstrap inicial, aislado):
         // Supabase confirmó CERO atenciones remotas y existen atenciones
