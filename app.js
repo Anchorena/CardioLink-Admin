@@ -768,6 +768,12 @@ async function cargarAtencionesDesdeSupabase() {
       await sincronizarAtencionesSupabase(true);
       cargandoDesdeNube = true;
     }
+  } else if (backendPendientesIdentidadV1?.role === 'medico') {
+    // Un médico sin registros visibles NO debe reinsertar registros locales
+    // posiblemente ajenos o antiguos. Sincronización clínica segura.
+    atenciones = [];
+    localStorage.setItem(storageAtenciones, JSON.stringify(atenciones));
+    console.log('Sin atenciones visibles para el profesional autenticado.');
   } else if (Array.isArray(atenciones) && atenciones.length > 0) {
     console.log("Supabase está vacío. Se migran atenciones locales a la nube:", atenciones.length);
     cargandoDesdeNube = false;
