@@ -6245,6 +6245,12 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   if(typeof sincronizarAtencionesSupabase==='function'){
     window.sincronizarAtencionesSupabase = sincronizarAtencionesSupabase = async function(forzar=false){
       if(!supabaseClient || !usuarioSupabase) return false;
+      // Médico: nunca permitir un volcado masivo forzado desde caché local.
+      // Los cambios ordinarios siguen el guardado condicionado por versión.
+      if(forzar && backendPendientesIdentidadV1?.role==='medico'){
+        console.warn('Sincronización forzada deshabilitada para perfil médico.');
+        return false;
+      }
       if(cargandoDesdeNube && !forzar) return false;
       if(syncAtencionesEnCurso){ syncAtencionesPendiente=true; return false; }
       syncAtencionesEnCurso=true;
