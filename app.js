@@ -9485,6 +9485,143 @@ function patientInfoTextHC(p,coverage){
     try{renderDetailHC(patientKey);}catch(e){}
   }
   function renderAttentionEventHC(a){return `<article class="hc-event attention" data-hc-attention-id="${escHC(a.id)}"><div class="hc-event-head"><div><strong>${escHC(a.prestacion||'Atención')}</strong><div class="hc-event-meta">${escHC(formatFecha?.(a.fecha)||a.fecha||'')} ${escHC(a.horaInicio||'')} · ${escHC(a.profesional||'')}</div></div><span class="hc-lock">Atención administrativa</span></div><div class="hc-event-section"><label>Cobertura</label><p>${escHC(a.obraSocial||'s/d')}</p></div>${a.observaciones?`<div class="hc-event-section"><label>Observaciones</label><p>${escHC(a.observaciones)}</p></div>`:''}<div class="hc-event-section"><button class="secondary small-btn" data-hc-new="${escHC(hcPacienteSeleccionado)}" data-atencion-id="${escHC(a.id)}">Evolucionar esta atención</button></div></article>`;}
+  // FASE 7 - Bloque 2: antecedentes / alergias / medicación habitual en
+  // modo lectura compacto + edición directa, SIN desmontar ni recrear los
+  // textarea (mismos id hcSumAntecedentes409/hcSumAlergias409/
+  // hcSumMedicacion409, mismo value, mismo guardado en saveEvolutionHC y
+  // mismo dictado por data-cl-voice-target4094): sólo se alterna una clase
+  // (.is-editing) y se refresca un <div> de resumen a partir del value del
+  // propio textarea. En lectura el textarea queda con alto 0 pero sigue
+  // siendo enfocable, así el dictado (que hace target.focus()) lo reabre.
+  // Alergias: tres estados reales, nunca se infiere "sin alergias" de un
+  // campo vacío - vacío = "no registradas"; la ausencia conocida se
+  // registra de forma explícita con el texto canónico de abajo (mismo
+  // campo de texto de siempre, sin cambios de esquema).
+  // Íconos de los títulos clínicos: SVG inline (sin bibliotecas ni
+  // dependencias), decorativos (aria-hidden): el título de texto siempre
+  // identifica la sección, el color y el ícono sólo refuerzan.
+  const SVG410I=d=>`<svg class="hc-ico410i" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" focusable="false">${d}</svg>`;
+  const ICO_ANTECEDENTES_410I=SVG410I('<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>');
+  const ICO_MEDICACION_410I=SVG410I('<path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/>');
+  const ICO_ALERGIAS_410I=SVG410I('<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>');
+  const ALERGIAS_NINGUNA_410G='Sin alergias conocidas';
+  const normTxt410g=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[.\s]+$/,'').trim().toLowerCase();
+  const esAlergiasNinguna410g=v=>normTxt410g(v)===normTxt410g(ALERGIAS_NINGUNA_410G);
+  // Ajuste de seguridad clínica: si el campo estaba EXACTAMENTE en "Sin
+  // alergias conocidas" y el usuario (o el dictado) agrega una alergia, la
+  // frase se descarta y queda sólo el contenido nuevo - nunca "Sin alergias
+  // conocidas Penicilina". Sólo se llama cuando el estado previo era
+  // "ninguna" (ver el listener de input): cualquier otro texto histórico
+  // ("Sin alergias conocidas, salvo penicilina", "niega", etc.) no se toca.
+  function sanearAlergiasNinguna410g(ta){
+    const v=String(ta.value||'');
+    if(esAlergiasNinguna410g(v))return false;
+    if(!/sin\s+alergias\s+conocidas/i.test(v))return false;
+    const resto=v.replace(/sin\s+alergias\s+conocidas\s*[.,;:]?/gi,'').split('\n').map(l=>l.replace(/[ \t]{2,}/g,' ').trim()).filter(Boolean).join('\n');
+    if(!resto)return false;
+    ta.value=resto;try{ta.setSelectionRange(resto.length,resto.length);}catch(e){}
+    return true;
+  }
+  function initResumenCompacto410g(overlay){
+    const bloques=[...overlay.querySelectorAll('[data-sum-field410g]')];
+    const refrescar=b=>{
+      const tipo=b.dataset.sumField410g,ta=b.querySelector('textarea'),vista=b.querySelector('.hc-sum-view-410g');
+      if(!ta||!vista)return;
+      const valor=String(ta.value||'').trim(),plano=valor.replace(/\s*\n+\s*/g,' · ');
+      let estado,texto;
+      if(tipo==='alergias'){
+        if(!valor){estado='unknown';texto='⚠ Alergias no registradas';}
+        else if(esAlergiasNinguna410g(valor)){estado='none';texto='✓ '+ALERGIAS_NINGUNA_410G;}
+        else{estado='registered';texto=plano;}
+        const chk=b.querySelector('[data-hc-noallergy410g]');
+        if(chk){chk.checked=estado==='none';chk.disabled=estado==='registered';chk.title=estado==='registered'?'Hay alergias registradas: borrá el texto para poder marcar esta opción.':'';}
+      }else{
+        estado=valor?'filled':'empty';texto=valor?plano:'Sin registrar';
+      }
+      b.dataset.estadoPrev410g=estado;
+      vista.dataset.estado=estado;(vista.querySelector('.hc-sum-text-410g')||vista).textContent=texto;vista.title=valor;
+    };
+    const abrir=(b,enfocar)=>{
+      const ta=b.querySelector('textarea'),yaEditando=b.classList.contains('is-editing');
+      b.classList.add('is-editing');if(ta)ta.tabIndex=0;
+      // Desde "Sin alergias conocidas": todo el texto queda seleccionado,
+      // así lo primero que se escriba o dicte REEMPLAZA ese estado en vez de
+      // sumarse (sólo al entrar en edición, nunca en cada tecla).
+      const reemplazable=!!ta&&!yaEditando&&b.dataset.sumField410g==='alergias'&&esAlergiasNinguna410g(ta.value);
+      if(reemplazable){try{ta.setSelectionRange(0,ta.value.length);}catch(e){}}
+      if(enfocar&&ta){ta.focus();if(!reemplazable){try{ta.setSelectionRange(ta.value.length,ta.value.length);}catch(e){}}}
+    };
+    const cerrar=b=>{const ta=b.querySelector('textarea');b.classList.remove('is-editing');if(ta)ta.tabIndex=-1;refrescar(b);};
+    bloques.forEach(b=>{const ta=b.querySelector('textarea');if(ta)ta.tabIndex=-1;refrescar(b);});
+    const bloqueDe=el=>el?.closest?.('[data-sum-field410g]');
+    overlay.addEventListener('click',e=>{const v=e.target.closest?.('.hc-sum-view-410g');if(v){const b=bloqueDe(v);if(b)abrir(b,true);}});
+    overlay.addEventListener('keydown',e=>{
+      if((e.key==='Enter'||e.key===' ')&&e.target.classList?.contains('hc-sum-view-410g')){e.preventDefault();const b=bloqueDe(e.target);if(b)abrir(b,true);}
+    });
+    // El dictado SIEMPRE dispara "input" tras insertar texto: además de
+    // refrescar el resumen, abre la edición (respaldo que no depende de
+    // que el navegador entregue focusin).
+    overlay.addEventListener('input',e=>{
+      const b=bloqueDe(e.target);if(!b||e.target.tagName!=='TEXTAREA')return;
+      if(b.dataset.sumField410g==='alergias'&&b.dataset.estadoPrev410g==='none')sanearAlergiasNinguna410g(e.target);
+      abrir(b,false);refrescar(b);
+    });
+    // Teclear/pegar/borrar sobre "Sin alergias conocidas" con el cursor en
+    // el medio de la frase también la REEMPLAZA completa (se selecciona
+    // todo justo antes de que el navegador aplique la edición). No se toca
+    // durante composición (IME/teclado predictivo): ahí manda el saneador.
+    overlay.addEventListener('beforeinput',e=>{
+      const ta=e.target;if(ta.tagName!=='TEXTAREA')return;
+      const b=bloqueDe(ta);if(!b||b.dataset.sumField410g!=='alergias')return;
+      const tipo=String(e.inputType||'');
+      if(e.isComposing||!/^(insert|delete)/.test(tipo)||/Composition/i.test(tipo))return;
+      if(esAlergiasNinguna410g(ta.value)&&!(ta.selectionStart===0&&ta.selectionEnd===ta.value.length)){
+        try{ta.setSelectionRange(0,ta.value.length);}catch(err){}
+      }
+    });
+    // Cualquier foco al textarea (click en la etiqueta, Tab, o el
+    // target.focus() del dictado por voz) abre la edición.
+    overlay.addEventListener('focusin',e=>{const b=bloqueDe(e.target);if(b&&e.target.tagName==='TEXTAREA')abrir(b,false);});
+    // Tocar "Dictar" abre la edición ya mismo (el dictado recién enfoca el
+    // textarea al llegar el primer resultado).
+    overlay.addEventListener('pointerdown',e=>{
+      const btn=e.target.closest?.('[data-cl-voice-target4094]');const b=bloqueDe(btn);
+      if(b){b.dataset.vozTs410g=String(Date.now());abrir(b,false);}
+    });
+    overlay.addEventListener('focusout',e=>{
+      const b=bloqueDe(e.target);if(!b)return;
+      setTimeout(()=>{
+        if(!overlay.isConnected||b.contains(document.activeElement))return;
+        if(b.querySelector('[data-cl-voice-target4094].is-listening'))return;
+        if(Date.now()-Number(b.dataset.vozTs410g||0)<4000)return;
+        cerrar(b);
+      },0);
+    });
+    overlay.addEventListener('change',e=>{
+      const chk=e.target.closest?.('[data-hc-noallergy410g]');if(!chk)return;
+      const b=bloqueDe(chk),ta=b?.querySelector('textarea');if(!ta)return;
+      ta.value=chk.checked?ALERGIAS_NINGUNA_410G:'';
+      refrescar(b);
+    });
+  }
+  // FASE 7 - Nueva evolución, columna izquierda: cada evolución previa se
+  // muestra como una tarjeta legible (fecha + profesional, motivo, Dx/Plan
+  // recortados, signos vitales) en vez de una sola línea. SÓLO presentación:
+  // usa exactamente los mismos datos de siempre (data-hc-prev-all411 /
+  // cronologiaBreveHC); "Ver todas/Ver detalle", "Continuar última" y
+  // "Traer seleccionados" no se tocan. completo=true (Ver todas/detalle)
+  // muestra los textos íntegros, como antes.
+  function articuloPrevHC410h(e,vit,completo){
+    const motivo=e.motivo||'',dx=e.diagnostico||'',ev=e.evolucion||'',plan=e.conducta||'';
+    const prof=e.profesional||e.profesionalNombre||'';
+    const titulo=motivo||dx||ev||'Evolución clínica';
+    const linea=(rot,txt)=>txt?`<div class="hc-prev-line410h"><b>${rot}</b> ${escHC(txt)}</div>`:'';
+    const parrafo=(rot,txt)=>txt?`<p class="hc-prev-full410h"><b>${rot}:</b> ${escHC(txt)}</p>`:'';
+    const cuerpo=completo
+      ?parrafo('Evolución',ev)+parrafo('Diagnóstico',dx)+parrafo('Conducta',plan)
+      :(()=>{const l=((dx&&titulo!==dx)?linea('Dx',dx):((!dx&&motivo&&ev)?linea('Evol.',ev):''))+linea('Plan',plan);return l?`<div class="hc-prev-lines410h">${l}</div>`:'';})();
+    return `<article class="hc-prev-item410h"><div class="hc-prev-head410h"><strong>${escHC(fmtDateTimeHC(e.fechaHora))}</strong>${prof?`<small>${escHC(prof)}</small>`:''}</div><div class="hc-prev-motivo410h">${escHC(titulo)}</div>${cuerpo}${vit?`<small class="hc-prev-vit410h">${escHC(vit)}</small>`:''}</article>`;
+  }
   function openEvolutionModalHC(key,evolutionId='',atencionId=''){
     if(!requireClinicalHC())return;
     const p=patientByKeyHC(key);if(!p)return;ensureHC();
@@ -9507,7 +9644,21 @@ function patientInfoTextHC(p,coverage){
     // de la atención vinculada (fuente única). No se copian a la evolución
     // ni a ninguna otra estructura, y si no hay atención vinculada no se
     // muestra nada (nada que inventar).
-    const episodeContextHtml410e=attention?`<div class="hc-episode-context411e"><span class="hc-episode-context-title411e">Contexto del turno · solo lectura</span><div class="hc-episode-context-grid411e"><div><span>Solicitante / derivante</span><strong>${escHC(attention.medicoSolicitante||attention.derivante||'s/d')}</strong></div><div><span>Motivo</span><strong>${escHC(attention.motivoSolicitud||attention.motivoConsulta||'s/d')}</strong></div>${attention.observacionClinica?`<div class="full"><span>Observación clínica</span><strong>${escHC(attention.observacionClinica)}</strong></div>`:''}</div></div>`:'';
+    // El médico solicitante y el MOTIVO DE DERIVACIÓN (motivoSolicitud, el
+    // "Motivo / indicación" que carga Secretaría) se muestran ahora en la
+    // franja "Médico que refiere / deriva / solicita" de la columna
+    // izquierda; acá sólo queda lo que NO está en esa franja, para no
+    // duplicar: la observación clínica y - únicamente si no hay motivo de
+    // derivación - el motivo de consulta cargado en el turno (otro concepto,
+    // por eso se rotula distinto).
+    const episodeContextHtml410e=(()=>{
+      if(!attention)return '';
+      const motivoDerivacion=String(attention.motivoSolicitud||'').trim(),motivoConsultaTurno=String(attention.motivoConsulta||'').trim();
+      const items=[];
+      if(!motivoDerivacion&&motivoConsultaTurno)items.push(`<div class="full"><span>Motivo de consulta (turno)</span><strong>${escHC(motivoConsultaTurno)}</strong></div>`);
+      if(attention.observacionClinica)items.push(`<div class="full"><span>Observación clínica</span><strong>${escHC(attention.observacionClinica)}</strong></div>`);
+      return items.length?`<div class="hc-episode-context411e"><span class="hc-episode-context-title411e">Contexto del turno · solo lectura</span><div class="hc-episode-context-grid411e">${items.join('')}</div></div>`:'';
+    })();
     // FASE 4 - "previo" de cada signo vital: referencia discreta de la
     // última evolución CON algún signo vital cargado (mismo criterio que
     // ultimaEvolucionConVitalesHC, ya usado en el detalle de HC),
@@ -9532,11 +9683,11 @@ function patientInfoTextHC(p,coverage){
     const prevEvolutionsHtml410e=(()=>{
       const prev=cronologiaBreveHC(p,existing?.id||''),allPrev=cronologiaCompletaHC(p,existing?.id||'');
       const countTxt=allPrev.length?`${allPrev.length} evolución(es) previa(s)`:'sin evoluciones previas';
-      return `<details class="hc-prev-evolutions410" id="hcPrevSection411" data-hc-prev-all411="${escHC(encodeURIComponent(JSON.stringify(allPrev.map(e=>({id:e.id,fechaHora:e.fechaHora,motivo:e.motivo||'',evolucion:e.evolucion||'',diagnostico:e.diagnostico||'',conducta:e.conducta||'',vitales:vitalesHC(e)})))))}">
+      return `<details class="hc-prev-evolutions410" id="hcPrevSection411" data-hc-prev-all411="${escHC(encodeURIComponent(JSON.stringify(allPrev.map(e=>({id:e.id,fechaHora:e.fechaHora,motivo:e.motivo||'',evolucion:e.evolucion||'',diagnostico:e.diagnostico||'',conducta:e.conducta||'',vitales:vitalesHC(e),profesional:e.profesionalNombre||''})))))}">
         <summary class="hc-prev-summary410">Evoluciones previas <span class="hc-prev-count410">${escHC(countTxt)}</span></summary>
         <div class="hc-prev-body410">
           <div class="hc-prev-head410">${allPrev.length?`<div class="hc-prev-actions411"><button class="secondary small-btn" type="button" id="hcVerTodas411">${allPrev.length>3?'Ver todas':'Ver detalle'}</button>${!existing?`<button class="secondary small-btn" type="button" id="hcContinuarUltima411">Continuar última</button>`:''}</div>`:''}</div>
-          <div id="hcPrevList411">${prev.length?prev.map(e=>`<article><strong>${escHC(fmtDateTimeHC(e.fechaHora))}</strong><span>${escHC(e.motivo||e.diagnostico||e.evolucion||'Evolución clínica')}</span>${vitalesHC(e)?`<small>${vitalesHC(e)}</small>`:''}</article>`).join(''):`<div class="muted">Esta será la primera evolución clínica registrada.</div>`}</div>
+          <div id="hcPrevList411">${prev.length?prev.map(e=>articuloPrevHC410h(e,vitalesHC(e),false)).join(''):`<div class="muted">Esta será la primera evolución clínica registrada.</div>`}</div>
           ${allPrev.length&&!existing?`<div class="hc-continue-panel411 hidden" id="hcContinuePanel411"><div><strong>Traer de la última evolución</strong><p class="muted">Elegí qué campos querés reutilizar. No se copian signos vitales, fecha ni datos permanentes.</p></div><div class="hc-continue-options411"><label><input type="checkbox" data-hc-copyfield411="motivo"> Motivo</label><label><input type="checkbox" data-hc-copyfield411="evolucion"> Evolución / examen</label><label><input type="checkbox" data-hc-copyfield411="diagnostico"> Diagnóstico</label><label><input type="checkbox" data-hc-copyfield411="conducta"> Conducta / plan</label></div><div class="hc-continue-actions411"><button type="button" class="secondary small-btn" id="hcCancelarContinuar411">Cancelar</button><button type="button" class="primary small-btn" id="hcAplicarContinuar411">Traer seleccionados</button></div></div>`:''}
         </div>
       </details>`;
@@ -9555,6 +9706,10 @@ function patientInfoTextHC(p,coverage){
     // duplicarlo en la narrativa. Vacío si la evolución no está vinculada a
     // un turno.
     overlay.dataset.solicitanteAtencion410e=attention?(attention.medicoSolicitante||attention.derivante||''):'';
+    // Motivo de derivación registrado por Secretaría en el turno (solo
+    // lectura, mismo origen que el solicitante: la atención vinculada). NO
+    // es el motivo de consulta de la evolución (#hcMotivo) y nunca se copia ahí.
+    overlay.dataset.motivoDerivacion410i=attention?String(attention.motivoSolicitud||'').trim():'';
     overlay.innerHTML=`<div class="hc-modal-card hc-evolution-card-408 hc-evolution-card-409"><div class="hc-modal-head"><div><h2>${existing?'Editar evolución':'Nueva evolución'}</h2><p class="muted">Registro clínico del paciente</p></div><button class="modal-close" type="button" data-hc-close>×</button></div>
       <section class="hc-patient-banner-408"><div class="hc-patient-title-408"><div><h3 data-hc-patient-name409>${escHC(nombrePacientePanel?.(p)||p.nombreCompleto||'Paciente')}</h3><p class="muted hc-evo-meta411e">${escHC(evoMetaTxt410e)}</p>${p.fechaNacimiento&&!dob?'<div class="hc-invalid-date409">Fecha de nacimiento inválida: corregila para calcular la edad.</div>':''}</div><div class="hc-patient-title-actions409"><button class="secondary small-btn" type="button" data-hc-edit-patient409="${escHC(patientKey)}" data-hc-edit-context409="evolution">Editar ficha</button></div></div>
         <div class="hc-patient-data-408"><div><span>DNI</span><strong data-hc-field409="dni">${escHC(p.dni||'s/d')}</strong></div><div><span>Fecha de nacimiento</span><strong data-hc-field409="birth">${escHC(dob?(formatFecha?.(dob)||dob):(p.fechaNacimiento?'Fecha inválida':'s/d'))}</strong></div><div><span>Edad</span><strong data-hc-field409="age">${escHC(age?age+' años':'s/d')}</strong></div><div><span>Sexo</span><strong data-hc-field409="sex">${escHC(p.sexo||'s/d')}</strong></div><div><span>Obra social</span><strong data-hc-field409="coverage">${escHC(coverage)}</strong></div><div><span>N.º afiliado</span><strong data-hc-field409="affiliate">${escHC(p.numeroAfiliadoHabitual||attention?.numeroAfiliadoAtencion||'s/d')}</strong></div><div><span>Teléfono</span><strong data-hc-field409="phone">${escHC(phone||'s/d')}</strong></div><div><span>Email</span><strong data-hc-field409="email">${escHC(email||'s/d')}</strong></div></div>
@@ -9562,7 +9717,6 @@ function patientInfoTextHC(p,coverage){
         ${episodeContextHtml410e}
       </section>
       <div class="hc-evo-layout-410f"><div class="hc-evo-context-col">
-      ${prevEvolutionsHtml410e}
       <section class="hc-vitals-section410"><div class="hc-permanent-title409"><div><h3>Signos vitales y antropometría</h3><p class="muted">Opcionales. Cada evolución guarda los valores de ese momento; no se copian valores anteriores.</p></div></div><div class="hc-vitals-grid410">
         <label>Peso (kg)<input id="hcPeso410" type="number" inputmode="decimal" min="0" step="0.1" value="${existing?.pesoKg??''}" placeholder="Ej. 88">${prevVital410e('pesoKg','kg')}</label>
         <label>Talla (cm)<input id="hcTalla410" type="number" inputmode="decimal" min="0" step="0.1" value="${existing?.tallaCm??''}" placeholder="Ej. 185">${prevVital410e('tallaCm','cm')}</label>
@@ -9571,11 +9725,59 @@ function patientInfoTextHC(p,coverage){
         <label>FC (lpm)<input id="hcFc410" type="number" inputmode="numeric" min="0" step="1" value="${existing?.frecuenciaCardiaca??''}" placeholder="70">${prevVital410e('frecuenciaCardiaca','lpm')}</label>
         <label>SatO₂ (%)<input id="hcSat410" type="number" inputmode="decimal" min="0" max="100" step="0.1" value="${existing?.sato2??''}" placeholder="98">${prevVital410e('sato2','%')}</label>
       </div></section>
-      <section class="hc-permanent-data409"><div class="hc-permanent-title409"><div><h3>Datos clínicos permanentes</h3><p class="muted">Se actualizan en el resumen del paciente y quedan visibles en futuras consultas.</p></div></div><div class="hc-permanent-grid409"><div><div class="cl-voice-label4094"><label for="hcSumAntecedentes409">Antecedentes</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAntecedentes409" aria-label="Dictar antecedentes">🎤 Dictar</button></div><textarea id="hcSumAntecedentes409" rows="3" placeholder="HTA, DBT, cirugías, antecedentes relevantes...">${escHC(sum.antecedentes||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcSumAlergias409">Alergias</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAlergias409" aria-label="Dictar alergias">🎤 Dictar</button></div><textarea id="hcSumAlergias409" rows="3" placeholder="Fármacos, alimentos u otras alergias...">${escHC(sum.alergias||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcSumMedicacion409">Medicación habitual</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumMedicacion409" aria-label="Dictar medicación habitual">🎤 Dictar</button></div><textarea id="hcSumMedicacion409" rows="3" placeholder="Medicamento, dosis y esquema...">${escHC(sum.medicacion||'')}</textarea></div></div></section>
+      <section class="hc-permanent-data409"><div class="hc-permanent-title409"><div><h3>Datos clínicos permanentes</h3><p class="muted">Se actualizan en el resumen del paciente y quedan visibles en futuras consultas.</p></div></div><div class="hc-permanent-grid409"><div class="hc-sum-field-410g" data-sum-field410g="antecedentes"><div class="cl-voice-label4094"><label for="hcSumAntecedentes409">${ICO_ANTECEDENTES_410I}Antecedentes</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAntecedentes409" aria-label="Dictar antecedentes">🎤 Dictar</button></div><div class="hc-sum-view-410g" role="button" tabindex="0" data-sum-view410g="hcSumAntecedentes409" aria-label="Editar antecedentes"><span class="hc-sum-text-410g"></span></div><textarea id="hcSumAntecedentes409" rows="3" placeholder="HTA, DBT, cirugías, antecedentes relevantes...">${escHC(sum.antecedentes||'')}</textarea></div><div class="hc-sum-field-410g" data-sum-field410g="alergias"><div class="cl-voice-label4094"><label for="hcSumAlergias409">${ICO_ALERGIAS_410I}Alergias</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAlergias409" aria-label="Dictar alergias">🎤 Dictar</button></div><div class="hc-sum-view-410g" role="button" tabindex="0" data-sum-view410g="hcSumAlergias409" aria-label="Editar alergias"><span class="hc-sum-text-410g"></span></div><textarea id="hcSumAlergias409" rows="3" placeholder="Fármacos, alimentos u otras alergias...">${escHC(sum.alergias||'')}</textarea><label class="hc-noalg-410g"><input type="checkbox" data-hc-noallergy410g> Sin alergias conocidas</label></div><div class="hc-sum-field-410g" data-sum-field410g="medicacion"><div class="cl-voice-label4094"><label for="hcSumMedicacion409">${ICO_MEDICACION_410I}Medicación habitual</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumMedicacion409" aria-label="Dictar medicación habitual">🎤 Dictar</button></div><div class="hc-sum-view-410g" role="button" tabindex="0" data-sum-view410g="hcSumMedicacion409" aria-label="Editar medicación habitual"><span class="hc-sum-text-410g"></span></div><textarea id="hcSumMedicacion409" rows="3" placeholder="Medicamento, dosis y esquema...">${escHC(sum.medicacion||'')}</textarea></div></div></section>
       </div><div class="hc-evo-write-col">
       <div class="hc-modal-grid hc-evolution-grid-408"><div class="full hc-motive-field-408"><div class="cl-voice-label4094"><label for="hcMotivo">Motivo de consulta</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcMotivo" aria-label="Dictar motivo de consulta">🎤 Dictar</button></div><input id="hcMotivo" type="text" placeholder="Ej.: control de HTA, dolor precordial, apto físico" value="${escHC(existing?.motivo||'')}"></div><div class="full hc-main-evolution-408"><div class="cl-voice-label4094"><label for="hcEvolucion">Evolución / examen físico</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcEvolucion" aria-label="Dictar evolución y examen físico">🎤 Dictar</button></div><textarea id="hcEvolucion" placeholder="Narrativa clínica, hallazgos, signos vitales...">${escHC(existing?.evolucion||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcDiagnostico">Impresión diagnóstica</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcDiagnostico" aria-label="Dictar impresión diagnóstica">🎤 Dictar</button></div><textarea id="hcDiagnostico" placeholder="Diagnósticos o problemas activos">${escHC(existing?.diagnostico||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcConducta">Conducta / plan</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcConducta" aria-label="Dictar conducta y plan">🎤 Dictar</button></div><textarea id="hcConducta" placeholder="Tratamiento, indicaciones, estudios, control">${escHC(existing?.conducta||'')}</textarea></div></div>
+      ${prevEvolutionsHtml410e}
       </div></div><div class="hc-modal-actions">${existing&&puedeEliminarEvolucionHC()?`<button class="danger" type="button" id="hcDeleteEvolucion411e">Eliminar</button>`:''}<button class="secondary" type="button" data-hc-close>Cancelar</button><button class="primary" type="button" id="hcGuardarEvolucion">${existing?'Guardar cambios':'Guardar evolución'}</button></div></div>`;
     document.body.appendChild(overlay);
+    // FASE 7 - Bloque 1, corrección QA visual (punto 4/7): bloquear el
+    // scroll de la página de fondo mientras "Nueva evolución" está
+    // abierta, reutilizando la clase ya existente body.patient-modal-open-371
+    // (mismo mecanismo que #pacienteGlobalModal, ver openPatient360 en
+    // app.js) - no se crea ningún overlay/estilo nuevo. overflow:hidden en
+    // body no resetea el scroll de la página: al sacar la clase, el fondo
+    // queda exactamente en la posición en la que estaba (requisito de
+    // "conservar la posición previa"), sin necesidad de guardar/restaurar
+    // manualmente ningún scrollTop. El cierre del modal puede pasar por
+    // varios caminos (Cancelar, Guardar, Eliminar, cierre de sesión) - en
+    // vez de agregar la limpieza en cada uno, un MutationObserver detecta
+    // la desaparición real del modal y saca la clase una sola vez, sin
+    // importar quién lo haya cerrado.
+    document.body.classList.add('patient-modal-open-371');
+    const bodyScrollLockObs410f=new MutationObserver(()=>{
+      if(!document.getElementById('hcEvolutionModal')){
+        document.body.classList.remove('patient-modal-open-371');
+        bodyScrollLockObs410f.disconnect();
+      }
+    });
+    bodyScrollLockObs410f.observe(document.body,{childList:true});
+    initResumenCompacto410g(overlay);
+    // El módulo del derivante inserta su tarjeta justo antes de
+    // #hcPrevSection411, que ahora está al final de la columna DERECHA: se
+    // la devuelve a la columna izquierda, primera (sin tocar ese módulo;
+    // sólo se la reubica en el DOM, sus ids y listeners no cambian). El
+    // orden del DOM = orden visual = orden de Tab.
+    const colCtx410h=overlay.querySelector('.hc-evo-context-col');
+    if(colCtx410h){
+      // Se mira todo el modal (la tarjeta puede aparecer en cualquier columna).
+      const derivantePrimero=()=>{
+        const c=overlay.querySelector('.cl-requester-card411r');if(!c)return;
+        if(c.parentElement!==colCtx410h||colCtx410h.firstElementChild!==c)colCtx410h.insertBefore(c,colCtx410h.firstElementChild);
+        // Motivo de derivación (sólo lectura): si existe se muestra dentro de
+        // la misma tarjeta; si no existe, no se inventa nada.
+        const motivo=overlay.dataset.motivoDerivacion410i||'';
+        if(motivo&&!c.querySelector('.hc-deriv-motivo410i')){
+          const fila=document.createElement('div');fila.className='hc-deriv-motivo410i';
+          const rot=document.createElement('span');rot.className='hc-deriv-rot410i';rot.textContent='Motivo de derivación';
+          const val=document.createElement('span');val.className='hc-deriv-val410i';val.textContent=motivo;
+          fila.append(rot,val);c.appendChild(fila);
+        }
+      };
+      derivantePrimero();
+      const obsDeriv410h=new MutationObserver(()=>{if(!overlay.isConnected){obsDeriv410h.disconnect();return;}derivantePrimero();});
+      obsDeriv410h.observe(overlay,{childList:true,subtree:true});
+    }
     const recalcularImc410=()=>{const v=imcHC($hc('hcPeso410')?.value,$hc('hcTalla410')?.value);if($hc('hcImc410'))$hc('hcImc410').value=v??'';};
     $hc('hcPeso410')?.addEventListener('input',recalcularImc410);$hc('hcTalla410')?.addEventListener('input',recalcularImc410);recalcularImc410();
 
@@ -9586,7 +9788,8 @@ function patientInfoTextHC(p,coverage){
     const pintarPrev411=()=>{
       const list=$hc('hcPrevList411');if(!list)return;
       const arr=mostrandoTodas411?prevAll411:prevAll411.slice(0,3);
-      list.innerHTML=arr.length?arr.map(e=>`<article><strong>${escHC(fmtDateTimeHC(e.fechaHora))}</strong><span>${escHC(e.motivo||e.diagnostico||e.evolucion||'Evolución clínica')}</span>${e.vitales?`<small>${escHC(e.vitales)}</small>`:''}${mostrandoTodas411?`${e.evolucion?`<p><b>Evolución:</b> ${escHC(e.evolucion)}</p>`:''}${e.diagnostico?`<p><b>Diagnóstico:</b> ${escHC(e.diagnostico)}</p>`:''}${e.conducta?`<p><b>Conducta:</b> ${escHC(e.conducta)}</p>`:''}`:''}</article>`).join(''):'<div class="muted">Esta será la primera evolución clínica registrada.</div>';
+      list.classList.toggle('is-all410h',mostrandoTodas411);
+      list.innerHTML=arr.length?arr.map(e=>articuloPrevHC410h(e,e.vitales||'',mostrandoTodas411)).join(''):'<div class="muted">Esta será la primera evolución clínica registrada.</div>';
       if($hc('hcVerTodas411'))$hc('hcVerTodas411').textContent=mostrandoTodas411?'Ver últimas 3':(prevAll411.length>3?'Ver todas':'Ver detalle');
     };
     $hc('hcVerTodas411')?.addEventListener('click',()=>{mostrandoTodas411=!mostrandoTodas411;pintarPrev411();});
