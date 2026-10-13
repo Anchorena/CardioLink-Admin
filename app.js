@@ -206,6 +206,48 @@ function nombreVisibleBackendV1(){
 // la nube desde la caché local o forzar un volcado masivo. Médico, o cualquier
 // sesión cuyo rol no se pudo confirmar (RPC caída/sin migrar), nunca.
 function sincronizacionMasivaPermitidaV1(){ return backendEsAdminOwner===true || backendTieneAccesoTurnos===true; }
+// ===== Privacidad de la caché local al cambiar de usuario (misma computadora) =====
+// La config y las atenciones se cachean en localStorage. Para que un usuario no vea la caché de otro:
+//  * Se registra el dueño (auth.uid) de la caché. Si el usuario que inicia sesión es OTRO, la caché anterior NO se borra: se APARTA
+//    bajo el uid de su dueño (cardiolink_apartado_<uid>__<clave>), invisible para la app, y se restaura cuando ese usuario vuelve.
+//    Así los datos pendientes de sincronización no se pierden.
+//  * Un dueño desconocido (caché anterior a este cambio) sólo se adopta si el usuario es owner/admin/secretaría (ya ven todo); si no, se aparta.
+//  * Al cerrar sesión se intenta sincronizar; si TODO quedó confirmado la caché se elimina; si queda algo pendiente se conserva (sigue asociada a su dueño).
+const CACHE_OWNER_KEY_V1='cardiolink_cache_owner_v1';
+function clavesCacheLocalV1(){ return [storageConfig,storageAtenciones,storageValoresColocacion,'cl_last_sync_382']; }
+function aislarCacheLocalPorUsuarioV1(uid,privilegiado){
+  try{
+    if(!uid) return;
+    const dueno=localStorage.getItem(CACHE_OWNER_KEY_V1);
+    if(dueno===uid) return;
+    const claves=clavesCacheLocalV1();
+    const ap=(id,k)=>'cardiolink_apartado_'+id+'__'+k;
+    if(!dueno && privilegiado){ localStorage.setItem(CACHE_OWNER_KEY_V1,uid); return; } // caché heredada: owner/admin/secretaría la adoptan
+    claves.forEach(k=>{
+      const v=localStorage.getItem(k); if(v===null) return;
+      try{ localStorage.setItem(ap(dueno||'desconocido',k),v); }
+      catch(e){ console.warn('No se pudo apartar la caché anterior (cuota); se elimina por privacidad:',k); }
+      localStorage.removeItem(k);
+    });
+    claves.forEach(k=>{ const v=localStorage.getItem(ap(uid,k)); if(v!==null){ localStorage.setItem(k,v); localStorage.removeItem(ap(uid,k)); } });
+    localStorage.setItem(CACHE_OWNER_KEY_V1,uid);
+    data=loadConfig(); atenciones=loadAtenciones(); // la memoria queda alineada con la caché del usuario actual
+  }catch(e){ console.warn('Aislamiento de caché local no disponible:',e); }
+}
+// Se llama con la sesión todavía válida (antes de signOut). Devuelve true si la caché se eliminó (nada pendiente).
+async function liberarCacheLocalAlCerrarSesionV1(){
+  try{
+    if(typeof sincronizarAtencionesSupabase==='function'){
+      await Promise.race([sincronizarAtencionesSupabase(false),new Promise(r=>setTimeout(r,8000))]);
+    }
+    const pendiente=typeof window.hayPendientesSync298==='function'?window.hayPendientesSync298():true;
+    if(pendiente) return false; // se conserva: sigue asociada a su dueño y la app no se la muestra a otro usuario
+    clavesCacheLocalV1().forEach(k=>localStorage.removeItem(k));
+    localStorage.removeItem(CACHE_OWNER_KEY_V1);
+    return true;
+  }catch(e){ console.warn('No se pudo liberar la caché local al cerrar sesión:',e); return false; }
+}
+
 // Directorio mínimo de destinatarios (todos los roles, aditivo) y, sólo para el médico, configuración
 // clínica saneada + identidad de mensajería. Todo aislado: si una RPC aún no existe o falla, se
 // conserva el comportamiento anterior sin bloquear el login ni la detección de roles.
@@ -259,6 +301,7 @@ async function cargarPermisoBackendRoles(){
     if(adminOwner.error||appointmentRequests.error) throw (adminOwner.error||appointmentRequests.error);
     if(pendientesIdentidad.error) console.warn('No se pudo confirmar la identidad de Pendientes (cardiolink_identidad_pendientes_v1):',pendientesIdentidad.error);
     backendPendientesIdentidadV1=pendientesIdentidad.error?null:(pendientesIdentidad.data||null);
+    aislarCacheLocalPorUsuarioV1(usuarioSupabase?.id, adminOwner.data===true||appointmentRequests.data===true);
     await cargarMensajeriaYConfigMedicoV1();
     backendEsAdminOwner=adminOwner.data===true;
     backendTieneAccesoTurnos=appointmentRequests.data===true;
@@ -271,6 +314,7 @@ async function cargarPermisoBackendRoles(){
     // determinarlo (no rompe el modo local sin Supabase, que no entra acá).
     console.warn('No se pudo confirmar el rol backend (cardiolink_user_roles):',e);
     backendRolCargado=false;backendEsAdminOwner=false;backendTieneAccesoTurnos=false;backendPendientesIdentidadV1=null;backendMensajeriaV1=null;directorioMensajesV1=null;
+    aislarCacheLocalPorUsuarioV1(usuarioSupabase?.id,false);
   }finally{
     // Corre tanto en éxito como en error (nunca si se volvió antes por
     // falta de supabaseClient/usuarioSupabase): la consulta ya terminó,
@@ -740,6 +784,7 @@ function iniciarControlInactividad() {
 async function cerrarPorInactividad() {
   try {
     if (window.cardioLinkRefreshInterval) clearInterval(window.cardioLinkRefreshInterval);
+    await liberarCacheLocalAlCerrarSesionV1();
     if (supabaseClient) await supabaseClient.auth.signOut();
   } catch (error) {
     console.error('Error cerrando sesión por inactividad:', error);
@@ -757,6 +802,7 @@ async function cerrarPorInactividad() {
 async function cerrarSesionSupabase() {
   if (!supabaseClient) return;
 
+  await liberarCacheLocalAlCerrarSesionV1();
   await supabaseClient.auth.signOut();
   localStorage.removeItem("sb-session");
   // UI Interna V1 (iteración 2) - mismo motivo que cerrarPorInactividad():
@@ -6016,6 +6062,10 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     return confirmado;
   }
   window.releerYConfirmarTrasRpc298=releerYConfirmarTrasRpc298;
+  // ¿Queda algo por confirmar en Supabase? (usado al cerrar sesión para no borrar la caché con datos pendientes)
+  window.hayPendientesSync298=function(){
+    try{ return !!(syncAtencionesPendiente||syncPendienteSinConfirmar||(atenciones||[]).some(atencionModificada298)); }catch(e){ return true; }
+  };
 
   // Un mensaje rechazado por PERMISOS (RLS/42501) no es un fallo transitorio: reintentarlo indefinidamente bloquearía la cola.
   function esErrorPermisosRLS298(e){ return !!e&&(e.code==='42501'||/row-level security|permission denied/i.test(String(e.message||''))); }

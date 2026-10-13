@@ -123,3 +123,20 @@ test('Secretaría y owner conservan la lógica de remitente anterior',()=>{
   assert.match(f,/:\(u\.nombre\|\|u\.usuario\|\|usuarioActualNombreCorto\(\)\)/);
   assert.match(f,/const medicoBk=esMedicoBackendV1\(\)&&!!backendMensajeriaV1\?\.login;/);
 });
+
+test('caché local por usuario: se aparta sin borrar, se limpia al cerrar sólo sin pendientes y antes de signOut',()=>{
+  const a=between('function aislarCacheLocalPorUsuarioV1(uid,privilegiado){','// Se llama con la sesión');
+  assert.match(a,/cardiolink_apartado_/);
+  assert.match(a,/if\(!dueno && privilegiado\)/);                              // caché heredada: sólo la adoptan roles que ya ven todo
+  assert.match(a,/localStorage\.setItem\(ap\(dueno\|\|'desconocido',k\),v\)/);   // se APARTA bajo su dueño (no se borra)
+  assert.match(a,/data=loadConfig\(\); atenciones=loadAtenciones\(\);/);          // la memoria queda alineada con la caché del usuario actual
+  const r=between('async function cargarPermisoBackendRoles(){','finally{');
+  assert.match(r,/aislarCacheLocalPorUsuarioV1\(usuarioSupabase\?\.id, adminOwner\.data===true\|\|appointmentRequests\.data===true\);\s*await cargarMensajeriaYConfigMedicoV1\(\);/);
+  assert.match(r,/aislarCacheLocalPorUsuarioV1\(usuarioSupabase\?\.id,false\);/);   // sin rol confirmado: nunca privilegiado
+  const l=between('async function liberarCacheLocalAlCerrarSesionV1(){','// Directorio mínimo');
+  assert.match(l,/sincronizarAtencionesSupabase\(false\)/);
+  assert.ok(l.indexOf('if(pendiente) return false;')!==-1&&l.indexOf('if(pendiente) return false;')<l.indexOf('removeItem(k)'));
+  assert.match(src,/await liberarCacheLocalAlCerrarSesionV1\(\);\s*if \(supabaseClient\) await supabaseClient\.auth\.signOut\(\);/);   // inactividad
+  assert.match(src,/await liberarCacheLocalAlCerrarSesionV1\(\);\s*await supabaseClient\.auth\.signOut\(\);/);                           // cierre manual
+  assert.match(src,/window\.hayPendientesSync298=function\(\)\{/);
+});
