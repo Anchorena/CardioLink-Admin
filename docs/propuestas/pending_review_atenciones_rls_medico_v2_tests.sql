@@ -274,8 +274,12 @@ END $$;
 -- ===== MÉDICO B: aislamiento recíproco =====
 DO $$ DECLARE a record; n int; BEGIN
   SELECT * INTO a FROM t_actores; PERFORM pg_temp.claims(a.med_b,a.mail_b);
-  SELECT count(*) INTO n FROM public.cardiolink_atenciones WHERE id IN ('__t_att_a','__t_msg_para_a','__t_msg_hist_a','__t_msg_falso_a');
-  IF n<>0 THEN RAISE EXCEPTION 'FALLA: médico B ve datos de A (%) o un mensaje falsificado a nombre de A',n; END IF;
+  SELECT count(*) INTO n FROM public.cardiolink_atenciones WHERE id IN ('__t_att_a','__t_msg_para_a','__t_msg_hist_a');
+  IF n<>0 THEN RAISE EXCEPTION 'FALLA: médico B ve datos pertenecientes a A (%)',n; END IF;
+  -- El fixture falso declara deUsuario=A pero creadoUid=B. B sí puede verlo por su propio UID.
+  -- La seguridad en INSERT impide que un médico cree un mensaje así; el fixture lo inserta postgres.
+  SELECT count(*) INTO n FROM public.cardiolink_atenciones WHERE id='__t_msg_falso_a';
+  IF n<>1 THEN RAISE EXCEPTION 'FALLA: médico B no ve un mensaje histórico que registra su propio creadoUid'; END IF;
   SELECT count(*) INTO n FROM public.cardiolink_atenciones WHERE id IN ('__t_att_b','__t_msg_para_b','__t_msg_hist_b');
   IF n<>3 THEN RAISE EXCEPTION 'FALLA: médico B no ve lo propio (ve %/3)',n; END IF;
   RAISE NOTICE 'OK médico B: aislamiento recíproco';
