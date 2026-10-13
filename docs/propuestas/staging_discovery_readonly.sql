@@ -81,3 +81,19 @@ from public.cardiolink_user_roles where active and base_role='medico' order by p
 
 -- 9) Cantidad de médicos, secretarías y owners/admins activos (para saber si el QA necesita una 2ª identidad ficticia)
 select base_role, count(*) as activos from public.cardiolink_user_roles where active group by base_role order by base_role;
+
+-- 10) Triggers de usuario sobre auth.users y cardiolink_user_roles (revisar ANTES de usar cuentas transaccionales en el QA)
+select c.relname as tabla, t.tgname as trigger, p.proname as funcion, t.tgenabled as habilitado,
+       (p.prosrc ~* '(net\.http|http_post|http_request|http_get|dblink|pg_net)') as posible_efecto_externo
+from pg_trigger t join pg_class c on c.oid=t.tgrelid join pg_namespace n on n.oid=c.relnamespace join pg_proc p on p.oid=t.tgfoid
+where not t.tgisinternal and ((n.nspname='auth' and c.relname='users') or (n.nspname='public' and c.relname='cardiolink_user_roles'))
+order by 1,2;
+
+-- 11) Columnas de auth.users: obligatorias sin default (las que un INSERT mínimo debería informar) y FKs que apuntan a auth.users
+select column_name, data_type, is_nullable, column_default from information_schema.columns
+where table_schema='auth' and table_name='users' and is_nullable='NO' and column_default is null order by ordinal_position;
+select conrelid::regclass as tabla, conname, pg_get_constraintdef(oid) as definicion from pg_constraint
+where contype='f' and confrelid='auth.users'::regclass order by 1;
+
+-- 12) Checks de cardiolink_user_roles (p. ej. btrim(professional_id) <> '')
+select conname, pg_get_constraintdef(oid) from pg_constraint where conrelid='public.cardiolink_user_roles'::regclass and contype='c' order by 1;

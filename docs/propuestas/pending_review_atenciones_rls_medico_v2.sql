@@ -16,6 +16,9 @@
 --  4. GRANTs: en Supabase REVOKE ... FROM PUBLIC no quita el EXECUTE por defecto de anon/authenticated. Se revoca
 --     explícitamente de PUBLIC y anon (y de authenticated en helpers internos). Verificar con la consulta 7 del discovery.
 --  5. Precondición: la migración aborta si las políticas actuales no son las esperadas (STAGING = permite_atencion_v1).
+--  6. (v3.2.1) cardiolink_mensaje_crea_medico_v1 exige ADEMÁS que deUsuario (normalizado) pertenezca a MIS logins verificados:
+--     un médico no puede enviar con creadoUid propio y el remitente de otro profesional. deNombre/creadoPor/creadoUsuario son
+--     etiquetas de pantalla enviadas por el cliente y NUNCA se usan para decidir identidad ni permisos.
 --
 -- Base verificada en STAGING (yslhwdl…): el médico backend (professional_id = medico_qa_staging) NO existe en config.usuarios.
 -- La identidad de mensajería sale del BACKEND, no de la config ni del email:
@@ -99,7 +102,7 @@ CREATE OR REPLACE FUNCTION public.cardiolink_config_usuarios_v1()
  RETURNS TABLE(login text, nombre text, rol text, prof text) LANGUAGE sql STABLE SECURITY DEFINER
  SET search_path TO 'pg_catalog', 'public'
 AS $f$
- SELECT public.cardiolink_login_cliente_v1(coalesce(nullif(u->>'usuario',''),u->>'id')),
+ SELECT public.cardiolink_login_cliente_v1(coalesce(nullif(u->>'usuario',''),nullif(u->>'email',''),u->>'id')),   -- igual que normalizarUsuarioRegistro() del cliente
         u->>'nombre', u->>'rol', nullif(u->>'profesionalId','')
  FROM public.cardiolink_atenciones a,
       jsonb_array_elements(coalesce(a.payload#>'{config,usuarios}','[]'::jsonb)) u
@@ -154,6 +157,8 @@ AS $f$
  SELECT coalesce(pg_catalog.cardinality(p_logins),0)>0
   AND p_payload->>'tipoRegistro'='mensaje'
   AND p_payload->>'creadoUid' = p_uid::text
+  -- El remitente declarado debe ser un login PROPIO verificado por el backend (nunca el de otro profesional).
+  AND public.cardiolink_login_cliente_v1(p_payload->>'deUsuario') = ANY (p_logins)
   AND coalesce(p_payload->>'destino','todos') ~ '^(todos|rol:secretaria|rol:medico|usuario:[a-z0-9_.-]+)$'
 $f$;
 REVOKE ALL ON FUNCTION public.cardiolink_mensaje_crea_medico_v1(jsonb,text[],uuid) FROM PUBLIC, anon;

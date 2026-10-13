@@ -11,6 +11,28 @@
 
 BEGIN;
 
+-- 00) PRECHEQUEO de triggers/dependencias de auth.users y cardiolink_user_roles ANTES de crear cuentas transaccionales.
+--     Todo lo creado se revierte con el ROLLBACK, incluidos los efectos de triggers transaccionales. Aborta (sin cambios) si:
+--       * algún trigger de usuario sobre auth.users / cardiolink_user_roles invoca http/net/dblink (efectos fuera de la transacción);
+--       * auth.users tiene columnas NOT NULL sin default que este script no informa (id, aud, role, email).
+DO $$ DECLARE r record; faltan text; BEGIN
+  FOR r IN SELECT c.relname AS tabla, t.tgname, p.proname, p.prosrc
+           FROM pg_trigger t JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace
+           JOIN pg_proc p ON p.oid=t.tgfoid
+           WHERE NOT t.tgisinternal AND ((n.nspname='auth' AND c.relname='users') OR (n.nspname='public' AND c.relname='cardiolink_user_roles'))
+  LOOP
+    RAISE NOTICE 'Trigger sobre %: % -> %()', r.tabla, r.tgname, r.proname;
+    IF r.prosrc ~* '(net\.http|http_post|http_request|http_get|dblink|pg_net)' THEN
+      RAISE EXCEPTION 'Abortado: el trigger % (%) parece invocar servicios externos; no usar cuentas transaccionales (usar el nivel 3)', r.tgname, r.proname; END IF;
+  END LOOP;
+  SELECT string_agg(column_name, ', ') INTO faltan FROM information_schema.columns
+   WHERE table_schema='auth' AND table_name='users' AND is_nullable='NO' AND column_default IS NULL
+     AND column_name NOT IN ('id','aud','role','email');
+  IF faltan IS NOT NULL THEN
+    RAISE EXCEPTION 'Abortado: auth.users tiene columnas NOT NULL sin default que este script no informa: % (usar el nivel 3)', faltan; END IF;
+  RAISE NOTICE 'OK prechequeo: sin triggers con efectos externos y sin columnas obligatorias adicionales en auth.users';
+END $$;
+
 -- 0) IDENTIDAD B EFÍMERA. STAGING tiene un único médico backend (medico_qa_staging). Si no hay un segundo médico activo, se crea
 --    DENTRO de esta transacción una identidad ficticia (auth.users + cardiolink_user_roles) que se revierte con el ROLLBACK final:
 --    no queda ninguna cuenta ni fila. Si el INSERT falla (columnas/triggers de auth.users), la transacción aborta sin cambios:
@@ -112,6 +134,30 @@ DO $$ DECLARE a record; n int; BEGIN
       jsonb_build_object('id','__t_msg_ajeno','tipoRegistro','mensaje','destino','todos','creadoUid',gen_random_uuid()::text));
     RAISE EXCEPTION 'FALLA: médico A insertó un mensaje con creadoUid de otro';
   EXCEPTION WHEN insufficient_privilege OR check_violation THEN RAISE NOTICE 'OK rechazado: mensaje con creadoUid ajeno'; END;
+  -- Remitente (deUsuario) vs identidad verificada: sólo se acepta un login PROPIO
+  DECLARE v_login_a text := (SELECT login_a[1] FROM t_logins); v_login_b text := (SELECT login_b[1] FROM t_logins);
+  BEGIN
+    BEGIN  -- creadoUid propio + deUsuario AJENO => RECHAZADO
+      INSERT INTO public.cardiolink_atenciones(id,payload) VALUES('__t_msg_remit_ajeno',
+        jsonb_build_object('id','__t_msg_remit_ajeno','tipoRegistro','mensaje','destino','todos','creadoUid',a.med_a::text,'deUsuario',v_login_b,'texto','x'));
+      RAISE EXCEPTION 'FALLA: médico A envió con creadoUid propio y deUsuario de OTRO profesional';
+    EXCEPTION WHEN insufficient_privilege OR check_violation THEN RAISE NOTICE 'OK rechazado: creadoUid propio + deUsuario ajeno'; END;
+    BEGIN  -- creadoUid propio + deUsuario inexistente/vacío => RECHAZADO
+      INSERT INTO public.cardiolink_atenciones(id,payload) VALUES('__t_msg_remit_vacio',
+        jsonb_build_object('id','__t_msg_remit_vacio','tipoRegistro','mensaje','destino','todos','creadoUid',a.med_a::text,'texto','x'));
+      RAISE EXCEPTION 'FALLA: médico A envió sin deUsuario';
+    EXCEPTION WHEN insufficient_privilege OR check_violation THEN RAISE NOTICE 'OK rechazado: creadoUid propio sin deUsuario'; END;
+    BEGIN  -- creadoUid propio + deUsuario propio => PERMITIDO
+      INSERT INTO public.cardiolink_atenciones(id,payload) VALUES('__t_msg_remit_propio',
+        jsonb_build_object('id','__t_msg_remit_propio','tipoRegistro','mensaje','destino','rol:secretaria','creadoUid',a.med_a::text,'deUsuario',v_login_a,'texto','x'));
+      RAISE NOTICE 'OK permitido: creadoUid propio + deUsuario propio';
+    EXCEPTION WHEN OTHERS THEN RAISE EXCEPTION 'FALLA: médico A no puede enviar con su propio remitente (%)',SQLERRM; END;
+    BEGIN  -- deUsuario con otra capitalización/espacios del MISMO login => PERMITIDO (misma normalización que el cliente)
+      INSERT INTO public.cardiolink_atenciones(id,payload) VALUES('__t_msg_remit_norm',
+        jsonb_build_object('id','__t_msg_remit_norm','tipoRegistro','mensaje','destino','todos','creadoUid',a.med_a::text,'deUsuario',upper(v_login_a),'texto','x'));
+      RAISE NOTICE 'OK permitido: remitente propio con distinta capitalización';
+    EXCEPTION WHEN OTHERS THEN RAISE EXCEPTION 'FALLA: la normalización del remitente propio no coincide (%)',SQLERRM; END;
+  END;
   BEGIN
     INSERT INTO public.cardiolink_atenciones(id,payload) VALUES('__t_msg_sin_uid',
       jsonb_build_object('id','__t_msg_sin_uid','tipoRegistro','mensaje','destino','todos','deUsuario','cualquiera'));
@@ -119,7 +165,7 @@ DO $$ DECLARE a record; n int; BEGIN
   EXCEPTION WHEN insufficient_privilege OR check_violation THEN RAISE NOTICE 'OK rechazado: mensaje sin creadoUid'; END;
   BEGIN
     INSERT INTO public.cardiolink_atenciones(id,payload) VALUES('__t_msg_propio',
-      jsonb_build_object('id','__t_msg_propio','tipoRegistro','mensaje','destino','rol:secretaria','creadoUid',a.med_a::text,'texto','hola'));
+      jsonb_build_object('id','__t_msg_propio','tipoRegistro','mensaje','destino','rol:secretaria','creadoUid',a.med_a::text,'deUsuario',(SELECT login_a[1] FROM t_logins),'texto','hola'));
     RAISE NOTICE 'OK permitido: mensaje propio';
   EXCEPTION WHEN OTHERS THEN RAISE EXCEPTION 'FALLA: médico A no puede enviar un mensaje propio (%)',SQLERRM; END;
   BEGIN
@@ -204,7 +250,7 @@ RESET ROLE;
 DO $$ DECLARE v uuid:=gen_random_uuid(); BEGIN
   BEGIN
     INSERT INTO auth.users(id, aud, role, email) VALUES (v,'authenticated','authenticated','qa-tmp-medico-inv@invalid.test');
-    INSERT INTO public.cardiolink_user_roles(user_id, base_role, active, professional_id) VALUES (v,'medico',true,'  ');
+    INSERT INTO public.cardiolink_user_roles(user_id, base_role, active, professional_id) VALUES (v,'medico',true,'Dr. Inválido (QA)');
     CREATE TEMP TABLE t_inv AS SELECT v AS uid;
     GRANT SELECT ON t_inv TO authenticated;
   EXCEPTION WHEN OTHERS THEN
