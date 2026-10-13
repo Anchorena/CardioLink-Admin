@@ -152,7 +152,7 @@ function perfilUsuarioActual(){
   let u=(data.usuarios||[]).find(x=>usuarioCoincide(x,user,email) && x.activo!==false);
   if(!u) u=inferirUsuarioPorLogin(user) || inferirUsuarioPorLogin(email);
   // Si no se reconoce el usuario, entra con permisos mínimos. No cae en Matías para evitar exposición de caja/reportes.
-  if(!u) u={id:'usr_sin_config',usuario:user,nombre:user||'Usuario sin configurar',rol:'sin_configurar',profesionalId:'',especialidad:'Perfil no configurado',activo:true};
+  if(!u) u={id:'usr_sin_config',usuario:(esMedicoBackendV1()&&backendMensajeriaV1?.login)||user,nombre:user||'Usuario sin configurar',rol:'sin_configurar',profesionalId:'',especialidad:'Perfil no configurado',activo:true};
   usuarioPerfilActual=u;
   return u;
 }
@@ -184,10 +184,55 @@ let backendEsAdminOwner=false;
 let backendTieneAccesoTurnos=false;
 let backendPendientesIdentidadV1=null;
 let pendientesOperacionEnCursoV1=false;
+// Mensajería interna del médico (identidad y directorio entregados por el backend).
+// backendMensajeriaV1={login}: login estable del médico para mensajes (usuario configurado
+// vinculado por professional_id o, si no existe, el propio professional_id). Nunca el prefijo del email.
+let backendMensajeriaV1=null;
+let directorioMensajesV1=null; // [{destino,nombre,rol}] sin emails, alias, ids ni datos comerciales
+function esMedicoBackendV1(){ return backendPendientesIdentidadV1?.role==='medico'; }
 // Fail-closed: sólo owner/admin (backend) o secretaría (backend) pueden sembrar
 // la nube desde la caché local o forzar un volcado masivo. Médico, o cualquier
 // sesión cuyo rol no se pudo confirmar (RPC caída/sin migrar), nunca.
 function sincronizacionMasivaPermitidaV1(){ return backendEsAdminOwner===true || backendTieneAccesoTurnos===true; }
+// Directorio mínimo de destinatarios (todos los roles, aditivo) y, sólo para el médico, configuración
+// clínica saneada + identidad de mensajería. Todo aislado: si una RPC aún no existe o falla, se
+// conserva el comportamiento anterior sin bloquear el login ni la detección de roles.
+async function cargarMensajeriaYConfigMedicoV1(){
+  backendMensajeriaV1=null; directorioMensajesV1=null;
+  try{
+    const dir=await supabaseClient.rpc('cardiolink_directorio_mensajes_v1');
+    if(!dir.error&&Array.isArray(dir.data)){
+      directorioMensajesV1=dir.data
+        .filter(d=>d&&typeof d.destino==='string'&&/^usuario:[a-z0-9_.-]+$/.test(d.destino))
+        .map(d=>({destino:d.destino,nombre:String(d.nombre||''),rol:String(d.rol||'')}));
+    }
+  }catch(e){ console.warn('Directorio de mensajes no disponible:',e); }
+  if(!esMedicoBackendV1()) return;
+  try{
+    const r=await supabaseClient.rpc('cardiolink_config_medico_v1');
+    const c=(!r.error&&r.data&&typeof r.data==='object')?r.data:null;
+    if(!c) return;
+    if(c.mensajeria&&/^[a-z0-9_.-]+$/.test(String(c.mensajeria.login||''))) backendMensajeriaV1={login:String(c.mensajeria.login)};
+    // Mezcla sólo lo clínico en la config LOCAL (nunca se escribe la fila remota desde un médico).
+    if(typeof data==='object'&&data){
+      if(!Array.isArray(data.profesionales)) data.profesionales=[];
+      (Array.isArray(c.profesionales)?c.profesionales:[]).forEach(p=>{
+        if(!p||p.id==null) return;
+        const l=data.profesionales.find(x=>x.id===p.id);
+        if(l){ if(p.nombre) l.nombre=p.nombre; if(p.area) l.area=p.area; if(Array.isArray(p.prestaciones)) l.prestaciones=p.prestaciones; }
+        else data.profesionales.push({id:p.id,nombre:p.nombre||p.id,area:p.area||'',prestaciones:Array.isArray(p.prestaciones)?p.prestaciones:[],valores:{}});
+      });
+      if(Array.isArray(c.obrasSociales)){ if(!Array.isArray(data.obrasSociales)) data.obrasSociales=[]; c.obrasSociales.forEach(o=>{ if(!data.obrasSociales.includes(o)) data.obrasSociales.push(o); }); }
+      // Sólo se acepta un usuario propio de rol médico: la RPC nunca puede elevar el perfil local.
+      if(c.usuarioPropio&&c.usuarioPropio.id&&c.usuarioPropio.rol==='medico'){
+        if(!Array.isArray(data.usuarios)) data.usuarios=[];
+        const i=data.usuarios.findIndex(x=>x.id===c.usuarioPropio.id);
+        if(i>=0) data.usuarios[i]=Object.assign({},data.usuarios[i],c.usuarioPropio); else data.usuarios.push(c.usuarioPropio);
+      }
+      try{ localStorage.setItem(storageConfig,JSON.stringify(data)); }catch(e){}
+    }
+  }catch(e){ console.warn('Configuración clínica del médico no disponible:',e); }
+}
 async function cargarPermisoBackendRoles(){
   if(!supabaseClient || !usuarioSupabase) return; // todavía antes del login: ni empezó la consulta
   backendRolConsultaFinalizada=false;
@@ -202,6 +247,7 @@ async function cargarPermisoBackendRoles(){
     if(adminOwner.error||appointmentRequests.error) throw (adminOwner.error||appointmentRequests.error);
     if(pendientesIdentidad.error) console.warn('No se pudo confirmar la identidad de Pendientes (cardiolink_identidad_pendientes_v1):',pendientesIdentidad.error);
     backendPendientesIdentidadV1=pendientesIdentidad.error?null:(pendientesIdentidad.data||null);
+    await cargarMensajeriaYConfigMedicoV1();
     backendEsAdminOwner=adminOwner.data===true;
     backendTieneAccesoTurnos=appointmentRequests.data===true;
     backendRolCargado=true;
@@ -212,7 +258,7 @@ async function cargarPermisoBackendRoles(){
     // sin rol backend confirmado" como permisos mínimos hasta poder
     // determinarlo (no rompe el modo local sin Supabase, que no entra acá).
     console.warn('No se pudo confirmar el rol backend (cardiolink_user_roles):',e);
-    backendRolCargado=false;backendEsAdminOwner=false;backendTieneAccesoTurnos=false;backendPendientesIdentidadV1=null;
+    backendRolCargado=false;backendEsAdminOwner=false;backendTieneAccesoTurnos=false;backendPendientesIdentidadV1=null;backendMensajeriaV1=null;directorioMensajesV1=null;
   }finally{
     // Corre tanto en éxito como en error (nunca si se volvió antes por
     // falta de supabaseClient/usuarioSupabase): la consulta ya terminó,
@@ -3762,6 +3808,13 @@ function destinatariosMensajes(){
   (data.usuarios||[]).filter(u=>u.activo!==false).forEach(u=>{
     lista.push({value:'usuario:'+usuarioLoginCorto(u.usuario||u.id), label:u.nombre||u.usuario});
   });
+  if(Array.isArray(directorioMensajesV1)&&directorioMensajesV1.length){
+    if(esMedicoBackendV1()){
+      // El médico no recibe el listado de usuarios de la config: sólo el directorio mínimo (nombre + rol).
+      lista.length=2;
+    }
+    directorioMensajesV1.forEach(d=>{ if(!lista.some(x=>x.value===d.destino)) lista.push({value:d.destino,label:d.nombre||'Usuario'}); });
+  }
   return lista;
 }
 function initMensajes(){
@@ -3787,8 +3840,14 @@ function mensajeVisibleParaUsuario(m){
   if(destino==='rol:secretaria')return esSecretaria() || esMatiasDuenio() || esAdminComun();
   if(destino==='rol:medico')return esMedico();
   if(destino==='usuario:'+usr)return true;
+  if(m.creadoUid&&usuarioSupabase?.id&&m.creadoUid===usuarioSupabase.id)return true;
   if(m.deUsuario===usr)return true;
   return false;
+}
+// "Propio": si el mensaje trae creadoUid (verificado por el backend) manda ese; si no (histórico), deUsuario.
+function esMensajePropioV1(m,usr){
+  if(m&&m.creadoUid&&usuarioSupabase?.id) return m.creadoUid===usuarioSupabase.id;
+  return !!m&&m.deUsuario===usr;
 }
 function nombreDestinoMensaje(destino){
   if(destino==='todos')return 'Todos';
@@ -3797,7 +3856,9 @@ function nombreDestinoMensaje(destino){
   if(String(destino).startsWith('usuario:')){
     const usr=destino.replace('usuario:','');
     const u=(data.usuarios||[]).find(x=>usuarioLoginCorto(x.usuario||x.id)===usr || (x.aliases||[]).map(usuarioLoginCorto).includes(usr));
-    return u?.nombre || usr;
+    if(u?.nombre) return u.nombre;
+    const d=(directorioMensajesV1||[]).find(x=>x.destino===destino);
+    return d?.nombre || usr;
   }
   return destino || 'Todos';
 }
@@ -3856,6 +3917,7 @@ function enviarMensajeInterno(){
     texto,
     leidoPor:[]
   };
+  if(usuarioSupabase?.id) msg.creadoUid=usuarioSupabase.id; // identidad verificable por el backend (RLS)
   selloAuditoriaCreacion(msg);
   atenciones.push(msg);
   saveAtenciones();
@@ -3868,7 +3930,7 @@ function renderMensajes(){
   const filtro=$('msgFiltro')?.value||'visibles';
   const usr=usuarioLoginCorto(perfilUsuarioActual().usuario||usuarioActualNombreCorto());
   let datos=mensajesInternos();
-  if(filtro==='enviados')datos=datos.filter(m=>m.deUsuario===usr);
+  if(filtro==='enviados')datos=datos.filter(m=>esMensajePropioV1(m,usr));
   else datos=datos.filter(m=>mensajeVisibleParaUsuario(m));
   datos=datos.slice(0,80);
   if(!datos.length){box.innerHTML='<p class="muted">No hay mensajes para mostrar.</p>';actualizarNotificacionMensajes();return;}
@@ -3882,7 +3944,25 @@ function renderMensajes(){
   }).join('');
   actualizarNotificacionMensajes();
 }
+// Médico: marcar leído pasa por la RPC (el médico no modifica mensajes por la sincronización normal).
+async function marcarLeidosMedicoV1(){
+  const usr=usuarioLoginCorto(perfilUsuarioActual().usuario||usuarioActualNombreCorto());
+  const pendientes=mensajesInternos().filter(m=>mensajeVisibleParaUsuario(m)&&!esMensajePropioV1(m,usr)&&!(Array.isArray(m.leidoPor)&&m.leidoPor.includes(usr)));
+  for(const m of pendientes){
+    try{
+      const {data:res,error}=await supabaseClient.rpc('cardiolink_mensaje_marcar_leido_v1',{p_id:String(m.id)});
+      if(error||!res) throw (error||new Error('Respuesta vacía'));
+      const confirmado=window.releerYConfirmarTrasRpc298?await window.releerYConfirmarTrasRpc298(m.id,res):res;
+      const i=atenciones.findIndex(a=>String(a.id)===String(m.id));
+      if(i>=0) atenciones[i]=confirmado;
+    }catch(e){ console.warn('No se pudo marcar el mensaje como leído:',e); }
+  }
+  try{ localStorage.setItem(storageAtenciones,JSON.stringify(atenciones)); }catch(e){}
+  renderMensajes();
+  actualizarNotificacionMensajes();
+}
 function marcarMensajesVisiblesLeidos(){
+  if(esMedicoBackendV1()){ marcarLeidosMedicoV1(); return; }
   const usr=usuarioLoginCorto(perfilUsuarioActual().usuario||usuarioActualNombreCorto());
   let cambio=false;
   mensajesInternos().forEach(m=>{
@@ -5195,14 +5275,14 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const filtro=$id('msgFiltro')?.value||'visibles';
     const usr=usuarioCortoActual();
     let datos=(atenciones||[]).filter(esMensajeInterno).sort((a,b)=>String(b.creadoEn||b.fecha||'').localeCompare(String(a.creadoEn||a.fecha||'')));
-    if(filtro==='enviados') datos=datos.filter(m=>m.deUsuario===usr);
+    if(filtro==='enviados')datos=datos.filter(m=>esMensajePropioV1(m,usr));
     else datos=datos.filter(m=>mensajeVisibleParaUsuario?.(m));
     datos=datos.slice(0,120);
     if(!datos.length){box.innerHTML='<p class="muted">No hay mensajes para mostrar.</p>';actualizarNotificacionMensajes?.();return;}
     box.innerHTML=datos.map(m=>{
-      const propio=m.deUsuario===usr;
+      const propio=esMensajePropioV1(m,usr);
       const visto=(m.leidoPor||[]).includes(usr);
-      const puedeBorrar=propio || esAdminActual();
+      const puedeBorrar=(propio && !esMedicoBackendV1()) || esAdminActual();
       return `<div class="mensaje-item chat ${propio?'propio':'ajeno'} ${visto?'visto':'nuevo'} ${colorClaseMensaje294(m)}" data-id="${esc(m.id)}">
         <div class="mensaje-texto principal">${esc(m.texto||'')}</div>
         <div class="mensaje-meta"><strong>${esc(m.deNombre||m.deUsuario||'Usuario')}</strong><span>${esc(fechaHoraAuditoria?.(m.creadoEn)||m.horaInicio||'')}</span></div>
@@ -5326,14 +5406,14 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const filtro=$id('msgFiltro')?.value||'visibles';
     const usr=usrActual();
     let datos=(atenciones||[]).filter(a=>typeof esMensajeInterno==='function' && esMensajeInterno(a)).sort((a,b)=>String(b.creadoEn||b.fecha||'').localeCompare(String(a.creadoEn||a.fecha||'')));
-    if(filtro==='enviados') datos=datos.filter(m=>m.deUsuario===usr);
+    if(filtro==='enviados')datos=datos.filter(m=>esMensajePropioV1(m,usr));
     else datos=datos.filter(m=> typeof mensajeVisibleParaUsuario==='function' ? mensajeVisibleParaUsuario(m) : true);
     datos=datos.slice(0,120);
     if(!datos.length){box.innerHTML='<p class="muted">No hay mensajes para mostrar.</p>'; try{actualizarNotificacionMensajes?.();}catch(e){} return;}
     box.innerHTML=datos.map(m=>{
-      const propio=String(m.deUsuario||'')===String(usr);
+      const propio=esMensajePropioV1(m,usr);
       const visto=(m.leidoPor||[]).includes(usr);
-      const puedeBorrar=propio || esAdmin();
+      const puedeBorrar=(propio && !esMedicoBackendV1()) || esAdmin();
       return `<div class="mensaje-burbuja ${propio?'propio':'ajeno'} ${visto?'visto':'nuevo'} ${claseColorMensaje295(m)}" data-id="${esc(m.id)}">
         <div class="mensaje-texto">${esc(m.texto||'')}</div>
         <div class="mensaje-info"><strong>${esc(m.deNombre||m.deUsuario||'Usuario')}</strong><span>${esc((typeof fechaHoraAuditoria==='function'?fechaHoraAuditoria(m.creadoEn):'')||m.horaInicio||'')}</span></div>
@@ -5904,6 +5984,18 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     return true;
   }
   window.confirmarVersionRemotaAtencion298=confirmarVersionRemotaAtencion298;
+  // Relee la fila tras una RPC del servidor y la toma como nuevo punto de partida (ver actualizarPendienteMedicoV1).
+  async function releerYConfirmarTrasRpc298(id,payloadRpc){
+    let confirmado=payloadRpc,version=null;
+    try{
+      const {data:filas,error}=await supabaseClient.from('cardiolink_atenciones').select('id,payload,updated_at').eq('id',String(id)).limit(1);
+      const f=Array.isArray(filas)?filas[0]:filas;
+      if(!error&&f&&f.payload&&f.updated_at){confirmado=f.payload;version=f.updated_at;}
+    }catch(e){ console.warn('No se pudo releer la fila tras la RPC:',e); }
+    confirmarVersionRemotaAtencion298(id,confirmado,version,version===null);
+    return confirmado;
+  }
+  window.releerYConfirmarTrasRpc298=releerYConfirmarTrasRpc298;
 
   function d(id){return document.getElementById(id)}
   function esc(v){return String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;')}
@@ -6200,6 +6292,8 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   // Sincronización de configuración/pacientes con Supabase usando una fila técnica.
   async function guardarConfigEnSupabase298(){
     if(!supabaseClient || !usuarioSupabase) return false;
+    // El médico nunca escribe la fila compartida de configuración (sólo la lee saneada por RPC).
+    if(esMedicoBackendV1()) return false;
     try{
       const payload={tipoRegistro:'config', version:VERSION_298, config:data, updatedAt:new Date().toISOString()};
       const {error}=await supabaseClient.from('cardiolink_atenciones').upsert([{id:CONFIG_ROW_ID,payload,updated_at:new Date().toISOString()}],{onConflict:'id'});

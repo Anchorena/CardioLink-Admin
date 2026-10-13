@@ -56,3 +56,18 @@ test('tras la RPC del médico se relee la fila y se actualizan los baselines (si
   assert.match(c,/if\(!soloContenido&&updatedAt\)baselineVersionAtenciones298\.set\(/);
   assert.doesNotMatch(c,/baselineVersionAtenciones298\.delete\(/);
 });
+
+test('mensajería del médico: identidad por backend, directorio mínimo, config nunca escrita y leído por RPC',()=>{
+  const carga=between('async function cargarMensajeriaYConfigMedicoV1(){','async function cargarPermisoBackendRoles(){');
+  assert.match(carga,/rpc\('cardiolink_directorio_mensajes_v1'\)/);
+  assert.match(carga,/\^usuario:\[a-z0-9_\.-\]\+\$/);
+  assert.match(carga,/rpc\('cardiolink_config_medico_v1'\)/);
+  assert.doesNotMatch(carga,/\.upsert\(|\.update\(|saveConfig/);
+  assert.match(src,/usuario:\(esMedicoBackendV1\(\)&&backendMensajeriaV1\?\.login\)\|\|user/);
+  const guardar=between('async function guardarConfigEnSupabase298(){','try{');
+  assert.match(guardar,/if\(esMedicoBackendV1\(\)\) return false;/);
+  assert.match(src,/if\(usuarioSupabase\?\.id\) msg\.creadoUid=usuarioSupabase\.id;/);
+  const leidos=between('async function marcarLeidosMedicoV1(){','function marcarMensajesVisiblesLeidos(){');
+  assert.match(leidos,/rpc\('cardiolink_mensaje_marcar_leido_v1'/);
+  assert.doesNotMatch(leidos,/saveAtenciones\(|sincronizarAtencionesSupabase\(|\.upsert\(/);
+});
