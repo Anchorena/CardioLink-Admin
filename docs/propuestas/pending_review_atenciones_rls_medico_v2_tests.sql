@@ -214,7 +214,7 @@ DO $$ DECLARE a record; r jsonb; BEGIN
   r := public.cardiolink_config_medico_v1();
   IF r ? 'usuarios' OR r ? 'pacientes' OR r ? 'reglasOS' OR r ? 'colocadores' OR r::text ~ '"valores"' THEN
     RAISE EXCEPTION 'FALLA: la config saneada expone usuarios ajenos o datos comerciales/pacientes'; END IF;
-  IF r->'usuarioPropio' IS NOT NULL THEN
+  IF jsonb_typeof(r->'usuarioPropio')='object' THEN
     IF r->'usuarioPropio'->>'profesionalId' IS DISTINCT FROM a.prof_a THEN RAISE EXCEPTION 'FALLA: usuarioPropio no corresponde al médico A'; END IF;
     IF EXISTS (SELECT 1 FROM jsonb_object_keys(r->'usuarioPropio') k
                WHERE k NOT IN ('id','usuario','nombre','rol','profesionalId','especialidad','activo','aliases')) THEN
@@ -222,6 +222,8 @@ DO $$ DECLARE a record; r jsonb; BEGIN
     IF r->'usuarioPropio' ? 'aliases' AND jsonb_array_length(r->'usuarioPropio'->'aliases')>1 THEN RAISE EXCEPTION 'FALLA: usuarioPropio devuelve más de un alias'; END IF;
     IF r->'usuarioPropio' ? 'email' OR r->'usuarioPropio' ? 'rolId' OR r->'usuarioPropio' ? 'soloMatias' THEN RAISE EXCEPTION 'FALLA: usuarioPropio expone email/rolId/soloMatias'; END IF;
   END IF;
+  IF jsonb_typeof(r->'usuarioPropio') NOT IN ('object','null') THEN
+    RAISE EXCEPTION 'FALLA: usuarioPropio debe ser objeto o JSON null'; END IF;
   IF r->'mensajeria'->>'login' IS NULL THEN RAISE EXCEPTION 'FALLA: falta la identidad de mensajería del médico'; END IF;
   IF NOT EXISTS (SELECT 1 FROM jsonb_array_elements(public.cardiolink_directorio_mensajes_v1()) e WHERE e->>'destino'='usuario:'||(r->'mensajeria'->>'login')) THEN
     RAISE EXCEPTION 'FALLA: el médico A no figura en el directorio (no se le podrían dirigir mensajes)'; END IF;
