@@ -1,4 +1,4 @@
--- Pruebas SQL del borrador pending_review_atenciones_rls_medico_v2.sql (v3.1: identidad por backend, sin prefijo de email)
+-- Pruebas SQL del borrador pending_review_atenciones_rls_medico_v2.sql (v3.2: identidad por backend, sin prefijo de email)
 -- SOLO STAGING, con el borrador YA aplicado en STAGING. NO ejecutar en Production.
 -- Todo corre dentro de una transacción que termina en ROLLBACK: no deja datos.
 -- Ejecutar en el SQL Editor de STAGING (rol postgres). No usa datos de pacientes reales.
@@ -11,6 +11,19 @@
 
 BEGIN;
 
+-- 0) IDENTIDAD B EFÍMERA. STAGING tiene un único médico backend (medico_qa_staging). Si no hay un segundo médico activo, se crea
+--    DENTRO de esta transacción una identidad ficticia (auth.users + cardiolink_user_roles) que se revierte con el ROLLBACK final:
+--    no queda ninguna cuenta ni fila. Si el INSERT falla (columnas/triggers de auth.users), la transacción aborta sin cambios:
+--    en ese caso usar el procedimiento B de BLOQUEANTES_PENDIENTES_MEDICOS_V1.md (cuenta ficticia persistente, con autorización).
+DO $$ DECLARE v_b uuid; BEGIN
+  IF (SELECT count(*) FROM public.cardiolink_user_roles WHERE base_role='medico' AND active AND professional_id ~ '^[A-Za-z0-9_.-]{1,64}$') < 2 THEN
+    v_b := gen_random_uuid();
+    INSERT INTO auth.users(id, aud, role, email) VALUES (v_b,'authenticated','authenticated','qa-tmp-medico-b@invalid.test');
+    INSERT INTO public.cardiolink_user_roles(user_id, base_role, active, professional_id) VALUES (v_b,'medico',true,'qa_tmp_medico_b');
+    RAISE NOTICE 'Identidad B efímera creada (se revierte con ROLLBACK)';
+  END IF;
+END $$;
+
 -- Actores (con sus emails resueltos ANTES de bajar de privilegios: `authenticated` no puede leer auth.users).
 CREATE TEMP TABLE t_actores AS
 SELECT
@@ -20,9 +33,9 @@ SELECT
  (SELECT user_id FROM public.cardiolink_user_roles WHERE base_role IN ('owner','admin') AND active ORDER BY base_role LIMIT 1) AS own
 FROM
  (SELECT user_id AS med_a, professional_id AS prof_a FROM public.cardiolink_user_roles
-  WHERE base_role='medico' AND active AND nullif(btrim(professional_id),'') IS NOT NULL ORDER BY professional_id LIMIT 1) a,
+  WHERE base_role='medico' AND active AND professional_id ~ '^[A-Za-z0-9_.-]{1,64}$' ORDER BY professional_id LIMIT 1) a,
  (SELECT user_id AS med_b, professional_id AS prof_b FROM public.cardiolink_user_roles
-  WHERE base_role='medico' AND active AND nullif(btrim(professional_id),'') IS NOT NULL ORDER BY professional_id DESC LIMIT 1) b;
+  WHERE base_role='medico' AND active AND professional_id ~ '^[A-Za-z0-9_.-]{1,64}$' ORDER BY professional_id DESC LIMIT 1) b;
 CREATE TEMP TABLE t_logins(login_a text[], login_b text[]);
 GRANT SELECT ON t_actores, t_logins TO authenticated;
 
@@ -32,6 +45,24 @@ DO $$ DECLARE a record; BEGIN SELECT * INTO a FROM t_actores;
 
 CREATE OR REPLACE FUNCTION pg_temp.claims(p_uid uuid, p_mail text) RETURNS void LANGUAGE sql AS $$
   SELECT set_config('request.jwt.claims', json_build_object('sub',p_uid,'role','authenticated','email',p_mail)::text, true) $$;
+
+-- ===== 0b) PRIVILEGIOS DE EJECUCIÓN (catálogo; como postgres) =====
+DO $$ DECLARE f text; BEGIN
+  FOREACH f IN ARRAY ARRAY[
+    'public.cardiolink_config_usuarios_v1()','public.cardiolink_login_seudonimo_v1(text)'] LOOP
+    IF has_function_privilege('anon',f,'EXECUTE') OR has_function_privilege('authenticated',f,'EXECUTE') THEN
+      RAISE EXCEPTION 'FALLA: el helper interno % es ejecutable por anon/authenticated',f; END IF;
+  END LOOP;
+  FOREACH f IN ARRAY ARRAY[
+    'public.cardiolink_config_medico_v1()','public.cardiolink_directorio_mensajes_v1()','public.cardiolink_mensaje_marcar_leido_v1(text)',
+    'public.cardiolink_logins_propios_v1()','public.cardiolink_ctx_rol_v1()','public.cardiolink_ctx_prof_v1()',
+    'public.cardiolink_atencion_permitida_v2(jsonb,text,text)','public.cardiolink_mensaje_visible_medico_v1(jsonb,text[],uuid)',
+    'public.cardiolink_mensaje_crea_medico_v1(jsonb,text[],uuid)','public.cardiolink_login_cliente_v1(text)'] LOOP
+    IF has_function_privilege('anon',f,'EXECUTE') THEN RAISE EXCEPTION 'FALLA: anon puede ejecutar %',f; END IF;
+    IF NOT has_function_privilege('authenticated',f,'EXECUTE') THEN RAISE EXCEPTION 'FALLA: authenticated NO puede ejecutar % (las políticas/RPC fallarían)',f; END IF;
+  END LOOP;
+  RAISE NOTICE 'OK privilegios: helpers internos cerrados; RPC y predicados sólo para authenticated (no anon)';
+END $$;
 
 -- ===== 1) FIXTURES (como postgres; sin RLS). Todos los ids con prefijo __t_ =====
 DO $$ DECLARE a record; la text[]; lb text[]; BEGIN
@@ -92,6 +123,15 @@ DO $$ DECLARE a record; n int; BEGIN
     RAISE NOTICE 'OK permitido: mensaje propio';
   EXCEPTION WHEN OTHERS THEN RAISE EXCEPTION 'FALLA: médico A no puede enviar un mensaje propio (%)',SQLERRM; END;
   BEGIN
+    INSERT INTO public.cardiolink_atenciones(id,payload) VALUES('__t_msg_falsif',
+      jsonb_build_object('id','__t_msg_falsif','tipoRegistro','mensaje','profesionalId',a.prof_a,'destino','todos','deUsuario','matias','texto','falsificado'));
+    RAISE EXCEPTION 'FALLA: médico A falsificó un mensaje insertándolo como "atención" propia con tipoRegistro=mensaje';
+  EXCEPTION WHEN insufficient_privilege OR check_violation THEN RAISE NOTICE 'OK rechazado: mensaje falsificado vía atención propia'; END;
+  BEGIN
+    UPDATE public.cardiolink_atenciones SET payload=payload||'{"tipoRegistro":"mensaje","destino":"todos","deUsuario":"matias"}'::jsonb WHERE id='__t_att_a';
+    RAISE EXCEPTION 'FALLA: médico A reconvirtió su atención en mensaje';
+  EXCEPTION WHEN insufficient_privilege OR check_violation THEN RAISE NOTICE 'OK rechazado: reconversión de atención en mensaje'; END;
+  BEGIN
     INSERT INTO public.cardiolink_atenciones(id,payload) VALUES('__t_att_ajena',jsonb_build_object('id','__t_att_ajena','profesionalId',a.prof_b));
     RAISE EXCEPTION 'FALLA: médico A insertó una atención de otro profesional';
   EXCEPTION WHEN insufficient_privilege OR check_violation THEN RAISE NOTICE 'OK rechazado: atención de otro profesional'; END;
@@ -128,7 +168,14 @@ DO $$ DECLARE a record; r jsonb; BEGIN
   r := public.cardiolink_config_medico_v1();
   IF r ? 'usuarios' OR r ? 'pacientes' OR r ? 'reglasOS' OR r ? 'colocadores' OR r::text ~ '"valores"' THEN
     RAISE EXCEPTION 'FALLA: la config saneada expone usuarios ajenos o datos comerciales/pacientes'; END IF;
-  IF r->'usuarioPropio' IS NOT NULL AND r->'usuarioPropio'->>'profesionalId' IS DISTINCT FROM a.prof_a THEN RAISE EXCEPTION 'FALLA: usuarioPropio no corresponde al médico A'; END IF;
+  IF r->'usuarioPropio' IS NOT NULL THEN
+    IF r->'usuarioPropio'->>'profesionalId' IS DISTINCT FROM a.prof_a THEN RAISE EXCEPTION 'FALLA: usuarioPropio no corresponde al médico A'; END IF;
+    IF EXISTS (SELECT 1 FROM jsonb_object_keys(r->'usuarioPropio') k
+               WHERE k NOT IN ('id','usuario','nombre','rol','profesionalId','especialidad','activo','aliases')) THEN
+      RAISE EXCEPTION 'FALLA: usuarioPropio expone campos fuera de la lista mínima (%)',(SELECT string_agg(k,',') FROM jsonb_object_keys(r->'usuarioPropio') k); END IF;
+    IF r->'usuarioPropio' ? 'aliases' AND jsonb_array_length(r->'usuarioPropio'->'aliases')>1 THEN RAISE EXCEPTION 'FALLA: usuarioPropio devuelve más de un alias'; END IF;
+    IF r->'usuarioPropio' ? 'email' OR r->'usuarioPropio' ? 'rolId' OR r->'usuarioPropio' ? 'soloMatias' THEN RAISE EXCEPTION 'FALLA: usuarioPropio expone email/rolId/soloMatias'; END IF;
+  END IF;
   IF r->'mensajeria'->>'login' IS NULL THEN RAISE EXCEPTION 'FALLA: falta la identidad de mensajería del médico'; END IF;
   IF NOT EXISTS (SELECT 1 FROM jsonb_array_elements(public.cardiolink_directorio_mensajes_v1()) e WHERE e->>'destino'='usuario:'||(r->'mensajeria'->>'login')) THEN
     RAISE EXCEPTION 'FALLA: el médico A no figura en el directorio (no se le podrían dirigir mensajes)'; END IF;
@@ -141,6 +188,39 @@ DO $$ DECLARE a record; BEGIN
   IF public.cardiolink_config_medico_v1() IS NOT NULL THEN RAISE EXCEPTION 'FALLA: Secretaría obtuvo config_medico'; END IF;
   IF coalesce(array_length(public.cardiolink_logins_propios_v1(),1),0)<>0 THEN RAISE EXCEPTION 'FALLA: Secretaría tiene logins de médico'; END IF;
   RAISE NOTICE 'OK Secretaría: sin config_medico ni identidad de médico';
+END $$;
+
+-- Identidad médica inválida: sin sesión, o professional_id vacío/ inválido => nada de config médica ni logins ni mensajes
+DO $$ DECLARE a record; BEGIN
+  SELECT * INTO a FROM t_actores;
+  PERFORM set_config('request.jwt.claims','{}',true);                 -- sin sesión (auth.uid() NULL)
+  IF public.cardiolink_config_medico_v1() IS NOT NULL OR coalesce(array_length(public.cardiolink_logins_propios_v1(),1),0)<>0
+     OR public.cardiolink_directorio_mensajes_v1() IS NOT NULL THEN
+    RAISE EXCEPTION 'FALLA: sin sesión se obtuvo config médica, logins o directorio'; END IF;
+  RAISE NOTICE 'OK sin sesión: sin config médica, sin logins, sin directorio';
+END $$;
+RESET ROLE;
+-- (como postgres) médico con professional_id inválido, creado dentro de la transacción
+DO $$ DECLARE v uuid:=gen_random_uuid(); BEGIN
+  BEGIN
+    INSERT INTO auth.users(id, aud, role, email) VALUES (v,'authenticated','authenticated','qa-tmp-medico-inv@invalid.test');
+    INSERT INTO public.cardiolink_user_roles(user_id, base_role, active, professional_id) VALUES (v,'medico',true,'  ');
+    CREATE TEMP TABLE t_inv AS SELECT v AS uid;
+    GRANT SELECT ON t_inv TO authenticated;
+  EXCEPTION WHEN OTHERS THEN
+    RAISE NOTICE 'OMITIDO: no se pudo crear el médico con professional_id inválido (%). Probar manualmente.',SQLERRM;
+  END;
+END $$;
+SET LOCAL ROLE authenticated;
+DO $$ BEGIN
+  IF to_regclass('pg_temp.t_inv') IS NOT NULL THEN
+    PERFORM pg_temp.claims((SELECT uid FROM t_inv),'qa-tmp-medico-inv@invalid.test');
+    IF public.cardiolink_config_medico_v1() IS NOT NULL OR coalesce(array_length(public.cardiolink_logins_propios_v1(),1),0)<>0 THEN
+      RAISE EXCEPTION 'FALLA: médico con professional_id inválido obtuvo config médica/logins'; END IF;
+    IF EXISTS (SELECT 1 FROM public.cardiolink_atenciones WHERE id IN ('__t_att_a','__t_msg_todos')) THEN
+      RAISE EXCEPTION 'FALLA: médico con professional_id inválido ve atenciones o mensajes'; END IF;
+    RAISE NOTICE 'OK professional_id inválido: sin config, sin logins, sin datos';
+  END IF;
 END $$;
 
 -- ===== MÉDICO B: aislamiento recíproco =====
@@ -198,3 +278,5 @@ END $$;
 
 RESET ROLE;
 ROLLBACK;  -- no deja datos de prueba
+-- Verificación posterior (fuera de la transacción): select count(*) from public.cardiolink_user_roles where professional_id like 'qa_tmp_%'; -- = 0
+--                                                    select count(*) from auth.users where email like 'qa-tmp-%'; -- = 0

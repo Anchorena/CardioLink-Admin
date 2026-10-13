@@ -6,7 +6,8 @@ Rama: `feat/ui-interna-v1-v2` (base `6a245df`). Sin cambios de políticas ni mig
 Archivos de este paquete. Versionados para revisión: los dos `pending_review_…sql`, `staging_discovery_readonly.sql` y este documento. Los arneses de navegador (`qa-*.js`) son material local de QA simulado y **no** se versionan en este commit:
 - `pending_review_atenciones_rls_medico_v2.sql` — borrador de la corrección RLS (NO ejecutar).
 - `pending_review_atenciones_rls_medico_v2_tests.sql` — pruebas SQL con `BEGIN … ROLLBACK` para STAGING.
-- `staging_discovery_readonly.sql` — 6 consultas de SOLO LECTURA para verificar usuarios, destinatarios y políticas en STAGING.
+- `staging_discovery_readonly.sql` — 9 consultas de SOLO LECTURA (usuarios, destinatarios, políticas, privilegios EXECUTE, formato de professional_id, cantidad de roles).
+- `pending_review_atenciones_rls_medico_v2_rollback.sql` — rollback EXACTO a las políticas previas de STAGING (permite_atencion_v1), con verificación posterior.
 - `qa-bloqueante2-version-base.harness.js` + `qa-harness.js` (Supabase simulado en memoria) — pruebas de navegador del bloqueante 2.
 
 ---
@@ -41,7 +42,29 @@ Consecuencias de diseño:
 - **Config saneada** (`cardiolink_config_medico_v1`): agrega `mensajeria.login`; `usuarioPropio` puede ser `null`.
 - Cliente: el perfil local del médico sin usuario configurado toma el login de backend; no se muestra ningún identificador (las etiquetas son nombres).
 - El médico **no puede borrar mensajes** (RLS lo impide): el botón "Borrar" se oculta para el médico.
-Archivos actualizados: borrador SQL (v3), pruebas SQL, `qa-bloqueante1-mensajes.harness.js` (QA simulado con dos identidades de médico, secretaría y owner).
+Archivos actualizados: borrador SQL (v3.2), pruebas SQL, rollback, `qa-bloqueante1-mensajes.harness.js` (QA simulado con dos identidades de médico, secretaría y owner).
+
+### Revisión v3.2 (correcciones pedidas tras la revisión de ChatGPT sobre v3.1)
+| # | Observación | Resolución en v3.2 |
+|---|---|---|
+| 1 | `config_medico` devolvía el objeto `usuarioPropio` completo | JSON construido **campo a campo**: `id, usuario, nombre, rol, profesionalId, especialidad, activo` y, como máximo, **un** alias: el login del propio llamador (para que el cliente se reconozca). Sin `email`, `rolId`, `soloMatias`, lista de aliases ni otros. Sólo entradas con `rol='medico'` activas. Compatibilidad con `app.js` comprobada en simulación: el cliente deriva `rolId` de `rol` y reconoce al médico por identidad de backend aun sin entrada de config |
+| 2 | Identidad médica | Una sola función `cardiolink_ctx_prof_v1()`: sesión (`auth.uid()` no nulo) + rol médico **activo** + `professional_id` válido (`^[A-Za-z0-9_.-]{1,64}$`). Si falla algo: `config_medico` = NULL, `logins_propios` = `{}`, sin mensajes. Directorio y marcar-leído también exigen sesión/rol activo |
+| 3 | QA entre médicos con un único médico en STAGING | Ver "Estrategia de QA real" más abajo |
+| 4a | UPDATE/DELETE de mensajes por médicos | Las 4 políticas usan el predicado `cardiolink_atencion_permitida_v2`; para el médico **excluye** `tipoRegistro` `mensaje`/`config`. UPDATE/DELETE sólo por ese predicado ⇒ el médico no modifica ni borra mensajes ni config, y tampoco puede reconvertir una atención propia en mensaje |
+| 4b | **Hallazgo propio, más grave que lo pedido** | En v3.1 un médico podía **insertar una "atención" propia con `tipoRegistro='mensaje'`** y así falsificar un mensaje (`deUsuario:'matias'`, `destino:'todos'`) saltándose `creadoUid`. Corregido en v3.2 y cubierto por 2 pruebas SQL (insert falsificado y reconversión por UPDATE) |
+| 4c | Directorio | Sólo `{destino,nombre,rol}`; sin emails, alias, ids ni `profesionalId`; requiere sesión y rol activo. Prueba SQL verifica claves y ausencia de `@` |
+| 4d | Nombres de funciones y GRANT | En Supabase `REVOKE … FROM PUBLIC` **no** quita el EXECUTE por defecto de `anon`/`authenticated`. v3.2 revoca de `PUBLIC, anon` en todo y además de `authenticated` en los helpers internos (`config_usuarios`, `login_seudonimo`: antes eran ejecutables por anon y leían la config). Las funciones que las políticas evalúan como `authenticated` conservan el GRANT. Prueba SQL con `has_function_privilege` y consulta 7 del discovery. Nota: las funciones de la migración de Pendientes (`identidad_pendientes_v1`, `pendiente_mutar_v1`, `permite_atencion_v1`) usan sólo `REVOKE … FROM PUBLIC`; conviene el mismo endurecimiento (no se tocó ese archivo) |
+| 4e | Aislamiento de atenciones entre profesionales | Predicado v2 exige `profesionalId = mi professional_id`; pruebas A/B recíprocas |
+| 4f | Históricos conservados | La migración y el rollback no hacen DML. Precondición/postcondición comparan la cantidad de mensajes antes/después y abortan si cambia |
+| 4g | Rollback = políticas previas de STAGING | Nuevo `…_rollback.sql`: restaura las 4 políticas **exactamente** como en `pending_review_pendientes_medicos_v1.sql` (todas con `permite_atencion_v1(payload)`), y verifica el resultado. Distinto del rollback de Production (`USING (true)`). La v3.2 además **aborta si las políticas actuales no son las esperadas** (precondición). Pendiente: comparar con el snapshot real de `pg_policies` antes de aplicar |
+Riesgo nuevo de v3.2: el formato exigido a `professional_id` deja sin acceso a un médico cuyo id tenga espacios/acentos. Consulta 8 del discovery lo detecta antes de aplicar.
+
+### Estrategia de QA real con dos identidades ficticias (PROPUESTA — nada se ejecuta sin autorización)
+Estado verificado: un único médico backend (`professional_id = medico_qa_staging`). Ninguna cuenta ni dato se crea hasta que se autorice.
+**Nivel 1 — SQL transaccional, sin cuentas persistentes (recomendado primero).** El script de pruebas crea **dentro de la transacción** una identidad ficticia B (`auth.users` + `cardiolink_user_roles`, `professional_id = qa_tmp_medico_b`) y un médico con `professional_id` inválido, impersona con claims JWT (`SET LOCAL ROLE authenticated`) y termina en `ROLLBACK`. Verificación posterior: `select count(*) from cardiolink_user_roles where professional_id like 'qa_tmp_%'` y `… from auth.users where email like 'qa-tmp-%'` deben dar 0. Riesgo: si `auth.users` exige columnas o dispara triggers, el INSERT falla y la transacción aborta sin cambios; en ese caso pasar al nivel 3.
+**Nivel 2 — App autenticada con las cuentas reales de STAGING** (médico QA, Secretaría, owner): mensajería A→Secretaría, Secretaría→médico QA (vía directorio), marcar leído, "Enviados", config saneada, escritura de config sólo por Secretaría, envío sin alerta ni cola bloqueada, atenciones del médico QA aisladas. No usa pacientes reales: sólo registros marcados "QA" creados para la prueba.
+**Nivel 3 — Segunda cuenta ficticia persistente (sólo con autorización explícita).** (a) Crear en el panel de Authentication un usuario con email ficticio de tu control y contraseña que definís vos (no la manejo yo). (b) `insert into cardiolink_user_roles(user_id, base_role, active, professional_id) values ('<uuid>','medico',true,'qa_medico_b');` (c) Sin usuario en `config.usuarios` (identidad por seudónimo), para que sea un caso distinto del médico QA. (d) Ejecutar los mismos flujos del nivel 2 con ambos médicos en navegadores separados y atenciones "QA" para cada uno. (e) **Limpieza:** `delete from cardiolink_atenciones where id like '__qa_%' or payload->>'paciente' like 'QA %'` (revisar antes con un SELECT), `delete from cardiolink_user_roles where professional_id='qa_medico_b'`, y eliminar el usuario desde el panel. Registrar el snapshot de políticas antes y después.
+Orden: discovery de solo lectura → snapshot → aplicar v3.2 en STAGING → nivel 1 → nivel 2 → (si se autoriza) nivel 3 → decisión sobre Production. Nada de esto toca Production.
 
 ### Revisión de seguridad y rendimiento del SQL v3.1 (previa a STAGING)
 Cambios respecto de v3 por esta revisión:

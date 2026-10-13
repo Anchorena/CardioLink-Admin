@@ -66,3 +66,18 @@ order by 1,3 desc;
 -- 6) Políticas vigentes sobre cardiolink_atenciones (para el snapshot previo a cualquier cambio)
 select policyname, cmd, roles, qual, with_check from pg_policies
 where schemaname='public' and tablename='cardiolink_atenciones' order by cmd, policyname;
+
+-- 7) Privilegios EXECUTE actuales de las funciones cardiolink_* (en Supabase REVOKE ... FROM PUBLIC no quita anon/authenticated).
+--    Guardar como snapshot; tras aplicar la v3.2 los helpers internos no deben tener anon/authenticated y las RPC no deben tener anon.
+select routine_name, grantee, privilege_type
+from information_schema.routine_privileges
+where routine_schema='public' and routine_name like 'cardiolink\_%' and grantee in ('anon','authenticated','PUBLIC')
+order by routine_name, grantee;
+
+-- 8) ¿Todos los professional_id activos cumplen el formato exigido por la v3.2 (^[A-Za-z0-9_.-]{1,64}$)?
+--    Un médico activo cuyo professional_id NO cumpla quedaría SIN acceso a atenciones con la v3.2.
+select base_role, professional_id, (professional_id ~ '^[A-Za-z0-9_.-]{1,64}$') as formato_valido
+from public.cardiolink_user_roles where active and base_role='medico' order by professional_id;
+
+-- 9) Cantidad de médicos, secretarías y owners/admins activos (para saber si el QA necesita una 2ª identidad ficticia)
+select base_role, count(*) as activos from public.cardiolink_user_roles where active group by base_role order by base_role;
