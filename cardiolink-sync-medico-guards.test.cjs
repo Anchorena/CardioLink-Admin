@@ -155,3 +155,37 @@ test('filas nuevas sin sincronizar: se respaldan al cerrar sesión con pendiente
   // la recuperación corre DESPUÉS del snapshot de baselines y de soltar cargandoDesdeNube
   assert.match(src,/snapshotBaselineAtenciones298\(atenciones\);\s*cargandoDesdeNube=false;\s*try\{ await recuperarNuevasPendientesV1\(\);/);
 });
+
+test('evoluciones: guardado confiable (por id, refresco pausado, confirmación del servidor, sin duplicados)',()=>{
+  const f=sinComentarios(between('async function saveEvolutionHC(p,existing,atencionId){','function mostrarErrorGuardadoEvolucionV1'));
+  // (1) se resuelve la evolución POR ID en el estado actual (no se muta la referencia capturada al abrir)
+  assert.match(f,/let live=editId\?\(data\.evolucionesClinicas\|\|\[\]\)\.find\(x=>String\(x\.id\)===editId\):null;/);
+  assert.match(f,/Object\.assign\(live,campos\)/);
+  assert.doesNotMatch(f,/Object\.assign\(existing,/);
+  // evolución ausente del estado: se comprueba el servidor antes de recrear; si no existe en el servidor NO se recrea
+  assert.match(f,/srv\.existe===false\)\{falloGuardado\(/);
+  // control de versión contra una edición posterior de otra sesión
+  assert.match(f,/vServ>vBase\+1000/);
+  // (3) los datos se arman antes de cualquier await; (4) se confirma antes de cerrar y (5) se revierte el estado local si falla
+  assert.match(f,/guardarEvolucionConfirmada\(p,evolutionIdFinal,\{resumen:summaryChanged\}\)/);
+  assert.ok(f.indexOf('if(!r.ok){')!==-1&&f.indexOf('revertirLocal();')<f.indexOf("$hc('hcEvolutionModal')?.remove()"));
+  assert.ok(f.indexOf('guardarEvolucionConfirmada(')<f.indexOf("$hc('hcEvolutionModal')?.remove()"));   // el modal se cierra DESPUÉS de confirmar
+  // (6) id estable por modal y bloqueo de reentrada
+  assert.match(f,/modalEl\.dataset\.evoIdV1=evolutionIdFinal/);
+  assert.match(f,/if\(window\.__hcGuardandoEvolucionV1\)return;/);
+  assert.match(f,/finally\{\s*window\.__hcGuardandoEvolucionV1=false;/);
+  // el refresco automático se pausa con el modal abierto o guardando
+  const r=between('async function refrescarDesdeSupabaseAutomatico(){','await cargarAtencionesDesdeSupabase();');
+  assert.match(r,/window\.__hcGuardandoEvolucionV1\s*\|\|\s*document\.getElementById\('hcEvolutionModal'\)/);
+});
+
+test('capa relacional: guardarEvolucionConfirmada arma filas antes de los await, sólo sube la evolución editada y verifica por lectura',()=>{
+  const g=sinComentarios(between('async function guardarEvolucionConfirmada410(p,evolutionId,opts){','function mergePaciente410(row){'));
+  const antesDelPrimerAwait=g.slice(0,g.indexOf('await'));
+  assert.match(antesDelPrimerAwait,/erow=evolucionRow410\(ev,p\)/);        // snapshot de la fila ANTES de cualquier await
+  assert.doesNotMatch(g,/evolucionesLocal410\(p\)\.filter\(x=>x\?\.id\)\.map/);   // no reenvía todas las evoluciones del paciente
+  assert.match(g,/\.from\('cardiolink_hc_evoluciones'\)\.upsert\(\[erow\],\{onConflict:'id'\}\)/);
+  assert.match(g,/23503/);                                                    // sólo toca la ficha del paciente si falta (FK)
+  assert.match(g,/leerEvolucion410\(erow\.id\)/);                              // confirmación por lectura posterior
+  assert.match(src,/leerEvolucion:leerEvolucion410,guardarEvolucionConfirmada:guardarEvolucionConfirmada410/);
+});
