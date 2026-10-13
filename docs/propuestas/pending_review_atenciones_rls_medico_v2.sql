@@ -142,11 +142,11 @@ CREATE OR REPLACE FUNCTION public.cardiolink_mensaje_visible_medico_v1(p_payload
 AS $f$
  SELECT coalesce(pg_catalog.cardinality(p_logins),0)>0
   AND p_payload->>'tipoRegistro'='mensaje'
-  AND ( coalesce(p_payload->>'destino','todos') IN ('todos','rol:medico')
+  AND coalesce(( coalesce(p_payload->>'destino','todos') IN ('todos','rol:medico')
      OR (p_payload->>'destino' LIKE 'usuario:%' AND pg_catalog.substr(p_payload->>'destino',9) = ANY (p_logins))
      OR p_payload->>'creadoUid' = p_uid::text
      OR (p_payload->>'creadoUid' IS NULL
-         AND public.cardiolink_login_cliente_v1(p_payload->>'deUsuario') = ANY (p_logins)) )
+         AND public.cardiolink_login_cliente_v1(p_payload->>'deUsuario') = ANY (p_logins)) ),false)
 $f$;
 REVOKE ALL ON FUNCTION public.cardiolink_mensaje_visible_medico_v1(jsonb,text[],uuid) FROM PUBLIC, anon;
 GRANT EXECUTE ON FUNCTION public.cardiolink_mensaje_visible_medico_v1(jsonb,text[],uuid) TO authenticated;
@@ -176,7 +176,7 @@ BEGIN
   IF coalesce(array_length(v_logins,1),0)=0 THEN RAISE EXCEPTION 'Identidad médica no válida'; END IF;
   SELECT payload INTO v_payload FROM public.cardiolink_atenciones WHERE id=p_id FOR UPDATE;
   IF NOT FOUND OR v_payload->>'tipoRegistro' IS DISTINCT FROM 'mensaje' THEN RAISE EXCEPTION 'Mensaje inexistente'; END IF;
-  IF NOT public.cardiolink_mensaje_visible_medico_v1(v_payload, v_logins, auth.uid()) THEN RAISE EXCEPTION 'Mensaje no autorizado'; END IF;
+  IF public.cardiolink_mensaje_visible_medico_v1(v_payload, v_logins, auth.uid()) IS DISTINCT FROM TRUE THEN RAISE EXCEPTION 'Mensaje no autorizado'; END IF;
   v_leidos := CASE WHEN jsonb_typeof(v_payload->'leidoPor')='array' THEN v_payload->'leidoPor' ELSE '[]'::jsonb END;
   FOREACH l IN ARRAY v_logins LOOP
     IF NOT (v_leidos ? l) THEN v_leidos := v_leidos || to_jsonb(l); END IF;
