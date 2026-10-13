@@ -135,8 +135,23 @@ test('caché local por usuario: se aparta sin borrar, se limpia al cerrar sólo 
   assert.match(r,/aislarCacheLocalPorUsuarioV1\(usuarioSupabase\?\.id,false\);/);   // sin rol confirmado: nunca privilegiado
   const l=between('async function liberarCacheLocalAlCerrarSesionV1(){','// Directorio mínimo');
   assert.match(l,/sincronizarAtencionesSupabase\(false\)/);
-  assert.ok(l.indexOf('if(pendiente) return false;')!==-1&&l.indexOf('if(pendiente) return false;')<l.indexOf('removeItem(k)'));
+  assert.ok(l.indexOf('if(pendiente){')!==-1&&l.indexOf('if(pendiente){')<l.indexOf('removeItem(k)'));
   assert.match(src,/await liberarCacheLocalAlCerrarSesionV1\(\);\s*if \(supabaseClient\) await supabaseClient\.auth\.signOut\(\);/);   // inactividad
   assert.match(src,/await liberarCacheLocalAlCerrarSesionV1\(\);\s*await supabaseClient\.auth\.signOut\(\);/);                           // cierre manual
   assert.match(src,/window\.hayPendientesSync298=function\(\)\{/);
+});
+
+test('filas nuevas sin sincronizar: se respaldan al cerrar sesión con pendientes y se recuperan sin pisar ni duplicar',()=>{
+  const l=sinComentarios(between('async function liberarCacheLocalAlCerrarSesionV1(){','// Directorio mínimo'));
+  assert.match(l,/window\.filasNuevasPendientes298\(\)/);
+  assert.match(l,/OUTBOX_NUEVAS_KEY_V1\+usuarioSupabase\.id/);                       // respaldo POR usuario
+  assert.ok(l.indexOf('OUTBOX_NUEVAS_KEY_V1')<l.indexOf('return false;'));
+  const r=sinComentarios(between('async function recuperarNuevasPendientesV1(){','function clavesCacheLocalV1()')||between('async function recuperarNuevasPendientesV1(){','function aislarCacheLocalPorUsuarioV1'));
+  assert.match(r,/!ids\.has\(String\(r\.id\)\)/);                                    // lo que ya existe en el servidor NO se pisa ni se duplica
+  assert.match(r,/idsRec\.has\(String\(a\.id\)\)/);                                 // confirmado = las filas recuperadas ya tienen versión remota
+  assert.match(r,/if\(ok\) localStorage\.removeItem\(k\)/);                           // el respaldo se descarta sólo si quedó confirmado
+  const s=between('window.filasNuevasPendientes298=function(){','window.hayPendientesSync298=function(){');
+  assert.match(s,/!baselineVersionAtenciones298\.has\(String\(a\.id\)\)/);            // sólo filas sin versión remota (nunca confirmadas)
+  // la recuperación corre DESPUÉS del snapshot de baselines y de soltar cargandoDesdeNube
+  assert.match(src,/snapshotBaselineAtenciones298\(atenciones\);\s*cargandoDesdeNube=false;\s*try\{ await recuperarNuevasPendientesV1\(\);/);
 });

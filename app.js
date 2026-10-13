@@ -214,6 +214,27 @@ function sincronizacionMasivaPermitidaV1(){ return backendEsAdminOwner===true ||
 //  * Un dueño desconocido (caché anterior a este cambio) sólo se adopta si el usuario es owner/admin/secretaría (ya ven todo); si no, se aparta.
 //  * Al cerrar sesión se intenta sincronizar; si TODO quedó confirmado la caché se elimina; si queda algo pendiente se conserva (sigue asociada a su dueño).
 const CACHE_OWNER_KEY_V1='cardiolink_cache_owner_v1';
+const OUTBOX_NUEVAS_KEY_V1='cardiolink_nuevas_pendientes_v1_'; // + uid
+// Tras la carga desde el servidor: vuelve a encolar las filas nuevas respaldadas al cerrar sesión. Si el servidor ya tiene esa fila NO se pisa ni
+// se duplica (gana el servidor). El respaldo se descarta sólo cuando quedó confirmado.
+async function recuperarNuevasPendientesV1(){
+  const uid=usuarioSupabase?.id; if(!uid) return;
+  const k=OUTBOX_NUEVAS_KEY_V1+uid; let rows=[];
+  try{ rows=(JSON.parse(localStorage.getItem(k)||'{}').rows)||[]; }catch(e){ rows=[]; }
+  if(!Array.isArray(rows)||!rows.length){ localStorage.removeItem(k); return; }
+  const ids=new Set((atenciones||[]).map(a=>String(a&&a.id)));
+  const nuevas=rows.filter(r=>r&&r.id!=null&&!ids.has(String(r.id)));
+  nuevas.forEach(r=>atenciones.push(r));
+  if(nuevas.length){ try{ localStorage.setItem(storageAtenciones,JSON.stringify(atenciones)); }catch(e){} }
+  let ok=true;
+  if(nuevas.length){
+    await sincronizarAtencionesSupabase(false);
+    // Confirmado = ya ninguna de las filas recuperadas está sin versión remota (el servidor las aceptó); no depende de otros pendientes.
+    const idsRec=new Set(nuevas.map(r=>String(r.id)));
+    ok=!(window.filasNuevasPendientes298?.()||[]).some(a=>idsRec.has(String(a.id)));
+  }
+  if(ok) localStorage.removeItem(k);
+}
 function clavesCacheLocalV1(){ return [storageConfig,storageAtenciones,storageValoresColocacion,'cl_last_sync_382']; }
 function aislarCacheLocalPorUsuarioV1(uid,privilegiado){
   try{
@@ -241,7 +262,16 @@ async function liberarCacheLocalAlCerrarSesionV1(){
       await Promise.race([sincronizarAtencionesSupabase(false),new Promise(r=>setTimeout(r,8000))]);
     }
     const pendiente=typeof window.hayPendientesSync298==='function'?window.hayPendientesSync298():true;
-    if(pendiente) return false; // se conserva: sigue asociada a su dueño y la app no se la muestra a otro usuario
+    if(pendiente){
+      // Se conserva la caché (sigue asociada a su dueño; la app no se la muestra a otro usuario). Además se respaldan por separado las filas NUEVAS
+      // que nunca llegaron al servidor: al volver a iniciar sesión la carga reemplaza las atenciones locales por las del servidor y, sin este
+      // respaldo, esas filas se perderían.
+      try{
+        const nuevas=typeof window.filasNuevasPendientes298==='function'?window.filasNuevasPendientes298():[];
+        if(nuevas.length&&usuarioSupabase?.id) localStorage.setItem(OUTBOX_NUEVAS_KEY_V1+usuarioSupabase.id,JSON.stringify({rows:nuevas,fecha:new Date().toISOString()}));
+      }catch(e){ console.warn('No se pudo respaldar las filas nuevas pendientes:',e); }
+      return false;
+    }
     clavesCacheLocalV1().forEach(k=>localStorage.removeItem(k));
     localStorage.removeItem(CACHE_OWNER_KEY_V1);
     return true;
@@ -6063,6 +6093,10 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   }
   window.releerYConfirmarTrasRpc298=releerYConfirmarTrasRpc298;
   // ¿Queda algo por confirmar en Supabase? (usado al cerrar sesión para no borrar la caché con datos pendientes)
+  // Filas que nunca fueron confirmadas por el servidor (sin versión remota): son las únicas que se pierden si se recarga desde Supabase.
+  window.filasNuevasPendientes298=function(){
+    try{ return (atenciones||[]).filter(a=>a&&a.id!=null&&a.id!==CONFIG_ROW_ID&&!baselineVersionAtenciones298.has(String(a.id))).map(a=>JSON.parse(JSON.stringify(a))); }catch(e){ return []; }
+  };
   window.hayPendientesSync298=function(){
     try{ return !!(syncAtencionesPendiente||syncPendienteSinConfirmar||(atenciones||[]).some(atencionModificada298)); }catch(e){ return true; }
   };
@@ -6450,6 +6484,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       // baseline al confirmar el UPSERT.
       snapshotBaselineAtenciones298(atenciones);
       cargandoDesdeNube=false;
+      try{ await recuperarNuevasPendientesV1(); }catch(e){ console.warn('No se pudieron recuperar las filas nuevas pendientes:',e); }
     };
   }
   if(typeof sincronizarAtencionesSupabase==='function'){
