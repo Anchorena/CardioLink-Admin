@@ -151,8 +151,15 @@ function perfilUsuarioActual(){
   const email = usuarioSupabase?.email || '';
   let u=(data.usuarios||[]).find(x=>usuarioCoincide(x,user,email) && x.activo!==false);
   if(!u) u=inferirUsuarioPorLogin(user) || inferirUsuarioPorLogin(email);
+  // Médico con identidad de backend: las heurísticas de email/alias NO pueden asignarle el perfil de otro profesional.
+  // Si el perfil resuelto no está vinculado a SU professional_id, se usa el usuario configurado vinculado o, si no hay, el
+  // perfil de respaldo con el login de backend.
+  if(esMedicoBackendV1()){
+    const P=String(backendPendientesIdentidadV1.professional_id||'');
+    if(u && String(u.profesionalId||'')!==P) u=(data.usuarios||[]).find(x=>x.activo!==false&&String(x.profesionalId||'')===P)||null;
+  }
   // Si no se reconoce el usuario, entra con permisos mínimos. No cae en Matías para evitar exposición de caja/reportes.
-  if(!u) u={id:'usr_sin_config',usuario:user,nombre:user||'Usuario sin configurar',rol:'sin_configurar',profesionalId:'',especialidad:'Perfil no configurado',activo:true};
+  if(!u) u={id:'usr_sin_config',usuario:(esMedicoBackendV1()&&backendMensajeriaV1?.login)||user,nombre:(esMedicoBackendV1()&&nombreVisibleBackendV1())||user||'Usuario sin configurar',rol:'sin_configurar',profesionalId:'',especialidad:'Perfil no configurado',activo:true};
   usuarioPerfilActual=u;
   return u;
 }
@@ -182,15 +189,150 @@ let backendRolCargado=false;
 let backendRolConsultaFinalizada=false;
 let backendEsAdminOwner=false;
 let backendTieneAccesoTurnos=false;
+let backendPendientesIdentidadV1=null;
+let pendientesOperacionEnCursoV1=false;
+// Mensajería interna del médico (identidad y directorio entregados por el backend).
+// backendMensajeriaV1={login}: login estable del médico para mensajes (usuario configurado
+// vinculado por professional_id o, si no existe, el propio professional_id). Nunca el prefijo del email.
+let backendMensajeriaV1=null;
+let directorioMensajesV1=null; // [{destino,nombre,rol}] sin emails, alias, ids ni datos comerciales
+function esMedicoBackendV1(){ return backendPendientesIdentidadV1?.role==='medico'; }
+// Nombre visible CONFIABLE del médico: sale del directorio del backend, nunca del prefijo del email.
+function nombreVisibleBackendV1(){
+  const login=backendMensajeriaV1?.login; if(!login) return '';
+  return (directorioMensajesV1||[]).find(x=>x.destino==='usuario:'+login)?.nombre||'';
+}
+// Fail-closed: sólo owner/admin (backend) o secretaría (backend) pueden sembrar
+// la nube desde la caché local o forzar un volcado masivo. Médico, o cualquier
+// sesión cuyo rol no se pudo confirmar (RPC caída/sin migrar), nunca.
+function sincronizacionMasivaPermitidaV1(){ return backendEsAdminOwner===true || backendTieneAccesoTurnos===true; }
+// ===== Privacidad de la caché local al cambiar de usuario (misma computadora) =====
+// La config y las atenciones se cachean en localStorage. Para que un usuario no vea la caché de otro:
+//  * Se registra el dueño (auth.uid) de la caché. Si el usuario que inicia sesión es OTRO, la caché anterior NO se borra: se APARTA
+//    bajo el uid de su dueño (cardiolink_apartado_<uid>__<clave>), invisible para la app, y se restaura cuando ese usuario vuelve.
+//    Así los datos pendientes de sincronización no se pierden.
+//  * Un dueño desconocido (caché anterior a este cambio) sólo se adopta si el usuario es owner/admin/secretaría (ya ven todo); si no, se aparta.
+//  * Al cerrar sesión se intenta sincronizar; si TODO quedó confirmado la caché se elimina; si queda algo pendiente se conserva (sigue asociada a su dueño).
+const CACHE_OWNER_KEY_V1='cardiolink_cache_owner_v1';
+const OUTBOX_NUEVAS_KEY_V1='cardiolink_nuevas_pendientes_v1_'; // + uid
+// Tras la carga desde el servidor: vuelve a encolar las filas nuevas respaldadas al cerrar sesión. Si el servidor ya tiene esa fila NO se pisa ni
+// se duplica (gana el servidor). El respaldo se descarta sólo cuando quedó confirmado.
+async function recuperarNuevasPendientesV1(){
+  const uid=usuarioSupabase?.id; if(!uid) return;
+  const k=OUTBOX_NUEVAS_KEY_V1+uid; let rows=[];
+  try{ rows=(JSON.parse(localStorage.getItem(k)||'{}').rows)||[]; }catch(e){ rows=[]; }
+  if(!Array.isArray(rows)||!rows.length){ localStorage.removeItem(k); return; }
+  const ids=new Set((atenciones||[]).map(a=>String(a&&a.id)));
+  const nuevas=rows.filter(r=>r&&r.id!=null&&!ids.has(String(r.id)));
+  nuevas.forEach(r=>atenciones.push(r));
+  if(nuevas.length){ try{ localStorage.setItem(storageAtenciones,JSON.stringify(atenciones)); }catch(e){} }
+  let ok=true;
+  if(nuevas.length){
+    await sincronizarAtencionesSupabase(false);
+    // Confirmado = ya ninguna de las filas recuperadas está sin versión remota (el servidor las aceptó); no depende de otros pendientes.
+    const idsRec=new Set(nuevas.map(r=>String(r.id)));
+    ok=!(window.filasNuevasPendientes298?.()||[]).some(a=>idsRec.has(String(a.id)));
+  }
+  if(ok) localStorage.removeItem(k);
+}
+function clavesCacheLocalV1(){ return [storageConfig,storageAtenciones,storageValoresColocacion,'cl_last_sync_382']; }
+function aislarCacheLocalPorUsuarioV1(uid,privilegiado){
+  try{
+    if(!uid) return;
+    const dueno=localStorage.getItem(CACHE_OWNER_KEY_V1);
+    if(dueno===uid) return;
+    const claves=clavesCacheLocalV1();
+    const ap=(id,k)=>'cardiolink_apartado_'+id+'__'+k;
+    if(!dueno && privilegiado){ localStorage.setItem(CACHE_OWNER_KEY_V1,uid); return; } // caché heredada: owner/admin/secretaría la adoptan
+    claves.forEach(k=>{
+      const v=localStorage.getItem(k); if(v===null) return;
+      try{ localStorage.setItem(ap(dueno||'desconocido',k),v); }
+      catch(e){ console.warn('No se pudo apartar la caché anterior (cuota); se elimina por privacidad:',k); }
+      localStorage.removeItem(k);
+    });
+    claves.forEach(k=>{ const v=localStorage.getItem(ap(uid,k)); if(v!==null){ localStorage.setItem(k,v); localStorage.removeItem(ap(uid,k)); } });
+    localStorage.setItem(CACHE_OWNER_KEY_V1,uid);
+    data=loadConfig(); atenciones=loadAtenciones(); // la memoria queda alineada con la caché del usuario actual
+  }catch(e){ console.warn('Aislamiento de caché local no disponible:',e); }
+}
+// Se llama con la sesión todavía válida (antes de signOut). Devuelve true si la caché se eliminó (nada pendiente).
+async function liberarCacheLocalAlCerrarSesionV1(){
+  try{
+    if(typeof sincronizarAtencionesSupabase==='function'){
+      await Promise.race([sincronizarAtencionesSupabase(false),new Promise(r=>setTimeout(r,8000))]);
+    }
+    const pendiente=typeof window.hayPendientesSync298==='function'?window.hayPendientesSync298():true;
+    if(pendiente){
+      // Se conserva la caché (sigue asociada a su dueño; la app no se la muestra a otro usuario). Además se respaldan por separado las filas NUEVAS
+      // que nunca llegaron al servidor: al volver a iniciar sesión la carga reemplaza las atenciones locales por las del servidor y, sin este
+      // respaldo, esas filas se perderían.
+      try{
+        const nuevas=typeof window.filasNuevasPendientes298==='function'?window.filasNuevasPendientes298():[];
+        if(nuevas.length&&usuarioSupabase?.id) localStorage.setItem(OUTBOX_NUEVAS_KEY_V1+usuarioSupabase.id,JSON.stringify({rows:nuevas,fecha:new Date().toISOString()}));
+      }catch(e){ console.warn('No se pudo respaldar las filas nuevas pendientes:',e); }
+      return false;
+    }
+    clavesCacheLocalV1().forEach(k=>localStorage.removeItem(k));
+    localStorage.removeItem(CACHE_OWNER_KEY_V1);
+    return true;
+  }catch(e){ console.warn('No se pudo liberar la caché local al cerrar sesión:',e); return false; }
+}
+
+// Directorio mínimo de destinatarios (todos los roles, aditivo) y, sólo para el médico, configuración
+// clínica saneada + identidad de mensajería. Todo aislado: si una RPC aún no existe o falla, se
+// conserva el comportamiento anterior sin bloquear el login ni la detección de roles.
+async function cargarMensajeriaYConfigMedicoV1(){
+  backendMensajeriaV1=null; directorioMensajesV1=null;
+  try{
+    const dir=await supabaseClient.rpc('cardiolink_directorio_mensajes_v1');
+    if(!dir.error&&Array.isArray(dir.data)){
+      directorioMensajesV1=dir.data
+        .filter(d=>d&&typeof d.destino==='string'&&/^usuario:[a-z0-9_.-]+$/.test(d.destino))
+        .map(d=>({destino:d.destino,nombre:String(d.nombre||''),rol:String(d.rol||'')}));
+    }
+  }catch(e){ console.warn('Directorio de mensajes no disponible:',e); }
+  if(!esMedicoBackendV1()) return;
+  try{
+    const r=await supabaseClient.rpc('cardiolink_config_medico_v1');
+    const c=(!r.error&&r.data&&typeof r.data==='object')?r.data:null;
+    if(!c) return;
+    if(c.mensajeria&&/^[a-z0-9_.-]+$/.test(String(c.mensajeria.login||''))) backendMensajeriaV1={login:String(c.mensajeria.login)};
+    // Mezcla sólo lo clínico en la config LOCAL (nunca se escribe la fila remota desde un médico).
+    if(typeof data==='object'&&data){
+      if(!Array.isArray(data.profesionales)) data.profesionales=[];
+      (Array.isArray(c.profesionales)?c.profesionales:[]).forEach(p=>{
+        if(!p||p.id==null) return;
+        const l=data.profesionales.find(x=>x.id===p.id);
+        if(l){ if(p.nombre) l.nombre=p.nombre; if(p.area) l.area=p.area; if(Array.isArray(p.prestaciones)) l.prestaciones=p.prestaciones; }
+        else data.profesionales.push({id:p.id,nombre:p.nombre||p.id,area:p.area||'',prestaciones:Array.isArray(p.prestaciones)?p.prestaciones:[],valores:{}});
+      });
+      if(Array.isArray(c.obrasSociales)){ if(!Array.isArray(data.obrasSociales)) data.obrasSociales=[]; c.obrasSociales.forEach(o=>{ if(!data.obrasSociales.includes(o)) data.obrasSociales.push(o); }); }
+      // Sólo se acepta un usuario propio de rol médico: la RPC nunca puede elevar el perfil local.
+      if(c.usuarioPropio&&c.usuarioPropio.id&&c.usuarioPropio.rol==='medico'){
+        if(!Array.isArray(data.usuarios)) data.usuarios=[];
+        const i=data.usuarios.findIndex(x=>x.id===c.usuarioPropio.id);
+        if(i>=0) data.usuarios[i]=Object.assign({},data.usuarios[i],c.usuarioPropio); else data.usuarios.push(c.usuarioPropio);
+      }
+      try{ localStorage.setItem(storageConfig,JSON.stringify(data)); }catch(e){}
+    }
+  }catch(e){ console.warn('Configuración clínica del médico no disponible:',e); }
+}
 async function cargarPermisoBackendRoles(){
   if(!supabaseClient || !usuarioSupabase) return; // todavía antes del login: ni empezó la consulta
   backendRolConsultaFinalizada=false;
   try{
-    const [adminOwner,appointmentRequests]=await Promise.all([
+    const [adminOwner,appointmentRequests,pendientesIdentidad]=await Promise.all([
       supabaseClient.rpc('cardiolink_es_admin_u_owner'),
-      supabaseClient.rpc('cardiolink_has_appointment_requests_access')
+      supabaseClient.rpc('cardiolink_has_appointment_requests_access'),
+      // Aislada a propósito: si esta RPC aún no existe (migración sin aplicar)
+      // o falla, NO debe invalidar la detección de owner/admin/secretaría.
+      supabaseClient.rpc('cardiolink_identidad_pendientes_v1').then(r=>r,e=>({data:null,error:e}))
     ]);
     if(adminOwner.error||appointmentRequests.error) throw (adminOwner.error||appointmentRequests.error);
+    if(pendientesIdentidad.error) console.warn('No se pudo confirmar la identidad de Pendientes (cardiolink_identidad_pendientes_v1):',pendientesIdentidad.error);
+    backendPendientesIdentidadV1=pendientesIdentidad.error?null:(pendientesIdentidad.data||null);
+    aislarCacheLocalPorUsuarioV1(usuarioSupabase?.id, adminOwner.data===true||appointmentRequests.data===true);
+    await cargarMensajeriaYConfigMedicoV1();
     backendEsAdminOwner=adminOwner.data===true;
     backendTieneAccesoTurnos=appointmentRequests.data===true;
     backendRolCargado=true;
@@ -201,7 +343,8 @@ async function cargarPermisoBackendRoles(){
     // sin rol backend confirmado" como permisos mínimos hasta poder
     // determinarlo (no rompe el modo local sin Supabase, que no entra acá).
     console.warn('No se pudo confirmar el rol backend (cardiolink_user_roles):',e);
-    backendRolCargado=false;backendEsAdminOwner=false;backendTieneAccesoTurnos=false;
+    backendRolCargado=false;backendEsAdminOwner=false;backendTieneAccesoTurnos=false;backendPendientesIdentidadV1=null;backendMensajeriaV1=null;directorioMensajesV1=null;
+    aislarCacheLocalPorUsuarioV1(usuarioSupabase?.id,false);
   }finally{
     // Corre tanto en éxito como en error (nunca si se volvió antes por
     // falta de supabaseClient/usuarioSupabase): la consulta ya terminó,
@@ -228,6 +371,7 @@ function rolBaseUsuarioActual(){
     return (rolLocal==='duenio'||rolLocal==='admin'||rolLocal==='secretaria') ? 'sin_configurar' : rolLocal;
   }
   if(backendEsAdminOwner) return rolLocal; // owner/admin: sin cambios
+  if(backendPendientesIdentidadV1?.role==='medico') return 'medico'; // identidad médica autoritativa
   if(backendTieneAccesoTurnos) return 'secretaria'; // fuerza secretaria aunque el alias/local diga otra cosa
   // Ni admin/owner ni secretaria según backend. No hay RPC acá que
   // distinga médico de una cuenta sin fila en cardiolink_user_roles -
@@ -269,7 +413,10 @@ function exigirConfigAdministrativa(mensaje='Tu perfil no puede modificar esta c
   alert(mensaje);
   return false;
 }
-function profesionalIdUsuarioActual(){ return perfilUsuarioActual().profesionalId || ''; }
+function profesionalIdUsuarioActual(){
+  if(usuarioSupabase && backendRolCargado && backendPendientesIdentidadV1?.role==='medico') return backendPendientesIdentidadV1.professional_id || '';
+  return perfilUsuarioActual().profesionalId || '';
+}
 function nombreUsuarioAuditoria(){
   const u=perfilUsuarioActual();
   return `${u.nombre || u.usuario || usuarioActualNombreCorto()} (${usuarioActualNombreCorto()})`;
@@ -302,7 +449,7 @@ function seccionPermitida(section){
   if(esMatiasDuenio()) return true;
   if(esAdminComun()) return true;
   if(esSecretaria()) return ['dashboard','pendientes383','carga','agenda','mensajes','pacientes','listado','estadisticas','instructivos','solicitudesTurno'].includes(section);
-  if(esMedico()) return ['dashboard','carga','agenda','mensajes','pacientes','hc','listado','estadisticas','instructivos'].includes(section);
+  if(esMedico()) return ['dashboard','pendientes383','carga','agenda','mensajes','pacientes','hc','listado','estadisticas','instructivos'].includes(section);
   return section==='dashboard';
 }
 // Fix mínimo (carrera de permisos en el boot): distingue "todavía no
@@ -667,6 +814,7 @@ function iniciarControlInactividad() {
 async function cerrarPorInactividad() {
   try {
     if (window.cardioLinkRefreshInterval) clearInterval(window.cardioLinkRefreshInterval);
+    await liberarCacheLocalAlCerrarSesionV1();
     if (supabaseClient) await supabaseClient.auth.signOut();
   } catch (error) {
     console.error('Error cerrando sesión por inactividad:', error);
@@ -684,6 +832,7 @@ async function cerrarPorInactividad() {
 async function cerrarSesionSupabase() {
   if (!supabaseClient) return;
 
+  await liberarCacheLocalAlCerrarSesionV1();
   await supabaseClient.auth.signOut();
   localStorage.removeItem("sb-session");
   // UI Interna V1 (iteración 2) - mismo motivo que cerrarPorInactividad():
@@ -764,6 +913,12 @@ async function cargarAtencionesDesdeSupabase() {
       await sincronizarAtencionesSupabase(true);
       cargandoDesdeNube = true;
     }
+  } else if (!sincronizacionMasivaPermitidaV1()) {
+    // Un médico sin registros visibles NO debe reinsertar registros locales
+    // posiblemente ajenos o antiguos. Sincronización clínica segura.
+    atenciones = [];
+    localStorage.setItem(storageAtenciones, JSON.stringify(atenciones));
+    console.log('Sin atenciones visibles para el profesional autenticado.');
   } else if (Array.isArray(atenciones) && atenciones.length > 0) {
     console.log("Supabase está vacío. Se migran atenciones locales a la nube:", atenciones.length);
     cargandoDesdeNube = false;
@@ -3741,6 +3896,13 @@ function destinatariosMensajes(){
   (data.usuarios||[]).filter(u=>u.activo!==false).forEach(u=>{
     lista.push({value:'usuario:'+usuarioLoginCorto(u.usuario||u.id), label:u.nombre||u.usuario});
   });
+  if(Array.isArray(directorioMensajesV1)&&directorioMensajesV1.length){
+    if(esMedicoBackendV1()){
+      // El médico no recibe el listado de usuarios de la config: sólo el directorio mínimo (nombre + rol).
+      lista.length=2;
+    }
+    directorioMensajesV1.forEach(d=>{ if(!lista.some(x=>x.value===d.destino)) lista.push({value:d.destino,label:d.nombre||'Usuario'}); });
+  }
   return lista;
 }
 function initMensajes(){
@@ -3766,8 +3928,14 @@ function mensajeVisibleParaUsuario(m){
   if(destino==='rol:secretaria')return esSecretaria() || esMatiasDuenio() || esAdminComun();
   if(destino==='rol:medico')return esMedico();
   if(destino==='usuario:'+usr)return true;
+  if(m.creadoUid&&usuarioSupabase?.id&&m.creadoUid===usuarioSupabase.id)return true;
   if(m.deUsuario===usr)return true;
   return false;
+}
+// "Propio": si el mensaje trae creadoUid (verificado por el backend) manda ese; si no (histórico), deUsuario.
+function esMensajePropioV1(m,usr){
+  if(m&&m.creadoUid&&usuarioSupabase?.id) return m.creadoUid===usuarioSupabase.id;
+  return !!m&&m.deUsuario===usr;
 }
 function nombreDestinoMensaje(destino){
   if(destino==='todos')return 'Todos';
@@ -3776,7 +3944,9 @@ function nombreDestinoMensaje(destino){
   if(String(destino).startsWith('usuario:')){
     const usr=destino.replace('usuario:','');
     const u=(data.usuarios||[]).find(x=>usuarioLoginCorto(x.usuario||x.id)===usr || (x.aliases||[]).map(usuarioLoginCorto).includes(usr));
-    return u?.nombre || usr;
+    if(u?.nombre) return u.nombre;
+    const d=(directorioMensajesV1||[]).find(x=>x.destino===destino);
+    return d?.nombre || usr;
   }
   return destino || 'Todos';
 }
@@ -3823,18 +3993,27 @@ function enviarMensajeInterno(){
   const texto=($('msgTexto')?.value||'').trim();
   if(!texto){alert('Escribí un mensaje.');return;}
   const u=perfilUsuarioActual();
+  // Médico con identidad de backend: el remitente SIEMPRE es un login propio autorizado y el nombre visible sale del directorio
+  // (nunca del prefijo del email). El resto de los roles conserva el comportamiento anterior.
+  const medicoBk=esMedicoBackendV1()&&!!backendMensajeriaV1?.login;
+  const vinculado=medicoBk&&String(u.profesionalId||'')===String(backendPendientesIdentidadV1.professional_id||'');
+  const loginRem=medicoBk?(vinculado?usuarioLoginCorto(u.usuario):backendMensajeriaV1.login):usuarioLoginCorto(u.usuario||usuarioActualNombreCorto());
+  const nombreRem=medicoBk?(nombreVisibleBackendV1()||(vinculado&&u.nombre)||'Médico'):(u.nombre||u.usuario||usuarioActualNombreCorto());
   const msg={
     id:'msg_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
     tipoRegistro:'mensaje',
     fecha:todayISO(),
     horaInicio:new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}),
-    deUsuario:usuarioLoginCorto(u.usuario||usuarioActualNombreCorto()),
-    deNombre:u.nombre||u.usuario||usuarioActualNombreCorto(),
+    deUsuario:loginRem,
+    deNombre:nombreRem,
     deRol:u.rol||'',
     destino:$('msgDestino')?.value||'todos',
     texto,
     leidoPor:[]
   };
+  if(usuarioSupabase?.id) msg.creadoUid=usuarioSupabase.id; // identidad verificable por el backend (RLS)
+  // El sello de auditoría usaría el prefijo del email del médico: se fija antes con datos confiables.
+  if(medicoBk){ msg.creadoPor=nombreRem+' ('+loginRem+')'; msg.creadoUsuario=loginRem; }
   selloAuditoriaCreacion(msg);
   atenciones.push(msg);
   saveAtenciones();
@@ -3847,7 +4026,7 @@ function renderMensajes(){
   const filtro=$('msgFiltro')?.value||'visibles';
   const usr=usuarioLoginCorto(perfilUsuarioActual().usuario||usuarioActualNombreCorto());
   let datos=mensajesInternos();
-  if(filtro==='enviados')datos=datos.filter(m=>m.deUsuario===usr);
+  if(filtro==='enviados')datos=datos.filter(m=>esMensajePropioV1(m,usr));
   else datos=datos.filter(m=>mensajeVisibleParaUsuario(m));
   datos=datos.slice(0,80);
   if(!datos.length){box.innerHTML='<p class="muted">No hay mensajes para mostrar.</p>';actualizarNotificacionMensajes();return;}
@@ -3861,7 +4040,25 @@ function renderMensajes(){
   }).join('');
   actualizarNotificacionMensajes();
 }
+// Médico: marcar leído pasa por la RPC (el médico no modifica mensajes por la sincronización normal).
+async function marcarLeidosMedicoV1(){
+  const usr=usuarioLoginCorto(perfilUsuarioActual().usuario||usuarioActualNombreCorto());
+  const pendientes=mensajesInternos().filter(m=>mensajeVisibleParaUsuario(m)&&!esMensajePropioV1(m,usr)&&!(Array.isArray(m.leidoPor)&&m.leidoPor.includes(usr)));
+  for(const m of pendientes){
+    try{
+      const {data:res,error}=await supabaseClient.rpc('cardiolink_mensaje_marcar_leido_v1',{p_id:String(m.id)});
+      if(error||!res) throw (error||new Error('Respuesta vacía'));
+      const confirmado=window.releerYConfirmarTrasRpc298?await window.releerYConfirmarTrasRpc298(m.id,res):res;
+      const i=atenciones.findIndex(a=>String(a.id)===String(m.id));
+      if(i>=0) atenciones[i]=confirmado;
+    }catch(e){ console.warn('No se pudo marcar el mensaje como leído:',e); }
+  }
+  try{ localStorage.setItem(storageAtenciones,JSON.stringify(atenciones)); }catch(e){}
+  renderMensajes();
+  actualizarNotificacionMensajes();
+}
 function marcarMensajesVisiblesLeidos(){
+  if(esMedicoBackendV1()){ marcarLeidosMedicoV1(); return; }
   const usr=usuarioLoginCorto(perfilUsuarioActual().usuario||usuarioActualNombreCorto());
   let cambio=false;
   mensajesInternos().forEach(m=>{
@@ -5174,14 +5371,14 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const filtro=$id('msgFiltro')?.value||'visibles';
     const usr=usuarioCortoActual();
     let datos=(atenciones||[]).filter(esMensajeInterno).sort((a,b)=>String(b.creadoEn||b.fecha||'').localeCompare(String(a.creadoEn||a.fecha||'')));
-    if(filtro==='enviados') datos=datos.filter(m=>m.deUsuario===usr);
+    if(filtro==='enviados')datos=datos.filter(m=>esMensajePropioV1(m,usr));
     else datos=datos.filter(m=>mensajeVisibleParaUsuario?.(m));
     datos=datos.slice(0,120);
     if(!datos.length){box.innerHTML='<p class="muted">No hay mensajes para mostrar.</p>';actualizarNotificacionMensajes?.();return;}
     box.innerHTML=datos.map(m=>{
-      const propio=m.deUsuario===usr;
+      const propio=esMensajePropioV1(m,usr);
       const visto=(m.leidoPor||[]).includes(usr);
-      const puedeBorrar=propio || esAdminActual();
+      const puedeBorrar=(propio && !esMedicoBackendV1()) || esAdminActual();
       return `<div class="mensaje-item chat ${propio?'propio':'ajeno'} ${visto?'visto':'nuevo'} ${colorClaseMensaje294(m)}" data-id="${esc(m.id)}">
         <div class="mensaje-texto principal">${esc(m.texto||'')}</div>
         <div class="mensaje-meta"><strong>${esc(m.deNombre||m.deUsuario||'Usuario')}</strong><span>${esc(fechaHoraAuditoria?.(m.creadoEn)||m.horaInicio||'')}</span></div>
@@ -5305,14 +5502,14 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const filtro=$id('msgFiltro')?.value||'visibles';
     const usr=usrActual();
     let datos=(atenciones||[]).filter(a=>typeof esMensajeInterno==='function' && esMensajeInterno(a)).sort((a,b)=>String(b.creadoEn||b.fecha||'').localeCompare(String(a.creadoEn||a.fecha||'')));
-    if(filtro==='enviados') datos=datos.filter(m=>m.deUsuario===usr);
+    if(filtro==='enviados')datos=datos.filter(m=>esMensajePropioV1(m,usr));
     else datos=datos.filter(m=> typeof mensajeVisibleParaUsuario==='function' ? mensajeVisibleParaUsuario(m) : true);
     datos=datos.slice(0,120);
     if(!datos.length){box.innerHTML='<p class="muted">No hay mensajes para mostrar.</p>'; try{actualizarNotificacionMensajes?.();}catch(e){} return;}
     box.innerHTML=datos.map(m=>{
-      const propio=String(m.deUsuario||'')===String(usr);
+      const propio=esMensajePropioV1(m,usr);
       const visto=(m.leidoPor||[]).includes(usr);
-      const puedeBorrar=propio || esAdmin();
+      const puedeBorrar=(propio && !esMedicoBackendV1()) || esAdmin();
       return `<div class="mensaje-burbuja ${propio?'propio':'ajeno'} ${visto?'visto':'nuevo'} ${claseColorMensaje295(m)}" data-id="${esc(m.id)}">
         <div class="mensaje-texto">${esc(m.texto||'')}</div>
         <div class="mensaje-info"><strong>${esc(m.deNombre||m.deUsuario||'Usuario')}</strong><span>${esc((typeof fechaHoraAuditoria==='function'?fechaHoraAuditoria(m.creadoEn):'')||m.horaInicio||'')}</span></div>
@@ -5868,6 +6065,65 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     }catch(e){}
   }
 
+  // Pendientes médicos V1: tras una mutación hecha por una RPC del servidor
+  // (la fila cambió remotamente sin pasar por este sync), la sesión debe tomar
+  // esa fila como su nuevo punto de partida. Fija el baseline de CONTENIDO (la
+  // fila no queda "sucia") y, si se conoce, el de VERSIÓN remota (updated_at),
+  // para que una edición posterior no choque contra la versión vieja. Con
+  // soloContenido=true NO toca la versión: nunca se borra, porque una fila sin
+  // versión se trataría como "nueva" y se subiría con un upsert ciego.
+  function confirmarVersionRemotaAtencion298(id,payload,updatedAt,soloContenido){
+    if(id==null||!payload||typeof payload!=='object')return false;
+    const idStr=String(id);
+    baselineAtenciones298.set(idStr,stableStringify298(payload));
+    if(!soloContenido&&updatedAt)baselineVersionAtenciones298.set(idStr,updatedAt);
+    return true;
+  }
+  window.confirmarVersionRemotaAtencion298=confirmarVersionRemotaAtencion298;
+  // Relee la fila tras una RPC del servidor y la toma como nuevo punto de partida (ver actualizarPendienteMedicoV1).
+  async function releerYConfirmarTrasRpc298(id,payloadRpc){
+    let confirmado=payloadRpc,version=null;
+    try{
+      const {data:filas,error}=await supabaseClient.from('cardiolink_atenciones').select('id,payload,updated_at').eq('id',String(id)).limit(1);
+      const f=Array.isArray(filas)?filas[0]:filas;
+      if(!error&&f&&f.payload&&f.updated_at){confirmado=f.payload;version=f.updated_at;}
+    }catch(e){ console.warn('No se pudo releer la fila tras la RPC:',e); }
+    confirmarVersionRemotaAtencion298(id,confirmado,version,version===null);
+    return confirmado;
+  }
+  window.releerYConfirmarTrasRpc298=releerYConfirmarTrasRpc298;
+  // ¿Queda algo por confirmar en Supabase? (usado al cerrar sesión para no borrar la caché con datos pendientes)
+  // Filas que nunca fueron confirmadas por el servidor (sin versión remota): son las únicas que se pierden si se recarga desde Supabase.
+  window.filasNuevasPendientes298=function(){
+    try{ return (atenciones||[]).filter(a=>a&&a.id!=null&&a.id!==CONFIG_ROW_ID&&!baselineVersionAtenciones298.has(String(a.id))).map(a=>JSON.parse(JSON.stringify(a))); }catch(e){ return []; }
+  };
+  window.hayPendientesSync298=function(){
+    try{ return !!(syncAtencionesPendiente||syncPendienteSinConfirmar||(atenciones||[]).some(atencionModificada298)); }catch(e){ return true; }
+  };
+
+  // Un mensaje rechazado por PERMISOS (RLS/42501) no es un fallo transitorio: reintentarlo indefinidamente bloquearía la cola.
+  function esErrorPermisosRLS298(e){ return !!e&&(e.code==='42501'||/row-level security|permission denied/i.test(String(e.message||''))); }
+  function descartarMensajesRechazados298(rechazados){
+    if(!rechazados.length) return;
+    const ids=new Set(rechazados.map(a=>String(a.id)));
+    atenciones=atenciones.filter(a=>!(a&&ids.has(String(a.id))));
+    rechazados.forEach(a=>{baselineAtenciones298.delete(String(a.id));baselineVersionAtenciones298.delete(String(a.id));});
+    try{ localStorage.setItem(storageAtenciones,JSON.stringify(atenciones)); }catch(e){}
+    const textos=rechazados.map(a=>String(a.texto||'')).filter(Boolean);
+    // Respaldo local del texto (últimos 20) para poder recuperarlo aunque el cuadro de mensaje ya tenga otro texto.
+    try{
+      const k='cardiolink_mensajes_no_enviados_v1';
+      const previos=JSON.parse(localStorage.getItem(k)||'[]');
+      const nuevos=rechazados.map(a=>({texto:String(a.texto||''),destino:String(a.destino||''),fecha:new Date().toISOString()}));
+      localStorage.setItem(k,JSON.stringify([...(Array.isArray(previos)?previos:[]),...nuevos].slice(-20)));
+    }catch(e){}
+    let enCuadro=false;
+    try{ const t=document.getElementById('msgTexto'); if(t&&!t.value&&textos.length){ t.value=textos.join('\n'); enCuadro=true; } }catch(e){}
+    try{ renderMensajes?.(); actualizarNotificacionMensajes?.(); }catch(e){}
+    alert('No se pudo enviar el mensaje: tu usuario no tiene permiso para enviarlo con ese remitente o destino. Se descartó para no reintentarlo. '
+      +(enCuadro?'El texto quedó en el cuadro de mensaje.':'Texto del mensaje (copialo si lo necesitás): «'+textos.join(' · ').slice(0,800)+'»'));
+  }
+
   function d(id){return document.getElementById(id)}
   function esc(v){return String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;')}
   function clean(v){return String(v??'').replace(/<[^>]*>/g,' ').replace(/&nbsp;/gi,' ').replace(/\s+/g,' ').trim()}
@@ -6163,6 +6419,8 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   // Sincronización de configuración/pacientes con Supabase usando una fila técnica.
   async function guardarConfigEnSupabase298(){
     if(!supabaseClient || !usuarioSupabase) return false;
+    // El médico nunca escribe la fila compartida de configuración (sólo la lee saneada por RPC).
+    if(esMedicoBackendV1()) return false;
     try{
       const payload={tipoRegistro:'config', version:VERSION_298, config:data, updatedAt:new Date().toISOString()};
       const {error}=await supabaseClient.from('cardiolink_atenciones').upsert([{id:CONFIG_ROW_ID,payload,updated_at:new Date().toISOString()}],{onConflict:'id'});
@@ -6204,6 +6462,11 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         // ya sube cualquier fila que haya cambiado o sea nueva; no hace falta
         // forzar el snapshot completo.
         if(corruptosEliminados>0){ cargandoDesdeNube=false; await sincronizarAtencionesSupabase(false); cargandoDesdeNube=true; }
+      }else if(!sincronizacionMasivaPermitidaV1()){
+        // RLS puede devolver cero filas aunque la tabla tenga atenciones de
+        // otros profesionales. Jamás usar la copia local como bootstrap médico.
+        atenciones=[];
+        localStorage.setItem(storageAtenciones,JSON.stringify(atenciones));
       }else if(Array.isArray(atenciones)&&atenciones.length>0){
         // ÚNICO CASO QUE CONSERVA forzar=true (bootstrap inicial, aislado):
         // Supabase confirmó CERO atenciones remotas y existen atenciones
@@ -6221,11 +6484,19 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       // baseline al confirmar el UPSERT.
       snapshotBaselineAtenciones298(atenciones);
       cargandoDesdeNube=false;
+      try{ await recuperarNuevasPendientesV1(); }catch(e){ console.warn('No se pudieron recuperar las filas nuevas pendientes:',e); }
     };
   }
   if(typeof sincronizarAtencionesSupabase==='function'){
     window.sincronizarAtencionesSupabase = sincronizarAtencionesSupabase = async function(forzar=false){
       if(!supabaseClient || !usuarioSupabase) return false;
+      // Médico (o rol no confirmado): nunca permitir un volcado masivo forzado
+      // desde caché local. Los cambios ordinarios siguen el guardado
+      // condicionado por versión.
+      if(forzar && !sincronizacionMasivaPermitidaV1()){
+        console.warn('Sincronización forzada deshabilitada para perfil médico.');
+        return false;
+      }
       if(cargandoDesdeNube && !forzar) return false;
       if(syncAtencionesEnCurso){ syncAtencionesPendiente=true; return false; }
       syncAtencionesEnCurso=true;
@@ -6366,31 +6637,55 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         }
 
         if(nuevas298.length){
-          const rows=nuevas298.map(a=>({id:String(a.id),payload:a,updated_at:now298}));
-          const vistos=new Set();
-          const finalRows=[];
-          rows.forEach((r,idx)=>{
-            if(vistos.has(r.id)) r.id='att_'+Date.now()+'_'+idx+'_'+Math.random().toString(36).slice(2,8);
-            vistos.add(r.id);
-            finalRows.push(r);
+          // Mensajes internos y atenciones viajan en lotes SEPARADOS: un mensaje rechazado por permisos no puede bloquear
+          // las atenciones (ni al revés).
+          const esMsg298=a=>!!a&&a.tipoRegistro==='mensaje';
+          const lotes298=[nuevas298.filter(a=>!esMsg298(a)),nuevas298.filter(esMsg298)].filter(l=>l.length);
+          const filasDe298=lote=>{
+            const rows=lote.map(a=>({id:String(a.id),payload:a,updated_at:now298}));
+            const vistos=new Set();
+            const finalRows=[];
+            rows.forEach((r,idx)=>{
+              if(vistos.has(r.id)) r.id='att_'+Date.now()+'_'+idx+'_'+Math.random().toString(36).slice(2,8);
+              vistos.add(r.id);
+              finalRows.push(r);
+            });
+            return finalRows;
+          };
+          const confirmar298=lote=>lote.forEach(a=>{
+            if(!a || a.id==null) return;
+            baselineAtenciones298.set(String(a.id), stableStringify298(a));
+            baselineVersionAtenciones298.set(String(a.id), now298);
           });
-          // Atención nueva -> no hay versión remota previa que proteger
-          // (punto 4): se conserva el upsert normal.
-          const {error:upErr}=await supabaseClient
-            .from('cardiolink_atenciones')
-            .upsert(finalRows,{onConflict:'id'});
-          if(upErr){
+          const rechazadosPorPermisos298=[];
+          for(const lote of lotes298){
+            // Atención nueva -> no hay versión remota previa que proteger
+            // (punto 4): se conserva el upsert normal.
+            const {error:upErr}=await supabaseClient
+              .from('cardiolink_atenciones')
+              .upsert(filasDe298(lote),{onConflict:'id'});
+            if(!upErr){ confirmar298(lote); continue; }
+            if(lote.every(esMsg298)&&esErrorPermisosRLS298(upErr)){
+              // Se envía uno por uno: sólo se descartan los rechazados por permisos, no los válidos del mismo lote.
+              for(const m of lote){
+                const {error:e1}=await supabaseClient.from('cardiolink_atenciones').upsert(filasDe298([m]),{onConflict:'id'});
+                if(!e1){ confirmar298([m]); continue; }
+                if(esErrorPermisosRLS298(e1)){ rechazadosPorPermisos298.push(m); continue; }
+                console.error(e1);
+                alert('No se pudo sincronizar con Supabase: '+e1.message);
+                syncAtencionesPendiente=true;
+                syncReintentosFallidos++;
+                return false;
+              }
+              continue;
+            }
             console.error(upErr);
             alert('No se pudo sincronizar con Supabase: '+upErr.message);
             syncAtencionesPendiente=true;
             syncReintentosFallidos++;
             return false;
           }
-          nuevas298.forEach(a=>{
-            if(!a || a.id==null) return;
-            baselineAtenciones298.set(String(a.id), stableStringify298(a));
-            baselineVersionAtenciones298.set(String(a.id), now298);
-          });
+          descartarMensajesRechazados298(rechazadosPorPermisos298);
         }
 
         if(conflictos298.length){
@@ -7386,6 +7681,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     a.actualizadoEn=new Date().toISOString();
   }
   function marcarPendientesVisiblesResueltos350(){
+    if(esMedico()){alert('Resolvé los pendientes individualmente desde Pendientes.');return;}
     let lista=[]; try{lista=filtrar().filter(a=>typeof esPendienteAdministrativo==='function'?esPendienteAdministrativo(a):true);}catch(e){lista=[];}
     if(!lista.length){alert('No hay pendientes visibles para marcar.');return;}
     if(!confirm(`Vas a marcar como resueltos ${lista.length} registro(s) visibles según el filtro actual. ¿Continuar?`))return;
@@ -8063,7 +8359,56 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     return out;
   }
   window.pendientesDeAtencion383=pendientes383;
-  function base383(){try{return typeof atencionesPerfil==='function'?atencionesPerfil().filter(a=>!(typeof esMensajeInterno==='function'&&esMensajeInterno(a))):atenciones}catch{return atenciones||[]}}
+  function base383(){
+    // Pendientes médicos: exclusivamente professional_id autenticado en backend.
+    // cajaPerfil es un destino económico: nunca autoriza ver un pendiente clínico.
+    if(esMedico()){
+      const i=backendPendientesIdentidadV1;
+      if(!backendRolCargado||i?.role!=='medico'||!i?.professional_id)return [];
+      return (atenciones||[]).filter(a=>a?.profesionalId===i.professional_id && !esMensajeInterno(a));
+    }
+    try{return typeof atencionesPerfil==='function'?atencionesPerfil().filter(a=>!(typeof esMensajeInterno==='function'&&esMensajeInterno(a))):atenciones}catch{return []}
+  }
+  async function actualizarPendienteMedicoV1(id,tipo,operacion){
+    const i=backendPendientesIdentidadV1;
+    const registro=(atenciones||[]).find(a=>String(a.id)===String(id));
+    if(!esMedico()||!backendRolCargado||i?.role!=='medico'||!i?.professional_id||
+       !registro||registro.profesionalId!==i.professional_id||pendientesOperacionEnCursoV1){
+      alert('No autorizado para este pendiente.');return false;
+    }
+    pendientesOperacionEnCursoV1=true;
+    try{
+      const {data:actualizado,error}=await supabaseClient.rpc('cardiolink_pendiente_mutar_v1',{
+        p_id:String(id),p_tipo:tipo,p_operacion:operacion
+      });
+      if(error)throw error;
+      // La RPC devuelve sólo el payload, no el nuevo updated_at: se relee ESA
+      // fila (el médico ve la suya) y se toma como verdad. Si otra sesión
+      // escribió entre la RPC y la lectura, se adopta lo leído (nunca se pisa).
+      // Si la relectura falla se usa el payload de la RPC y se fija sólo el
+      // baseline de contenido: la versión queda como estaba y una edición
+      // posterior sigue protegida por la detección de conflicto.
+      let confirmado=actualizado,version=null;
+      try{
+        const {data:filas,error:errRel}=await supabaseClient.from('cardiolink_atenciones')
+          .select('id,payload,updated_at').eq('id',String(id)).limit(1);
+        const f=Array.isArray(filas)?filas[0]:filas;
+        if(!errRel&&f&&f.payload&&f.updated_at){confirmado=f.payload;version=f.updated_at;}
+      }catch(eRel){console.warn('No se pudo releer la atención tras la RPC de pendientes:',eRel);}
+      const pos=atenciones.findIndex(a=>String(a.id)===String(id));
+      if(pos>=0)atenciones[pos]=confirmado;
+      window.confirmarVersionRemotaAtencion298?.(id,confirmado,version,version===null);
+      // No llamar saveAtenciones(): reenvía TODA la colección y pisaría
+      // modificaciones concurrentes de otros usuarios.
+      localStorage.setItem(storageAtenciones,JSON.stringify(atenciones));
+      renderPendientes383();renderTabla?.();renderStats?.();
+      return true;
+    }catch(e){
+      console.error('Pendiente médico no guardado',e);
+      alert('No se pudo guardar el pendiente: '+(e.message||'Error'));
+      return false;
+    }finally{pendientesOperacionEnCursoV1=false;}
+  }
   function labels383(k){return {firma:'Falta firma / bono',copia:'Falta copia facturación',informe:'Falta informe',entrega:'Falta imprimir / enviar',retiro:'Pendiente de retiro',autorizacion:'Falta autorización',cancelado_paciente:'Cancelado por el paciente'}[k]||k}
   function counts383(list){const c={todos:0,firma:0,copia:0,informe:0,entrega:0,retiro:0,autorizacion:0,cancelado_paciente:0};list.forEach(a=>{const p=pendientes383(a);if(p.length)c.todos++;p.forEach(k=>c[k]++)});return c}
   function overdue383(a){try{return typeof diasAntiguedadPendiente411C==='function'&&diasAntiguedadPendiente411C(a)>7}catch(e){return false}}
@@ -8194,7 +8539,13 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   // Guarda quién/cuándo en los 3 campos nuevos del payload (sin tabla
   // nueva, sin migración) y deja traza en auditoriaPendientes (mismo
   // array/formato que audit383 ya usa para el resto de los tipos).
-  function cerrarPendienteCancelacion383(id){
+  async function cerrarPendienteCancelacion383(id){
+    if(esMedico()){
+      if(!confirm('¿Cerrar este pendiente de cancelación?'))return;
+      const ok=await actualizarPendienteMedicoV1(id,'cancelado_paciente','resolver');
+      if(ok){undo383={id,tipo:'cancelado_paciente',medicoV1:true};toastUndo383('Pendiente de cancelación cerrado')}
+      return;
+    }
     const a=(atenciones||[]).find(x=>String(x.id)===String(id));if(!a)return;
     if(!confirm('¿Cerrar este pendiente de cancelación?'))return;
     const prev=JSON.parse(JSON.stringify(a));
@@ -8208,7 +8559,12 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     undo383={id,prev};toastUndo383('Pendiente de cancelación cerrado');
   }
   window.cerrarPendienteCancelacion383=cerrarPendienteCancelacion383;
-  function resolverPendiente383(id,k){
+  async function resolverPendiente383(id,k){
+    if(esMedico()){
+      const ok=await actualizarPendienteMedicoV1(id,k,'resolver');
+      if(ok){undo383={id,tipo:k,medicoV1:true};toastUndo383(labels383(k)+' resuelto')}
+      return;
+    }
     const a=(atenciones||[]).find(x=>String(x.id)===String(id));if(!a)return;
     const prev=JSON.parse(JSON.stringify(a));
     if(k==='firma')a.bonoFirmado=true;
@@ -8222,7 +8578,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   }
   window.resolverPendiente383=resolverPendiente383;
   function toastUndo383(msg){let t=document.getElementById('undoToast383');if(!t){t=document.createElement('div');t.id='undoToast383';t.className='undo-toast383';document.body.appendChild(t)}t.innerHTML=`<span>${esc383(msg)}</span><button type="button" onclick="deshacerPendiente383()">Deshacer</button>`;t.classList.add('show');clearTimeout(t._tm);t._tm=setTimeout(()=>{t.classList.remove('show');undo383=null},6500)}
-  window.deshacerPendiente383=function(){if(!undo383)return;const i=(atenciones||[]).findIndex(x=>String(x.id)===String(undo383.id));if(i>=0){atenciones[i]=undo383.prev;saveAtenciones();renderPendientes383();renderTabla?.();renderStats?.()}document.getElementById('undoToast383')?.classList.remove('show');undo383=null};
+  window.deshacerPendiente383=async function(){if(!undo383)return;if(undo383.medicoV1){const u=undo383;undo383=null;await actualizarPendienteMedicoV1(u.id,u.tipo,'deshacer');document.getElementById('undoToast383')?.classList.remove('show');return;}const i=(atenciones||[]).findIndex(x=>String(x.id)===String(undo383.id));if(i>=0){atenciones[i]=undo383.prev;saveAtenciones();renderPendientes383();renderTabla?.();renderStats?.()}document.getElementById('undoToast383')?.classList.remove('show');undo383=null};
 
   // Un único cálculo para dashboard/listados nuevos.
   const oldEval=typeof evaluarEstado==='function'?evaluarEstado:null;
@@ -9485,6 +9841,143 @@ function patientInfoTextHC(p,coverage){
     try{renderDetailHC(patientKey);}catch(e){}
   }
   function renderAttentionEventHC(a){return `<article class="hc-event attention" data-hc-attention-id="${escHC(a.id)}"><div class="hc-event-head"><div><strong>${escHC(a.prestacion||'Atención')}</strong><div class="hc-event-meta">${escHC(formatFecha?.(a.fecha)||a.fecha||'')} ${escHC(a.horaInicio||'')} · ${escHC(a.profesional||'')}</div></div><span class="hc-lock">Atención administrativa</span></div><div class="hc-event-section"><label>Cobertura</label><p>${escHC(a.obraSocial||'s/d')}</p></div>${a.observaciones?`<div class="hc-event-section"><label>Observaciones</label><p>${escHC(a.observaciones)}</p></div>`:''}<div class="hc-event-section"><button class="secondary small-btn" data-hc-new="${escHC(hcPacienteSeleccionado)}" data-atencion-id="${escHC(a.id)}">Evolucionar esta atención</button></div></article>`;}
+  // FASE 7 - Bloque 2: antecedentes / alergias / medicación habitual en
+  // modo lectura compacto + edición directa, SIN desmontar ni recrear los
+  // textarea (mismos id hcSumAntecedentes409/hcSumAlergias409/
+  // hcSumMedicacion409, mismo value, mismo guardado en saveEvolutionHC y
+  // mismo dictado por data-cl-voice-target4094): sólo se alterna una clase
+  // (.is-editing) y se refresca un <div> de resumen a partir del value del
+  // propio textarea. En lectura el textarea queda con alto 0 pero sigue
+  // siendo enfocable, así el dictado (que hace target.focus()) lo reabre.
+  // Alergias: tres estados reales, nunca se infiere "sin alergias" de un
+  // campo vacío - vacío = "no registradas"; la ausencia conocida se
+  // registra de forma explícita con el texto canónico de abajo (mismo
+  // campo de texto de siempre, sin cambios de esquema).
+  // Íconos de los títulos clínicos: SVG inline (sin bibliotecas ni
+  // dependencias), decorativos (aria-hidden): el título de texto siempre
+  // identifica la sección, el color y el ícono sólo refuerzan.
+  const SVG410I=d=>`<svg class="hc-ico410i" viewBox="0 0 24 24" width="15" height="15" aria-hidden="true" focusable="false">${d}</svg>`;
+  const ICO_ANTECEDENTES_410I=SVG410I('<rect width="8" height="4" x="8" y="2" rx="1" ry="1"/><path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/><path d="M12 11h4"/><path d="M12 16h4"/><path d="M8 11h.01"/><path d="M8 16h.01"/>');
+  const ICO_MEDICACION_410I=SVG410I('<path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z"/><path d="m8.5 8.5 7 7"/>');
+  const ICO_ALERGIAS_410I=SVG410I('<path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/>');
+  const ALERGIAS_NINGUNA_410G='Sin alergias conocidas';
+  const normTxt410g=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'').replace(/[.\s]+$/,'').trim().toLowerCase();
+  const esAlergiasNinguna410g=v=>normTxt410g(v)===normTxt410g(ALERGIAS_NINGUNA_410G);
+  // Ajuste de seguridad clínica: si el campo estaba EXACTAMENTE en "Sin
+  // alergias conocidas" y el usuario (o el dictado) agrega una alergia, la
+  // frase se descarta y queda sólo el contenido nuevo - nunca "Sin alergias
+  // conocidas Penicilina". Sólo se llama cuando el estado previo era
+  // "ninguna" (ver el listener de input): cualquier otro texto histórico
+  // ("Sin alergias conocidas, salvo penicilina", "niega", etc.) no se toca.
+  function sanearAlergiasNinguna410g(ta){
+    const v=String(ta.value||'');
+    if(esAlergiasNinguna410g(v))return false;
+    if(!/sin\s+alergias\s+conocidas/i.test(v))return false;
+    const resto=v.replace(/sin\s+alergias\s+conocidas\s*[.,;:]?/gi,'').split('\n').map(l=>l.replace(/[ \t]{2,}/g,' ').trim()).filter(Boolean).join('\n');
+    if(!resto)return false;
+    ta.value=resto;try{ta.setSelectionRange(resto.length,resto.length);}catch(e){}
+    return true;
+  }
+  function initResumenCompacto410g(overlay){
+    const bloques=[...overlay.querySelectorAll('[data-sum-field410g]')];
+    const refrescar=b=>{
+      const tipo=b.dataset.sumField410g,ta=b.querySelector('textarea'),vista=b.querySelector('.hc-sum-view-410g');
+      if(!ta||!vista)return;
+      const valor=String(ta.value||'').trim(),plano=valor.replace(/\s*\n+\s*/g,' · ');
+      let estado,texto;
+      if(tipo==='alergias'){
+        if(!valor){estado='unknown';texto='⚠ Alergias no registradas';}
+        else if(esAlergiasNinguna410g(valor)){estado='none';texto='✓ '+ALERGIAS_NINGUNA_410G;}
+        else{estado='registered';texto=plano;}
+        const chk=b.querySelector('[data-hc-noallergy410g]');
+        if(chk){chk.checked=estado==='none';chk.disabled=estado==='registered';chk.title=estado==='registered'?'Hay alergias registradas: borrá el texto para poder marcar esta opción.':'';}
+      }else{
+        estado=valor?'filled':'empty';texto=valor?plano:'Sin registrar';
+      }
+      b.dataset.estadoPrev410g=estado;
+      vista.dataset.estado=estado;(vista.querySelector('.hc-sum-text-410g')||vista).textContent=texto;vista.title=valor;
+    };
+    const abrir=(b,enfocar)=>{
+      const ta=b.querySelector('textarea'),yaEditando=b.classList.contains('is-editing');
+      b.classList.add('is-editing');if(ta)ta.tabIndex=0;
+      // Desde "Sin alergias conocidas": todo el texto queda seleccionado,
+      // así lo primero que se escriba o dicte REEMPLAZA ese estado en vez de
+      // sumarse (sólo al entrar en edición, nunca en cada tecla).
+      const reemplazable=!!ta&&!yaEditando&&b.dataset.sumField410g==='alergias'&&esAlergiasNinguna410g(ta.value);
+      if(reemplazable){try{ta.setSelectionRange(0,ta.value.length);}catch(e){}}
+      if(enfocar&&ta){ta.focus();if(!reemplazable){try{ta.setSelectionRange(ta.value.length,ta.value.length);}catch(e){}}}
+    };
+    const cerrar=b=>{const ta=b.querySelector('textarea');b.classList.remove('is-editing');if(ta)ta.tabIndex=-1;refrescar(b);};
+    bloques.forEach(b=>{const ta=b.querySelector('textarea');if(ta)ta.tabIndex=-1;refrescar(b);});
+    const bloqueDe=el=>el?.closest?.('[data-sum-field410g]');
+    overlay.addEventListener('click',e=>{const v=e.target.closest?.('.hc-sum-view-410g');if(v){const b=bloqueDe(v);if(b)abrir(b,true);}});
+    overlay.addEventListener('keydown',e=>{
+      if((e.key==='Enter'||e.key===' ')&&e.target.classList?.contains('hc-sum-view-410g')){e.preventDefault();const b=bloqueDe(e.target);if(b)abrir(b,true);}
+    });
+    // El dictado SIEMPRE dispara "input" tras insertar texto: además de
+    // refrescar el resumen, abre la edición (respaldo que no depende de
+    // que el navegador entregue focusin).
+    overlay.addEventListener('input',e=>{
+      const b=bloqueDe(e.target);if(!b||e.target.tagName!=='TEXTAREA')return;
+      if(b.dataset.sumField410g==='alergias'&&b.dataset.estadoPrev410g==='none')sanearAlergiasNinguna410g(e.target);
+      abrir(b,false);refrescar(b);
+    });
+    // Teclear/pegar/borrar sobre "Sin alergias conocidas" con el cursor en
+    // el medio de la frase también la REEMPLAZA completa (se selecciona
+    // todo justo antes de que el navegador aplique la edición). No se toca
+    // durante composición (IME/teclado predictivo): ahí manda el saneador.
+    overlay.addEventListener('beforeinput',e=>{
+      const ta=e.target;if(ta.tagName!=='TEXTAREA')return;
+      const b=bloqueDe(ta);if(!b||b.dataset.sumField410g!=='alergias')return;
+      const tipo=String(e.inputType||'');
+      if(e.isComposing||!/^(insert|delete)/.test(tipo)||/Composition/i.test(tipo))return;
+      if(esAlergiasNinguna410g(ta.value)&&!(ta.selectionStart===0&&ta.selectionEnd===ta.value.length)){
+        try{ta.setSelectionRange(0,ta.value.length);}catch(err){}
+      }
+    });
+    // Cualquier foco al textarea (click en la etiqueta, Tab, o el
+    // target.focus() del dictado por voz) abre la edición.
+    overlay.addEventListener('focusin',e=>{const b=bloqueDe(e.target);if(b&&e.target.tagName==='TEXTAREA')abrir(b,false);});
+    // Tocar "Dictar" abre la edición ya mismo (el dictado recién enfoca el
+    // textarea al llegar el primer resultado).
+    overlay.addEventListener('pointerdown',e=>{
+      const btn=e.target.closest?.('[data-cl-voice-target4094]');const b=bloqueDe(btn);
+      if(b){b.dataset.vozTs410g=String(Date.now());abrir(b,false);}
+    });
+    overlay.addEventListener('focusout',e=>{
+      const b=bloqueDe(e.target);if(!b)return;
+      setTimeout(()=>{
+        if(!overlay.isConnected||b.contains(document.activeElement))return;
+        if(b.querySelector('[data-cl-voice-target4094].is-listening'))return;
+        if(Date.now()-Number(b.dataset.vozTs410g||0)<4000)return;
+        cerrar(b);
+      },0);
+    });
+    overlay.addEventListener('change',e=>{
+      const chk=e.target.closest?.('[data-hc-noallergy410g]');if(!chk)return;
+      const b=bloqueDe(chk),ta=b?.querySelector('textarea');if(!ta)return;
+      ta.value=chk.checked?ALERGIAS_NINGUNA_410G:'';
+      refrescar(b);
+    });
+  }
+  // FASE 7 - Nueva evolución, columna izquierda: cada evolución previa se
+  // muestra como una tarjeta legible (fecha + profesional, motivo, Dx/Plan
+  // recortados, signos vitales) en vez de una sola línea. SÓLO presentación:
+  // usa exactamente los mismos datos de siempre (data-hc-prev-all411 /
+  // cronologiaBreveHC); "Ver todas/Ver detalle", "Continuar última" y
+  // "Traer seleccionados" no se tocan. completo=true (Ver todas/detalle)
+  // muestra los textos íntegros, como antes.
+  function articuloPrevHC410h(e,vit,completo){
+    const motivo=e.motivo||'',dx=e.diagnostico||'',ev=e.evolucion||'',plan=e.conducta||'';
+    const prof=e.profesional||e.profesionalNombre||'';
+    const titulo=motivo||dx||ev||'Evolución clínica';
+    const linea=(rot,txt)=>txt?`<div class="hc-prev-line410h"><b>${rot}</b> ${escHC(txt)}</div>`:'';
+    const parrafo=(rot,txt)=>txt?`<p class="hc-prev-full410h"><b>${rot}:</b> ${escHC(txt)}</p>`:'';
+    const cuerpo=completo
+      ?parrafo('Evolución',ev)+parrafo('Diagnóstico',dx)+parrafo('Conducta',plan)
+      :(()=>{const l=((dx&&titulo!==dx)?linea('Dx',dx):((!dx&&motivo&&ev)?linea('Evol.',ev):''))+linea('Plan',plan);return l?`<div class="hc-prev-lines410h">${l}</div>`:'';})();
+    return `<article class="hc-prev-item410h"><div class="hc-prev-head410h"><strong>${escHC(fmtDateTimeHC(e.fechaHora))}</strong>${prof?`<small>${escHC(prof)}</small>`:''}</div><div class="hc-prev-motivo410h">${escHC(titulo)}</div>${cuerpo}${vit?`<small class="hc-prev-vit410h">${escHC(vit)}</small>`:''}</article>`;
+  }
   function openEvolutionModalHC(key,evolutionId='',atencionId=''){
     if(!requireClinicalHC())return;
     const p=patientByKeyHC(key);if(!p)return;ensureHC();
@@ -9507,7 +10000,21 @@ function patientInfoTextHC(p,coverage){
     // de la atención vinculada (fuente única). No se copian a la evolución
     // ni a ninguna otra estructura, y si no hay atención vinculada no se
     // muestra nada (nada que inventar).
-    const episodeContextHtml410e=attention?`<div class="hc-episode-context411e"><span class="hc-episode-context-title411e">Contexto del turno · solo lectura</span><div class="hc-episode-context-grid411e"><div><span>Solicitante / derivante</span><strong>${escHC(attention.medicoSolicitante||attention.derivante||'s/d')}</strong></div><div><span>Motivo</span><strong>${escHC(attention.motivoSolicitud||attention.motivoConsulta||'s/d')}</strong></div>${attention.observacionClinica?`<div class="full"><span>Observación clínica</span><strong>${escHC(attention.observacionClinica)}</strong></div>`:''}</div></div>`:'';
+    // El médico solicitante y el MOTIVO DE DERIVACIÓN (motivoSolicitud, el
+    // "Motivo / indicación" que carga Secretaría) se muestran ahora en la
+    // franja "Médico que refiere / deriva / solicita" de la columna
+    // izquierda; acá sólo queda lo que NO está en esa franja, para no
+    // duplicar: la observación clínica y - únicamente si no hay motivo de
+    // derivación - el motivo de consulta cargado en el turno (otro concepto,
+    // por eso se rotula distinto).
+    const episodeContextHtml410e=(()=>{
+      if(!attention)return '';
+      const motivoDerivacion=String(attention.motivoSolicitud||'').trim(),motivoConsultaTurno=String(attention.motivoConsulta||'').trim();
+      const items=[];
+      if(!motivoDerivacion&&motivoConsultaTurno)items.push(`<div class="full"><span>Motivo de consulta (turno)</span><strong>${escHC(motivoConsultaTurno)}</strong></div>`);
+      if(attention.observacionClinica)items.push(`<div class="full"><span>Observación clínica</span><strong>${escHC(attention.observacionClinica)}</strong></div>`);
+      return items.length?`<div class="hc-episode-context411e"><span class="hc-episode-context-title411e">Contexto del turno · solo lectura</span><div class="hc-episode-context-grid411e">${items.join('')}</div></div>`:'';
+    })();
     // FASE 4 - "previo" de cada signo vital: referencia discreta de la
     // última evolución CON algún signo vital cargado (mismo criterio que
     // ultimaEvolucionConVitalesHC, ya usado en el detalle de HC),
@@ -9532,11 +10039,11 @@ function patientInfoTextHC(p,coverage){
     const prevEvolutionsHtml410e=(()=>{
       const prev=cronologiaBreveHC(p,existing?.id||''),allPrev=cronologiaCompletaHC(p,existing?.id||'');
       const countTxt=allPrev.length?`${allPrev.length} evolución(es) previa(s)`:'sin evoluciones previas';
-      return `<details class="hc-prev-evolutions410" id="hcPrevSection411" data-hc-prev-all411="${escHC(encodeURIComponent(JSON.stringify(allPrev.map(e=>({id:e.id,fechaHora:e.fechaHora,motivo:e.motivo||'',evolucion:e.evolucion||'',diagnostico:e.diagnostico||'',conducta:e.conducta||'',vitales:vitalesHC(e)})))))}">
+      return `<details class="hc-prev-evolutions410" id="hcPrevSection411" data-hc-prev-all411="${escHC(encodeURIComponent(JSON.stringify(allPrev.map(e=>({id:e.id,fechaHora:e.fechaHora,motivo:e.motivo||'',evolucion:e.evolucion||'',diagnostico:e.diagnostico||'',conducta:e.conducta||'',vitales:vitalesHC(e),profesional:e.profesionalNombre||''})))))}">
         <summary class="hc-prev-summary410">Evoluciones previas <span class="hc-prev-count410">${escHC(countTxt)}</span></summary>
         <div class="hc-prev-body410">
           <div class="hc-prev-head410">${allPrev.length?`<div class="hc-prev-actions411"><button class="secondary small-btn" type="button" id="hcVerTodas411">${allPrev.length>3?'Ver todas':'Ver detalle'}</button>${!existing?`<button class="secondary small-btn" type="button" id="hcContinuarUltima411">Continuar última</button>`:''}</div>`:''}</div>
-          <div id="hcPrevList411">${prev.length?prev.map(e=>`<article><strong>${escHC(fmtDateTimeHC(e.fechaHora))}</strong><span>${escHC(e.motivo||e.diagnostico||e.evolucion||'Evolución clínica')}</span>${vitalesHC(e)?`<small>${vitalesHC(e)}</small>`:''}</article>`).join(''):`<div class="muted">Esta será la primera evolución clínica registrada.</div>`}</div>
+          <div id="hcPrevList411">${prev.length?prev.map(e=>articuloPrevHC410h(e,vitalesHC(e),false)).join(''):`<div class="muted">Esta será la primera evolución clínica registrada.</div>`}</div>
           ${allPrev.length&&!existing?`<div class="hc-continue-panel411 hidden" id="hcContinuePanel411"><div><strong>Traer de la última evolución</strong><p class="muted">Elegí qué campos querés reutilizar. No se copian signos vitales, fecha ni datos permanentes.</p></div><div class="hc-continue-options411"><label><input type="checkbox" data-hc-copyfield411="motivo"> Motivo</label><label><input type="checkbox" data-hc-copyfield411="evolucion"> Evolución / examen</label><label><input type="checkbox" data-hc-copyfield411="diagnostico"> Diagnóstico</label><label><input type="checkbox" data-hc-copyfield411="conducta"> Conducta / plan</label></div><div class="hc-continue-actions411"><button type="button" class="secondary small-btn" id="hcCancelarContinuar411">Cancelar</button><button type="button" class="primary small-btn" id="hcAplicarContinuar411">Traer seleccionados</button></div></div>`:''}
         </div>
       </details>`;
@@ -9555,6 +10062,10 @@ function patientInfoTextHC(p,coverage){
     // duplicarlo en la narrativa. Vacío si la evolución no está vinculada a
     // un turno.
     overlay.dataset.solicitanteAtencion410e=attention?(attention.medicoSolicitante||attention.derivante||''):'';
+    // Motivo de derivación registrado por Secretaría en el turno (solo
+    // lectura, mismo origen que el solicitante: la atención vinculada). NO
+    // es el motivo de consulta de la evolución (#hcMotivo) y nunca se copia ahí.
+    overlay.dataset.motivoDerivacion410i=attention?String(attention.motivoSolicitud||'').trim():'';
     overlay.innerHTML=`<div class="hc-modal-card hc-evolution-card-408 hc-evolution-card-409"><div class="hc-modal-head"><div><h2>${existing?'Editar evolución':'Nueva evolución'}</h2><p class="muted">Registro clínico del paciente</p></div><button class="modal-close" type="button" data-hc-close>×</button></div>
       <section class="hc-patient-banner-408"><div class="hc-patient-title-408"><div><h3 data-hc-patient-name409>${escHC(nombrePacientePanel?.(p)||p.nombreCompleto||'Paciente')}</h3><p class="muted hc-evo-meta411e">${escHC(evoMetaTxt410e)}</p>${p.fechaNacimiento&&!dob?'<div class="hc-invalid-date409">Fecha de nacimiento inválida: corregila para calcular la edad.</div>':''}</div><div class="hc-patient-title-actions409"><button class="secondary small-btn" type="button" data-hc-edit-patient409="${escHC(patientKey)}" data-hc-edit-context409="evolution">Editar ficha</button></div></div>
         <div class="hc-patient-data-408"><div><span>DNI</span><strong data-hc-field409="dni">${escHC(p.dni||'s/d')}</strong></div><div><span>Fecha de nacimiento</span><strong data-hc-field409="birth">${escHC(dob?(formatFecha?.(dob)||dob):(p.fechaNacimiento?'Fecha inválida':'s/d'))}</strong></div><div><span>Edad</span><strong data-hc-field409="age">${escHC(age?age+' años':'s/d')}</strong></div><div><span>Sexo</span><strong data-hc-field409="sex">${escHC(p.sexo||'s/d')}</strong></div><div><span>Obra social</span><strong data-hc-field409="coverage">${escHC(coverage)}</strong></div><div><span>N.º afiliado</span><strong data-hc-field409="affiliate">${escHC(p.numeroAfiliadoHabitual||attention?.numeroAfiliadoAtencion||'s/d')}</strong></div><div><span>Teléfono</span><strong data-hc-field409="phone">${escHC(phone||'s/d')}</strong></div><div><span>Email</span><strong data-hc-field409="email">${escHC(email||'s/d')}</strong></div></div>
@@ -9562,7 +10073,6 @@ function patientInfoTextHC(p,coverage){
         ${episodeContextHtml410e}
       </section>
       <div class="hc-evo-layout-410f"><div class="hc-evo-context-col">
-      ${prevEvolutionsHtml410e}
       <section class="hc-vitals-section410"><div class="hc-permanent-title409"><div><h3>Signos vitales y antropometría</h3><p class="muted">Opcionales. Cada evolución guarda los valores de ese momento; no se copian valores anteriores.</p></div></div><div class="hc-vitals-grid410">
         <label>Peso (kg)<input id="hcPeso410" type="number" inputmode="decimal" min="0" step="0.1" value="${existing?.pesoKg??''}" placeholder="Ej. 88">${prevVital410e('pesoKg','kg')}</label>
         <label>Talla (cm)<input id="hcTalla410" type="number" inputmode="decimal" min="0" step="0.1" value="${existing?.tallaCm??''}" placeholder="Ej. 185">${prevVital410e('tallaCm','cm')}</label>
@@ -9571,11 +10081,59 @@ function patientInfoTextHC(p,coverage){
         <label>FC (lpm)<input id="hcFc410" type="number" inputmode="numeric" min="0" step="1" value="${existing?.frecuenciaCardiaca??''}" placeholder="70">${prevVital410e('frecuenciaCardiaca','lpm')}</label>
         <label>SatO₂ (%)<input id="hcSat410" type="number" inputmode="decimal" min="0" max="100" step="0.1" value="${existing?.sato2??''}" placeholder="98">${prevVital410e('sato2','%')}</label>
       </div></section>
-      <section class="hc-permanent-data409"><div class="hc-permanent-title409"><div><h3>Datos clínicos permanentes</h3><p class="muted">Se actualizan en el resumen del paciente y quedan visibles en futuras consultas.</p></div></div><div class="hc-permanent-grid409"><div><div class="cl-voice-label4094"><label for="hcSumAntecedentes409">Antecedentes</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAntecedentes409" aria-label="Dictar antecedentes">🎤 Dictar</button></div><textarea id="hcSumAntecedentes409" rows="3" placeholder="HTA, DBT, cirugías, antecedentes relevantes...">${escHC(sum.antecedentes||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcSumAlergias409">Alergias</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAlergias409" aria-label="Dictar alergias">🎤 Dictar</button></div><textarea id="hcSumAlergias409" rows="3" placeholder="Fármacos, alimentos u otras alergias...">${escHC(sum.alergias||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcSumMedicacion409">Medicación habitual</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumMedicacion409" aria-label="Dictar medicación habitual">🎤 Dictar</button></div><textarea id="hcSumMedicacion409" rows="3" placeholder="Medicamento, dosis y esquema...">${escHC(sum.medicacion||'')}</textarea></div></div></section>
+      <section class="hc-permanent-data409"><div class="hc-permanent-title409"><div><h3>Datos clínicos permanentes</h3><p class="muted">Se actualizan en el resumen del paciente y quedan visibles en futuras consultas.</p></div></div><div class="hc-permanent-grid409"><div class="hc-sum-field-410g" data-sum-field410g="antecedentes"><div class="cl-voice-label4094"><label for="hcSumAntecedentes409">${ICO_ANTECEDENTES_410I}Antecedentes</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAntecedentes409" aria-label="Dictar antecedentes">🎤 Dictar</button></div><div class="hc-sum-view-410g" role="button" tabindex="0" data-sum-view410g="hcSumAntecedentes409" aria-label="Editar antecedentes"><span class="hc-sum-text-410g"></span></div><textarea id="hcSumAntecedentes409" rows="3" placeholder="HTA, DBT, cirugías, antecedentes relevantes...">${escHC(sum.antecedentes||'')}</textarea></div><div class="hc-sum-field-410g" data-sum-field410g="alergias"><div class="cl-voice-label4094"><label for="hcSumAlergias409">${ICO_ALERGIAS_410I}Alergias</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAlergias409" aria-label="Dictar alergias">🎤 Dictar</button></div><div class="hc-sum-view-410g" role="button" tabindex="0" data-sum-view410g="hcSumAlergias409" aria-label="Editar alergias"><span class="hc-sum-text-410g"></span></div><textarea id="hcSumAlergias409" rows="3" placeholder="Fármacos, alimentos u otras alergias...">${escHC(sum.alergias||'')}</textarea><label class="hc-noalg-410g"><input type="checkbox" data-hc-noallergy410g> Sin alergias conocidas</label></div><div class="hc-sum-field-410g" data-sum-field410g="medicacion"><div class="cl-voice-label4094"><label for="hcSumMedicacion409">${ICO_MEDICACION_410I}Medicación habitual</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumMedicacion409" aria-label="Dictar medicación habitual">🎤 Dictar</button></div><div class="hc-sum-view-410g" role="button" tabindex="0" data-sum-view410g="hcSumMedicacion409" aria-label="Editar medicación habitual"><span class="hc-sum-text-410g"></span></div><textarea id="hcSumMedicacion409" rows="3" placeholder="Medicamento, dosis y esquema...">${escHC(sum.medicacion||'')}</textarea></div></div></section>
       </div><div class="hc-evo-write-col">
       <div class="hc-modal-grid hc-evolution-grid-408"><div class="full hc-motive-field-408"><div class="cl-voice-label4094"><label for="hcMotivo">Motivo de consulta</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcMotivo" aria-label="Dictar motivo de consulta">🎤 Dictar</button></div><input id="hcMotivo" type="text" placeholder="Ej.: control de HTA, dolor precordial, apto físico" value="${escHC(existing?.motivo||'')}"></div><div class="full hc-main-evolution-408"><div class="cl-voice-label4094"><label for="hcEvolucion">Evolución / examen físico</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcEvolucion" aria-label="Dictar evolución y examen físico">🎤 Dictar</button></div><textarea id="hcEvolucion" placeholder="Narrativa clínica, hallazgos, signos vitales...">${escHC(existing?.evolucion||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcDiagnostico">Impresión diagnóstica</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcDiagnostico" aria-label="Dictar impresión diagnóstica">🎤 Dictar</button></div><textarea id="hcDiagnostico" placeholder="Diagnósticos o problemas activos">${escHC(existing?.diagnostico||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcConducta">Conducta / plan</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcConducta" aria-label="Dictar conducta y plan">🎤 Dictar</button></div><textarea id="hcConducta" placeholder="Tratamiento, indicaciones, estudios, control">${escHC(existing?.conducta||'')}</textarea></div></div>
+      ${prevEvolutionsHtml410e}
       </div></div><div class="hc-modal-actions">${existing&&puedeEliminarEvolucionHC()?`<button class="danger" type="button" id="hcDeleteEvolucion411e">Eliminar</button>`:''}<button class="secondary" type="button" data-hc-close>Cancelar</button><button class="primary" type="button" id="hcGuardarEvolucion">${existing?'Guardar cambios':'Guardar evolución'}</button></div></div>`;
     document.body.appendChild(overlay);
+    // FASE 7 - Bloque 1, corrección QA visual (punto 4/7): bloquear el
+    // scroll de la página de fondo mientras "Nueva evolución" está
+    // abierta, reutilizando la clase ya existente body.patient-modal-open-371
+    // (mismo mecanismo que #pacienteGlobalModal, ver openPatient360 en
+    // app.js) - no se crea ningún overlay/estilo nuevo. overflow:hidden en
+    // body no resetea el scroll de la página: al sacar la clase, el fondo
+    // queda exactamente en la posición en la que estaba (requisito de
+    // "conservar la posición previa"), sin necesidad de guardar/restaurar
+    // manualmente ningún scrollTop. El cierre del modal puede pasar por
+    // varios caminos (Cancelar, Guardar, Eliminar, cierre de sesión) - en
+    // vez de agregar la limpieza en cada uno, un MutationObserver detecta
+    // la desaparición real del modal y saca la clase una sola vez, sin
+    // importar quién lo haya cerrado.
+    document.body.classList.add('patient-modal-open-371');
+    const bodyScrollLockObs410f=new MutationObserver(()=>{
+      if(!document.getElementById('hcEvolutionModal')){
+        document.body.classList.remove('patient-modal-open-371');
+        bodyScrollLockObs410f.disconnect();
+      }
+    });
+    bodyScrollLockObs410f.observe(document.body,{childList:true});
+    initResumenCompacto410g(overlay);
+    // El módulo del derivante inserta su tarjeta justo antes de
+    // #hcPrevSection411, que ahora está al final de la columna DERECHA: se
+    // la devuelve a la columna izquierda, primera (sin tocar ese módulo;
+    // sólo se la reubica en el DOM, sus ids y listeners no cambian). El
+    // orden del DOM = orden visual = orden de Tab.
+    const colCtx410h=overlay.querySelector('.hc-evo-context-col');
+    if(colCtx410h){
+      // Se mira todo el modal (la tarjeta puede aparecer en cualquier columna).
+      const derivantePrimero=()=>{
+        const c=overlay.querySelector('.cl-requester-card411r');if(!c)return;
+        if(c.parentElement!==colCtx410h||colCtx410h.firstElementChild!==c)colCtx410h.insertBefore(c,colCtx410h.firstElementChild);
+        // Motivo de derivación (sólo lectura): si existe se muestra dentro de
+        // la misma tarjeta; si no existe, no se inventa nada.
+        const motivo=overlay.dataset.motivoDerivacion410i||'';
+        if(motivo&&!c.querySelector('.hc-deriv-motivo410i')){
+          const fila=document.createElement('div');fila.className='hc-deriv-motivo410i';
+          const rot=document.createElement('span');rot.className='hc-deriv-rot410i';rot.textContent='Motivo de derivación';
+          const val=document.createElement('span');val.className='hc-deriv-val410i';val.textContent=motivo;
+          fila.append(rot,val);c.appendChild(fila);
+        }
+      };
+      derivantePrimero();
+      const obsDeriv410h=new MutationObserver(()=>{if(!overlay.isConnected){obsDeriv410h.disconnect();return;}derivantePrimero();});
+      obsDeriv410h.observe(overlay,{childList:true,subtree:true});
+    }
     const recalcularImc410=()=>{const v=imcHC($hc('hcPeso410')?.value,$hc('hcTalla410')?.value);if($hc('hcImc410'))$hc('hcImc410').value=v??'';};
     $hc('hcPeso410')?.addEventListener('input',recalcularImc410);$hc('hcTalla410')?.addEventListener('input',recalcularImc410);recalcularImc410();
 
@@ -9586,7 +10144,8 @@ function patientInfoTextHC(p,coverage){
     const pintarPrev411=()=>{
       const list=$hc('hcPrevList411');if(!list)return;
       const arr=mostrandoTodas411?prevAll411:prevAll411.slice(0,3);
-      list.innerHTML=arr.length?arr.map(e=>`<article><strong>${escHC(fmtDateTimeHC(e.fechaHora))}</strong><span>${escHC(e.motivo||e.diagnostico||e.evolucion||'Evolución clínica')}</span>${e.vitales?`<small>${escHC(e.vitales)}</small>`:''}${mostrandoTodas411?`${e.evolucion?`<p><b>Evolución:</b> ${escHC(e.evolucion)}</p>`:''}${e.diagnostico?`<p><b>Diagnóstico:</b> ${escHC(e.diagnostico)}</p>`:''}${e.conducta?`<p><b>Conducta:</b> ${escHC(e.conducta)}</p>`:''}`:''}</article>`).join(''):'<div class="muted">Esta será la primera evolución clínica registrada.</div>';
+      list.classList.toggle('is-all410h',mostrandoTodas411);
+      list.innerHTML=arr.length?arr.map(e=>articuloPrevHC410h(e,e.vitales||'',mostrandoTodas411)).join(''):'<div class="muted">Esta será la primera evolución clínica registrada.</div>';
       if($hc('hcVerTodas411'))$hc('hcVerTodas411').textContent=mostrandoTodas411?'Ver últimas 3':(prevAll411.length>3?'Ver todas':'Ver detalle');
     };
     $hc('hcVerTodas411')?.addEventListener('click',()=>{mostrandoTodas411=!mostrandoTodas411;pintarPrev411();});

@@ -795,18 +795,77 @@
       if(!p||!p.id)return;
       const actions=modal.querySelector('.hc-patient-title-actions409');
       if(!actions)return;
+      // Fase 7 - Adjuntar unificado: los MISMOS dos botones (mismos data-*
+      // que maneja el listener de click de abajo, sin lógica nueva) ahora
+      // viven dentro de un menú "📎 Adjuntar ▾". Sólo cambia el contenedor.
       const bImg=document.createElement('button');
       bImg.type='button';
-      bImg.className='secondary small-btn';
+      bImg.className='secondary small-btn pdf-adj-item-v1';
+      bImg.setAttribute('role','menuitem');
       bImg.dataset.pdfTomarImagenV1=p.id;
       bImg.textContent='Tomar imagen clínica';
-      actions.prepend(bImg);
       const b=document.createElement('button');
       b.type='button';
-      b.className='secondary small-btn';
+      b.className='secondary small-btn pdf-adj-item-v1';
+      b.setAttribute('role','menuitem');
       b.dataset.pdfNuevoV1=p.id;
       b.textContent='Subir estudio / PDF';
-      actions.prepend(b);
+      const wrap=document.createElement('div');
+      wrap.className='pdf-adj-v1';
+      wrap.dataset.pdfAdjV1='';
+      const trigger=document.createElement('button');
+      trigger.type='button';
+      trigger.className='secondary small-btn pdf-adj-trigger-v1';
+      trigger.dataset.pdfAdjTriggerV1='';
+      trigger.setAttribute('aria-haspopup','menu');
+      trigger.setAttribute('aria-expanded','false');
+      trigger.setAttribute('aria-controls','pdfAdjMenuV1');
+      trigger.innerHTML='<span aria-hidden="true">📎</span> Adjuntar <span class="pdf-adj-count-v1" data-pdf-adj-count-v1 hidden></span><span aria-hidden="true" class="pdf-adj-caret-v1">▾</span>';
+      const menu=document.createElement('div');
+      menu.id='pdfAdjMenuV1';
+      menu.className='pdf-adj-menu-v1';
+      menu.setAttribute('role','menu');
+      menu.setAttribute('aria-label','Adjuntar a esta evolución');
+      menu.hidden=true;
+      menu.append(b,bImg);
+      wrap.append(trigger,menu);
+      actions.prepend(wrap);
+      actualizarContadorAdjuntarV1(modal);
+    }catch(e){}
+  }
+
+  // Fase 7 - menú "Adjuntar" de Nueva evolución: sólo abre/cierra el menú y
+  // muestra la cantidad de adjuntos de esta evolución. La selección, captura,
+  // subida y vinculación siguen siendo las de 6D (listener de click abajo).
+  function cerrarMenuAdjuntarV1(devolverFoco){
+    document.querySelectorAll('[data-pdf-adj-v1]').forEach(w=>{
+      const m=w.querySelector('.pdf-adj-menu-v1');
+      const t=w.querySelector('[data-pdf-adj-trigger-v1]');
+      if(m&&!m.hidden){
+        m.hidden=true;
+        t?.setAttribute('aria-expanded','false');
+        if(devolverFoco)t?.focus();
+      }
+    });
+  }
+  function abrirMenuAdjuntarV1(wrap,enfocarPrimero){
+    const m=wrap.querySelector('.pdf-adj-menu-v1');
+    const t=wrap.querySelector('[data-pdf-adj-trigger-v1]');
+    if(!m||!t)return;
+    m.hidden=false;
+    t.setAttribute('aria-expanded','true');
+    if(enfocarPrimero)m.querySelector('[role="menuitem"]')?.focus();
+  }
+  function actualizarContadorAdjuntarV1(modal){
+    try{
+      const t=modal?.querySelector('[data-pdf-adj-trigger-v1]');
+      const c=t?.querySelector('[data-pdf-adj-count-v1]');
+      if(!t||!c)return;
+      const n=pendingDocsGetV1(modal).length;
+      c.hidden=!n;
+      c.textContent=n?String(n):'';
+      if(n)t.setAttribute('aria-label','Adjuntar. '+n+(n===1?' adjunto':' adjuntos')+' en esta evolución');
+      else t.removeAttribute('aria-label');
     }catch(e){}
   }
 
@@ -835,6 +894,7 @@
   function renderAdjuntosPendientesV1(modal){
     const list=pendingDocsGetV1(modal);
     let box=modal.querySelector('[data-pdf-pending-box-v1]');
+    actualizarContadorAdjuntarV1(modal);
     if(!list.length){box?.remove();return;}
     const pdfs=list.filter(d=>!esImagenClinicaV1(d));
     const imagenes=list.filter(esImagenClinicaV1);
@@ -1184,6 +1244,49 @@
     wrapped.__pdfV1=true;
     window.seleccionarPacientePanel=seleccionarPacientePanel=wrapped;
   }
+
+  // Fase 7 - menú "Adjuntar": en fase de captura, ANTES del listener de 6D
+  // (que sigue abriendo el modal de PDF/cámara al clickear el ítem). No
+  // detiene la propagación: sólo abre/cierra el menú.
+  document.addEventListener('click',e=>{
+    const trig=e.target.closest?.('[data-pdf-adj-trigger-v1]');
+    if(trig){
+      const w=trig.closest('[data-pdf-adj-v1]');
+      const abierto=!w.querySelector('.pdf-adj-menu-v1').hidden;
+      cerrarMenuAdjuntarV1(false);
+      if(!abierto)abrirMenuAdjuntarV1(w,e.detail===0);
+      return;
+    }
+    if(e.target.closest?.('.pdf-adj-menu-v1 [role="menuitem"]')){cerrarMenuAdjuntarV1(false);return;}
+    if(!e.target.closest?.('[data-pdf-adj-v1]'))cerrarMenuAdjuntarV1(false);
+  },true);
+  // Escape en la ventana (captura): con el menú abierto lo cierra y NO deja
+  // llegar la tecla al cierre de "Nueva evolución" (app.js), así no se pierde
+  // lo escrito. Con el menú cerrado no interviene.
+  window.addEventListener('keydown',e=>{
+    const abierto=document.querySelector('.pdf-adj-menu-v1:not([hidden])');
+    if(!abierto)return;
+    if(e.key==='Escape'){e.preventDefault();e.stopPropagation();cerrarMenuAdjuntarV1(true);return;}
+    const wrap=abierto.closest('[data-pdf-adj-v1]');
+    if(!wrap?.contains(e.target))return;
+    const items=[...abierto.querySelectorAll('[role="menuitem"]')];
+    const i=items.indexOf(document.activeElement);
+    if(e.key==='ArrowDown'){e.preventDefault();items[(i+1)%items.length]?.focus();}
+    else if(e.key==='ArrowUp'){e.preventDefault();items[(i<=0?items.length:i)-1]?.focus();}
+    else if(e.key==='Home'){e.preventDefault();items[0]?.focus();}
+    else if(e.key==='End'){e.preventDefault();items[items.length-1]?.focus();}
+    else if(e.key==='Tab'){cerrarMenuAdjuntarV1(false);}
+  },true);
+  // ArrowDown sobre el botón cerrado también abre el menú (patrón menu-button).
+  document.addEventListener('keydown',e=>{
+    const trig=e.target.closest?.('[data-pdf-adj-trigger-v1]');
+    if(trig&&(e.key==='ArrowDown'||e.key==='ArrowUp')){
+      e.preventDefault();
+      const w=trig.closest('[data-pdf-adj-v1]');
+      cerrarMenuAdjuntarV1(false);
+      abrirMenuAdjuntarV1(w,true);
+    }
+  });
 
   document.addEventListener('click',e=>{
     const nuevo=e.target.closest?.('[data-pdf-nuevo-v1]');

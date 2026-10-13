@@ -2026,16 +2026,16 @@ body.dark .agenda-patient-evolve-403:hover{background:rgba(157,177,255,.12);colo
 .hc-pagination-408{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:14px;padding-top:12px;border-top:1px solid var(--border,#dbe3ee)}
 .hc-pagination-408 span{font-size:13px;font-weight:800;color:var(--muted,#64748b)}
 .hc-pagination-408 button{padding:8px 12px}
-.hc-evolution-card-408{width:min(1120px,100%);padding:24px}
-.hc-patient-banner-408{margin-top:14px;border:1px solid var(--border,#dbe3ee);border-radius:18px;background:var(--soft,#f8fafc);padding:16px}
-.hc-patient-title-408{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:12px}
-.hc-patient-title-408 h3{margin:0;font-size:22px}
-.hc-patient-data-408{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}
-.hc-patient-data-408>div{min-width:0;background:var(--card,#fff);border:1px solid var(--border,#dbe3ee);border-radius:12px;padding:9px 11px}
+.hc-evolution-card-408{width:min(1120px,100%);padding:14px 24px 24px}
+.hc-patient-banner-408{margin-top:10px;border:1px solid var(--border,#dbe3ee);border-radius:18px;background:var(--soft,#f8fafc);padding:10px 14px}
+.hc-patient-title-408{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:8px}
+.hc-patient-title-408 h3{margin:0;font-size:18px}
+.hc-patient-data-408{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:7px}
+.hc-patient-data-408>div{min-width:0;background:var(--card,#fff);border:1px solid var(--border,#dbe3ee);border-radius:12px;padding:6px 9px}
 .hc-patient-data-408 span{display:block;color:var(--muted,#64748b);font-size:11px;font-weight:800;text-transform:uppercase;letter-spacing:.02em}
 .hc-patient-data-408 strong{display:block;margin-top:3px;overflow-wrap:anywhere}
-.hc-copy-actions-408{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
-.hc-copy-actions-408 button,.hc-link-button-408{padding:8px 11px;font-size:13px;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;border-radius:9px;cursor:pointer}
+.hc-copy-actions-408{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.hc-copy-actions-408 button,.hc-link-button-408{padding:6px 10px;font-size:12.5px;font-weight:700;text-decoration:none;display:inline-flex;align-items:center;justify-content:center;border-radius:9px;cursor:pointer}
 .hc-context-meta-408{margin-top:12px;margin-bottom:4px}
 .hc-evolution-grid-408{margin-top:12px}
 .hc-evolution-grid-408 input,.hc-evolution-grid-408 textarea{width:100%}
@@ -2107,6 +2107,183 @@ body.dark .agenda-patient-evolve-403:hover{background:rgba(157,177,255,.12);colo
 @media(max-width:520px){
   .hc-evo-layout-410f{gap:12px}
   .hc-evo-context-col .hc-vitals-grid410{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+
+/* FASE 7 - Bloque 1, corrección dirigida tras QA visual en STAGING.
+   Todo scopeado a #hcEvolutionModal/.hc-evo-context-col - no toca ningún
+   encabezado ni modal genérico de otras pantallas. */
+/* Punto 1/2 - cabecera del modal (título "Nueva evolución" + subtítulo)
+   compactada: la tarjeta de paciente ya se compactó arriba
+   (.hc-patient-banner-408 etc., clases exclusivas de este modal). */
+#hcEvolutionModal .hc-modal-head{margin-bottom:0}
+#hcEvolutionModal .hc-modal-head h2{margin:0;font-size:20px}
+#hcEvolutionModal .hc-modal-head p{margin:2px 0 0}
+/* Punto 3/6 - la columna izquierda (contexto) suele quedar más alta que
+   la derecha (escritura) por los 3 textarea de "Datos clínicos
+   permanentes" apilados (6D.2/409) - se acortan sólo acá, dentro de la
+   columna angosta, para que la diferencia de altura entre columnas (ya
+   correcta gracias a align-items:start, ninguna se estira) sea menor y
+   quede menos espacio en blanco antes de la barra de Guardar. */
+.hc-evo-context-col .hc-permanent-grid409 textarea{min-height:50px}
+.hc-evo-context-col .hc-permanent-data409{padding:10px 13px;margin:10px 0 12px}
+.hc-evo-context-col .hc-permanent-grid409{gap:4px}
+/* Punto 4/7 - scroll: la tarjeta ya tenía overflow:auto propio
+   (.hc-evolution-card-409); overscroll-behavior:contain evita que, al
+   llegar al final del scroll interno, la rueda del mouse siga pasando el
+   scroll a la página de fondo. No afecta el scroll táctil normal (sólo
+   el "rebote"/chaining en el límite), así que no rompe iOS/Android. El
+   bloqueo del scroll de fondo en sí (body) se hace reutilizando la
+   clase ya existente body.patient-modal-open-371 (ver openEvolutionModalHC,
+   app.js) - mismo mecanismo que ya usa #pacienteGlobalModal, no uno nuevo. */
+.hc-evolution-card-409{overscroll-behavior:contain}
+/* Punto 8 - TA (PAS/PAD): sin min-width los dos input se comprimían
+   dentro de la columna de contexto, ahora más angosta que antes del
+   Bloque 1. min-width asegura que "120"/"80" se sigan viendo y editando
+   completos sin recortes, en cualquier ancho. */
+.hc-vital-ta-inputs410 input{width:auto;flex:1 1 48px;min-width:48px}
+/* Corrección de seguimiento (QA real en STAGING: el hueco antes de
+   Guardar seguía siendo grande) - la columna de contexto sigue siendo la
+   más alta por "Signos vitales" + "Datos clínicos permanentes" +
+   "Evoluciones previas" juntos. Se acorta más, sin estirar ni tocar la
+   columna de escritura (eso sí quedaría prohibido por el punto 6) - sólo
+   padding/márgenes/texto explicativo más chicos, mismos datos y
+   funcionalidad. Selector con #hcEvolutionModal para ganarle en
+   especificidad a la variante de color de este mismo bloque (línea
+   ~2314) que ya fija su propio padding. */
+#hcEvolutionModal .hc-evo-context-col .hc-vitals-section410{padding:8px 10px}
+.hc-evo-context-col .hc-vitals-section410{margin:8px 0}
+/* "Evoluciones previas" vive en la columna derecha, debajo de Impresión
+   diagnóstica / Conducta. */
+.hc-evo-write-col .hc-prev-evolutions410{margin:12px 0 0}
+.hc-evo-context-col .hc-vitals-grid410{margin-top:6px}
+.hc-evo-context-col .hc-permanent-title409 p,
+.hc-evo-context-col .hc-vitals-section410 .hc-permanent-title409 p{font-size:12px;margin:0 0 4px;line-height:1.3}
+.hc-evo-context-col .hc-permanent-title409 h3{font-size:14.5px;margin:0 0 1px}
+
+/* ===== FASE 7 - Bloque 2: compactación del contexto clínico =====
+   Todo scopeado a #hcEvolutionModal (ID: le gana en especificidad a los
+   estilos propios de cardiolink-hc-referidos.js, que no se toca). */
+/* 1) Médico derivante: franja compacta. Se conserva el <select>, el
+   campo "Otro", el bloqueo por turno y su texto de aviso (sólo se oculta
+   la ayuda "Opcional..." cuando NO viene del turno). */
+#hcEvolutionModal .cl-requester-card411r{padding:6px 10px;margin:0 0 8px;border-radius:12px}
+#hcEvolutionModal .cl-requester-title411r h3{margin:0;font-size:12.5px;font-weight:800;line-height:1.25}
+#hcEvolutionModal .cl-requester-title411r p{display:none}
+#hcEvolutionModal .cl-requester-locked411r .cl-requester-title411r p{display:block;margin:1px 0 0;font-size:11.5px;line-height:1.25}
+#hcEvolutionModal .cl-requester-grid411r{grid-template-columns:minmax(0,1fr);gap:4px;margin-top:4px}
+#hcEvolutionModal .cl-requester-grid411r label{display:flex;align-items:center;gap:8px;margin:0;font-size:12px;min-width:0}
+#hcEvolutionModal .cl-requester-grid411r select,
+#hcEvolutionModal .cl-requester-grid411r input{flex:1;min-width:0;width:auto;margin-top:0;height:34px;min-height:34px;padding-top:4px;padding-bottom:4px}
+/* 5) Evoluciones previas: sigue desplegable, sólo más baja. */
+#hcEvolutionModal .hc-evo-write-col .hc-prev-summary410{padding:10px 14px;font-size:14px}
+/* 2/3/4) Antecedentes · Alergias · Medicación: resumen en lectura,
+   textarea (mismo elemento) visible sólo al editar. */
+#hcEvolutionModal .hc-sum-field-410g .cl-voice-label4094{min-height:26px;margin-bottom:2px}
+#hcEvolutionModal .hc-sum-field-410g .cl-voice-btn4094{padding:4px 9px;font-size:11.5px;min-height:30px;height:30px}
+#hcEvolutionModal .hc-sum-field-410g label[for]{margin-bottom:0;font-size:13px}
+.hc-sum-view-410g{cursor:text;min-height:28px;padding:5px 8px;border:1px dashed var(--hc-evo-card-border,#cbd5e1);border-radius:8px;background:rgba(255,255,255,.6);color:var(--text,#111827);font-size:13px;line-height:1.35;overflow-wrap:anywhere}
+/* El recorte a 2 líneas va en el <span> interno (no en el contenedor con
+   padding): con padding en el mismo elemento, la 3ª línea asomaba cortada. */
+.hc-sum-text-410g{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden}
+.hc-sum-view-410g:hover{border-style:solid}
+.hc-sum-view-410g:focus-visible{outline:2px solid var(--primary,#174b5c);outline-offset:1px}
+.hc-sum-view-410g[data-estado="empty"]{color:var(--muted,#64748b);font-style:italic}
+/* Alergias: texto completo (sin recorte), pequeño, en negrita. */
+.hc-sum-field-410g[data-sum-field410g="alergias"] .hc-sum-view-410g{font-size:12px}
+.hc-sum-field-410g[data-sum-field410g="alergias"] .hc-sum-text-410g{display:block;-webkit-line-clamp:unset;line-clamp:unset;overflow:visible}
+.hc-sum-view-410g[data-estado="registered"]{color:#b91c1c;font-weight:800;background:#fef2f2;border-color:#fca5a5}
+.hc-sum-view-410g[data-estado="unknown"]{color:#92400e;font-weight:700;background:#fffbeb;border-color:#f59e0b}
+.hc-sum-view-410g[data-estado="none"]{color:#166534;font-weight:700;background:#f0fdf4;border-color:#86efac}
+body.dark .hc-sum-view-410g{background:rgba(15,23,42,.45)}
+body.dark .hc-sum-view-410g[data-estado="registered"]{color:#fca5a5;background:rgba(127,29,29,.35);border-color:#b91c1c}
+body.dark .hc-sum-view-410g[data-estado="unknown"]{color:#fcd34d;background:rgba(120,53,15,.35);border-color:#b45309}
+body.dark .hc-sum-view-410g[data-estado="none"]{color:#86efac;background:rgba(20,83,45,.35);border-color:#15803d}
+.hc-sum-field-410g.is-editing .hc-sum-view-410g{display:none}
+#hcEvolutionModal .hc-sum-field-410g:not(.is-editing) textarea{height:0;min-height:0;padding:0;margin:0;border:0;opacity:0;overflow:hidden;resize:none;pointer-events:none;box-shadow:none}
+#hcEvolutionModal .hc-sum-field-410g.is-editing textarea{min-height:64px}
+#hcEvolutionModal .hc-noalg-410g{display:flex;align-items:center;gap:6px;margin:3px 0 0;font-size:11.5px;font-weight:700;color:var(--muted,#475569);cursor:pointer}
+#hcEvolutionModal .hc-noalg-410g input{width:auto;height:auto;min-height:0;margin:0;padding:0}
+#hcEvolutionModal .hc-noalg-410g input:disabled{cursor:not-allowed}
+/* ===== FASE 7 - Nueva evolución: "Evoluciones previas" al final de la
+   columna izquierda, con tarjetas legibles. Los estilos inyectados por
+   app.js (cardiolink-hc-fase2-410) forzaban una grilla 170px+1fr con
+   nowrap/ellipsis (una sola línea, ilegible en una columna angosta): acá
+   se pisan sólo dentro de este modal (ID). */
+#hcEvolutionModal #hcPrevList411{display:flex;flex-direction:column;gap:8px}
+#hcEvolutionModal #hcPrevList411.is-all410h{max-height:min(62vh,640px);overflow-y:auto;overscroll-behavior:contain;padding-right:2px}
+#hcEvolutionModal #hcPrevList411 article.hc-prev-item410h{display:block;padding:8px 10px;border:1px solid var(--hc-evo-card-border,#dbe3ee);border-radius:10px}
+#hcEvolutionModal #hcPrevList411 article.hc-prev-item410h:first-of-type{border-top:1px solid var(--hc-evo-card-border,#dbe3ee)}
+.hc-prev-head410h{display:flex;flex-wrap:wrap;align-items:baseline;justify-content:space-between;gap:2px 8px}
+.hc-prev-head410h strong{font-size:12.5px;white-space:nowrap}
+.hc-prev-head410h small{font-size:11.5px;color:var(--muted,#64748b);overflow-wrap:anywhere}
+.hc-prev-motivo410h{margin-top:3px;font-size:13px;font-weight:700;line-height:1.3;overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden}
+/* Dx / Plan: en 1 o 2 columnas según el ancho disponible (la columna de
+   escritura es ancha; en celular cae a 1). */
+.hc-prev-lines410h{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:0 16px}
+.hc-prev-line410h{margin-top:3px;font-size:12.5px;line-height:1.35;color:var(--text,#1f2937);overflow-wrap:anywhere;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden}
+.hc-prev-line410h b{color:var(--muted,#475569);font-weight:800}
+#hcEvolutionModal #hcPrevList411 .hc-prev-full410h{margin:4px 0 0;font-size:12.5px;line-height:1.4;white-space:pre-wrap;overflow-wrap:anywhere;color:var(--text,#1f2937)}
+#hcEvolutionModal #hcPrevList411 .hc-prev-full410h b{color:var(--muted,#475569)}
+#hcEvolutionModal #hcPrevList411 small.hc-prev-vit410h{display:block;margin-top:4px;font-size:11.5px;color:var(--muted,#64748b);grid-column:auto}
+/* "Ver todas": los textos van completos (sin recorte). */
+#hcPrevList411.is-all410h .hc-prev-motivo410h{-webkit-line-clamp:unset;line-clamp:unset}
+/* ===== FASE 7 - Colores clínicos accesibles (sólo Nueva evolución) =====
+   Antecedentes violeta / Medicación azul / Alergias rojo. El color NUNCA es
+   el único identificador: cada sección conserva su título de texto
+   (seminegrita) y un ícono SVG propio. Modo claro = paleta aprobada; modo
+   oscuro = variantes más claras (los hex del modo claro perderían contraste
+   sobre fondo oscuro). Contraste medido en navegador (ver informe). */
+.hc-ico410i{flex:none;fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+#hcEvolutionModal .hc-sum-field-410g label[for]{display:inline-flex;align-items:center;gap:6px;font-weight:600;color:var(--hc-ctx-col410i,inherit)}
+.hc-sum-field-410g[data-sum-field410g="antecedentes"]{--hc-ctx-col410i:#6D28D9}
+.hc-sum-field-410g[data-sum-field410g="medicacion"]{--hc-ctx-col410i:#1D4ED8}
+.hc-sum-field-410g[data-sum-field410g="alergias"]{--hc-ctx-col410i:#B91C1C}
+.hc-sum-field-410g[data-sum-field410g="alergias"][data-estado-prev410g="unknown"]{--hc-ctx-col410i:#92400E}
+.hc-sum-field-410g[data-sum-field410g="alergias"][data-estado-prev410g="none"]{--hc-ctx-col410i:#166534}
+body.dark .hc-sum-field-410g[data-sum-field410g="antecedentes"]{--hc-ctx-col410i:#C4B5FD}
+body.dark .hc-sum-field-410g[data-sum-field410g="medicacion"]{--hc-ctx-col410i:#93C5FD}
+body.dark .hc-sum-field-410g[data-sum-field410g="alergias"]{--hc-ctx-col410i:#FCA5A5}
+body.dark .hc-sum-field-410g[data-sum-field410g="alergias"][data-estado-prev410g="unknown"]{--hc-ctx-col410i:#FCD34D}
+body.dark .hc-sum-field-410g[data-sum-field410g="alergias"][data-estado-prev410g="none"]{--hc-ctx-col410i:#86EFAC}
+/* Franja de derivación: motivo de derivación (sólo lectura) dentro de la
+   misma tarjeta compacta. Rótulo propio para no confundirlo con el
+   "Motivo de consulta" de la evolución. */
+.hc-deriv-motivo410i{display:flex;flex-wrap:wrap;align-items:baseline;gap:2px 6px;margin-top:5px;padding-top:5px;border-top:1px dashed #94a3b8;font-size:12px;line-height:1.35}
+.hc-deriv-rot410i{font-weight:700;color:#334155}
+.hc-deriv-val410i{font-weight:600;color:#0f172a;overflow-wrap:anywhere;min-width:0}
+/* Modo oscuro: la tarjeta del derivante (estilo propio de
+   cardiolink-hc-referidos.js) conservaba su fondo CLARO #f8fbfd aunque el
+   texto del tema oscuro es claro -> ilegible (1.2:1). Se oscurece sólo
+   acá, con las variables del propio modal; el módulo no se toca. */
+body.dark #hcEvolutionModal .cl-requester-card411r{background:var(--hc-evo-tint-slate);border-color:var(--hc-evo-tint-slate-border)}
+body.dark #hcEvolutionModal .cl-requester-title411r p{color:#b6c3d1}
+body.dark #hcEvolutionModal .cl-requester-locked411r select[disabled],
+body.dark #hcEvolutionModal .cl-requester-locked411r input[disabled]{background:#243445;color:#e5e7eb;border-color:#3d5873}
+body.dark .hc-deriv-motivo410i{border-top-color:#64748b}
+body.dark .hc-deriv-rot410i{color:#cbd5e1}
+body.dark .hc-deriv-val410i{color:#f1f5f9}
+/* ===== FASE 7 - Signos vitales: contraste en MODO OSCURO (sólo color) =====
+   Defecto preexistente: título #0e7490 (2.88:1), descripción #64748b
+   (3.24:1) y etiquetas #334155 (1.49:1) sobre el fondo oscuro #192631.
+   Se corrigen únicamente en body.dark y dentro de Nueva evolución: el modo
+   claro no cambia, y no se tocan tamaños, campos, valores ni distribución.
+   Tonos de la misma familia petróleo/pizarra que ya usa el resto del modal
+   oscuro (el "previo" ya usa #94a3b8). */
+body.dark #hcEvolutionModal .hc-vitals-section410 h3{color:#7dd3e8}
+body.dark #hcEvolutionModal .hc-vitals-section410 .hc-permanent-title409 p{color:#94a3b8}
+body.dark #hcEvolutionModal .hc-vitals-grid410 label{color:#cbd5e1}
+/* ===== FASE 7 - Signos vitales: descripción en MODO CLARO (sólo color) =====
+   #64748b sobre el fondo #e2e7ed medía 3.83:1. Se pasa a #475569 (misma familia
+   pizarra, ~6.1:1). Sólo esta descripción; el modo oscuro la sobreescribe arriba. */
+#hcEvolutionModal .hc-vitals-section410 .hc-permanent-title409 p{color:#475569}
+/* Accesibilidad: foco visible por teclado en el checkbox y áreas de toque
+   más grandes SÓLO en pantallas táctiles (en mouse no cambia nada). */
+#hcEvolutionModal .hc-noalg-410g:focus-within{outline:2px solid var(--primary,#174b5c);outline-offset:2px;border-radius:6px}
+@media (pointer:coarse){
+  #hcEvolutionModal .hc-noalg-410g{min-height:40px;font-size:13px;gap:10px}
+  #hcEvolutionModal .hc-noalg-410g input{width:20px;height:20px}
+  #hcEvolutionModal .hc-sum-field-410g .cl-voice-btn4094{min-height:40px;height:40px}
+  .hc-sum-view-410g{min-height:40px}
 }
 
 @media(max-width:1100px){.patients-directory-head409,.patients-directory-row409{grid-template-columns:minmax(200px,1.4fr) 110px 80px minmax(135px,1fr) minmax(140px,1fr)}.patients-directory-head409>div:last-child,.patients-directory-row409>div:last-child{display:none}}
@@ -2424,3 +2601,28 @@ body.dark #hcEvolutionModal button.secondary:hover{background:#31505f}
 /* Bloque 6E.1 - modal "Enviar documento". */
 .pdf-enviar-canales-v1{display:flex;gap:16px;flex-wrap:wrap;margin-top:4px}
 .pdf-enviar-canales-v1 label{display:flex;align-items:center;gap:6px;font-size:13px;text-transform:none;font-weight:400;color:inherit;letter-spacing:normal}
+
+/* ===== FASE 7 - Adjuntar unificado (sólo Nueva evolución) =====
+   "📎 Adjuntar ▾" abre un menú con los mismos dos botones de Fase 6
+   (Subir estudio / PDF, Tomar imagen clínica). Sólo presentación. */
+#hcEvolutionModal .pdf-adj-v1{position:relative;display:inline-block;z-index:30}
+#hcEvolutionModal .pdf-adj-trigger-v1{display:inline-flex;align-items:center;gap:6px}
+#hcEvolutionModal .pdf-adj-caret-v1{font-size:11px;line-height:1}
+#hcEvolutionModal .pdf-adj-count-v1{display:inline-flex;align-items:center;justify-content:center;min-width:20px;height:20px;padding:0 6px;border-radius:999px;background:#123f56;color:#fff;font-size:12px;font-weight:800;line-height:1}
+#hcEvolutionModal .pdf-adj-count-v1[hidden]{display:none}
+#hcEvolutionModal .pdf-adj-menu-v1{position:absolute;top:calc(100% + 4px);right:0;min-width:210px;max-width:calc(100vw - 32px);display:flex;flex-direction:column;gap:2px;padding:6px;background:var(--hc-evo-card-bg,#fff);border:1px solid var(--hc-evo-card-border,#c2d3da);border-radius:12px;box-shadow:var(--hc-evo-shadow-modal,0 12px 30px rgba(15,23,42,.2))}
+#hcEvolutionModal .pdf-adj-menu-v1[hidden]{display:none}
+#hcEvolutionModal .pdf-adj-menu-v1 .pdf-adj-item-v1{width:100%;justify-content:flex-start;text-align:left;background:transparent;border-color:transparent;color:#123141;white-space:nowrap;min-height:36px}
+#hcEvolutionModal .pdf-adj-menu-v1 .pdf-adj-item-v1:hover,
+#hcEvolutionModal .pdf-adj-menu-v1 .pdf-adj-item-v1:focus-visible{background:var(--hc-evo-hover,rgba(18,63,86,.08));border-color:var(--hc-evo-card-border,#c2d3da)}
+#hcEvolutionModal .pdf-adj-v1 button:focus-visible{outline:2px solid #123f56;outline-offset:2px}
+body.dark #hcEvolutionModal .pdf-adj-count-v1{background:#7dd3e8;color:#0b1b24}
+body.dark #hcEvolutionModal .pdf-adj-menu-v1 .pdf-adj-item-v1{color:#dceef3}
+body.dark #hcEvolutionModal .pdf-adj-v1 button:focus-visible{outline-color:#7dd3e8}
+@media(max-width:600px){
+  #hcEvolutionModal .pdf-adj-menu-v1{right:auto;left:0}
+}
+@media(pointer:coarse){
+  #hcEvolutionModal .pdf-adj-trigger-v1{min-height:44px}
+  #hcEvolutionModal .pdf-adj-menu-v1 .pdf-adj-item-v1{min-height:44px}
+}
