@@ -6,6 +6,7 @@ const {test}=require('node:test');
 const fs=require('node:fs');
 const path=require('node:path');
 const src=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+const sinComentarios=t=>t.replace(/^\s*\/\/.*$/gm,'');
 const between=(from,to)=>{const i=src.indexOf(from);assert.notEqual(i,-1,'no se encontró: '+from);const j=src.indexOf(to,i+from.length);assert.notEqual(j,-1,'no se encontró fin: '+to);return src.slice(i,j);};
 
 test('helper fail-closed: sólo owner/admin o secretaría confirmados por backend',()=>{
@@ -70,4 +71,55 @@ test('mensajería del médico: identidad por backend, directorio mínimo, config
   const leidos=between('async function marcarLeidosMedicoV1(){','function marcarMensajesVisiblesLeidos(){');
   assert.match(leidos,/rpc\('cardiolink_mensaje_marcar_leido_v1'/);
   assert.doesNotMatch(leidos,/saveAtenciones\(|sincronizarAtencionesSupabase\(|\.upsert\(/);
+});
+
+test('el perfil del médico con identidad de backend no se asigna por heurísticas de email/alias',()=>{
+  const f=between('function perfilUsuarioActual(){','/* ===== Rol backend autoritativo');
+  assert.match(f,/if\(esMedicoBackendV1\(\)\)\{/);
+  assert.match(f,/String\(u\.profesionalId\|\|''\)!==P/);
+  assert.match(f,/usuario:\(esMedicoBackendV1\(\)&&backendMensajeriaV1\?\.login\)\|\|user/);
+  assert.match(f,/nombre:\(esMedicoBackendV1\(\)&&nombreVisibleBackendV1\(\)\)\|\|user/);
+});
+
+test('el remitente del médico es un login propio y el nombre visible sale del directorio, no del email',()=>{
+  const n=between('function nombreVisibleBackendV1(){','function ');
+  assert.match(n,/directorioMensajesV1/);
+  assert.doesNotMatch(n,/usuarioSupabase|email/i);
+  const f=sinComentarios(between('function enviarMensajeInterno(){','function renderMensajes(){'));
+  assert.match(f,/const loginRem=medicoBk\?\(vinculado\?usuarioLoginCorto\(u\.usuario\):backendMensajeriaV1\.login\)/);
+  assert.match(f,/const nombreRem=medicoBk\?\(nombreVisibleBackendV1\(\)\|\|\(vinculado&&u\.nombre\)\|\|'Médico'\)/);
+  assert.match(f,/deUsuario:loginRem,/);
+  assert.match(f,/deNombre:nombreRem,/);
+  assert.match(f,/if\(medicoBk\)\{ msg\.creadoPor=nombreRem\+' \('\+loginRem\+'\)'; msg\.creadoUsuario=loginRem; \}/);
+  // el sello de auditoría (que usa el prefijo del email) se aplica DESPUÉS de fijar los datos confiables
+  assert.ok(f.indexOf('msg.creadoUsuario=loginRem')<f.indexOf('selloAuditoriaCreacion(msg)'));
+});
+
+test('un mensaje rechazado por permisos (RLS) no se reencola y no bloquea el lote de atenciones',()=>{
+  const e=between('function esErrorPermisosRLS298(e){','function descartarMensajesRechazados298');
+  assert.match(e,/e\.code==='42501'/);
+  assert.match(e,/row-level security\|permission denied/);
+  const d=sinComentarios(between('function descartarMensajesRechazados298(','function d(id)'));
+  assert.match(d,/atenciones=atenciones\.filter\(/);
+  assert.match(d,/baselineAtenciones298\.delete\(/);
+  assert.match(d,/baselineVersionAtenciones298\.delete\(/);
+  // el texto no se pierde: respaldo local (últimos 20), cuadro de mensaje si está vacío y, si no, dentro del aviso
+  assert.match(d,/cardiolink_mensajes_no_enviados_v1/);
+  assert.match(d,/slice\(-20\)/);
+  assert.match(d,/t\.value=textos\.join/);
+  assert.match(d,/Texto del mensaje \(copialo si lo necesitás\)/);
+  const s=sinComentarios(between('if(nuevas298.length){','if(conflictos298.length){'));
+  assert.match(s,/nuevas298\.filter\(a=>!esMsg298\(a\)\),nuevas298\.filter\(esMsg298\)/);       // lotes separados
+  assert.match(s,/lote\.every\(esMsg298\)&&esErrorPermisosRLS298\(upErr\)/);                       // sólo mensajes + sólo permisos
+  assert.match(s,/for\(const m of lote\)/);                                                         // uno por uno: sólo se descartan los rechazados
+  assert.match(s,/descartarMensajesRechazados298\(rechazadosPorPermisos298\)/);
+  // los errores que NO son de permisos siguen reencolando
+  assert.match(s,/syncAtencionesPendiente=true;\s*syncReintentosFallidos\+\+;\s*return false;/);
+});
+
+test('Secretaría y owner conservan la lógica de remitente anterior',()=>{
+  const f=sinComentarios(between('function enviarMensajeInterno(){','function renderMensajes(){'));
+  assert.match(f,/:usuarioLoginCorto\(u\.usuario\|\|usuarioActualNombreCorto\(\)\)/);
+  assert.match(f,/:\(u\.nombre\|\|u\.usuario\|\|usuarioActualNombreCorto\(\)\)/);
+  assert.match(f,/const medicoBk=esMedicoBackendV1\(\)&&!!backendMensajeriaV1\?\.login;/);
 });

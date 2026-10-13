@@ -151,8 +151,15 @@ function perfilUsuarioActual(){
   const email = usuarioSupabase?.email || '';
   let u=(data.usuarios||[]).find(x=>usuarioCoincide(x,user,email) && x.activo!==false);
   if(!u) u=inferirUsuarioPorLogin(user) || inferirUsuarioPorLogin(email);
+  // Médico con identidad de backend: las heurísticas de email/alias NO pueden asignarle el perfil de otro profesional.
+  // Si el perfil resuelto no está vinculado a SU professional_id, se usa el usuario configurado vinculado o, si no hay, el
+  // perfil de respaldo con el login de backend.
+  if(esMedicoBackendV1()){
+    const P=String(backendPendientesIdentidadV1.professional_id||'');
+    if(u && String(u.profesionalId||'')!==P) u=(data.usuarios||[]).find(x=>x.activo!==false&&String(x.profesionalId||'')===P)||null;
+  }
   // Si no se reconoce el usuario, entra con permisos mínimos. No cae en Matías para evitar exposición de caja/reportes.
-  if(!u) u={id:'usr_sin_config',usuario:(esMedicoBackendV1()&&backendMensajeriaV1?.login)||user,nombre:user||'Usuario sin configurar',rol:'sin_configurar',profesionalId:'',especialidad:'Perfil no configurado',activo:true};
+  if(!u) u={id:'usr_sin_config',usuario:(esMedicoBackendV1()&&backendMensajeriaV1?.login)||user,nombre:(esMedicoBackendV1()&&nombreVisibleBackendV1())||user||'Usuario sin configurar',rol:'sin_configurar',profesionalId:'',especialidad:'Perfil no configurado',activo:true};
   usuarioPerfilActual=u;
   return u;
 }
@@ -190,6 +197,11 @@ let pendientesOperacionEnCursoV1=false;
 let backendMensajeriaV1=null;
 let directorioMensajesV1=null; // [{destino,nombre,rol}] sin emails, alias, ids ni datos comerciales
 function esMedicoBackendV1(){ return backendPendientesIdentidadV1?.role==='medico'; }
+// Nombre visible CONFIABLE del médico: sale del directorio del backend, nunca del prefijo del email.
+function nombreVisibleBackendV1(){
+  const login=backendMensajeriaV1?.login; if(!login) return '';
+  return (directorioMensajesV1||[]).find(x=>x.destino==='usuario:'+login)?.nombre||'';
+}
 // Fail-closed: sólo owner/admin (backend) o secretaría (backend) pueden sembrar
 // la nube desde la caché local o forzar un volcado masivo. Médico, o cualquier
 // sesión cuyo rol no se pudo confirmar (RPC caída/sin migrar), nunca.
@@ -3905,19 +3917,27 @@ function enviarMensajeInterno(){
   const texto=($('msgTexto')?.value||'').trim();
   if(!texto){alert('Escribí un mensaje.');return;}
   const u=perfilUsuarioActual();
+  // Médico con identidad de backend: el remitente SIEMPRE es un login propio autorizado y el nombre visible sale del directorio
+  // (nunca del prefijo del email). El resto de los roles conserva el comportamiento anterior.
+  const medicoBk=esMedicoBackendV1()&&!!backendMensajeriaV1?.login;
+  const vinculado=medicoBk&&String(u.profesionalId||'')===String(backendPendientesIdentidadV1.professional_id||'');
+  const loginRem=medicoBk?(vinculado?usuarioLoginCorto(u.usuario):backendMensajeriaV1.login):usuarioLoginCorto(u.usuario||usuarioActualNombreCorto());
+  const nombreRem=medicoBk?(nombreVisibleBackendV1()||(vinculado&&u.nombre)||'Médico'):(u.nombre||u.usuario||usuarioActualNombreCorto());
   const msg={
     id:'msg_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
     tipoRegistro:'mensaje',
     fecha:todayISO(),
     horaInicio:new Date().toLocaleTimeString('es-AR',{hour:'2-digit',minute:'2-digit'}),
-    deUsuario:usuarioLoginCorto(u.usuario||usuarioActualNombreCorto()),
-    deNombre:u.nombre||u.usuario||usuarioActualNombreCorto(),
+    deUsuario:loginRem,
+    deNombre:nombreRem,
     deRol:u.rol||'',
     destino:$('msgDestino')?.value||'todos',
     texto,
     leidoPor:[]
   };
   if(usuarioSupabase?.id) msg.creadoUid=usuarioSupabase.id; // identidad verificable por el backend (RLS)
+  // El sello de auditoría usaría el prefijo del email del médico: se fija antes con datos confiables.
+  if(medicoBk){ msg.creadoPor=nombreRem+' ('+loginRem+')'; msg.creadoUsuario=loginRem; }
   selloAuditoriaCreacion(msg);
   atenciones.push(msg);
   saveAtenciones();
@@ -5997,6 +6017,29 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   }
   window.releerYConfirmarTrasRpc298=releerYConfirmarTrasRpc298;
 
+  // Un mensaje rechazado por PERMISOS (RLS/42501) no es un fallo transitorio: reintentarlo indefinidamente bloquearía la cola.
+  function esErrorPermisosRLS298(e){ return !!e&&(e.code==='42501'||/row-level security|permission denied/i.test(String(e.message||''))); }
+  function descartarMensajesRechazados298(rechazados){
+    if(!rechazados.length) return;
+    const ids=new Set(rechazados.map(a=>String(a.id)));
+    atenciones=atenciones.filter(a=>!(a&&ids.has(String(a.id))));
+    rechazados.forEach(a=>{baselineAtenciones298.delete(String(a.id));baselineVersionAtenciones298.delete(String(a.id));});
+    try{ localStorage.setItem(storageAtenciones,JSON.stringify(atenciones)); }catch(e){}
+    const textos=rechazados.map(a=>String(a.texto||'')).filter(Boolean);
+    // Respaldo local del texto (últimos 20) para poder recuperarlo aunque el cuadro de mensaje ya tenga otro texto.
+    try{
+      const k='cardiolink_mensajes_no_enviados_v1';
+      const previos=JSON.parse(localStorage.getItem(k)||'[]');
+      const nuevos=rechazados.map(a=>({texto:String(a.texto||''),destino:String(a.destino||''),fecha:new Date().toISOString()}));
+      localStorage.setItem(k,JSON.stringify([...(Array.isArray(previos)?previos:[]),...nuevos].slice(-20)));
+    }catch(e){}
+    let enCuadro=false;
+    try{ const t=document.getElementById('msgTexto'); if(t&&!t.value&&textos.length){ t.value=textos.join('\n'); enCuadro=true; } }catch(e){}
+    try{ renderMensajes?.(); actualizarNotificacionMensajes?.(); }catch(e){}
+    alert('No se pudo enviar el mensaje: tu usuario no tiene permiso para enviarlo con ese remitente o destino. Se descartó para no reintentarlo. '
+      +(enCuadro?'El texto quedó en el cuadro de mensaje.':'Texto del mensaje (copialo si lo necesitás): «'+textos.join(' · ').slice(0,800)+'»'));
+  }
+
   function d(id){return document.getElementById(id)}
   function esc(v){return String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;')}
   function clean(v){return String(v??'').replace(/<[^>]*>/g,' ').replace(/&nbsp;/gi,' ').replace(/\s+/g,' ').trim()}
@@ -6509,31 +6552,55 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         }
 
         if(nuevas298.length){
-          const rows=nuevas298.map(a=>({id:String(a.id),payload:a,updated_at:now298}));
-          const vistos=new Set();
-          const finalRows=[];
-          rows.forEach((r,idx)=>{
-            if(vistos.has(r.id)) r.id='att_'+Date.now()+'_'+idx+'_'+Math.random().toString(36).slice(2,8);
-            vistos.add(r.id);
-            finalRows.push(r);
+          // Mensajes internos y atenciones viajan en lotes SEPARADOS: un mensaje rechazado por permisos no puede bloquear
+          // las atenciones (ni al revés).
+          const esMsg298=a=>!!a&&a.tipoRegistro==='mensaje';
+          const lotes298=[nuevas298.filter(a=>!esMsg298(a)),nuevas298.filter(esMsg298)].filter(l=>l.length);
+          const filasDe298=lote=>{
+            const rows=lote.map(a=>({id:String(a.id),payload:a,updated_at:now298}));
+            const vistos=new Set();
+            const finalRows=[];
+            rows.forEach((r,idx)=>{
+              if(vistos.has(r.id)) r.id='att_'+Date.now()+'_'+idx+'_'+Math.random().toString(36).slice(2,8);
+              vistos.add(r.id);
+              finalRows.push(r);
+            });
+            return finalRows;
+          };
+          const confirmar298=lote=>lote.forEach(a=>{
+            if(!a || a.id==null) return;
+            baselineAtenciones298.set(String(a.id), stableStringify298(a));
+            baselineVersionAtenciones298.set(String(a.id), now298);
           });
-          // Atención nueva -> no hay versión remota previa que proteger
-          // (punto 4): se conserva el upsert normal.
-          const {error:upErr}=await supabaseClient
-            .from('cardiolink_atenciones')
-            .upsert(finalRows,{onConflict:'id'});
-          if(upErr){
+          const rechazadosPorPermisos298=[];
+          for(const lote of lotes298){
+            // Atención nueva -> no hay versión remota previa que proteger
+            // (punto 4): se conserva el upsert normal.
+            const {error:upErr}=await supabaseClient
+              .from('cardiolink_atenciones')
+              .upsert(filasDe298(lote),{onConflict:'id'});
+            if(!upErr){ confirmar298(lote); continue; }
+            if(lote.every(esMsg298)&&esErrorPermisosRLS298(upErr)){
+              // Se envía uno por uno: sólo se descartan los rechazados por permisos, no los válidos del mismo lote.
+              for(const m of lote){
+                const {error:e1}=await supabaseClient.from('cardiolink_atenciones').upsert(filasDe298([m]),{onConflict:'id'});
+                if(!e1){ confirmar298([m]); continue; }
+                if(esErrorPermisosRLS298(e1)){ rechazadosPorPermisos298.push(m); continue; }
+                console.error(e1);
+                alert('No se pudo sincronizar con Supabase: '+e1.message);
+                syncAtencionesPendiente=true;
+                syncReintentosFallidos++;
+                return false;
+              }
+              continue;
+            }
             console.error(upErr);
             alert('No se pudo sincronizar con Supabase: '+upErr.message);
             syncAtencionesPendiente=true;
             syncReintentosFallidos++;
             return false;
           }
-          nuevas298.forEach(a=>{
-            if(!a || a.id==null) return;
-            baselineAtenciones298.set(String(a.id), stableStringify298(a));
-            baselineVersionAtenciones298.set(String(a.id), now298);
-          });
+          descartarMensajesRechazados298(rechazadosPorPermisos298);
         }
 
         if(conflictos298.length){
