@@ -189,3 +189,43 @@ test('capa relacional: guardarEvolucionConfirmada arma filas antes de los await,
   assert.match(g,/leerEvolucion410\(erow\.id\)/);                              // confirmación por lectura posterior
   assert.match(src,/leerEvolucion:leerEvolucion410,guardarEvolucionConfirmada:guardarEvolucionConfirmada410/);
 });
+
+test('cierre de sesión: los documentos clínicos sin respaldo confirmado se resguardan por uid y nunca se pierden',()=>{
+  const lib=sinComentarios(between('async function liberarCacheLocalAlCerrarSesionV1(){','// Directorio mínimo de destinatarios'));
+  // el respaldo se resuelve ANTES de decidir si se elimina la caché, y la caché no se elimina si no está garantizado
+  assert.ok(lib.indexOf('protegerDocumentosSinRespaldoV1()')!==-1);
+  assert.ok(lib.indexOf('protegerDocumentosSinRespaldoV1()')<lib.indexOf('hayPendientesSync298'));
+  assert.ok(lib.indexOf('if(!docsSeguros) return false;')!==-1&&lib.indexOf('if(!docsSeguros) return false;')<lib.indexOf('clavesCacheLocalV1().forEach(k=>localStorage.removeItem(k))'));
+  // la evidencia viene del SERVIDOR (PDF archivado con el mismo hash o copia idéntica en la config remota), nunca de la memoria local
+  const c=sinComentarios(between('async function documentosSinRespaldoConfirmadoV1(docs){','// true = es seguro eliminar la caché'));
+  assert.match(c,/from\('cardiolink_patient_documents'\)\.select\('source_document_id,source_content_hash,document_type,patient_id'\)\.in\('source_document_id'/);
+  // el hash archivado NO distingue paciente, tipo ni firma: una fila sólo confirma si además coinciden tipo y paciente real y el documento nunca fue editado
+  const f=sinComentarios(between('function filaArchivadaConfirmaDocV1(f,d,hash){','// Huella completa'));
+  assert.match(f,/f\.source_content_hash!==hash/);
+  assert.match(f,/if\(d\.actualizadoEn\) return false;/);
+  assert.match(f,/f\.document_type!==TIPO_ARCHIVO_PDF_POR_DOC_V1\[d\.tipo\]/);
+  assert.match(f,/String\(f\.patient_id\)===real/);
+  assert.match(f,/real!==null/);
+  // la copia remota de la config sólo confirma con la huella COMPLETA del documento (no con el hash débil)
+  assert.match(c,/huellaDocCompletaV1\(r\)===huellaDocCompletaV1\(d\)/);
+  assert.match(c,/payload->config->documentosClinicos/);
+  assert.match(c,/if\(error\) throw error;/);                      // un error de red NO confirma nada: lanza y el llamador conserva todo
+  assert.match(c,/if\(!esMedicoBackendV1\(\)\)/);                  // el médico nunca escribe la config: no se usa como respaldo
+  assert.match(c,/window\.hashContenidoDocumento406/);
+  // el resguardo está aislado por uid; sin uid o sin poder resguardar no se elimina nada
+  const p=sinComentarios(between('async function protegerDocumentosSinRespaldoV1(){','// Tras iniciar sesión'));
+  assert.match(p,/OUTBOX_DOCS_KEY_V1\+uid/);
+  assert.match(p,/if\(!uid\) return locales\.length===0;/);
+  assert.match(p,/catch\(e\)\{[^}]*return false;\s*\}/);
+  assert.match(p,/consultaOk=false/);
+  assert.match(p,/return consultaOk;/);
+  // la recuperación sólo lee el resguardo del uid actual y nunca pisa un documento existente por id
+  const r=sinComentarios(between('function recuperarDocumentosPendientesV1(){','// Último recurso'));
+  assert.match(r,/leerOutboxDocsV1\(uid\)/);
+  assert.match(r,/!ids\.has\(String\(d\.id\)\)/);
+  assert.doesNotMatch(r,/removeItem/);                              // el resguardo sólo lo descarta un cierre que lo confirme
+  assert.match(src,/try\{ await recuperarNuevasPendientesV1\(\); \}[^\n]*\n\s*try\{ recuperarDocumentosPendientesV1\(\); \}/);
+  // si apartar la caché ajena falla por cuota, sus documentos pasan al resguardo de SU uid antes de eliminarse
+  assert.match(src,/se elimina por privacidad:',k\); if\(k===storageConfig&&dueno\) salvarDocumentosDeCacheV1\(dueno,v\);/);
+  assert.match(src,/window\.hashContenidoDocumento406=hashContenidoDocumento406;/);
+});

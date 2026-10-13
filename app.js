@@ -235,6 +235,102 @@ async function recuperarNuevasPendientesV1(){
   }
   if(ok) localStorage.removeItem(k);
 }
+// ===== Documentos clínicos locales sin respaldo confirmado (data.documentosClinicos) =====
+// El perfil médico nunca escribe la fila de configuración: sus documentos pueden existir SÓLO en esta caché. Al cerrar sesión la caché se
+// eliminaba cuando no había atenciones pendientes y esos documentos se perdían. Ahora, antes de eliminarla, cada documento se compara con lo
+// que el SERVIDOR realmente tiene (PDF archivado con el mismo contenido o copia idéntica en la config remota; estar en memoria no cuenta). Los que
+// no tienen respaldo confirmado se resguardan aparte, bajo el uid de su dueño (nunca los lee otro usuario), hasta que un cierre posterior
+// los encuentre confirmados. Si no se puede consultar al servidor o resguardar, la caché NO se elimina.
+const OUTBOX_DOCS_KEY_V1='cardiolink_docs_pendientes_v1_'; // + uid
+const CONFIG_ROW_ID_DOCS_V1='__cardiolink_config_v1';
+function leerOutboxDocsV1(uid){
+  try{ const o=JSON.parse(localStorage.getItem(OUTBOX_DOCS_KEY_V1+uid)||'null'); return Array.isArray(o&&o.docs)?o.docs.filter(d=>d&&d.id!=null):[]; }catch(e){ return []; }
+}
+function docsLocalesV1(){ return (Array.isArray(data&&data.documentosClinicos)?data.documentosClinicos:[]).filter(d=>d&&d.id!=null); }
+function unirDocsPorIdV1(base,prioritarios){ const m=new Map(); base.forEach(d=>m.set(String(d.id),d)); prioritarios.forEach(d=>m.set(String(d.id),d)); return [...m.values()]; }
+// Tipos que hoy se archivan como PDF (cardiolink_patient_documents.document_type) por tipo de documento clínico. Un tipo fuera de esta tabla nunca se confirma por PDF.
+const TIPO_ARCHIVO_PDF_POR_DOC_V1={orden:'Orden',certificado:'Certificado',constancia_atencion:'Constancia'};
+// Id real del paciente de un documento (mismas dos búsquedas que usa el generador de PDF: por id/clave y, si no, por DNI). null si no es inequívoco.
+function pacienteRealIdDeDocV1(d){
+  const ps=Array.isArray(data&&data.pacientes)?data.pacientes:[];
+  let p=ps.find(x=>x&&x.id!=null&&String(x.id)===String(d.pacienteId));
+  if(!p){ const dni=String(d.dni||'').replace(/\D/g,''); if(dni){ const c=ps.filter(x=>x&&String(x.dni||'').replace(/\D/g,'')===dni); if(c.length===1) p=c[0]; } }
+  return p&&p.id!=null?String(p.id):null;
+}
+// El hash archivado sólo cubre título/contenido/adicional/profesional/fecha: NO distingue paciente, tipo ni firma. Por eso una fila archivada sólo
+// confirma un documento si, además del hash, coinciden el tipo archivado y el paciente real, y el documento nunca fue editado después de crearse
+// (una edición pudo cambiar la firma, que no queda registrada en ningún lado). Ante cualquier duda: NO confirmado => se conserva.
+function filaArchivadaConfirmaDocV1(f,d,hash){
+  if(!f||String(f.source_document_id)!==String(d.id)||f.source_content_hash!==hash) return false;
+  if(d.actualizadoEn) return false;
+  if(TIPO_ARCHIVO_PDF_POR_DOC_V1[d.tipo]===undefined||f.document_type!==TIPO_ARCHIVO_PDF_POR_DOC_V1[d.tipo]) return false;
+  const real=pacienteRealIdDeDocV1(d);
+  return real!==null&&String(f.patient_id)===real;
+}
+// Huella completa (todos los campos que definen el documento) para comparar contra la copia remota de la config.
+function huellaDocCompletaV1(d){
+  return JSON.stringify([d.id,d.tipo,d.pacienteId,d.dni,d.pacienteNombre,d.titulo,d.contenido,d.adicional,d.fechaHora,d.profesionalId,d.profesionalNombre,d.incluirFirma!==false,d.actualizadoEn||'']);
+}
+// Devuelve los documentos SIN respaldo confirmado. Lanza si no pudo consultar al servidor (el llamador conserva todo).
+async function documentosSinRespaldoConfirmadoV1(docs){
+  if(!docs.length) return [];
+  const hashFn=window.hashContenidoDocumento406;
+  if(typeof hashFn!=='function') throw new Error('hash de documentos no disponible');
+  if(!supabaseClient||!usuarioSupabase) throw new Error('sin sesión');
+  const hashes=new Map(); for(const d of docs) hashes.set(String(d.id),await hashFn(d));
+  const porId=new Map(docs.map(d=>[String(d.id),d])), confirmados=new Set(), ids=docs.map(d=>String(d.id));
+  for(let i=0;i<ids.length;i+=100){
+    const {data:filas,error}=await supabaseClient.from('cardiolink_patient_documents').select('source_document_id,source_content_hash,document_type,patient_id').in('source_document_id',ids.slice(i,i+100));
+    if(error) throw error;
+    (filas||[]).forEach(f=>{ const d=f&&porId.get(String(f.source_document_id)); if(d&&filaArchivadaConfirmaDocV1(f,d,hashes.get(String(d.id)))) confirmados.add(String(d.id)); });
+  }
+  if(!esMedicoBackendV1()){
+    const {data:filas,error}=await supabaseClient.from('cardiolink_atenciones').select('d:payload->config->documentosClinicos').eq('id',CONFIG_ROW_ID_DOCS_V1).limit(1);
+    if(error) throw error;
+    const remotos=Array.isArray(filas&&filas[0]&&filas[0].d)?filas[0].d:[];
+    for(const r of remotos){
+      if(!r||r.id==null) continue;
+      const d=porId.get(String(r.id)); if(!d||confirmados.has(String(r.id))) continue;
+      if(huellaDocCompletaV1(r)===huellaDocCompletaV1(d)) confirmados.add(String(r.id));
+    }
+  }
+  return docs.filter(d=>!confirmados.has(String(d.id)));
+}
+// true = es seguro eliminar la caché (no queda ningún documento sin respaldo, o quedaron resguardados bajo el uid).
+async function protegerDocumentosSinRespaldoV1(){
+  const uid=usuarioSupabase&&usuarioSupabase.id, locales=docsLocalesV1();
+  if(!uid) return locales.length===0;                   // sin uid no hay a quién asociarlos: no se elimina nada
+  const k=OUTBOX_DOCS_KEY_V1+uid, todos=unirDocsPorIdV1(leerOutboxDocsV1(uid),locales);
+  if(!todos.length){ try{ localStorage.removeItem(k); }catch(e){} return true; }
+  let sin=todos, consultaOk=true;
+  try{ sin=await Promise.race([documentosSinRespaldoConfirmadoV1(todos),new Promise((_,rej)=>setTimeout(()=>rej(new Error('tiempo de espera')),8000))]); }
+  catch(e){ console.warn('No se pudo confirmar el respaldo de los documentos clínicos; se conservan:',e&&e.message||e); sin=todos; consultaOk=false; }
+  try{
+    if(sin.length) localStorage.setItem(k,JSON.stringify({docs:sin,fecha:new Date().toISOString()}));
+    else localStorage.removeItem(k);
+  }catch(e){ console.warn('No se pudieron resguardar los documentos clínicos sin respaldo:',e); return false; }
+  return consultaOk;
+}
+// Tras iniciar sesión: devuelve a la memoria los documentos resguardados que falten (por id; nunca pisa uno existente). El resguardo NO se borra acá:
+// sólo lo descarta un cierre de sesión posterior que los encuentre confirmados en el servidor.
+function recuperarDocumentosPendientesV1(){
+  const uid=usuarioSupabase&&usuarioSupabase.id; if(!uid||!data) return 0;
+  const docs=leerOutboxDocsV1(uid); if(!docs.length) return 0;
+  if(!Array.isArray(data.documentosClinicos)) data.documentosClinicos=[];
+  const ids=new Set(data.documentosClinicos.map(d=>String(d&&d.id)));
+  const faltan=docs.filter(d=>!ids.has(String(d.id)));
+  if(!faltan.length) return 0;
+  faltan.forEach(d=>data.documentosClinicos.push(d));
+  try{ localStorage.setItem(storageConfig,JSON.stringify(data)); }catch(e){}
+  return faltan.length;
+}
+// Último recurso al apartar la caché de otro usuario sin cuota: sus documentos pasan al resguardo de ESE uid antes de que la caché se elimine por privacidad.
+function salvarDocumentosDeCacheV1(uid,rawConfig){
+  try{
+    const docs=((JSON.parse(rawConfig)||{}).documentosClinicos||[]).filter(d=>d&&d.id!=null); if(!docs.length) return;
+    localStorage.setItem(OUTBOX_DOCS_KEY_V1+uid,JSON.stringify({docs:unirDocsPorIdV1(leerOutboxDocsV1(uid),docs),fecha:new Date().toISOString()}));
+  }catch(e){ console.warn('No se pudieron resguardar los documentos de la caché anterior:',e); }
+}
 function clavesCacheLocalV1(){ return [storageConfig,storageAtenciones,storageValoresColocacion,'cl_last_sync_382']; }
 function aislarCacheLocalPorUsuarioV1(uid,privilegiado){
   try{
@@ -247,7 +343,7 @@ function aislarCacheLocalPorUsuarioV1(uid,privilegiado){
     claves.forEach(k=>{
       const v=localStorage.getItem(k); if(v===null) return;
       try{ localStorage.setItem(ap(dueno||'desconocido',k),v); }
-      catch(e){ console.warn('No se pudo apartar la caché anterior (cuota); se elimina por privacidad:',k); }
+      catch(e){ console.warn('No se pudo apartar la caché anterior (cuota); se elimina por privacidad:',k); if(k===storageConfig&&dueno) salvarDocumentosDeCacheV1(dueno,v); }
       localStorage.removeItem(k);
     });
     claves.forEach(k=>{ const v=localStorage.getItem(ap(uid,k)); if(v!==null){ localStorage.setItem(k,v); localStorage.removeItem(ap(uid,k)); } });
@@ -261,6 +357,7 @@ async function liberarCacheLocalAlCerrarSesionV1(){
     if(typeof sincronizarAtencionesSupabase==='function'){
       await Promise.race([sincronizarAtencionesSupabase(false),new Promise(r=>setTimeout(r,8000))]);
     }
+    const docsSeguros=await protegerDocumentosSinRespaldoV1();
     const pendiente=typeof window.hayPendientesSync298==='function'?window.hayPendientesSync298():true;
     if(pendiente){
       // Se conserva la caché (sigue asociada a su dueño; la app no se la muestra a otro usuario). Además se respaldan por separado las filas NUEVAS
@@ -272,6 +369,8 @@ async function liberarCacheLocalAlCerrarSesionV1(){
       }catch(e){ console.warn('No se pudo respaldar las filas nuevas pendientes:',e); }
       return false;
     }
+    // Hay documentos clínicos cuyo respaldo no se pudo confirmar (o resguardar): la caché se conserva, asociada a su dueño.
+    if(!docsSeguros) return false;
     clavesCacheLocalV1().forEach(k=>localStorage.removeItem(k));
     localStorage.removeItem(CACHE_OWNER_KEY_V1);
     return true;
@@ -6490,6 +6589,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       snapshotBaselineAtenciones298(atenciones);
       cargandoDesdeNube=false;
       try{ await recuperarNuevasPendientesV1(); }catch(e){ console.warn('No se pudieron recuperar las filas nuevas pendientes:',e); }
+      try{ recuperarDocumentosPendientesV1(); }catch(e){ console.warn('No se pudieron recuperar los documentos clínicos resguardados:',e); }
     };
   }
   if(typeof sincronizarAtencionesSupabase==='function'){
@@ -11718,6 +11818,8 @@ function patientInfoTextHC(p,coverage){
       return Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,'0')).join('');
     }catch(e){return payload;}
   }
+  // Expuesto para el cierre de sesión (liberarCacheLocalAlCerrarSesionV1): una sola definición del hash de contenido, la misma con la que se archivó el PDF.
+  window.hashContenidoDocumento406=hashContenidoDocumento406;
   const TIPO_PDF_ARCHIVO_POR_DOC406={orden:'Orden',certificado:'Certificado',constancia_atencion:'Constancia'};
   // Expuesto para cardiolink-documentos-pdf-v1.js (módulo independiente,
   // 6D/6E.1): genera el PDF real + un descriptor con TODO lo necesario
