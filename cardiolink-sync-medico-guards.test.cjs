@@ -46,3 +46,13 @@ test('el médico resuelve pendientes sólo por RPC acotada, sin reenviar toda la
   assert.match(f,/rpc\('cardiolink_pendiente_mutar_v1'/);
   assert.doesNotMatch(f,/saveAtenciones\(|sincronizarAtencionesSupabase\(|\.upsert\(/);
 });
+
+test('tras la RPC del médico se relee la fila y se actualizan los baselines (sin borrar la versión)',()=>{
+  const f=between('async function actualizarPendienteMedicoV1(','function labels383').replace(/^\s*\/\/.*$/gm,'');
+  assert.match(f,/from\('cardiolink_atenciones'\)\s*\.select\('id,payload,updated_at'\)\s*\.eq\('id',String\(id\)\)/);
+  assert.match(f,/confirmarVersionRemotaAtencion298\?\.\(id,confirmado,version,version===null\)/);
+  const c=between('function confirmarVersionRemotaAtencion298(','window.confirmarVersionRemotaAtencion298=');
+  assert.match(c,/baselineAtenciones298\.set\(/);
+  assert.match(c,/if\(!soloContenido&&updatedAt\)baselineVersionAtenciones298\.set\(/);
+  assert.doesNotMatch(c,/baselineVersionAtenciones298\.delete\(/);
+});

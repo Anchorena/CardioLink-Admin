@@ -5889,6 +5889,22 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     }catch(e){}
   }
 
+  // Pendientes médicos V1: tras una mutación hecha por una RPC del servidor
+  // (la fila cambió remotamente sin pasar por este sync), la sesión debe tomar
+  // esa fila como su nuevo punto de partida. Fija el baseline de CONTENIDO (la
+  // fila no queda "sucia") y, si se conoce, el de VERSIÓN remota (updated_at),
+  // para que una edición posterior no choque contra la versión vieja. Con
+  // soloContenido=true NO toca la versión: nunca se borra, porque una fila sin
+  // versión se trataría como "nueva" y se subiría con un upsert ciego.
+  function confirmarVersionRemotaAtencion298(id,payload,updatedAt,soloContenido){
+    if(id==null||!payload||typeof payload!=='object')return false;
+    const idStr=String(id);
+    baselineAtenciones298.set(idStr,stableStringify298(payload));
+    if(!soloContenido&&updatedAt)baselineVersionAtenciones298.set(idStr,updatedAt);
+    return true;
+  }
+  window.confirmarVersionRemotaAtencion298=confirmarVersionRemotaAtencion298;
+
   function d(id){return document.getElementById(id)}
   function esc(v){return String(v??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;')}
   function clean(v){return String(v??'').replace(/<[^>]*>/g,' ').replace(/&nbsp;/gi,' ').replace(/\s+/g,' ').trim()}
@@ -8120,8 +8136,22 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         p_id:String(id),p_tipo:tipo,p_operacion:operacion
       });
       if(error)throw error;
+      // La RPC devuelve sólo el payload, no el nuevo updated_at: se relee ESA
+      // fila (el médico ve la suya) y se toma como verdad. Si otra sesión
+      // escribió entre la RPC y la lectura, se adopta lo leído (nunca se pisa).
+      // Si la relectura falla se usa el payload de la RPC y se fija sólo el
+      // baseline de contenido: la versión queda como estaba y una edición
+      // posterior sigue protegida por la detección de conflicto.
+      let confirmado=actualizado,version=null;
+      try{
+        const {data:filas,error:errRel}=await supabaseClient.from('cardiolink_atenciones')
+          .select('id,payload,updated_at').eq('id',String(id)).limit(1);
+        const f=Array.isArray(filas)?filas[0]:filas;
+        if(!errRel&&f&&f.payload&&f.updated_at){confirmado=f.payload;version=f.updated_at;}
+      }catch(eRel){console.warn('No se pudo releer la atención tras la RPC de pendientes:',eRel);}
       const pos=atenciones.findIndex(a=>String(a.id)===String(id));
-      if(pos>=0)atenciones[pos]=actualizado;
+      if(pos>=0)atenciones[pos]=confirmado;
+      window.confirmarVersionRemotaAtencion298?.(id,confirmado,version,version===null);
       // No llamar saveAtenciones(): reenvía TODA la colección y pisaría
       // modificaciones concurrentes de otros usuarios.
       localStorage.setItem(storageAtenciones,JSON.stringify(atenciones));
