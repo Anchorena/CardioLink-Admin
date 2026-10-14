@@ -4028,6 +4028,11 @@ async function refrescarDesdeSupabaseAutomatico(){
     if (syncPendienteSinConfirmar) {
       return;
     }
+    // Corrección de evoluciones V1: mientras hay una evolución abierta para editar (o guardándose) el estado NO se reemplaza:
+    // un refresco dejaría huérfana la evolución que se está editando y el guardado perdería la edición.
+    if (window.__hcGuardandoEvolucionV1 || document.getElementById('hcEvolutionModal')) {
+      return;
+    }
     await cargarAtencionesDesdeSupabase();
     // HOTFIX stale-overwrite (C): si otra sesion piso la fila config remota con
     // una copia vieja, cargarAtencionesDesdeSupabase() acaba de reemplazar `data`
@@ -10333,6 +10338,7 @@ function patientInfoTextHC(p,coverage){
       overlay.querySelectorAll('[data-hc-copyfield411]').forEach(x=>x.checked=false);
     });
 
+    if(existing)overlay.dataset.evoBaseV1=String(existing.actualizadoEn||'');   // versión con la que se abrió (control de edición concurrente)
     $hc('hcGuardarEvolucion').onclick=()=>saveEvolutionHC(p,existing,linked);
     // FASE 8 UI Interna V1 (Hoja de evolución) - "Eliminar" reutiliza 100%
     // la lógica ya existente (permiso + clave de administrador + borrado
@@ -10357,27 +10363,73 @@ function patientInfoTextHC(p,coverage){
     const summaryChanged=['antecedentes','alergias','medicacion'].some(k=>(summaryNow[k]||'')!==(summaryBefore[k]||''));
     const hasEvolution=!!(motivo||evolucion||diagnostico||conducta||hasVitales);
     if(!hasEvolution&&!summaryChanged){alert('No hay datos nuevos para guardar.');return;}
+    if(existing&&!hasEvolution){alert('Una evolución existente no puede quedar completamente vacía.');return;}
     ensureHC();const prof=profesionalHC(),now=new Date().toISOString(),key=patientKeyHC(p);
-    if(summaryChanged)data.resumenesClinicos[key]={...resumenHC(p),...summaryNow,actualizadoEn:now,actualizadoPor:prof.nombre};
-    // Bloque 6D.2 - capturamos el id REAL de la evolución (generado ahora
-    // mismo si es nueva) para poder vincular los adjuntos pendientes más
-    // abajo, una vez que esta fila exista también en Supabase.
-    let evolutionIdFinal='';
-    if(existing){
-      if(!hasEvolution){alert('Una evolución existente no puede quedar completamente vacía.');return;}
-      Object.assign(existing,{motivo,evolucion,diagnostico,conducta,pesoKg,tallaCm,imc,taSistolica,taDiastolica,frecuenciaCardiaca,sato2,actualizadoEn:now,actualizadoPor:prof.nombre});
-      evolutionIdFinal=existing.id;
-    }else if(hasEvolution){
-      evolutionIdFinal='evo_'+Date.now()+'_'+Math.floor(Math.random()*10000);
-      data.evolucionesClinicas.push({id:evolutionIdFinal,pacienteId:key,dni:p.dni||'',pacienteNombre:nombrePacientePanel?.(p)||p.nombreCompleto||'',atencionId:atencionId||'',fechaHora:now,profesionalId:prof.id,profesionalNombre:prof.nombre,motivo,evolucion,diagnostico,conducta,pesoKg,tallaCm,imc,taSistolica,taDiastolica,frecuenciaCardiaca,sato2,creadoEn:now});
-    }
-    saveConfig();try{programarSyncSupabase?.();}catch(e){}
-    // v4.1.0-hc: copia clínica relacional adicional en Supabase. Bloque
-    // 6D.2: ahora se espera (antes era fire-and-forget) porque la fila de
-    // cardiolink_hc_evoluciones tiene que existir en Supabase ANTES de
-    // intentar vincularle documentos (evolution_id es FK a esa tabla). La
-    // HC local/config sigue siendo compatible durante esta fase de transición.
-    try{await window.cardiolinkClinica410?.sincronizarPacienteCompleto?.(p);}catch(e){console.warn('No se pudo sincronizar la capa clínica relacional:',e);}
+    // Corrección de evoluciones V1 (guardado confiable). El modal puede estar abierto mucho tiempo: el estado (`data`) se reemplaza con el
+    // refresco automático, así que la referencia `existing` capturada al abrir puede quedar HUÉRFANA (editarla no modifica nada visible ni
+    // se envía al servidor). Por eso: (1) la evolución se resuelve POR ID en el estado actual al guardar; (2) el refresco queda pausado mientras
+    // el modal está abierto o se está guardando; (3) los datos a enviar se construyen ANTES de cualquier await; (4) el modal sólo se cierra
+    // si el servidor confirmó la persistencia; (5) ante un error el modal queda abierto con el texto intacto; (6) un reintento reutiliza el mismo id.
+    const modalEl=$hc('hcEvolutionModal'),btnGuardar=$hc('hcGuardarEvolucion');
+    const conectado=!!(typeof supabaseClient!=='undefined'&&supabaseClient&&typeof usuarioSupabase!=='undefined'&&usuarioSupabase);
+    const baseVersion=modalEl?.dataset.evoBaseV1||'';
+    const campos={motivo,evolucion,diagnostico,conducta,pesoKg,tallaCm,imc,taSistolica,taDiastolica,frecuenciaCardiaca,sato2,actualizadoEn:now,actualizadoPor:prof.nombre};
+    const falloGuardado=(msg)=>{mostrarErrorGuardadoEvolucionV1(msg);};
+    if(window.__hcGuardandoEvolucionV1)return;               // doble clic / reentrada
+    window.__hcGuardandoEvolucionV1=true;
+    const botonTxt=btnGuardar?btnGuardar.textContent:'';
+    if(btnGuardar){btnGuardar.disabled=true;btnGuardar.textContent='Guardando…';}
+    quitarErrorGuardadoEvolucionV1();
+    let evolutionIdFinal='',previoLive=null,pushedNow=false,previoResumen=null;
+    const revertirLocal=()=>{
+      try{
+        if(previoLive){const i=(data.evolucionesClinicas||[]).findIndex(x=>String(x.id)===String(previoLive.id));if(i>=0)data.evolucionesClinicas[i]=previoLive;}
+        if(pushedNow)data.evolucionesClinicas=(data.evolucionesClinicas||[]).filter(x=>String(x.id)!==String(evolutionIdFinal));
+        if(summaryChanged){if(previoResumen)data.resumenesClinicos[key]=previoResumen;else delete data.resumenesClinicos[key];}
+      }catch(e){console.warn('No se pudo revertir el estado local tras un guardado fallido:',e);}
+    };
+    try{
+      const editId=existing?String(existing.id):(modalEl?.dataset.evoIdV1||'');
+      let live=editId?(data.evolucionesClinicas||[]).find(x=>String(x.id)===editId):null;
+      if(existing){
+        // El estado actual ya no tiene la evolución (p. ej. reemplazado por un refresco): NO se recrea sin comprobar el servidor.
+        let srv=conectado&&window.cardiolinkClinica410?.leerEvolucion?await window.cardiolinkClinica410.leerEvolucion(editId):{existe:conectado?null:true};
+        if(!live){
+          if(srv.existe===false){falloGuardado('Esta evolución ya no existe en el servidor (fue eliminada). No se recreó. Tu texto sigue en pantalla: copialo si lo necesitás.');return;}
+          if(srv.existe!==true){falloGuardado('No se pudo comprobar la evolución en el servidor. Tu texto sigue acá: revisá la conexión y volvé a pulsar Guardar.');return;}
+          try{await window.cardiolinkClinica410?.cargar?.();}catch(e){}
+          live=(data.evolucionesClinicas||[]).find(x=>String(x.id)===editId);
+          if(!live){falloGuardado('No se pudo recuperar la evolución desde el servidor. Tu texto sigue acá: volvé a pulsar Guardar.');return;}
+        }
+        // Control de versión: no pisar una edición de otra sesión posterior a la que se abrió.
+        const vServ=Date.parse(srv.editadoEn||0)||0,vBase=Date.parse(baseVersion||0)||0;
+        if(srv.existe===true&&vServ>vBase+1000){
+          falloGuardado('Esta evolución fue modificada desde otra sesión después de abrirla. No se sobrescribió. Copiá tu texto, cerrá y volvé a abrir la evolución.');return;
+        }
+        previoLive=JSON.parse(JSON.stringify(live));
+        Object.assign(live,campos);
+        evolutionIdFinal=String(live.id);
+      }else{
+        evolutionIdFinal=editId||('evo_'+Date.now()+'_'+Math.floor(Math.random()*10000));
+        if(modalEl)modalEl.dataset.evoIdV1=evolutionIdFinal;     // mismo id en cada reintento: nunca duplica
+        const previa=(data.evolucionesClinicas||[]).find(x=>String(x.id)===evolutionIdFinal);
+        if(previa){previoLive=JSON.parse(JSON.stringify(previa));Object.assign(previa,campos);}
+        else if(hasEvolution){pushedNow=true;data.evolucionesClinicas.push({id:evolutionIdFinal,pacienteId:key,dni:p.dni||'',pacienteNombre:nombrePacientePanel?.(p)||p.nombreCompleto||'',atencionId:atencionId||'',fechaHora:now,profesionalId:prof.id,profesionalNombre:prof.nombre,motivo,evolucion,diagnostico,conducta,pesoKg,tallaCm,imc,taSistolica,taDiastolica,frecuenciaCardiaca,sato2,creadoEn:now});}
+        if(!hasEvolution)evolutionIdFinal='';
+      }
+      if(summaryChanged){previoResumen=data.resumenesClinicos[key]?JSON.parse(JSON.stringify(data.resumenesClinicos[key])):null;data.resumenesClinicos[key]={...resumenHC(p),...summaryNow,actualizadoEn:now,actualizadoPor:prof.nombre};}
+      // Confirmación de persistencia: sólo se cierra si el servidor tiene EXACTAMENTE esta versión (lectura posterior al upsert).
+      if(conectado&&window.cardiolinkClinica410?.guardarEvolucionConfirmada){
+        const r=await window.cardiolinkClinica410.guardarEvolucionConfirmada(p,evolutionIdFinal,{resumen:summaryChanged});
+        if(!r.ok){
+          revertirLocal();   // el estado local NO queda con una edición que el servidor no tiene (así no parece guardada tras un refresco)
+          falloGuardado('No se pudo confirmar el guardado en el servidor ('+(r.error||'error de conexión')+'). Tu texto sigue acá y no se perdió: volvé a pulsar Guardar. No se crea una evolución duplicada.');return;
+        }
+        saveConfig();try{programarSyncSupabase?.();}catch(e){}
+        clearTimeout(window.__syncConfig298Timer);
+        try{await window.guardarConfigEnSupabase298?.();}catch(e){}   // copia heredada de la HC en la fila de config (mejor esfuerzo)
+      }else{saveConfig();try{programarSyncSupabase?.();}catch(e){}}   // modo local sin servidor: se guarda sólo en este equipo, como siempre
+      if(modalEl)modalEl.dataset.evoBaseV1=now;                       // próxima comparación: contra NUESTRA escritura confirmada
     // Bloque 6D.2 - vincular los documentos adjuntos pendientes (subidos
     // durante esta sesión del modal, o ya vinculados si se está editando)
     // a esta evolución. Hook expuesto por cardiolink-documentos-pdf-v1.js
@@ -10403,7 +10455,25 @@ function patientInfoTextHC(p,coverage){
     }
     $hc('hcEvolutionModal')?.remove();renderDetailHC(key);
     if(!hasEvolution&&summaryChanged)setTimeout(()=>alert('Resumen clínico actualizado. No se creó una evolución en blanco.'),30);
+    }finally{
+      window.__hcGuardandoEvolucionV1=false;
+      const b=$hc('hcGuardarEvolucion');if(b&&b.disabled){b.disabled=false;b.textContent=botonTxt||'Guardar evolución';}
+    }
   }
+  // Aviso de error de guardado DENTRO del modal (no se cierra, no se pierde el texto).
+  function mostrarErrorGuardadoEvolucionV1(msg){
+    const m=$hc('hcEvolutionModal');if(!m)return;
+    let b=m.querySelector('#hcErrorGuardadoV1');
+    if(!b){
+      b=document.createElement('div');b.id='hcErrorGuardadoV1';b.setAttribute('role','alert');
+      b.style.cssText='margin:8px 0;padding:10px 12px;border-radius:10px;background:#fee2e2;color:#7f1d1d;border:1px solid #fca5a5;font-weight:700;font-size:13px;line-height:1.35';
+      const acciones=m.querySelector('.hc-modal-actions');
+      if(acciones&&acciones.parentNode)acciones.parentNode.insertBefore(b,acciones);else m.appendChild(b);
+    }
+    b.textContent=msg;
+    try{b.scrollIntoView({block:'nearest'});}catch(e){}
+  }
+  function quitarErrorGuardadoEvolucionV1(){$hc('hcEvolutionModal')?.querySelector('#hcErrorGuardadoV1')?.remove();}
   function editSummaryHC(key){
     if(!requireClinicalHC())return;
     const p=patientByKeyHC(key);if(!p)return;const s=resumenHC(p),o=document.createElement('div');o.id='hcSummaryModal';o.className='hc-modal-overlay';o.innerHTML=`<div class="hc-modal-card"><div class="hc-modal-head"><div><h2>Resumen clínico</h2><p class="muted">${escHC(nombrePacientePanel?.(p)||p.nombreCompleto||'')}</p></div><button class="modal-close" data-hc-close-summary>×</button></div><div class="hc-modal-grid"><div><div class="cl-voice-label4094"><label for="hcSumAntecedentes">Antecedentes</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAntecedentes" aria-label="Dictar antecedentes">🎤 Dictar</button></div><textarea id="hcSumAntecedentes">${escHC(s.antecedentes||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcSumAlergias">Alergias</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAlergias" aria-label="Dictar alergias">🎤 Dictar</button></div><textarea id="hcSumAlergias">${escHC(s.alergias||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcSumMedicacion">Medicación habitual</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumMedicacion" aria-label="Dictar medicación habitual">🎤 Dictar</button></div><textarea id="hcSumMedicacion">${escHC(s.medicacion||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcSumAlertas">Alertas clínicas</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAlertas" aria-label="Dictar alertas clínicas">🎤 Dictar</button></div><textarea id="hcSumAlertas">${escHC(s.alertas||'')}</textarea></div></div><div class="hc-modal-actions"><button class="secondary" data-hc-close-summary>Cancelar</button><button class="primary" id="hcSaveSummary">Guardar resumen</button></div></div>`;document.body.appendChild(o);$hc('hcSaveSummary').onclick=()=>{ensureHC();data.resumenesClinicos[patientKeyHC(p)]={antecedentes:$hc('hcSumAntecedentes').value.trim(),alergias:$hc('hcSumAlergias').value.trim(),medicacion:$hc('hcSumMedicacion').value.trim(),alertas:$hc('hcSumAlertas').value.trim(),actualizadoEn:new Date().toISOString()};saveConfig();try{programarSyncSupabase?.();}catch(e){}try{window.cardiolinkClinica410?.sincronizarPacienteCompleto?.(p);}catch(e){console.warn('No se pudo sincronizar el resumen clínico relacional:',e);}o.remove();renderDetailHC(patientKeyHC(p));};
@@ -12595,6 +12665,55 @@ function patientInfoTextHC(p,coverage){
     }
   }
 
+  // Lee UNA evolución del servidor: {existe:true|false|null(no se pudo saber), editadoEn, evolucion}.
+  async function leerEvolucion410(id){
+    if(!listo410()||id==null)return {existe:null};
+    try{
+      const {data:filas,error}=await supabaseClient.from('cardiolink_hc_evoluciones').select('id,editado_en,creado_en,evolucion').eq('id',String(id)).limit(1);
+      if(error)return {existe:null,error:error.message||String(error)};
+      const f=Array.isArray(filas)?filas[0]:filas;
+      if(!f)return {existe:false};
+      return {existe:true,editadoEn:f.editado_en||'',evolucion:f.evolucion};
+    }catch(e){return {existe:null,error:String(e?.message||e)};}
+  }
+  // Guarda UNA evolución (y, si cambió, el resumen) y CONFIRMA la persistencia leyendo la fila del servidor. A diferencia de
+  // sincronizarPacienteCompleto410(): (1) arma las filas ANTES de cualquier await (un refresco no puede cambiar lo que se envía),
+  // (2) sube sólo la evolución editada (no reenvía versiones locales viejas de las demás), (3) sólo toca la ficha del paciente
+  // si el servidor la rechaza por no existir todavía (FK), y (4) devuelve {ok,error}, nunca falla en silencio.
+  async function guardarEvolucionConfirmada410(p,evolutionId,opts){
+    if(!listo410()||!p)return {ok:false,error:'sin conexión con el servidor'};
+    let prow=null,srow=null,erow=null;
+    try{
+      prow=pacienteRow410(p);
+      if(opts&&opts.resumen){const s=resumenLocal410(p);if(s)srow=resumenRow410(p,s);}
+      if(evolutionId){
+        const ev=evolucionesLocal410(p).find(x=>String(x.id)===String(evolutionId));
+        if(!ev)return {ok:false,error:'la evolución no está en el estado local'};
+        erow=evolucionRow410(ev,p);
+      }
+    }catch(e){return {ok:false,error:String(e?.message||e)};}
+    const intentar=async()=>{
+      if(srow){const r=await supabaseClient.from('cardiolink_hc_resumen').upsert([srow],{onConflict:'paciente_id'});if(r.error)return r.error;}
+      if(erow){const r=await supabaseClient.from('cardiolink_hc_evoluciones').upsert([erow],{onConflict:'id'});if(r.error)return r.error;}
+      return null;
+    };
+    try{
+      let err=await intentar();
+      if(err&&(err.code==='23503'||/foreign key/i.test(String(err.message||'')))){
+        const {error:pe}=await supabaseClient.from('cardiolink_pacientes').upsert([prow],{onConflict:'id'});
+        if(pe)return {ok:false,error:pe.message||String(pe)};
+        err=await intentar();
+      }
+      if(err)return {ok:false,error:err.message||String(err)};
+      if(erow){
+        const l=await leerEvolucion410(erow.id);
+        const mismoEditado=(Date.parse(l.editadoEn||0)||0)===(Date.parse(erow.editado_en||0)||0);
+        if(l.existe!==true||String(l.evolucion||'')!==String(erow.evolucion||'')||!mismoEditado)return {ok:false,error:'el servidor no devolvió la versión guardada'};
+      }
+      return {ok:true};
+    }catch(e){return {ok:false,error:String(e?.message||e)};}
+  }
+
   function mergePaciente410(row){
     if(!row?.id)return;
     if(!Array.isArray(data.pacientes))data.pacientes=[];
@@ -12647,7 +12766,7 @@ function patientInfoTextHC(p,coverage){
     finally{cargando410=false;}
   }
 
-  window.cardiolinkClinica410={version:VERSION_CLINICA_410,cargar:cargar410,sincronizarPacienteCompleto:sincronizarPacienteCompleto410,sincronizarFichaBasica:sincronizarFichaPacienteBasica410,asegurarPacienteSinConflictoDni:asegurarPacienteSinConflictoDni410,reconciliarDniDuplicado:reconciliarDniDuplicado410};
+  window.cardiolinkClinica410={version:VERSION_CLINICA_410,cargar:cargar410,leerEvolucion:leerEvolucion410,guardarEvolucionConfirmada:guardarEvolucionConfirmada410,sincronizarPacienteCompleto:sincronizarPacienteCompleto410,sincronizarFichaBasica:sincronizarFichaPacienteBasica410,asegurarPacienteSinConflictoDni:asegurarPacienteSinConflictoDni410,reconciliarDniDuplicado:reconciliarDniDuplicado410};
 
   // Carga inicial: espera a que Supabase Auth haya terminado el login.
   let intentos=0;
