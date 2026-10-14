@@ -145,6 +145,18 @@ function inferirUsuarioPorLogin(user){
   if(k.includes('humberto') || k.includes('fernandezdrago') || k==='drago' || k.includes('dragohumberto')) return (data.usuarios||[]).find(x=>x.id==='humberto_drago' || x.usuario==='humberto' || (x.aliases||[]).map(normalizarUsuarioClave).includes('drago'));
   return null;
 }
+function nombreProfesionalPorIdV1(id){
+  const p=(data.profesionales||[]).find(x=>String(x.id)===String(id));
+  return (p&&p.nombre)||'';
+}
+// Identidad de BACKEND confirmada para owner/admin: rol (cardiolink_user_roles) + professional_id, leídos por RPC desde el propio auth.uid() y
+// ratificados por cardiolink_es_admin_u_owner(). Sólo se considera si ambas respuestas del servidor coinciden.
+function identidadBackendOwnerAdminV1(){
+  const i=backendPendientesIdentidadV1;
+  if(!usuarioSupabase||!backendRolCargado||!backendEsAdminOwner||!i||!i.professional_id) return null;
+  if(i.role!=='owner'&&i.role!=='admin') return null;
+  return {role:i.role,P:String(i.professional_id)};
+}
 function perfilUsuarioActual(){
   asegurarUsuariosConfig();
   const user = usuarioActualNombreCorto();
@@ -158,8 +170,19 @@ function perfilUsuarioActual(){
     const P=String(backendPendientesIdentidadV1.professional_id||'');
     if(u && String(u.profesionalId||'')!==P) u=(data.usuarios||[]).find(x=>x.activo!==false&&String(x.profesionalId||'')===P)||null;
   }
+  // La identidad del SERVIDOR prevalece sobre la configuración local y sobre cualquier alias de email: un owner/admin con professional_id confirmado
+  // por el backend se resuelve por ese profesional. Así una configuración local desactualizada, o pisada por el refresco de 30 s o por otra sesión,
+  // no puede quitarle el acceso ni el nombre; y ningún alias puede otorgarle (ni quitarle) permisos que el backend no confirma.
+  const ib=identidadBackendOwnerAdminV1();
+  if(ib){
+    // Matías (owner con professional_id 'matias') es el "dueño" del sistema; cualquier otro owner/admin se resuelve como administrador.
+    const esDuenio=ib.role==='owner'&&ib.P==='matias',rolLocalOk=esDuenio?'duenio':'admin';
+    u=(data.usuarios||[]).find(x=>x.activo!==false&&String(x.profesionalId||'')===ib.P&&x.rol===rolLocalOk)
+      ||{id:esDuenio?'matias':'backend_'+ib.P,usuario:esDuenio?'matias':ib.P,nombre:nombreProfesionalPorIdV1(ib.P)||ib.P,
+         rol:rolLocalOk,profesionalId:ib.P,soloMatias:esDuenio,especialidad:'',activo:true};
+  }
   // Si no se reconoce el usuario, entra con permisos mínimos. No cae en Matías para evitar exposición de caja/reportes.
-  if(!u) u={id:'usr_sin_config',usuario:(esMedicoBackendV1()&&backendMensajeriaV1?.login)||user,nombre:(esMedicoBackendV1()&&nombreVisibleBackendV1())||user||'Usuario sin configurar',rol:'sin_configurar',profesionalId:'',especialidad:'Perfil no configurado',activo:true};
+  if(!u) u={id:'usr_sin_config',usuario:(esMedicoBackendV1()&&backendMensajeriaV1?.login)||user,nombre:(esMedicoBackendV1()&&(nombreVisibleBackendV1()||nombreProfesionalPorIdV1(backendPendientesIdentidadV1.professional_id)))||user||'Usuario sin configurar',rol:'sin_configurar',profesionalId:'',especialidad:'Perfil no configurado',activo:true};
   usuarioPerfilActual=u;
   return u;
 }
@@ -416,9 +439,50 @@ async function cargarMensajeriaYConfigMedicoV1(){
     }
   }catch(e){ console.warn('Configuración clínica del médico no disponible:',e); }
 }
+// Errores TRANSITORIOS de la consulta de rol (p. ej. "JWT issued at future": el servidor rechaza por unos segundos un token recién emitido
+// por diferencia de relojes entre sus componentes; o un corte de red). Sólo estos se reintentan; cualquier otro error es definitivo (fail-closed).
+let ultimoErrorRolV1=null;
+function esErrorTransitorioRolV1(e){
+  const m=String((e&&(e.message||e.details||e.hint))||e||''),c=String((e&&e.code)||'');
+  return c==='PGRST303'||/jwt issued at future|failed to fetch|networkerror|network request failed|load failed|timed? ?out|\b50[234]\b/i.test(m);
+}
+function quitarAvisoRolBackendV1(){ document.getElementById('avisoRolBackendV1')?.remove(); }
+// Si el rol NO se pudo confirmar, el problema no se oculta: aviso visible con opción de reintentar. El acceso sigue restringido (fail-closed).
+function mostrarAvisoRolBackendV1(){
+  if(!usuarioSupabase||!document.body) return;
+  quitarAvisoRolBackendV1();
+  const motivo=String((ultimoErrorRolV1&&(ultimoErrorRolV1.message||ultimoErrorRolV1))||'sin detalle').slice(0,160);
+  const d=document.createElement('div');d.id='avisoRolBackendV1';d.setAttribute('role','alert');
+  d.style.cssText='position:fixed;left:12px;right:12px;bottom:12px;z-index:99998;background:#fef3c7;color:#78350f;border:1px solid #f59e0b;border-radius:12px;padding:12px 14px;box-shadow:0 6px 24px rgba(0,0,0,.2);font:600 14px/1.4 system-ui,Arial,sans-serif;display:flex;gap:12px;align-items:center;flex-wrap:wrap';
+  d.innerHTML='<span><strong>No se pudo confirmar tu rol con el servidor.</strong> Por seguridad el acceso queda restringido hasta confirmarlo. <small>('+escapeHtml(motivo)+')</small></span><button type="button" id="btnReintentarRolV1" class="primary">Reintentar</button>';
+  document.body.appendChild(d);
+  d.querySelector('#btnReintentarRolV1').onclick=reintentarRolBackendV1;
+}
+async function reintentarRolBackendV1(){
+  const b=document.getElementById('btnReintentarRolV1');if(b){b.disabled=true;b.textContent='Reintentando…';}
+  try{ await cargarPermisoBackendRoles(); }catch(e){ console.warn('Reintento de rol falló:',e); }
+  try{ aplicarPermisosUI(); }catch(e){}
+  if(backendRolCargado){ try{ await refrescarDesdeSupabaseAutomatico(); }catch(e){} }
+}
+// Consulta de rol con reintento automático breve y LIMITADO (2 reintentos, ~3,7 s como máximo). Mientras reintenta, backendRolCargado sigue en false y
+// la consulta figura como pendiente: no se concede ningún permiso clínico ni administrativo sin confirmación del servidor.
 async function cargarPermisoBackendRoles(){
   if(!supabaseClient || !usuarioSupabase) return; // todavía antes del login: ni empezó la consulta
   backendRolConsultaFinalizada=false;
+  const demoras=[1200,2500];
+  try{
+    for(let i=0;i<=demoras.length;i++){
+      const reintentar=await cargarPermisoBackendRolesIntentoV1(i===demoras.length);
+      if(!reintentar) break;
+      await new Promise(r=>setTimeout(r,demoras[i]));
+    }
+  }finally{
+    // Corre tanto en éxito como en error: la consulta ya terminó, sea cual sea el resultado - a partir de acá deja de ser "pendiente".
+    backendRolConsultaFinalizada=true;
+  }
+  if(backendRolCargado) quitarAvisoRolBackendV1(); else mostrarAvisoRolBackendV1();
+}
+async function cargarPermisoBackendRolesIntentoV1(ultimoIntento){
   try{
     const [adminOwner,appointmentRequests,pendientesIdentidad]=await Promise.all([
       supabaseClient.rpc('cardiolink_es_admin_u_owner'),
@@ -428,14 +492,19 @@ async function cargarPermisoBackendRoles(){
       supabaseClient.rpc('cardiolink_identidad_pendientes_v1').then(r=>r,e=>({data:null,error:e}))
     ]);
     if(adminOwner.error||appointmentRequests.error) throw (adminOwner.error||appointmentRequests.error);
+    // Un error TRANSITORIO de la identidad también se reintenta (sin ella un owner no se reconoce); otro error (función ausente) sigue siendo aislado.
+    if(pendientesIdentidad.error&&!ultimoIntento&&esErrorTransitorioRolV1(pendientesIdentidad.error)) throw pendientesIdentidad.error;
     if(pendientesIdentidad.error) console.warn('No se pudo confirmar la identidad de Pendientes (cardiolink_identidad_pendientes_v1):',pendientesIdentidad.error);
     backendPendientesIdentidadV1=pendientesIdentidad.error?null:(pendientesIdentidad.data||null);
     aislarCacheLocalPorUsuarioV1(usuarioSupabase?.id, adminOwner.data===true||appointmentRequests.data===true);
     await cargarMensajeriaYConfigMedicoV1();
     backendEsAdminOwner=adminOwner.data===true;
     backendTieneAccesoTurnos=appointmentRequests.data===true;
-    backendRolCargado=true;
+    backendRolCargado=true;ultimoErrorRolV1=null;
+    return false;
   }catch(e){
+    ultimoErrorRolV1=e;
+    if(!ultimoIntento&&esErrorTransitorioRolV1(e)){ console.warn('Rol backend: error transitorio, se reintenta:',e&&e.message||e); return true; }
     // FAIL CLOSED: si la consulta backend falla, no se eleva nada por
     // alias - queda backendRolCargado=false, y tanto esMatiasDuenio()
     // como rolBaseUsuarioActual() de abajo tratan "sesión Supabase real
@@ -444,11 +513,7 @@ async function cargarPermisoBackendRoles(){
     console.warn('No se pudo confirmar el rol backend (cardiolink_user_roles):',e);
     backendRolCargado=false;backendEsAdminOwner=false;backendTieneAccesoTurnos=false;backendPendientesIdentidadV1=null;backendMensajeriaV1=null;directorioMensajesV1=null;
     aislarCacheLocalPorUsuarioV1(usuarioSupabase?.id,false);
-  }finally{
-    // Corre tanto en éxito como en error (nunca si se volvió antes por
-    // falta de supabaseClient/usuarioSupabase): la consulta ya terminó,
-    // sea cual sea el resultado - a partir de acá deja de ser "pendiente".
-    backendRolConsultaFinalizada=true;
+    return false;
   }
 }
 function esMatiasDuenio(){
@@ -469,7 +534,8 @@ function rolBaseUsuarioActual(){
     // consulta): fail-closed para los roles con más acceso.
     return (rolLocal==='duenio'||rolLocal==='admin'||rolLocal==='secretaria') ? 'sin_configurar' : rolLocal;
   }
-  if(backendEsAdminOwner) return rolLocal; // owner/admin: sin cambios
+  // owner/admin confirmado por el servidor: sin cambios, salvo que el perfil local no se pueda mapear (config desactualizada o pisada): nunca queda sin acceso.
+  if(backendEsAdminOwner) return rolLocal==='sin_configurar'?'admin':rolLocal;
   if(backendPendientesIdentidadV1?.role==='medico') return 'medico'; // identidad médica autoritativa
   if(backendTieneAccesoTurnos) return 'secretaria'; // fuerza secretaria aunque el alias/local diga otra cosa
   // Ni admin/owner ni secretaria según backend. No hay RPC acá que
@@ -3949,6 +4015,12 @@ window.renderTabla=renderTabla;
 
 async function refrescarDesdeSupabaseAutomatico(){
   try{
+    // Rol backend sin confirmar (falló al arrancar): se vuelve a consultar en cada ciclo hasta que el servidor responda; si confirma, se recupera solo.
+    if(usuarioSupabase && backendRolConsultaFinalizada && !backendRolCargado && !window.__rolReintentandoV1){
+      window.__rolReintentandoV1=true;
+      try{ await cargarPermisoBackendRoles(); if(backendRolCargado){ try{ aplicarPermisosUI(); }catch(e){} } }
+      finally{ window.__rolReintentandoV1=false; }
+    }
     // Si hay un cambio local recién hecho (ej. resolver un pendiente) que
     // todavía no terminó de sincronizarse a Supabase, este refresco pisaría
     // ese cambio con la versión vieja que todavía está en la nube - se

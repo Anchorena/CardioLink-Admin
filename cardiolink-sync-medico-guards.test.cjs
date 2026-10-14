@@ -18,7 +18,7 @@ test('helper fail-closed: sólo owner/admin o secretaría confirmados por backen
 });
 
 test('la RPC de identidad está aislada: su falla no invalida owner/admin/secretaría',()=>{
-  const f=between('async function cargarPermisoBackendRoles(){','finally{');
+  const f=between('async function cargarPermisoBackendRolesIntentoV1(ultimoIntento){','function esMatiasDuenio(){');
   assert.match(f,/rpc\('cardiolink_identidad_pendientes_v1'\)\.then\(/);
   const lanza=f.match(/if\(adminOwner\.error\|\|appointmentRequests\.error[^\n]*throw[^\n]*/);
   assert.ok(lanza,'falta el throw de las RPC de rol');
@@ -78,7 +78,7 @@ test('el perfil del médico con identidad de backend no se asigna por heurístic
   assert.match(f,/if\(esMedicoBackendV1\(\)\)\{/);
   assert.match(f,/String\(u\.profesionalId\|\|''\)!==P/);
   assert.match(f,/usuario:\(esMedicoBackendV1\(\)&&backendMensajeriaV1\?\.login\)\|\|user/);
-  assert.match(f,/nombre:\(esMedicoBackendV1\(\)&&nombreVisibleBackendV1\(\)\)\|\|user/);
+  assert.match(f,/nombre:\(esMedicoBackendV1\(\)&&\(nombreVisibleBackendV1\(\)\|\|nombreProfesionalPorIdV1\(backendPendientesIdentidadV1\.professional_id\)\)\)\|\|user/);   // directorio del servidor, luego el nombre del profesional, nunca el prefijo del email salvo último recurso
 });
 
 test('el remitente del médico es un login propio y el nombre visible sale del directorio, no del email',()=>{
@@ -130,7 +130,7 @@ test('caché local por usuario: se aparta sin borrar, se limpia al cerrar sólo 
   assert.match(a,/if\(!dueno && privilegiado\)/);                              // caché heredada: sólo la adoptan roles que ya ven todo
   assert.match(a,/localStorage\.setItem\(ap\(dueno\|\|'desconocido',k\),v\)/);   // se APARTA bajo su dueño (no se borra)
   assert.match(a,/data=loadConfig\(\); atenciones=loadAtenciones\(\);/);          // la memoria queda alineada con la caché del usuario actual
-  const r=between('async function cargarPermisoBackendRoles(){','finally{');
+  const r=between('async function cargarPermisoBackendRolesIntentoV1(ultimoIntento){','function esMatiasDuenio(){');
   assert.match(r,/aislarCacheLocalPorUsuarioV1\(usuarioSupabase\?\.id, adminOwner\.data===true\|\|appointmentRequests\.data===true\);\s*await cargarMensajeriaYConfigMedicoV1\(\);/);
   assert.match(r,/aislarCacheLocalPorUsuarioV1\(usuarioSupabase\?\.id,false\);/);   // sin rol confirmado: nunca privilegiado
   const l=between('async function liberarCacheLocalAlCerrarSesionV1(){','// Directorio mínimo');
@@ -228,4 +228,39 @@ test('cierre de sesión: los documentos clínicos sin respaldo confirmado se res
   // si apartar la caché ajena falla por cuota, sus documentos pasan al resguardo de SU uid antes de eliminarse
   assert.match(src,/se elimina por privacidad:',k\); if\(k===storageConfig&&dueno\) salvarDocumentosDeCacheV1\(dueno,v\);/);
   assert.match(src,/window\.hashContenidoDocumento406=hashContenidoDocumento406;/);
+});
+
+test('identidad owner/admin: el servidor (rol + professional_id) prevalece sobre la config local y los alias; nunca se otorga sin ratificación',()=>{
+  const i=sinComentarios(between('function identidadBackendOwnerAdminV1(){','function perfilUsuarioActual(){'));
+  assert.match(i,/!usuarioSupabase\|\|!backendRolCargado\|\|!backendEsAdminOwner\|\|!i\|\|!i\.professional_id\) return null;/);   // exige sesión, rol cargado, es_admin_u_owner Y professional_id
+  assert.match(i,/i\.role!=='owner'&&i\.role!=='admin'\) return null;/);
+  const p=sinComentarios(between('function perfilUsuarioActual(){','/* ===== Rol backend autoritativo'));
+  const iB=p.indexOf('const ib=identidadBackendOwnerAdminV1();');
+  assert.ok(iB!==-1&&iB>p.indexOf('inferirUsuarioPorLogin(user)')&&iB<p.indexOf("if(!u) u={id:'usr_sin_config'"));   // después de alias/médico, antes del perfil mínimo: el servidor pisa lo local
+  assert.match(p,/esDuenio=ib\.role==='owner'&&ib\.P==='matias'/);                       // sólo owner + 'matias' es el dueño; cualquier otro owner/admin = administrador
+  assert.match(p,/rolLocalOk=esDuenio\?'duenio':'admin'/);
+  assert.match(p,/nombreProfesionalPorIdV1\(backendPendientesIdentidadV1\.professional_id\)/);   // médico sin entrada: nombre del profesional, no el prefijo del email
+  assert.doesNotMatch(i,/usuarioCoincide|email|alias/i);                                     // la decisión NO usa email ni alias
+  assert.match(src,/if\(backendEsAdminOwner\) return rolLocal==='sin_configurar'\?'admin':rolLocal;/);   // owner/admin del servidor con perfil local sin mapear: nunca queda sin acceso
+});
+
+test('rol backend: reintento automático breve y limitado, sin conceder nada sin confirmación, con aviso claro si es permanente',()=>{
+  const t=sinComentarios(between('function esErrorTransitorioRolV1(e){','function quitarAvisoRolBackendV1'));
+  assert.match(t,/PGRST303/);
+  assert.match(t,/jwt issued at future/);
+  const w=sinComentarios(between('async function cargarPermisoBackendRoles(){','async function cargarPermisoBackendRolesIntentoV1(ultimoIntento){'));
+  assert.match(w,/const demoras=\[1200,2500\];/);                                         // acotado: 2 reintentos, ~3,7 s como máximo
+  assert.match(w,/cargarPermisoBackendRolesIntentoV1\(i===demoras\.length\)/);                 // el último intento aplica el fail-closed definitivo
+  assert.ok(w.indexOf('backendRolConsultaFinalizada=false')<w.indexOf('for(let i=0'));          // durante los reintentos la consulta figura PENDIENTE
+  assert.match(w,/finally\{\s*backendRolConsultaFinalizada=true;/);
+  assert.match(w,/if\(backendRolCargado\) quitarAvisoRolBackendV1\(\); else mostrarAvisoRolBackendV1\(\);/);   // problema permanente: no se oculta
+  const a=sinComentarios(between('async function cargarPermisoBackendRolesIntentoV1(ultimoIntento){','function esMatiasDuenio(){'));
+  assert.equal((a.match(/backendRolCargado=true/g)||[]).length,1);                             // un solo punto donde se otorga: tras la confirmación del servidor
+  assert.ok(a.indexOf('backendRolCargado=true')>a.indexOf('backendEsAdminOwner=adminOwner.data===true'));
+  assert.match(a,/if\(!ultimoIntento&&esErrorTransitorioRolV1\(e\)\)\s*\{[^}]*return true;\s*\}/);     // sólo errores transitorios se reintentan
+  assert.match(a,/backendRolCargado=false;backendEsAdminOwner=false;backendTieneAccesoTurnos=false;backendPendientesIdentidadV1=null/);   // fail-closed definitivo intacto
+  const m=sinComentarios(between('function mostrarAvisoRolBackendV1(){','async function reintentarRolBackendV1(){'));
+  assert.match(m,/btnReintentarRolV1/);
+  const r=between('async function refrescarDesdeSupabaseAutomatico(){','await cargarAtencionesDesdeSupabase();');
+  assert.match(r,/usuarioSupabase && backendRolConsultaFinalizada && !backendRolCargado && !window\.__rolReintentandoV1/);   // recuperación automática en el ciclo de 30 s
 });
