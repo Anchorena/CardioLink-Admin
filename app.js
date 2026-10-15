@@ -400,6 +400,90 @@ async function liberarCacheLocalAlCerrarSesionV1(){
   }catch(e){ console.warn('No se pudo liberar la caché local al cerrar sesión:',e); return false; }
 }
 
+// ---- Identidad profesional (marca, logo, firma, matrículas, contacto, color): persistencia por una RPC ESPECÍFICA ----
+// El médico nunca escribe la fila compartida de configuración (guardarConfigEnSupabase298 devuelve false para él), así que la identidad
+// se guarda con cardiolink_guardar_identidad_profesional_v1: el SERVIDOR decide quién puede editar a quién (owner/admin: cualquiera;
+// médico: sólo su professional_id; secretaría: nadie) y toca únicamente estas claves del profesional indicado.
+const CAMPOS_IDENTIDAD_V1=['marcaDocumento','logoDocumento','logoDocumentoData','firmaDocumentoData','matriculaNacional','matriculaProvincial','telefonoDocumento','emailDocumento','direccionDocumento','redesDocumento','colorDocumento','mostrarFirmaDocumento'];
+let colaIdentidadV1=Promise.resolve();
+// Una clave omitida conserva el valor del servidor; '' borra. Devuelve {ok:true,identity} sólo con la confirmación del servidor.
+// El profesional local NO se modifica salvo con la respuesta confirmada (si falla, el valor previo queda intacto).
+function guardarIdentidadProfesionalBackendV1(professionalId,identity){
+  const corrida=colaIdentidadV1.then(()=>ejecutarGuardadoIdentidadV1(professionalId,identity));
+  colaIdentidadV1=corrida.catch(()=>{});     // serializa los guardados: no se cruzan ni llegan en otro orden
+  return corrida;
+}
+async function ejecutarGuardadoIdentidadV1(professionalId,identity){
+  const pid=String(professionalId||'').trim();
+  if(!pid) return {ok:false,error:'No hay un profesional seleccionado.'};
+  if(!supabaseClient||!usuarioSupabase) return {ok:false,error:'No hay sesión con el servidor.'};
+  const p_identity={};
+  CAMPOS_IDENTIDAD_V1.forEach(k=>{ if(identity&&Object.prototype.hasOwnProperty.call(identity,k)&&identity[k]!==undefined) p_identity[k]=k==='mostrarFirmaDocumento'?identity[k]!==false:String(identity[k]==null?'':identity[k]); });
+  try{
+    const r=await supabaseClient.rpc('cardiolink_guardar_identidad_profesional_v1',{p_professional_id:pid,p_identity});
+    if(r.error){
+      if(r.error.code==='PGRST202'||/could not find the function/i.test(String(r.error.message||''))) return {ok:false,error:'El servidor todavía no tiene habilitado el guardado de identidad profesional (falta aplicar la migración).'};
+      return {ok:false,error:String(r.error.message||r.error.details||'El servidor rechazó el guardado.')};
+    }
+    const d=r.data;
+    if(!d||d.ok!==true||String(d.professionalId)!==pid||!d.identity||typeof d.identity!=='object') return {ok:false,error:'Respuesta inesperada del servidor: no se pudo confirmar el guardado.'};
+    // Confirmado: recién ahora se refleja en el profesional local, y la copia local es sólo caché.
+    const loc=Array.isArray(data?.profesionales)?data.profesionales.find(x=>String(x.id)===pid):null;
+    if(loc) CAMPOS_IDENTIDAD_V1.forEach(k=>{ if(Object.prototype.hasOwnProperty.call(d.identity,k)) loc[k]=d.identity[k]; });
+    // Sólo caché local: NO se usa saveConfig() porque está envuelta y programa guardarConfigEnSupabase298() (reescritura completa de la config global).
+    try{ localStorage.setItem(storageConfig,JSON.stringify(data)); }catch(e){ console.warn('No se pudo actualizar la caché local de identidad:',e); }
+    return {ok:true,identity:d.identity};
+  }catch(e){ return {ok:false,error:String((e&&e.message)||e||'Error de red.')}; }
+}
+// Respaldo de la identidad LOCAL previa. Antes de que la identidad del servidor reemplace la copia local de un profesional (login del médico o
+// carga de la config remota del owner/admin), si la copia local tiene logo o firma que el servidor NO tiene igual, se conserva aparte en
+// localStorage (cardiolink_identidad_local_respaldo_v1:<uid>:<profesional>, hasta 3 versiones distintas, sin pisar las ya guardadas) para poder
+// recuperarla. Nunca se borra una imagen local sin dejar copia. Sólo imágenes: los textos por defecto de la app no generan respaldos.
+function respaldarIdentidadLocalPreviaV1(loc,srv){
+  try{
+    const uid=usuarioSupabase&&usuarioSupabase.id;
+    if(!uid||!loc||loc.id==null) return;
+    if(!['logoDocumentoData','firmaDocumentoData'].some(k=>loc[k]&&loc[k]!==(srv&&srv[k]))) return;
+    const snap={fecha:new Date().toISOString(),identidad:{}};
+    CAMPOS_IDENTIDAD_V1.forEach(k=>{ if(loc[k]!==undefined&&loc[k]!==null) snap.identidad[k]=loc[k]; });
+    const key='cardiolink_identidad_local_respaldo_v1:'+uid+':'+loc.id;
+    let reg=null; try{ reg=JSON.parse(localStorage.getItem(key)||'null'); }catch(e){ reg=null; }
+    if(!reg||!Array.isArray(reg.snapshots)) reg={profesionalId:String(loc.id),snapshots:[]};
+    if(reg.snapshots.some(x=>x.identidad.logoDocumentoData===snap.identidad.logoDocumentoData&&x.identidad.firmaDocumentoData===snap.identidad.firmaDocumentoData)) return;
+    if(reg.snapshots.length>=3){ console.warn('Respaldo de identidad local lleno (3 versiones): no se agrega otra para no perder las anteriores.'); return; }
+    reg.snapshots.push(snap);
+    localStorage.setItem(key,JSON.stringify(reg));
+  }catch(e){ console.warn('No se pudo respaldar la identidad local previa:',e); }
+}
+function respaldarIdentidadesLocalesPreviasV1(actual,nueva){
+  try{
+    const dest=(nueva&&Array.isArray(nueva.profesionales))?nueva.profesionales:[];
+    (actual&&Array.isArray(actual.profesionales)?actual.profesionales:[]).forEach(l=>respaldarIdentidadLocalPreviaV1(l,dest.find(x=>String(x.id)===String(l.id))));
+  }catch(e){ console.warn('No se pudo respaldar las identidades locales previas:',e); }
+}
+// Identidad propia que llega del servidor al iniciar sesión (médico): se respalda la local previa y se aplica la del servidor.
+function aplicarIdentidadPropiaDesdeServidorV1(loc,srv){
+  if(!loc||!srv) return;
+  respaldarIdentidadLocalPreviaV1(loc,srv);
+  CAMPOS_IDENTIDAD_V1.forEach(k=>{ if(Object.prototype.hasOwnProperty.call(srv,k)) loc[k]=srv[k]; });
+}
+// El servidor (protección de identidad profesional) rechaza con 54000 una config que quitaría a un profesional con identidad documental cuando su archivo de
+// identidades ya está lleno. La config NO se guardó: se avisa de forma visible (nunca como guardada) y se pide intervención administrativa.
+function esRechazoIdentidadArchivoLlenoV1(error){
+  return !!error&&(String(error.code||'')==='54000'||/ya tiene 5 identidades archivadas/i.test(String(error.message||'')));
+}
+function quitarAvisoConfigRechazadaV1(){ document.getElementById('avisoConfigRechazadaV1')?.remove(); }
+function mostrarAvisoConfigRechazadaV1(error){
+  if(!document.body) return;
+  quitarAvisoConfigRechazadaV1();
+  const prof=(/profesional\s+(\S+)/i.exec(String(error&&error.message||''))||[])[1]||'';
+  const d=document.createElement('div');d.id='avisoConfigRechazadaV1';d.setAttribute('role','alert');
+  d.style.cssText='position:fixed;left:12px;right:12px;bottom:12px;z-index:99999;background:#fee2e2;color:#7f1d1d;border:2px solid #dc2626;border-radius:12px;padding:14px 16px;box-shadow:0 6px 24px rgba(0,0,0,.25);font:600 14px/1.45 system-ui,Arial,sans-serif;display:flex;gap:12px;align-items:flex-start;flex-wrap:wrap';
+  d.innerHTML='<div style="flex:1 1 320px"><strong>La configuración NO se guardó.</strong><br>El servidor la rechazó porque quita a un profesional'+(prof?' ('+escapeHtml(prof)+')':'')+' con identidad documental (logo, firma, matrículas) que podría perderse: su archivo de identidades ya está lleno.<br><strong>Se requiere intervención administrativa:</strong> avisá al administrador del sistema. Hasta entonces los cambios de configuración quedan sólo en este equipo y no están en el servidor.</div><div style="display:flex;gap:8px;flex-wrap:wrap"><button type="button" id="btnReintentarConfigV1" class="secondary">Reintentar</button><button type="button" id="btnCerrarAvisoConfigV1" class="primary">Entendido</button></div>';
+  document.body.appendChild(d);
+  d.querySelector('#btnCerrarAvisoConfigV1').onclick=quitarAvisoConfigRechazadaV1;
+  d.querySelector('#btnReintentarConfigV1').onclick=async()=>{ try{ await window.guardarConfigEnSupabase298?.(); }catch(e){ console.warn('Reintento de config falló:',e); } };
+}
 // Directorio mínimo de destinatarios (todos los roles, aditivo) y, sólo para el médico, configuración
 // clínica saneada + identidad de mensajería. Todo aislado: si una RPC aún no existe o falla, se
 // conserva el comportamiento anterior sin bloquear el login ni la detección de roles.
@@ -427,6 +511,8 @@ async function cargarMensajeriaYConfigMedicoV1(){
         const l=data.profesionales.find(x=>x.id===p.id);
         if(l){ if(p.nombre) l.nombre=p.nombre; if(p.area) l.area=p.area; if(Array.isArray(p.prestaciones)) l.prestaciones=p.prestaciones; }
         else data.profesionales.push({id:p.id,nombre:p.nombre||p.id,area:p.area||'',prestaciones:Array.isArray(p.prestaciones)?p.prestaciones:[],valores:{}});
+        // Identidad documental: SÓLO la del profesional autenticado (la RPC nunca envía la de otros; igual se verifica acá).
+        if(String(p.id)===String(backendPendientesIdentidadV1?.professional_id||'')) aplicarIdentidadPropiaDesdeServidorV1(data.profesionales.find(x=>x.id===p.id),p);
       });
       if(Array.isArray(c.obrasSociales)){ if(!Array.isArray(data.obrasSociales)) data.obrasSociales=[]; c.obrasSociales.forEach(o=>{ if(!data.obrasSociales.includes(o)) data.obrasSociales.push(o); }); }
       // Sólo se acepta un usuario propio de rol médico: la RPC nunca puede elevar el perfil local.
@@ -6600,7 +6686,11 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     try{
       const payload={tipoRegistro:'config', version:VERSION_298, config:data, updatedAt:new Date().toISOString()};
       const {error}=await supabaseClient.from('cardiolink_atenciones').upsert([{id:CONFIG_ROW_ID,payload,updated_at:new Date().toISOString()}],{onConflict:'id'});
-      if(error) console.warn('No se pudo guardar config/pacientes en Supabase:',error.message);
+      if(error){
+        console.warn('No se pudo guardar config/pacientes en Supabase:',error.message);
+        // Protección de identidad profesional (54000): el servidor rechazó la config completa porque perdería una identidad documental. Aviso visible y claro.
+        if(esRechazoIdentidadArchivoLlenoV1(error)) mostrarAvisoConfigRechazadaV1(error);
+      }else quitarAvisoConfigRechazadaV1();
       return !error;
     }catch(e){console.warn('Error config Supabase:',e);return false;}
   }
@@ -6614,7 +6704,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       if(error){ console.error(error); alert('No se pudieron cargar las atenciones desde Supabase: '+error.message); throw error; }
       const cfgRow=(rows||[]).find(r=>r.id===CONFIG_ROW_ID || r.payload?.tipoRegistro==='config');
       if(cfgRow?.payload?.config){
-        try{ data=normalizarConfigCritica(cfgRow.payload.config); localStorage.setItem(storageConfig,JSON.stringify(data)); }catch(e){console.warn('Config remota inválida:',e);}
+        try{ const cfgRemota298=normalizarConfigCritica(cfgRow.payload.config); respaldarIdentidadesLocalesPreviasV1(data,cfgRemota298); data=cfgRemota298; localStorage.setItem(storageConfig,JSON.stringify(data)); }catch(e){console.warn('Config remota inválida:',e);}
       }
       // B1.5: se conserva la fila cruda (con updated_at), no solo el payload -
       // antes ese updated_at se descartaba acá y ya no quedaba disponible en
@@ -10676,17 +10766,20 @@ function patientInfoTextHC(p,coverage){
     const vals={docMarca402:p.marcaDocumento,docLogo402:p.logoDocumento,docMN402:p.matriculaNacional,docMP402:p.matriculaProvincial,docTelefono402:p.telefonoDocumento,docEmail402:p.emailDocumento,docDireccion402:p.direccionDocumento,docRedes402:p.redesDocumento};
     Object.entries(vals).forEach(([id,v])=>{if($402(id))$402(id).value=v||'';});
   }
-  function saveDocumentFields402(){
+  async function saveDocumentFields402(){
     if(!canMedical402()){alert('Tu perfil no puede modificar datos para documentos clínicos.');return;}
-    ensure402();const p=prof402($402('cfgProfEditar310')?.value||currentProfessionalId402()||'matias');if(!p)return;
-    p.marcaDocumento=$402('docMarca402')?.value.trim()||p.nombre;
-    // Fase 6, Bloque 6C: dejar el campo en blanco significa "sin logo
-    // propio" - ya no se guarda icons/icon-192.png como si fuera uno.
-    p.logoDocumento=$402('docLogo402')?.value.trim()||'';
-    p.matriculaNacional=$402('docMN402')?.value.trim()||'';p.matriculaProvincial=$402('docMP402')?.value.trim()||'';
-    p.telefonoDocumento=$402('docTelefono402')?.value.trim()||'';p.emailDocumento=$402('docEmail402')?.value.trim()||'';
-    p.direccionDocumento=$402('docDireccion402')?.value.trim()||'';p.redesDocumento=$402('docRedes402')?.value.trim()||'';
-    persist402();alert('Datos profesionales guardados para documentos e impresiones.');
+    ensure402();const pid=$402('cfgProfEditar310')?.value||currentProfessionalId402()||'matias',p=prof402(pid);if(!p)return;
+    // Fase 6, Bloque 6C: dejar el campo de logo en blanco significa "sin logo propio" - ya no se guarda icons/icon-192.png como si fuera uno.
+    // La identidad se guarda por la RPC específica del servidor (el médico nunca escribe la config global); el profesional local sólo
+    // cambia con la respuesta confirmada.
+    const r=await guardarIdentidadProfesionalBackendV1(pid,{
+      marcaDocumento:$402('docMarca402')?.value.trim()||p.nombre||'',
+      logoDocumento:$402('docLogo402')?.value.trim()||'',
+      matriculaNacional:$402('docMN402')?.value.trim()||'',matriculaProvincial:$402('docMP402')?.value.trim()||'',
+      telefonoDocumento:$402('docTelefono402')?.value.trim()||'',emailDocumento:$402('docEmail402')?.value.trim()||'',
+      direccionDocumento:$402('docDireccion402')?.value.trim()||'',redesDocumento:$402('docRedes402')?.value.trim()||''});
+    if(!r.ok){alert('No se pudieron guardar los datos para documentos: '+r.error+'\n\nNo se guardó ningún cambio.');return;}
+    loadDocumentFields402();alert('Datos profesionales guardados para documentos e impresiones.');
   }
 
   /* Nota interna privada por profesional */
@@ -11516,25 +11609,31 @@ function patientInfoTextHC(p,coverage){
     if($406('showSignature406'))$406('showSignature406').checked=p.mostrarFirmaDocumento!==false;
     const allowed=canEditIdentity406(pid);['uploadLogo406','removeLogo406','uploadSignature406','removeSignature406','saveIdentity406','docColor406','showSignature406'].forEach(id=>{const el=$406(id);if(el)el.disabled=!allowed;});
   }
+  // Identidad profesional (logo, firma, color, datos): TODOS los caminos guardan por guardarIdentidadProfesionalBackendV1 (RPC específica del
+  // servidor). El profesional local sólo cambia con la respuesta confirmada; si falla se avisa y no se afirma que se guardó.
+  function errorIdentidad406(r){alert('No se pudo guardar la identidad profesional: '+r.error+'\n\nNo se guardó ningún cambio.');}
   async function handleIdentityFile406(kind,file){
     if(!isMedical406()){alert('Tu perfil no puede modificar identidad para documentos clínicos.');return;}
     const pid=selectedProfId406(),p=prof406(pid);if(!p||!canEditIdentity406(pid))return;
-    try{
-      const dataUrl=await compressImage406(file,kind);
-      if(kind==='logo')p.logoDocumentoData=dataUrl;else p.firmaDocumentoData=dataUrl;
-      persist406();loadIdentityFields406();alert(kind==='logo'?'Logo guardado.':'Firma guardada.');
-    }catch(e){alert(e.message||'No se pudo procesar la imagen.');}
+    let dataUrl;
+    try{dataUrl=await compressImage406(file,kind);}catch(e){alert(e.message||'No se pudo procesar la imagen.');return;}
+    const r=await guardarIdentidadProfesionalBackendV1(pid,kind==='logo'?{logoDocumentoData:dataUrl}:{firmaDocumentoData:dataUrl});
+    if(!r.ok){errorIdentidad406(r);return;}
+    loadIdentityFields406();alert(kind==='logo'?'Logo guardado.':'Firma guardada.');
   }
-  function saveIdentity406(){
+  async function saveIdentity406(){
     if(!isMedical406()){alert('Tu perfil no puede modificar identidad para documentos clínicos.');return;}
     const pid=selectedProfId406(),p=prof406(pid);if(!p||!canEditIdentity406(pid))return;
-    p.colorDocumento=$406('docColor406')?.value||'#174b5c';p.mostrarFirmaDocumento=$406('showSignature406')?.checked!==false;
-    persist406();loadIdentityFields406();alert('Identidad profesional guardada.');
+    const r=await guardarIdentidadProfesionalBackendV1(pid,{colorDocumento:$406('docColor406')?.value||'#174b5c',mostrarFirmaDocumento:$406('showSignature406')?.checked!==false});
+    if(!r.ok){errorIdentidad406(r);return;}
+    loadIdentityFields406();alert('Identidad profesional guardada.');
   }
-  function removeIdentityImage406(kind){
+  async function removeIdentityImage406(kind){
     if(!isMedical406()){alert('Tu perfil no puede modificar identidad para documentos clínicos.');return;}
     const pid=selectedProfId406(),p=prof406(pid);if(!p||!canEditIdentity406(pid))return;
-    if(kind==='logo')p.logoDocumentoData='';else p.firmaDocumentoData='';persist406();loadIdentityFields406();
+    const r=await guardarIdentidadProfesionalBackendV1(pid,kind==='logo'?{logoDocumentoData:''}:{firmaDocumentoData:''});
+    if(!r.ok){errorIdentidad406(r);return;}
+    loadIdentityFields406();
   }
 
   function openOwnIdentity406(){
@@ -11547,12 +11646,25 @@ function patientInfoTextHC(p,coverage){
   async function uploadOwn406(kind,file){
     if(!isMedical406()){alert('Tu perfil no puede modificar identidad para documentos clínicos.');return;}
     const pid=currentProfId406()||selectedProfId406(),p=prof406(pid);if(!p)return;
-    try{const url=await compressImage406(file,kind);if(kind==='logo')p.logoDocumentoData=url;else p.firmaDocumentoData=url;persist406();$406('ownIdentityPreview406').innerHTML=identityPreviewHtml406(p);}catch(e){alert(e.message||'No se pudo procesar la imagen.');}
+    let url;
+    try{url=await compressImage406(file,kind);}catch(e){alert(e.message||'No se pudo procesar la imagen.');return;}
+    const r=await guardarIdentidadProfesionalBackendV1(pid,kind==='logo'?{logoDocumentoData:url}:{firmaDocumentoData:url});
+    if(!r.ok){errorIdentidad406(r);return;}
+    const prev=$406('ownIdentityPreview406');if(prev)prev.innerHTML=identityPreviewHtml406(prof406(pid)||p);
   }
-  function saveOwnIdentity406(){
+  async function removeOwnImage406(kind){
     if(!isMedical406()){alert('Tu perfil no puede modificar identidad para documentos clínicos.');return;}
     const pid=currentProfId406()||selectedProfId406(),p=prof406(pid);if(!p)return;
-    p.marcaDocumento=$406('ownMarca406')?.value.trim()||p.nombre;p.colorDocumento=$406('ownColor406')?.value||'#174b5c';p.matriculaNacional=$406('ownMN406')?.value.trim()||'';p.matriculaProvincial=$406('ownMP406')?.value.trim()||'';p.telefonoDocumento=$406('ownTelefono406')?.value.trim()||'';p.emailDocumento=$406('ownEmail406')?.value.trim()||'';p.direccionDocumento=$406('ownDireccion406')?.value.trim()||'';p.redesDocumento=$406('ownRedes406')?.value.trim()||'';p.mostrarFirmaDocumento=$406('ownShowSignature406')?.checked!==false;persist406();$406('identityModal406')?.remove();alert('Membrete y firma guardados.');
+    const r=await guardarIdentidadProfesionalBackendV1(pid,kind==='logo'?{logoDocumentoData:''}:{firmaDocumentoData:''});
+    if(!r.ok){errorIdentidad406(r);return;}
+    const prev=$406('ownIdentityPreview406');if(prev)prev.innerHTML=identityPreviewHtml406(prof406(pid)||p);
+  }
+  async function saveOwnIdentity406(){
+    if(!isMedical406()){alert('Tu perfil no puede modificar identidad para documentos clínicos.');return;}
+    const pid=currentProfId406()||selectedProfId406(),p=prof406(pid);if(!p)return;
+    const r=await guardarIdentidadProfesionalBackendV1(pid,{marcaDocumento:$406('ownMarca406')?.value.trim()||p.nombre||'',colorDocumento:$406('ownColor406')?.value||'#174b5c',matriculaNacional:$406('ownMN406')?.value.trim()||'',matriculaProvincial:$406('ownMP406')?.value.trim()||'',telefonoDocumento:$406('ownTelefono406')?.value.trim()||'',emailDocumento:$406('ownEmail406')?.value.trim()||'',direccionDocumento:$406('ownDireccion406')?.value.trim()||'',redesDocumento:$406('ownRedes406')?.value.trim()||'',mostrarFirmaDocumento:$406('ownShowSignature406')?.checked!==false});
+    if(!r.ok){errorIdentidad406(r);return;}
+    $406('identityModal406')?.remove();alert('Membrete y firma guardados.');
   }
 
   function docsForPatient406(p){
@@ -11999,8 +12111,8 @@ function patientInfoTextHC(p,coverage){
     if(e.target.closest?.('[data-close-identity406]')){$406('identityModal406')?.remove();return;}
     if(e.target.id==='ownUploadLogo406'){$406('ownLogoFile406')?.click();return;}
     if(e.target.id==='ownUploadSignature406'){$406('ownSignatureFile406')?.click();return;}
-    if(e.target.id==='ownRemoveLogo406'){const p=prof406(currentProfId406()||selectedProfId406());if(p){p.logoDocumentoData='';persist406();$406('ownIdentityPreview406').innerHTML=identityPreviewHtml406(p);}return;}
-    if(e.target.id==='ownRemoveSignature406'){const p=prof406(currentProfId406()||selectedProfId406());if(p){p.firmaDocumentoData='';persist406();$406('ownIdentityPreview406').innerHTML=identityPreviewHtml406(p);}return;}
+    if(e.target.id==='ownRemoveLogo406'){removeOwnImage406('logo');return;}
+    if(e.target.id==='ownRemoveSignature406'){removeOwnImage406('signature');return;}
     if(e.target.id==='saveOwnIdentity406'){saveOwnIdentity406();return;}
     const nd=e.target.closest?.('[data-new-doc406]');if(nd){openDocumentModal406(nd.dataset.newDoc406);return;}
     const ed=e.target.closest?.('[data-edit-doc406]');if(ed){openDocumentModal406(ed.dataset.docPatient406,ed.dataset.editDoc406);return;}
