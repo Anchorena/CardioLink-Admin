@@ -30,42 +30,36 @@ Ensayo en un clon descartable: el merge de `origin/main` sobre la rama es autom�
 No se versionan: `docs/propuestas/` (harness, incidente_*, patch viejo), respaldos y la carpeta temporal de QA.
 Los 3 `.sql` de `source_payload` y este documento quedan en `docs/propuestas/` (sin commitear, a decidir).
 
-## 3. Propuesta de commits
+## 3. Rama y commits (estado real)
 
-Base: dos PRs apilados para no atar evoluciones a la migración.
+**Rama:** `feat/documentos-v1-bloque-a`, creada desde `origin/main` (`bbd653b`, que ya incluye los PR #4 a #7) en un worktree propio
+(`~/Documents/GitHub/CardioLink-Admin-documentos-v1`). Sin upstream: no se hizo push. La rama anterior (`fix/evoluciones-guardado-documentos`,
+`d21a772`), su stash y los respaldos (`~/respaldo-documentos-v1-bloque-a*`) se conservan sin cambios.
 
-**PR-A · `fix/evoluciones-guardado-documentos`** (evoluciones; no requiere migración)
-1. `c682689` fix: evoluciones clínicas — guardado confiable *(ya existe y está en el remoto)*
-2. `d21a772` merge de main hasta `250146c` *(ya existe, local)*
-3. **merge de `origin/main` (`b6e0a12`, PR #4)** — merge commit, sin tocar el contenido del PR #4
+**Commits locales sobre `bbd653b`:**
+1. `8a86b41` feat: Documentos V1 Bloque A — guardado confirmado en servidor, versiones y recuperación (`app.js` + `cardiolink-documentos-pdf-v1.js`, acoplados).
+2. `b9aafef` test: contratos estáticos de Documentos V1 Bloque A (`cardiolink-sync-medico-guards.test.cjs`).
+3. `3f7d145` chore: bump de caché (`app.js?v=40104-documentos-v1`, `cardiolink-documentos-pdf-v1.js?v=4-documentos-v1`, `CACHE` de `sw.js` = `cardiolink-v4.1.0-documentos-v1`).
+4. `312769c` docs: los 3 SQL `pending_review_patient_documents_source_payload_v1*` y este documento (en `docs/propuestas/`, fuera de `supabase/migrations`).
+5. `204ca2f` fix: el aviso y el archivado manual de documentos actúan sólo sobre el paciente en pantalla (`app.js` + test).
 
-**PR-B · `feat/documentos-v1-bloque-a`** (sale del commit 3)
-4. `feat(documentos): archivado versionado con contenido editable (source_payload)` — `app.js` + `cardiolink-documentos-pdf-v1.js` (acoplados: no se separan para no dejar commits intermedios que no cargan)
-5. `test(documentos): contratos de Documentos V1 / Bloque A` — el archivo de tests
-6. `chore: bump de caché para Documentos V1` — `index.html` (`app.js?v=40101-documentos-v1-bloque-a`, `cardiolink-documentos-pdf-v1.js?v=4-documentos-v1-bloque-a`) y `sw.js` (`cardiolink-v4.1.0-documentos-v1`).
-   El token del módulo PDF es obligatorio: sin él un navegador con caché cargaría el `app.js` nuevo con el módulo viejo y "Guardar" diría que el módulo no está disponible.
+**Cambios posteriores a esos 5 commits (pendientes de commit hasta nueva autorización):**
+- Huella: el N.º de afiliado entra en `hashContenidoDocumento406` sólo en órdenes con número (`afiliadoOrden406`); sin número o en otros tipos la huella no cambia. Un cambio del número genera una versión nueva en el próximo Guardar / Guardar PDF / Enviar y no reutiliza el PDF anterior.
+- Aviso de versiones (`versionesDoc406`): distingue "versión eliminada" de "versión más nueva" (sólo presentación; con listado vacío o incoherente se mantiene el texto de siempre). No cambia el versionado.
+- Tests de contrato: 25 existentes + 2 nuevos (27).
+- Esta sección 3.
 
-Opcional (a decidir): commit 7 con `docs/propuestas/pending_review_patient_documents_source_payload_v1*.sql` y este documento.
+**Bump de caché:** se mantiene `40104-documentos-v1`. `main` remoto sirve `40103-orden-afiliado` y la rama no está publicada, así que ninguna build con `40104` llegó a un navegador real. Subirlo sólo si se despliega una build con `40104` antes del PR o si cambia el módulo PDF (el token `?v=4-documentos-v1` es obligatorio: sin él un navegador con caché cargaría el `app.js` nuevo con el módulo viejo).
 
-### Comandos (NO ejecutados; para después de la autorización)
-
+### Verificación antes de cualquier push (no ejecutada)
 ```bash
-# 0) respaldo
-git diff HEAD > ~/respaldo-docsv1.patch && mkdir -p ~/respaldo-docsv1 && cp app.js cardiolink-documentos-pdf-v1.js cardiolink-sync-medico-guards.test.cjs index.html sw.js ~/respaldo-docsv1/
-# 1) apartar el árbol de trabajo y fusionar main (limpio)
-git checkout -- app.js cardiolink-documentos-pdf-v1.js cardiolink-sync-medico-guards.test.cjs index.html sw.js
-git fetch origin && git merge origin/main            # commit 3
-# 2) rama del bloque
-git checkout -b feat/documentos-v1-bloque-a
-cp ~/respaldo-docsv1/app.js ~/respaldo-docsv1/cardiolink-documentos-pdf-v1.js .
-git add app.js cardiolink-documentos-pdf-v1.js && git commit      # commit 4
-cp ~/respaldo-docsv1/cardiolink-sync-medico-guards.test.cjs . && git add cardiolink-sync-medico-guards.test.cjs && git commit   # commit 5
-# commit 6: editar los 2 tokens de index.html y CACHE/SHELL de sw.js, luego
-git add index.html sw.js && git commit
-# 3) verificación antes de cualquier push
-shasum -a 256 app.js cardiolink-documentos-pdf-v1.js    # deben dar c4bb6e7a… y 71000d24…
-git diff origin/main --stat                              # sólo los 5 archivos esperados
+cd ~/Documents/GitHub/CardioLink-Admin-documentos-v1
+git status -sb                                   # árbol limpio, sin upstream
+git log --oneline origin/main..HEAD              # los commits de arriba (más los que se autoricen)
+git diff origin/main --stat                      # sólo app.js, módulo PDF, test, index.html, sw.js y docs/propuestas
+git diff origin/main --name-only | grep -c '^supabase/'   # debe dar 0
 ```
+El PR-B se abre desde esta rama; el orden de publicación está en la sección 4.
 
 ## 4. Orden exacto de publicación
 
