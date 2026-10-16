@@ -272,10 +272,32 @@ test('documentos V1 / Bloque A: recuperación sin pisar contenido local, version
   assert.match(s,/igualesPayload406\(local,basePl\)/);                                       // sólo se actualiza si la local ES la versión anterior archivada
   assert.ok(s.indexOf('igualesPayload406(local,basePl)')<s.indexOf('local.conflictoV1=v.id'));   // el aviso es el ÚLTIMO recurso: antes se descartan los casos seguros
   assert.match(s,/isMedical406\(\)/);
-  const a=sinComentarios(between('async function archivarLocales406(){','function versionesDoc406(d,p){'));
+  const a=sinComentarios(between('async function archivarLocales406(key){','function versionesDoc406(d,p){'));
   assert.match(a,/confirm\(/);                                                               // sólo con confirmación del usuario
   assert.doesNotMatch(a,/data\.documentosClinicos\s*=[^=]|splice\(|\.filter\(x=>!/);        // nunca borra copias locales
   assert.match(a,/live\.archivoId=r\.rowId/);                                                // se marca archivado recién cuando el servidor confirma
+});
+
+test('documentos V1 / Bloque A: el aviso y el archivado manual actúan SÓLO sobre el paciente en pantalla; el resguardo del logout sigue cubriendo a todos',()=>{
+  // el conteo es del paciente (docsForPatient406) y sin paciente no cuenta nada
+  const c=sinComentarios(between('function docsSinArchivar406(p){','// Archivado MANUAL'));
+  assert.match(c,/if\(!p\)return \[\];/);
+  assert.match(c,/docsForPatient406\(p\)\.filter\(d=>d&&d\.id&&!d\.archivoId&&canIssueDoc406\(d\.tipo\)\)/);
+  assert.doesNotMatch(c,/data\.documentosClinicos\.filter/);                                  // ya no recorre los documentos de todos los pacientes
+  // el botón lleva la clave del paciente y la confirmación lo nombra y dice cuántos se archivan
+  const a=sinComentarios(between('async function archivarLocales406(key){','function versionesDoc406(d,p){'));
+  assert.match(a,/const pac=patient406\(key\);if\(!pac\)return;/);
+  assert.match(a,/const pend=docsSinArchivar406\(pac\);/);
+  assert.match(a,/confirm\('Se van a archivar en el servidor[^\n]*pend\.length[^\n]*patientName406\(pac\)/);
+  const sec=between('function docsSection406(p){','const fila=d=>');
+  assert.match(sec,/isMedical406\(\)\?docsSinArchivar406\(p\):\[\]/);
+  assert.doesNotMatch(src,/guardado\$\{pend\.length===1\?'':'s'\} solo en este equipo/);   // ya no afirma "sólo en este equipo"
+  assert.match(src,/data-docs-archivar-locales-v1="\$\{esc406\(patientKey406\(p\)\)\}"/);
+  assert.match(src,/archivarLocales406\(al\.dataset\.docsArchivarLocalesV1\)/);
+  // el resguardo del cierre de sesión NO usa este conteo: sigue cubriendo los documentos de TODOS los pacientes
+  const lg=sinComentarios(between('async function protegerDocumentosSinRespaldoV1(){','// Tras iniciar sesión'));
+  assert.match(lg,/docsLocalesV1\(\)/);
+  assert.doesNotMatch(lg,/docsSinArchivar406|docsForPatient406/);
 });
 
 test('documentos V1 / Bloque A: archivado por versión (módulo PDF): idempotente, con candado y sin dejar filas sin archivo',()=>{

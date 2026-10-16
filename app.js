@@ -11931,14 +11931,17 @@ function patientInfoTextHC(p,coverage){
     });
   }
   window.refrescarSeccionesDocs406=refrescarSeccionesDocs406;
-  function docsSinArchivar406(){ensure406();return data.documentosClinicos.filter(d=>d&&d.id&&!d.archivoId&&canIssueDoc406(d.tipo));}
-  // Archivado MANUAL (con confirmación) de los documentos que sólo existen en este equipo. No migra ni borra nada solo: las copias locales se
-  // conservan siempre; cada documento recibe su archivoId recién cuando el servidor confirma su versión.
-  async function archivarLocales406(){
+  // Documentos DEL PACIENTE que todavía no tienen su PDF archivado en el servidor (sin `archivoId`). Es un conteo de archivado, no de respaldo: un documento
+  // puede figurar acá y tener igualmente copia en la config remota. El resguardo al cerrar sesión (protegerDocumentosSinRespaldoV1) es independiente y cubre a TODOS los pacientes.
+  function docsSinArchivar406(p){if(!p)return [];return docsForPatient406(p).filter(d=>d&&d.id&&!d.archivoId&&canIssueDoc406(d.tipo));}
+  // Archivado MANUAL (con confirmación) de los documentos de UN paciente que todavía no tienen su PDF archivado. No migra ni borra nada solo: las copias
+  // locales se conservan siempre; cada documento recibe su archivoId recién cuando el servidor confirma su versión.
+  async function archivarLocales406(key){
     if(window.__docArchivandoLocalesV1||window.__docGuardandoV1)return;
-    const pend=docsSinArchivar406();if(!pend.length)return;
+    const pac=patient406(key);if(!pac)return;
+    const pend=docsSinArchivar406(pac);if(!pend.length)return;
     if(typeof window.archivarVersionDocumentoV1!=='function'){alert('El módulo de archivo de documentos no está disponible. Recargá la página.');return;}
-    if(!confirm('Se van a guardar en el servidor '+pend.length+' documento'+(pend.length===1?'':'s')+' que hoy existen solo en este equipo. Tus copias locales no se borran. ¿Continuar?'))return;
+    if(!confirm('Se van a archivar en el servidor (PDF con el contenido editable) '+pend.length+' documento'+(pend.length===1?'':'s')+' de '+patientName406(pac)+' que todavía no tienen su PDF archivado. Solo se archivan los de este paciente y tus copias locales no se borran. ¿Continuar?'))return;
     window.__docArchivandoLocalesV1=true;
     const ok=[],fallos=[];
     try{
@@ -12242,8 +12245,8 @@ function patientInfoTextHC(p,coverage){
     };
   }
   function docsSection406(p){
-    const docs=docsForPatient406(p),pend=isMedical406()?docsSinArchivar406():[];
-    const banner=pend.length?`<div class="clinical-docs-local-v1" role="status" style="margin:8px 0;padding:10px 12px;border-radius:10px;background:#fef3c7;color:#78350f;border:1px solid #fcd34d;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px;font-weight:600"><span>Tenés ${pend.length} documento${pend.length===1?'':'s'} guardado${pend.length===1?'':'s'} solo en este equipo.</span><button class="secondary small-btn" type="button" data-docs-archivar-locales-v1>Guardarlos en el servidor</button></div>`:'';
+    const docs=docsForPatient406(p),pend=isMedical406()?docsSinArchivar406(p):[];
+    const banner=pend.length?`<div class="clinical-docs-local-v1" role="status" style="margin:8px 0;padding:10px 12px;border-radius:10px;background:#fef3c7;color:#78350f;border:1px solid #fcd34d;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px;font-weight:600"><span>${pend.length} documento${pend.length===1?'':'s'} de este paciente todavía ${pend.length===1?'no tiene':'no tienen'} su PDF archivado en el servidor.</span><button class="secondary small-btn" type="button" data-docs-archivar-locales-v1="${esc406(patientKey406(p))}">Guardarlos en el servidor</button></div>`:'';
     const fila=d=>{const v=versionesDoc406(d,p);return `<article class="clinical-doc-row406"><div><strong>${esc406(d.titulo||docLabel406(d.tipo))}</strong>${v.badge}<span>${esc406(fmtDT406(d.fechaHora))} · ${esc406(d.profesionalNombre||'')}</span>${v.aviso}${v.detalle}</div><div class="clinical-doc-actions406">${canEditDoc406(d)?`<button class="secondary small-btn" type="button" data-edit-doc406="${esc406(d.id)}" data-doc-patient406="${esc406(patientKey406(p))}">Editar</button>`:''}<button class="secondary small-btn" type="button" data-print-doc406="${esc406(d.id)}">Imprimir</button>${esTipoCompacto406(d.tipo)?`<button class="secondary small-btn" type="button" data-pdf2-guardar406="${esc406(d.id)}">Guardar PDF</button><button class="secondary small-btn" type="button" data-pdf2-enviar406="${esc406(d.id)}">Enviar</button>`:''}</div></article>`;};
     return `<section class="clinical-docs406" data-docs-section406><div class="clinical-docs-head406"><div><h3>Documentos clínicos e informes rápidos</h3><p class="muted">Recetas, órdenes, certificados, informes breves e indicaciones emitidas para este paciente.</p></div>${isMedical406()?`<button class="primary" type="button" data-new-doc406="${esc406(patientKey406(p))}">+ Nuevo documento</button>`:''}</div>${banner}<div class="clinical-doc-list406">${docs.length?docs.map(fila).join(''):'<p class="muted">Todavía no hay documentos emitidos.</p>'}</div></section>`;
   }
@@ -12299,7 +12302,7 @@ function patientInfoTextHC(p,coverage){
     if(e.target.id==='ownRemoveLogo406'){removeOwnImage406('logo');return;}
     if(e.target.id==='ownRemoveSignature406'){removeOwnImage406('signature');return;}
     if(e.target.id==='saveOwnIdentity406'){saveOwnIdentity406();return;}
-    if(e.target.closest?.('[data-docs-archivar-locales-v1]')){archivarLocales406();return;}
+    const al=e.target.closest?.('[data-docs-archivar-locales-v1]');if(al){archivarLocales406(al.dataset.docsArchivarLocalesV1);return;}
     const nd=e.target.closest?.('[data-new-doc406]');if(nd){openDocumentModal406(nd.dataset.newDoc406);return;}
     const ed=e.target.closest?.('[data-edit-doc406]');if(ed){openDocumentModal406(ed.dataset.docPatient406,ed.dataset.editDoc406);return;}
     const pd=e.target.closest?.('[data-print-doc406]');if(pd){elegirFormatoEImprimir406(pd.dataset.printDoc406);return;}
