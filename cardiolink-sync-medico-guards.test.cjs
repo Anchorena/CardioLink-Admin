@@ -6,8 +6,10 @@ const {test}=require('node:test');
 const fs=require('node:fs');
 const path=require('node:path');
 const src=fs.readFileSync(path.join(__dirname,'app.js'),'utf8');
+const srcPdf=fs.readFileSync(path.join(__dirname,'cardiolink-documentos-pdf-v1.js'),'utf8');
 const sinComentarios=t=>t.replace(/^\s*\/\/.*$/gm,'');
 const between=(from,to)=>{const i=src.indexOf(from);assert.notEqual(i,-1,'no se encontró: '+from);const j=src.indexOf(to,i+from.length);assert.notEqual(j,-1,'no se encontró fin: '+to);return src.slice(i,j);};
+const betweenIn=(txt,from,to)=>{const i=txt.indexOf(from);assert.notEqual(i,-1,'no se encontró: '+from);const j=txt.indexOf(to,i+from.length);assert.notEqual(j,-1,'no se encontró fin: '+to);return txt.slice(i,j);};
 
 test('helper fail-closed: sólo owner/admin o secretaría confirmados por backend',()=>{
   const m=src.match(/function sincronizacionMasivaPermitidaV1\(\)\{([^}]*)\}/);
@@ -198,14 +200,16 @@ test('cierre de sesión: los documentos clínicos sin respaldo confirmado se res
   assert.ok(lib.indexOf('if(!docsSeguros) return false;')!==-1&&lib.indexOf('if(!docsSeguros) return false;')<lib.indexOf('clavesCacheLocalV1().forEach(k=>localStorage.removeItem(k))'));
   // la evidencia viene del SERVIDOR (PDF archivado con el mismo hash o copia idéntica en la config remota), nunca de la memoria local
   const c=sinComentarios(between('async function documentosSinRespaldoConfirmadoV1(docs){','// true = es seguro eliminar la caché'));
-  assert.match(c,/from\('cardiolink_patient_documents'\)\.select\('source_document_id,source_content_hash,document_type,patient_id'\)\.in\('source_document_id'/);
+  assert.match(c,/from\('cardiolink_patient_documents'\)\.select\(cols\)\.in\('source_document_id'/);
+  assert.match(c,/consultaDocs\('source_document_id,source_content_hash,document_type,patient_id,pv:source_payload->>v'\)/);
   // el hash archivado NO distingue paciente, tipo ni firma: una fila sólo confirma si además coinciden tipo y paciente real y el documento nunca fue editado
   const f=sinComentarios(between('function filaArchivadaConfirmaDocV1(f,d,hash){','// Huella completa'));
   assert.match(f,/f\.source_content_hash!==hash/);
+  assert.match(f,/if\(String\(f\.pv\)==='2'\) return true;/);                 // huella v2 (cliente de Documentos V1): cubre tipo, firma, paciente y presentación
+  assert.ok(f.indexOf("if(String(f.pv)==='2') return true;")<f.indexOf('if(d.actualizadoEn) return false;'));   // las filas ANTERIORES siguen con las reglas estrictas
   assert.match(f,/if\(d\.actualizadoEn\) return false;/);
   assert.match(f,/f\.document_type!==TIPO_ARCHIVO_PDF_POR_DOC_V1\[d\.tipo\]/);
-  assert.match(f,/String\(f\.patient_id\)===real/);
-  assert.match(f,/real!==null/);
+  assert.match(f,/real===null\|\|String\(f\.patient_id\)!==real\) return false;/);   // el paciente real debe coincidir SIEMPRE (también con huella v2)
   // la copia remota de la config sólo confirma con la huella COMPLETA del documento (no con el hash débil)
   assert.match(c,/huellaDocCompletaV1\(r\)===huellaDocCompletaV1\(d\)/);
   assert.match(c,/payload->config->documentosClinicos/);
@@ -228,6 +232,69 @@ test('cierre de sesión: los documentos clínicos sin respaldo confirmado se res
   // si apartar la caché ajena falla por cuota, sus documentos pasan al resguardo de SU uid antes de eliminarse
   assert.match(src,/se elimina por privacidad:',k\); if\(k===storageConfig&&dueno\) salvarDocumentosDeCacheV1\(dueno,v\);/);
   assert.match(src,/window\.hashContenidoDocumento406=hashContenidoDocumento406;/);
+});
+
+
+test('documentos V1 / Bloque A: guardado confirmado en servidor antes de tocar el estado local ni cerrar el modal',()=>{
+  const f=sinComentarios(between('async function saveDocument406(p,existing,printAfter,formatoImpresion){','// ---- Documentos V1 / Bloque A: recuperación'));
+  assert.match(f,/if\(window\.__docGuardandoV1\)return;/);                                  // reentrada / doble clic
+  assert.match(f,/modalEl\.dataset\.docIdV1=docId/);                                           // id estable por modal: un reintento no crea otro documento
+  assert.match(f,/data\.documentosClinicos\.find\(x=>String\(x\.id\)===docId\)/);              // el estado se resuelve POR ID
+  assert.match(f,/Object\.assign\(clone406\(base\)/);                                         // el candidato es una copia: no muta el estado
+  const iArch=f.indexOf('await window.archivarVersionDocumentoV1(candidato');
+  assert.ok(iArch!==-1);
+  assert.ok(iArch<f.indexOf('data.documentosClinicos.push(candidato)'));                      // el estado local se toca DESPUÉS de la confirmación
+  assert.ok(iArch<f.indexOf("$406('clinicalDocModal406')?.remove()"));                          // el modal se cierra DESPUÉS de la confirmación
+  assert.ok(f.indexOf('if(!r||!r.ok){')<f.indexOf('persist406()'));
+  assert.match(f,/Tu texto sigue acá y no se perdió/);
+  assert.match(f,/refrescarSeccionesDocs406\(p\)/);                                           // el historial se actualiza ya
+  assert.match(f,/finally\{\s*window\.__docGuardandoV1=false;/);
+  assert.match(f,/baseArchivoId/);                                                            // versión sobre la que se editó (edición concurrente)
+  // el refresco automático se pausa con el modal de documento abierto
+  const r=between('async function refrescarDesdeSupabaseAutomatico(){','await cargarAtencionesDesdeSupabase();');
+  assert.match(r,/window\.__docGuardandoV1\s*\|\|\s*document\.getElementById\('clinicalDocModal406'\)/);
+});
+
+test('documentos V1 / Bloque A: huella de versión, catálogo único y payload sin datos de más',()=>{
+  const h=sinComentarios(between('async function hashContenidoDocumento406(d){','// Expuesto para el cierre de sesión'));
+  ['tipo','incluirFirma','paciente:{id:','prof:{marca','logo:','firma:'].forEach(k=>assert.ok(h.includes(k),'la huella debe cubrir '+k));
+  assert.match(src,/TIPO_PDF_ARCHIVO_POR_DOC406=\{receta:'Receta',orden:'Orden'.*mensaje_colega:'Mensaje a colega',indicacion_paciente:'Indicaciones'\}/s);   // los 13 tipos, un solo catálogo
+  const g=sinComentarios(between('window.generarPdfDocumentoGenerado406=async function(docId,formato,docOverride){','// Bloque E - mini-selector de formato'));
+  assert.match(g,/resolverDatosDocumento406\(docId,formato,docOverride\)/);
+  const pl=g.slice(g.indexOf('const payload={'),g.indexOf('return {',g.indexOf('const payload={')));
+  assert.doesNotMatch(pl,/dni|pacienteNombre/);                                               // el payload no duplica nombre ni DNI del paciente
+  assert.match(pl,/v:2/);
+});
+
+test('documentos V1 / Bloque A: recuperación sin pisar contenido local, versiones y archivado manual',()=>{
+  const s=sinComentarios(between('function sincronizarDocumentosDesdeFilas406(p,rows){','window.idsPayloadNecesariosV1'));
+  assert.match(s,/local\.conflictoV1=v\.id/);                                                // contenido local propio: se conserva y se avisa
+  assert.match(s,/igualesPayload406\(local,basePl\)/);                                       // sólo se actualiza si la local ES la versión anterior archivada
+  assert.ok(s.indexOf('igualesPayload406(local,basePl)')<s.indexOf('local.conflictoV1=v.id'));   // el aviso es el ÚLTIMO recurso: antes se descartan los casos seguros
+  assert.match(s,/isMedical406\(\)/);
+  const a=sinComentarios(between('async function archivarLocales406(){','function versionesDoc406(d,p){'));
+  assert.match(a,/confirm\(/);                                                               // sólo con confirmación del usuario
+  assert.doesNotMatch(a,/data\.documentosClinicos\s*=[^=]|splice\(|\.filter\(x=>!/);        // nunca borra copias locales
+  assert.match(a,/live\.archivoId=r\.rowId/);                                                // se marca archivado recién cuando el servidor confirma
+});
+
+test('documentos V1 / Bloque A: archivado por versión (módulo PDF): idempotente, con candado y sin dejar filas sin archivo',()=>{
+  const m=sinComentarios(betweenIn(srcPdf,'async function archivarInternoV1(doc,opts){','// Un documento a la vez'));
+  assert.match(m,/ult\.source_content_hash===gen\.sourceContentHash\)return \{ok:true,rowId:ult\.id/);   // misma huella: se reutiliza, no se duplica
+  assert.match(m,/String\(ult\.pv\)==='2'&&String\(ult\.id\)!==String\(opts\.baseArchivoId\|\|''\)/);   // edición concurrente: no se sobrescribe
+  assert.match(m,/conflicto:true/);
+  assert.match(m,/source_payload:gen\.payload/);
+  assert.match(m,/select\('id,created_at'\)\.single\(\)/);
+  // si el INSERT devuelve error se verifica ANTES de borrar el PDF, y sólo se borra cuando se comprobó que la fila no existe
+  const e=m.slice(m.indexOf('if(insErr){'));
+  assert.ok(e.indexOf(".eq('storage_path',storagePath)")!==-1&&e.indexOf('if(existe)return')<e.indexOf('remove([storagePath])'));
+  assert.match(e,/if\(existe===false\)\{try\{await supabaseClient\.storage/);
+  const c=sinComentarios(betweenIn(srcPdf,'function archivarVersionDocumentoV1(doc,opts){','window.archivarVersionDocumentoV1=archivarVersionDocumentoV1;'));
+  assert.match(c,/archivandoV1\.has\(id\)\)return archivandoV1\.get\(id\)/);                  // un documento a la vez: doble clic comparte la misma operación
+  // listados sin payload; los tipos sin plantilla de envío no ofrecen Enviar
+  assert.doesNotMatch(srcPdf,/select\('\*'\)/);
+  assert.match(srcPdf,/TIPOS_SIN_ENVIO_V1=\['Receta','Indicaciones','Apto físico','Mensaje a colega'\]/);
+  assert.match(srcPdf,/if\(TIPOS_SIN_ENVIO_V1\.includes\(d\?\.document_type\)\)return false;/);
 });
 
 test('identidad owner/admin: el servidor (rol + professional_id) prevalece sobre la config local y los alias; nunca se otorga sin ratificación',()=>{
@@ -263,4 +330,14 @@ test('rol backend: reintento automático breve y limitado, sin conceder nada sin
   assert.match(m,/btnReintentarRolV1/);
   const r=between('async function refrescarDesdeSupabaseAutomatico(){','await cargarAtencionesDesdeSupabase();');
   assert.match(r,/usuarioSupabase && backendRolConsultaFinalizada && !backendRolCargado && !window\.__rolReintentandoV1/);   // recuperación automática en el ciclo de 30 s
+});
+
+test('documentos V1: orden de despliegue seguro (servidor sin la columna source_payload): lecturas degradan, guardar avisa explícito',()=>{
+  assert.match(srcPdf,/async function consultarDocsV1\(armar\)\{/);
+  const usos=(srcPdf.match(/await consultarDocsV1\(c=>supabaseClient\.from\('cardiolink_patient_documents'\)\.select\(c\)/g)||[]).length;
+  assert.equal(usos,4);                                                                       // listas del paciente, de evolución, impresión de HC y sincronización
+  assert.doesNotMatch(srcPdf,/select\(COLUMNAS_LISTA_PDF_V1\)/);                              // ninguna lectura depende de la columna sin degradar
+  assert.match(srcPdf,/falloColumnaPayloadV1\(e\)\)return \{ok:false,error:'El servidor todavía no admite guardar el contenido editable/);   // guardar: mensaje explícito, nunca en silencio
+  const lo=sinComentarios(between('async function documentosSinRespaldoConfirmadoV1(docs){','// true = es seguro eliminar la caché'));
+  assert.match(lo,/rr\.error&&\/source_payload\|does not exist\|Could not find\/i\.test\(String\(rr\.error\.message\|\|''\)\)\) rr=await consultaDocs\('source_document_id,source_content_hash,document_type,patient_id'\)/);   // el cierre de sesión sigue con las reglas estrictas de las filas anteriores
 });
