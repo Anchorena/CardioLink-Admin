@@ -90,6 +90,9 @@
   const TIPOS_PDF_V1=['Estudio','Informe','Laboratorio','ECG','Holter','MAPA','Ecocardiograma','Orden','Certificado','Otro'];
   // Bloque 6D.3
   const TIPO_IMAGEN_CLINICA_V1='Imagen clínica';
+  // Documentos V1 / Bloque A: estos tipos ya se archivan como PDF pero su envío aún no tiene plantilla propia (el WhatsApp diría "estudio"):
+  // no se muestra "Enviar" hasta el bloque de plantillas. "Mensaje a colega" no se envía nunca al paciente.
+  const TIPOS_SIN_ENVIO_V1=['Receta','Indicaciones','Apto físico','Mensaje a colega'];
   const IMG_MAX_DIMENSION_V1=1600; // preserva detalle clínico sin archivos excesivos
   const IMG_JPEG_QUALITY_V1=0.85;
 
@@ -580,18 +583,19 @@
   // valida la Edge Function del lado servidor (ver patient-document-delivery).
   function puedeEnviarDocumentoV1(d){
     if(!puedeListarSubirPdfV1())return false;
+    if(TIPOS_SIN_ENVIO_V1.includes(d?.document_type))return false;
     if(esImagenClinicaV1(d))return puedeAccederClinicaPdfV1();
     return true;
   }
 
-  function tarjetaDocumentoPdfV1(d){
+  function tarjetaDocumentoPdfV1(d,ver){
     const esImg=esImagenClinicaV1(d);
     return `<article class="pdf-doc-row-v1">
       <div>
-        <strong>${escPdfV1(d.title)}</strong>
+        <strong>${escPdfV1(d.title)}</strong>${ver?ver.badge:''}
         <span>${escPdfV1(d.document_type)} · ${fmtFechaCortaPdfV1(d.document_date)}${d.professional_id?' · '+escPdfV1(profNombrePdfV1(d.professional_id)):''}</span>
         ${esImg?'':`<span>${escPdfV1(d.original_filename)}${d.size_bytes?' · '+fmtTamanoPdfV1(d.size_bytes):''}</span>`}
-        ${d.description?`<span>${escPdfV1(d.description)}</span>`:''}
+        ${d.description?`<span>${escPdfV1(d.description)}</span>`:''}${ver?ver.detalle:''}
       </div>
       <div class="pdf-doc-actions-v1">
         <button class="secondary small-btn" type="button" data-pdf-ver-v1="${escPdfV1(d.storage_path)}">${esImg?'Ver imagen':'Ver'}</button>
@@ -612,6 +616,42 @@
   //     independientes (evolution_id null) - los vinculados ya se
   //     muestran anidados dentro de su propia evolución (ver
   //     inyectarDocumentosEnEvolucionesV1), nunca los dos a la vez.
+  // Documentos V1 / Bloque A: columnas explícitas (el payload NO viaja en el listado) + `pv` = versión del payload (source_payload->>v).
+  const COLUMNAS_LISTA_PDF_V1='id,patient_id,attention_id,evolution_id,document_date,document_type,title,description,professional_id,storage_path,original_filename,mime_type,size_bytes,uploaded_by,created_at,updated_at,source_document_id,source_content_hash,pv:source_payload->>v';
+  // Orden de despliegue seguro: si el servidor TODAVÍA no tiene la columna source_payload (Production antes de aplicar la migración), las LECTURAS degradan a
+  // las columnas de siempre (las listas de estudios/documentos que ya funcionaban siguen funcionando) y GUARDAR avisa con un mensaje explícito, sin fallar en silencio.
+  function falloColumnaPayloadV1(e){
+    const m=String((e&&(e.message||e.details))||e||'');
+    return !!e&&(e.code==='42703'||e.code==='PGRST204'||/source_payload|column .* does not exist|Could not find the .* column/i.test(m));
+  }
+  const COLUMNAS_SIN_PAYLOAD_V1=COLUMNAS_LISTA_PDF_V1.replace(',pv:source_payload->>v','');
+  let columnasListaV1=COLUMNAS_LISTA_PDF_V1;
+  async function consultarDocsV1(armar){
+    let r=await armar(columnasListaV1);
+    if(r&&r.error&&columnasListaV1!==COLUMNAS_SIN_PAYLOAD_V1&&falloColumnaPayloadV1(r.error)){columnasListaV1=COLUMNAS_SIN_PAYLOAD_V1;r=await armar(columnasListaV1);}
+    return r;
+  }
+  function cmpFilasV1(a,b){const t=new Date(a.created_at)-new Date(b.created_at);return t!==0?t:String(a.id).localeCompare(String(b.id));}
+  // Trae sólo los payloads necesarios (vigentes que difieren de la copia local + su versión base) y sincroniza data.documentosClinicos desde el
+  // servidor: así un documento emitido en otro dispositivo autorizado aparece y se puede editar. Devuelve true si cambió algo visible.
+  async function sincronizarDocumentosPacienteV1(p,rows){
+    if(!p||!p.id||typeof window.sincronizarDocumentosDesdeFilasV1!=='function')return false;
+    if(!rows){
+      const {data:f,error}=await consultarDocsV1(c=>supabaseClient.from('cardiolink_patient_documents').select(c).eq('patient_id',p.id).order('created_at',{ascending:true}));
+      if(error)throw error;rows=f||[];
+    }
+    const necesarios=(window.idsPayloadNecesariosV1?.(p,rows))||[];
+    if(necesarios.length){
+      const {data:pl,error}=await supabaseClient.from('cardiolink_patient_documents').select('id,source_payload').in('id',necesarios);
+      if(error)throw error;
+      const m=new Map((pl||[]).map(x=>[String(x.id),x.source_payload]));
+      rows=rows.map(r=>m.has(String(r.id))?{...r,source_payload:m.get(String(r.id))}:r);
+    }
+    const cambio=window.sincronizarDocumentosDesdeFilasV1(p,rows);
+    if(cambio){try{window.refrescarSeccionesDocs406?.(p);}catch(e){}}
+    return cambio;
+  }
+  window.sincronizarDocumentosPacienteV1=sincronizarDocumentosPacienteV1;
   async function cargarYRenderizarListaPdfV1(p){
     if(!p?.id)return;
     const conts=Array.from(document.querySelectorAll('[data-pdf-docs-list-v1]'))
@@ -620,7 +660,7 @@
     if(!conts.length&&!hcRoot)return;
     let rows=[];
     try{
-      const {data:fetched,error}=await supabaseClient.from('cardiolink_patient_documents').select('*').eq('patient_id',p.id).order('document_date',{ascending:false}).order('created_at',{ascending:false});
+      const {data:fetched,error}=await consultarDocsV1(c=>supabaseClient.from('cardiolink_patient_documents').select(c).eq('patient_id',p.id).order('document_date',{ascending:false}).order('created_at',{ascending:false}));
       if(error)throw error;
       rows=fetched||[];
     }catch(e){
@@ -628,13 +668,27 @@
       conts.forEach(c=>c.innerHTML=html);
       return;
     }
+    // Recuperación desde el servidor (otro dispositivo autorizado). Un fallo acá nunca rompe el listado.
+    try{await sincronizarDocumentosPacienteV1(p,rows);}catch(e){console.warn('No se pudieron sincronizar los documentos desde el servidor:',e);}
+    // Versiones: de cada documento fuente se muestra la VIGENTE (la última) y las anteriores plegadas, sólo para ver/descargar.
+    const porFuente={};
+    rows.filter(r=>r.source_document_id).forEach(r=>{(porFuente[r.source_document_id]=porFuente[r.source_document_id]||[]).push(r);});
+    Object.values(porFuente).forEach(a=>a.sort(cmpFilasV1));
+    const ocultas=new Set();Object.values(porFuente).forEach(a=>a.slice(0,-1).forEach(r=>ocultas.add(r.id)));
+    const verDe=d=>{
+      const a=d.source_document_id&&porFuente[d.source_document_id];if(!a||a.length<2)return null;
+      const n=a.length,ant=a.slice(0,-1).reverse();
+      return {badge:` <span style="display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;background:#dcfce7;color:#166534;font-size:11px;font-weight:800">v${n} · Vigente</span>`,
+        detalle:`<details style="margin-top:4px"><summary style="cursor:pointer;font-size:12px">Versiones anteriores (${ant.length})</summary>${ant.map((r,i)=>`<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12px;margin-top:3px">v${n-1-i} · ${escPdfV1(new Date(r.created_at).toLocaleString('es-AR',{dateStyle:'short',timeStyle:'short'}))}<button class="secondary small-btn" type="button" data-pdf-ver-v1="${escPdfV1(r.storage_path)}">Ver</button><button class="secondary small-btn" type="button" data-pdf-descargar-v1="${escPdfV1(r.storage_path)}" data-pdf-name-v1="${escPdfV1(r.original_filename)}">Descargar</button></div>`).join('')}</details>`};
+    };
     conts.forEach(cont=>{
       const dentroDeHC=hcRoot&&hcRoot.contains(cont);
-      const visibles=dentroDeHC?rows.filter(d=>!d.evolution_id):rows;
-      cont.innerHTML=visibles.length?visibles.map(tarjetaDocumentoPdfV1).join(''):'<p class="muted">Todavía no hay documentos subidos.</p>';
+      const visibles=(dentroDeHC?rows.filter(d=>!d.evolution_id):rows).filter(d=>!ocultas.has(d.id));
+      cont.innerHTML=visibles.length?visibles.map(d=>tarjetaDocumentoPdfV1(d,verDe(d))).join(''):'<p class="muted">Todavía no hay documentos subidos.</p>';
     });
-    if(hcRoot)inyectarDocumentosEnEvolucionesV1(hcRoot,rows);
+    if(hcRoot)inyectarDocumentosEnEvolucionesV1(hcRoot,rows.filter(d=>!ocultas.has(d.id)));
   }
+  window.recargarListaPdfDocumentosV1=cargarYRenderizarListaPdfV1;
 
   // Bloque 6D.2/6D.3 - bloque anidado "Estudios / documentos asociados"
   // dentro de cada artículo de evolución de la línea de tiempo on-screen
@@ -925,7 +979,7 @@
     const evolutionId=modal.dataset.hcEvolutionId||'';
     if(!evolutionId)return;
     try{
-      const {data:rows,error}=await supabaseClient.from('cardiolink_patient_documents').select('*').eq('evolution_id',evolutionId);
+      const {data:rows,error}=await consultarDocsV1(c=>supabaseClient.from('cardiolink_patient_documents').select(c).eq('evolution_id',evolutionId));
       if(error)throw error;
       const lista=(rows||[]).map(d=>({id:d.id,document_type:d.document_type,title:d.title,description:d.description||null,document_date:d.document_date,storage_path:d.storage_path}));
       pendingDocsSetV1(modal,lista);
@@ -993,7 +1047,7 @@
   async function obtenerDocumentosParaImpresionHC402(patientId){
     if(!patientId)return [];
     try{
-      const {data:rows,error}=await supabaseClient.from('cardiolink_patient_documents').select('*').eq('patient_id',patientId).order('document_date',{ascending:false}).order('created_at',{ascending:false});
+      const {data:rows,error}=await consultarDocsV1(c=>supabaseClient.from('cardiolink_patient_documents').select(c).eq('patient_id',patientId).order('document_date',{ascending:false}).order('created_at',{ascending:false}));
       if(error)throw error;
       return rows||[];
     }catch(e){
@@ -1144,71 +1198,86 @@
   // source_content_hash (migración 20261008110000).
   // ---------------------------------------------------------------------
 
-  // Busca si este documento fuente YA tiene un PDF archivado. Si el
-  // contenido no cambió desde ese archivado (mismo hash), lo reutiliza
-  // (punto 10: nunca duplicar). Si cambió, archiva una fila NUEVA sin
-  // tocar la anterior (punto 11: versionar, no sobrescribir). Devuelve
-  // {ok, documentId, patientId, reusado, error}.
-  async function asegurarDocumentoArchivadoV1(docId){
-    let generado;
-    try{
-      generado=await window.generarPdfDocumentoGenerado406?.(docId,null);
-    }catch(e){
-      return {ok:false,error:'No se pudo generar el PDF: '+(e?.message||e)};
+  // ---------------------------------------------------------------------
+  // Documentos V1 / Bloque A - ARCHIVADO POR VERSIÓN. Una versión = una fila de cardiolink_patient_documents (+ su PDF en Storage) con el
+  // contenido editable en source_payload. Nunca se actualiza una versión ya archivada (lo impide un trigger en la base): una edición agrega una
+  // fila nueva y la vigente es la más reciente por source_document_id. Idempotente: mismo documento + misma huella => se reutiliza la fila.
+  // ---------------------------------------------------------------------
+  async function ultimaFilaDocumentoV1(sourceId){
+    const armar=cols=>supabaseClient.from('cardiolink_patient_documents').select(cols).eq('source_document_id',String(sourceId)).order('created_at',{ascending:false}).order('id',{ascending:false}).limit(1);
+    let {data:f,error}=await armar('id,source_content_hash,created_at,pv:source_payload->>v');
+    if(error&&falloColumnaPayloadV1(error))({data:f,error}=await armar('id,source_content_hash,created_at'));
+    if(error)throw error;
+    return f&&f.length?f[0]:null;
+  }
+  async function archivarInternoV1(doc,opts){
+    if(!supabaseClient||!usuarioSupabase)return {ok:false,error:'sin sesión con el servidor'};
+    let gen;
+    try{gen=await window.generarPdfDocumentoGenerado406?.(doc.id,null,doc);}
+    catch(e){return {ok:false,error:'No se pudo generar el PDF: '+(e?.message||e)};}
+    if(!gen||!gen.ok)return {ok:false,error:(gen&&gen.error)||'No se pudo generar el PDF.'};
+    let ult;
+    try{ult=await ultimaFilaDocumentoV1(doc.id);}
+    catch(e){return {ok:false,error:falloColumnaPayloadV1(e)?'El servidor todavía no admite guardar el contenido editable de los documentos (falta aplicar la migración source_payload). No se guardó nada.':'No se pudo consultar las versiones archivadas: '+(e?.message||e)};}
+    // misma huella => esta versión ya está archivada (reintento / doble clic / Enviar sin cambios): se reutiliza, no se duplica
+    if(ult&&ult.source_content_hash===gen.sourceContentHash)return {ok:true,rowId:ult.id,createdAt:ult.created_at,patientId:gen.patientId,reusado:true};
+    // edición concurrente: el servidor tiene una versión archivada por el cliente nuevo que NO es la que este usuario editó => no se sobrescribe
+    if(ult&&String(ult.pv)==='2'&&String(ult.id)!==String(opts.baseArchivoId||'')){
+      return {ok:false,conflicto:true,latestId:ult.id,error:'Este documento tiene una versión más reciente guardada desde otro dispositivo o sesión. No se sobrescribió nada. Copiá tu texto, cerrá y volvé a abrir el documento para ver la versión nueva (o guardalo de nuevo para archivar el tuyo como versión nueva).'};
     }
-    if(!generado)return {ok:false,error:'No se pudo generar el PDF.'};
-    if(!generado.ok)return {ok:false,error:generado.error||'No se pudo generar el PDF.'};
-
+    const uuid=(window.crypto&&typeof crypto.randomUUID==='function')?crypto.randomUUID():('xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;const v=c==='x'?r:(r&0x3|0x8);return v.toString(16);}));
+    // documents/{patient_id}/{uuid}.pdf - sin DNI/nombre/apellido/diagnóstico en el path.
+    const storagePath=`documents/${gen.patientId}/${uuid}.pdf`;
     try{
-      const {data:existentes,error:buscarError}=await supabaseClient
-        .from('cardiolink_patient_documents')
-        .select('id,source_content_hash')
-        .eq('source_document_id',generado.sourceDocumentId)
-        .order('created_at',{ascending:false})
-        .limit(1);
-      if(buscarError)throw buscarError;
-      const existente=existentes&&existentes.length?existentes[0]:null;
-      if(existente&&existente.source_content_hash===generado.sourceContentHash){
-        // Mismo contenido ya archivado: reutilizar, no subir de nuevo.
-        return {ok:true,documentId:existente.id,patientId:generado.patientId,reusado:true};
-      }
-
-      const uuid=(window.crypto&&typeof crypto.randomUUID==='function')?crypto.randomUUID():('xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g,c=>{const r=Math.random()*16|0;const v=c==='x'?r:(r&0x3|0x8);return v.toString(16);}));
-      // documents/{patient_id}/{uuid}.pdf - punto 9 de la tarea: sin
-      // DNI/nombre/apellido/diagnóstico en el path.
-      const storagePath=`documents/${generado.patientId}/${uuid}.pdf`;
-
-      const {error:upErr}=await supabaseClient.storage.from(BUCKET_PDF_V1).upload(storagePath,generado.blob,{contentType:'application/pdf',upsert:false});
+      const {error:upErr}=await supabaseClient.storage.from(BUCKET_PDF_V1).upload(storagePath,gen.blob,{contentType:'application/pdf',upsert:false});
       if(upErr)throw upErr;
-
       let uploadedUserId=null;
       try{uploadedUserId=(await supabaseClient.auth.getUser())?.data?.user?.id||null;}catch(e){}
-
       const {data:inserted,error:insErr}=await supabaseClient.from('cardiolink_patient_documents').insert({
-        patient_id:generado.patientId,
-        attention_id:null,
-        evolution_id:null, // nunca se inventa: estos documentos no nacen dentro de una evolución
-        document_date:generado.documentDate,
-        document_type:generado.documentType,
-        title:generado.title,
-        description:generado.description,
-        professional_id:generado.professionalId,
-        storage_path:storagePath,
-        original_filename:generado.originalFilename,
-        mime_type:'application/pdf',
-        size_bytes:generado.blob.size,
-        uploaded_by:uploadedUserId,
-        source_document_id:generado.sourceDocumentId,
-        source_content_hash:generado.sourceContentHash
-      }).select().single();
+        patient_id:gen.patientId,attention_id:null,evolution_id:null,
+        document_date:gen.documentDate,document_type:gen.documentType,title:gen.title,description:gen.description,professional_id:gen.professionalId,
+        storage_path:storagePath,original_filename:gen.originalFilename,mime_type:'application/pdf',size_bytes:gen.blob.size,uploaded_by:uploadedUserId,
+        source_document_id:gen.sourceDocumentId,source_content_hash:gen.sourceContentHash,source_payload:gen.payload
+      }).select('id,created_at').single();
       if(insErr){
-        try{await supabaseClient.storage.from(BUCKET_PDF_V1).remove([storagePath]);}catch(e2){console.warn('No se pudo revertir el PDF huérfano en Storage:',e2);}
+        // La respuesta pudo perderse con la fila YA insertada: antes de borrar el PDF se comprueba por su storage_path (único). Si la fila existe, la
+        // operación SÍ se completó. Si no se puede comprobar, el PDF NO se borra (un archivo huérfano es inocuo; una fila sin archivo no).
+        let existe=null;
+        try{
+          const {data:v,error:ve}=await supabaseClient.from('cardiolink_patient_documents').select('id,created_at').eq('storage_path',storagePath).limit(1);
+          if(!ve)existe=(v&&v[0])||false;
+        }catch(e2){existe=null;}
+        if(existe)return {ok:true,rowId:existe.id,createdAt:existe.created_at,patientId:gen.patientId,reusado:false};
+        if(existe===false){try{await supabaseClient.storage.from(BUCKET_PDF_V1).remove([storagePath]);}catch(e2){console.warn('No se pudo revertir el PDF huérfano en Storage:',e2);}}
         throw insErr;
       }
-      return {ok:true,documentId:inserted.id,patientId:generado.patientId,reusado:false};
+      return {ok:true,rowId:inserted.id,createdAt:inserted.created_at,patientId:gen.patientId,reusado:false};
     }catch(e){
+      if(falloColumnaPayloadV1(e))return {ok:false,error:'El servidor todavía no admite guardar el contenido editable de los documentos (falta aplicar la migración source_payload). No se guardó nada.'};
       return {ok:false,error:'No se pudo archivar el PDF: '+(e?.message||e)};
     }
+  }
+  // Un documento a la vez: dos llamadas simultáneas (doble clic, Guardar + Enviar) comparten la MISMA operación y no pueden duplicar la fila.
+  const archivandoV1=new Map();
+  function archivarVersionDocumentoV1(doc,opts){
+    const id=String(doc&&doc.id);
+    if(archivandoV1.has(id))return archivandoV1.get(id);
+    const prom=(async()=>{try{return await archivarInternoV1(doc,opts||{});}finally{archivandoV1.delete(id);}})();
+    archivandoV1.set(id,prom);
+    return prom;
+  }
+  window.archivarVersionDocumentoV1=archivarVersionDocumentoV1;
+
+  // Guardar PDF / Enviar sobre un documento ya guardado: archivan la versión VIGENTE (si cambió desde el último archivado se archiva una nueva;
+  // nunca se envía una versión anterior). Devuelve {ok,documentId,patientId,reusado,error}.
+  async function asegurarDocumentoArchivadoV1(docId){
+    const d=(typeof data!=='undefined'&&data&&Array.isArray(data.documentosClinicos)?data.documentosClinicos:[]).find(x=>String(x.id)===String(docId));
+    if(!d)return {ok:false,error:'No se encontró el documento.'};
+    const r=await archivarVersionDocumentoV1(d,{baseArchivoId:d.conflictoV1||d.archivoId||''});
+    if(!r.ok)return {ok:false,error:r.error};
+    const live=data.documentosClinicos.find(x=>String(x.id)===String(docId));
+    if(live){live.archivoId=r.rowId;live.archivadoEn=r.createdAt||'';delete live.conflictoV1;try{saveConfig();}catch(e){}}
+    return {ok:true,documentId:r.rowId,patientId:r.patientId,reusado:r.reusado};
   }
 
   window.guardarPdfDocumentoGenerado406=async function(docId,btn){
