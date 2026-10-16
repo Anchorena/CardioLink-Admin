@@ -11958,7 +11958,11 @@ function patientInfoTextHC(p,coverage){
   }
   function versionesDoc406(d,p){
     const lst=(window.__docVersionesV1&&window.__docVersionesV1[String(p.id)]&&window.__docVersionesV1[String(p.id)][d.id])||[];
-    const aviso=d.conflictoV1?`<span style="display:block;margin-top:4px;padding:6px 8px;border-radius:8px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:700">Hay una versión más nueva en el servidor y tu copia en este equipo tiene cambios propios. Si la guardás (Editar → Guardar), se archiva como versión nueva y la del servidor queda en el historial.</span>`:'';
+    // La versión que esta copia archivó ya no figura en el servidor (fue eliminada) y la vigente es una anterior. Sólo se afirma con un listado confiable: no vacío,
+    // con la fila vigente que originó el aviso y con el archivoId ausente. Si hay cualquier duda se mantiene el texto de siempre. Es presentación: no cambia el versionado.
+    const baseEliminada=!!d.conflictoV1&&!!d.archivoId&&lst.length>0&&lst.some(r=>String(r.id)===String(d.conflictoV1))&&!lst.some(r=>String(r.id)===String(d.archivoId));
+    const txtAviso=baseEliminada?'La versión que guardaste desde este equipo ya no está en el servidor (fue eliminada) y la vigente allí es una anterior; tu copia en este equipo tiene cambios propios. Si la guardás (Editar → Guardar), se archiva como versión nueva y la del servidor queda en el historial.':'Hay una versión más nueva en el servidor y tu copia en este equipo tiene cambios propios. Si la guardás (Editar → Guardar), se archiva como versión nueva y la del servidor queda en el historial.';
+    const aviso=d.conflictoV1?`<span style="display:block;margin-top:4px;padding:6px 8px;border-radius:8px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:700">${txtAviso}</span>`:'';
     if(!lst.length)return {badge:'',detalle:'',aviso};
     const n=lst.length,vig=vigente406(lst),esVig=vig&&String(d.archivoId||'')===String(vig.id);
     const badge=`<span style="display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;background:${esVig?'#dcfce7':'#fef3c7'};color:${esVig?'#166534':'#92400e'};font-size:11px;font-weight:800">v${n} · ${esVig?'Vigente':'copia local distinta'}</span>`;
@@ -12171,9 +12175,11 @@ function patientInfoTextHC(p,coverage){
     const firmaOn=d.incluirFirma!==false&&pr.mostrarFirmaDocumento!==false;
     const img=async v=>v?await sha256Hex406(String(v)):'';
     const lic=[pr.matriculaNacional,pr.matriculaProvincial].filter(Boolean).join(' · ');
+    // N.º de afiliado: sólo en órdenes con número cargado (el PDF lo imprime únicamente ahí). Sin número, o en otro tipo de documento, la clave no existe y la huella es idéntica a la anterior.
+    const afiliado=afiliadoOrden406(d,p);
     const payload=JSON.stringify({v:2,tipo:d.tipo||'',titulo:d.titulo||'',contenido:d.contenido||'',adicional:d.adicional||'',fechaHora:d.fechaHora||'',profesionalId:d.profesionalId||'',
       incluirFirma:d.incluirFirma!==false,
-      paciente:{id:p.id||'',nombre:patientName406(p)||d.pacienteNombre||'',dni:p.dni||d.dni||'',cobertura:p.coberturaHabitual||''},
+      paciente:{id:p.id||'',nombre:patientName406(p)||d.pacienteNombre||'',dni:p.dni||d.dni||'',cobertura:p.coberturaHabitual||'',...(afiliado?{afiliado}:{})},
       prof:{marca:pr.marcaDocumento||'',nombre:pr.nombre||'',esp:(typeof specialities406==='function'?specialities406(pr):'')||'',lic,
         tel:pr.telefonoDocumento||'',email:pr.emailDocumento||'',dir:pr.direccionDocumento||'',redes:pr.redesDocumento||'',color:pr.colorDocumento||''},
       logo:await img(getLogo406(pr)),firma:firmaOn?await img(getSignature406(pr)):''});

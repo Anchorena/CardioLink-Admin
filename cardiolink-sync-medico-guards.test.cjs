@@ -300,6 +300,27 @@ test('documentos V1 / Bloque A: el aviso y el archivado manual actúan SÓLO sob
   assert.doesNotMatch(lg,/docsSinArchivar406|docsForPatient406/);
 });
 
+test('documentos V1 / Bloque A: el N.º de afiliado entra en la huella SÓLO en órdenes con número (sin él la huella no cambia)',()=>{
+  const h=sinComentarios(between('async function hashContenidoDocumento406(d){','// Expuesto para el cierre de sesión'));
+  assert.match(h,/const afiliado=afiliadoOrden406\(d,p\);/);                                  // misma regla que imprime el PDF: sólo órdenes con número
+  assert.match(h,/cobertura:p\.coberturaHabitual\|\|'',\.\.\.\(afiliado\?\{afiliado\}:\{\}\)\}/);   // la clave sólo existe si hay número => huellas anteriores intactas
+  assert.match(h,/paciente:\{id:p\.id\|\|'',nombre:/);
+  const a=sinComentarios(between('function afiliadoOrden406(d,p){','function resolverDatosDocumento406('));
+  assert.match(a,/d\.tipo!=='orden'\)return ''/);                                             // otros tipos: sin afiliado
+});
+
+test('documentos V1 / Bloque A: el aviso distingue "versión eliminada" de "versión más nueva" sin tocar el versionado',()=>{
+  const v=sinComentarios(between('function versionesDoc406(d,p){','if(!lst.length)return'));
+  assert.match(v,/const baseEliminada=!!d\.conflictoV1&&!!d\.archivoId&&lst\.length>0&&lst\.some\(r=>String\(r\.id\)===String\(d\.conflictoV1\)\)&&!lst\.some\(r=>String\(r\.id\)===String\(d\.archivoId\)\);/);   // listado no vacío y coherente
+  assert.match(v,/ya no está en el servidor \(fue eliminada\)/);
+  assert.match(v,/Hay una versión más nueva en el servidor/);                                  // el texto de siempre se conserva como valor por defecto
+  assert.ok(v.indexOf('baseEliminada?')<v.indexOf('Hay una versión más nueva'));
+  // las reglas de versionado/sincronización NO cambiaron
+  const s=sinComentarios(between('function sincronizarDocumentosDesdeFilas406(p,rows){','window.idsPayloadNecesariosV1'));
+  assert.match(s,/local\.conflictoV1=v\.id/);
+  assert.match(src,/const baseArchivoId=base\?\(base\.conflictoV1\|\|base\.archivoId\|\|''\):'';/);
+});
+
 test('documentos V1 / Bloque A: archivado por versión (módulo PDF): idempotente, con candado y sin dejar filas sin archivo',()=>{
   const m=sinComentarios(betweenIn(srcPdf,'async function archivarInternoV1(doc,opts){','// Un documento a la vez'));
   assert.match(m,/ult\.source_content_hash===gen\.sourceContentHash\)return \{ok:true,rowId:ult\.id/);   // misma huella: se reutiliza, no se duplica
