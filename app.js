@@ -297,6 +297,21 @@ function filaArchivadaConfirmaDocV1(f,d,hash){
 function huellaDocCompletaV1(d){
   return JSON.stringify([d.id,d.tipo,d.pacienteId,d.dni,d.pacienteNombre,d.titulo,d.contenido,d.adicional,d.fechaHora,d.profesionalId,d.profesionalNombre,d.incluirFirma!==false,d.actualizadoEn||'']);
 }
+// Igualdad de CONTENIDO entre una copia local y el payload archivado (los campos que definen el documento; la presentación del profesional no cuenta).
+function payloadIgualDocV1(d,pl){
+  if(!d||!pl||typeof pl!=='object') return false;
+  const v=(x,k)=>k==='incluirFirma'?String(x[k]!==false):String(x[k]??'');
+  return ['tipo','titulo','contenido','adicional','fechaHora','profesionalId','incluirFirma'].every(k=>v(d,k)===v(pl,k));
+}
+// Documento emitido por OTRO profesional, visto por un usuario con rol médico en el backend. La configuración saneada del médico no trae el logo ni la firma de otros
+// profesionales: regenerar ese PDF (o calcular su huella) con esa vista daría un resultado distinto al archivado. Sin id propio conocido no se considera ajeno.
+function esDocumentoAjenoDeMedicoV1(d){
+  try{
+    if(!d||!esMedicoBackendV1()) return false;
+    const mio=String(profesionalIdUsuarioActual()||''), de=String(d.profesionalId||'');
+    return !!mio&&!!de&&de!==mio;
+  }catch(e){ return false; }
+}
 // Devuelve los documentos SIN respaldo confirmado. Lanza si no pudo consultar al servidor (el llamador conserva todo).
 async function documentosSinRespaldoConfirmadoV1(docs){
   if(!docs.length) return [];
@@ -313,6 +328,20 @@ async function documentosSinRespaldoConfirmadoV1(docs){
     const {data:filas,error}=rr;
     if(error) throw error;
     (filas||[]).forEach(f=>{ const d=f&&porId.get(String(f.source_document_id)); if(d&&filaArchivadaConfirmaDocV1(f,d,hashes.get(String(d.id)))) confirmados.add(String(d.id)); });
+  }
+  // Médico: un documento de OTRO profesional, ya archivado y sin cambios locales, está respaldado (el servidor tiene exactamente ese contenido). Su huella no sirve acá: incluye el
+  // logo/firma de quien lo emitió y la configuración saneada del médico no los trae. Los propios y los pendientes siguen confirmándose sólo por huella (sin debilitar nada).
+  const ajenos=docs.filter(d=>!confirmados.has(String(d.id))&&d.archivoId&&esDocumentoAjenoDeMedicoV1(d));
+  for(let i=0;i<ajenos.length;i+=100){
+    const lote=ajenos.slice(i,i+100);
+    const {data:filas,error}=await supabaseClient.from('cardiolink_patient_documents').select('id,source_document_id,patient_id,source_payload').in('id',lote.map(d=>String(d.archivoId)));
+    if(error) throw error;
+    const porFila=new Map((filas||[]).map(f=>[String(f.id),f]));
+    lote.forEach(d=>{
+      const f=porFila.get(String(d.archivoId)); if(!f||String(f.source_document_id)!==String(d.id)) return;
+      const real=pacienteRealIdDeDocV1(d); if(real===null||String(f.patient_id)!==real) return;
+      if(payloadIgualDocV1(d,f.source_payload)) confirmados.add(String(d.id));
+    });
   }
   if(!esMedicoBackendV1()){
     const {data:filas,error}=await supabaseClient.from('cardiolink_atenciones').select('d:payload->config->documentosClinicos').eq('id',CONFIG_ROW_ID_DOCS_V1).limit(1);
@@ -12017,6 +12046,14 @@ function patientInfoTextHC(p,coverage){
     return {d,p,pr,color,logo,sig,contacts,licenses,brandingCL406,cardioLogo406,fechaImpresion406,fmt,isA5};
   }
   function printDocument406(id,formato){
+    // Documento de OTRO profesional visto por un médico: se imprime su PDF ORIGINAL archivado (nunca se regenera con la vista saneada del médico, que no trae su logo ni su firma).
+    ensure406();
+    const dAjeno=data.documentosClinicos.find(x=>x.id===id);
+    if(dAjeno&&esDocumentoAjenoDeMedicoV1(dAjeno)){
+      if(typeof window.abrirPdfOriginalDocumentoAjenoV1==='function')window.abrirPdfOriginalDocumentoAjenoV1(dAjeno);
+      else alert('No se puede abrir el PDF original de este documento (módulo de archivo no disponible). Recargá la página. No se imprimió nada.');
+      return;
+    }
     const datos406=resolverDatosDocumento406(id,formato);
     if(!datos406)return;
     if(datos406.error){alert(datos406.error);return;}
@@ -12239,7 +12276,7 @@ function patientInfoTextHC(p,coverage){
   function cerrarPrintFormatModal406(){document.getElementById('printFormatModal406')?.remove();}
   function elegirFormatoEImprimir406(id){
     ensure406();const d=data.documentosClinicos.find(x=>x.id===id);
-    if(!d||!esTipoCompacto406(d.tipo)){printDocument406(id);return;}
+    if(!d||!esTipoCompacto406(d.tipo)||esDocumentoAjenoDeMedicoV1(d)){printDocument406(id);return;}   // ajeno: PDF original, sin selector de formato
     cerrarPrintFormatModal406();
     const modal=document.createElement('div');modal.id='printFormatModal406';modal.className='hc-modal-overlay';modal.dataset.docFormato406='A5';
     modal.innerHTML=`<div class="hc-modal-card"><div class="hc-modal-head"><h2>Formato de impresión</h2><button type="button" class="modal-close" data-close-print-format406>×</button></div><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:6px 0 4px"><div style="display:inline-flex;border:1px solid #cbd5e1;border-radius:8px;overflow:hidden"><button type="button" class="doc-format-opt406 active" data-doc-format406-opt="A5" style="padding:6px 16px;font-size:13px;font-weight:700;border:0;cursor:pointer;background:#174b5c;color:#fff">A5</button><button type="button" class="doc-format-opt406" data-doc-format406-opt="A4" style="padding:6px 16px;font-size:13px;font-weight:700;border:0;cursor:pointer;background:#eef2f7;color:#0f172a">A4</button></div></div><div class="hc-modal-actions"><button type="button" class="secondary" data-close-print-format406>Cancelar</button><button type="button" class="primary" id="btnConfirmPrintFormat406">Imprimir</button></div></div>`;

@@ -120,6 +120,19 @@
     try{return typeof puedeAccederInformacionClinica==='function'&&!!puedeAccederInformacionClinica();}catch(e){return false;}
   }
 
+  // Eliminar: owner/admin sin cambios. Un MÉDICO: si la fila tiene professional_id, sólo cuando es el suyo (haberla subido no alcanza si está atribuida a otro profesional);
+  // si professional_id es NULL, sólo quien la subió (uploaded_by). El servidor aplica la misma regla (policy DELETE de tabla y Storage); esto sólo evita ofrecer un botón que fallaría.
+  function puedeEliminarDocumentoV1(d){
+    if(!puedeAccederClinicaPdfV1())return false;
+    try{
+      if(typeof esMedicoBackendV1!=='function'||!esMedicoBackendV1())return true;
+      const mio=String((typeof profesionalIdUsuarioActual==='function'?profesionalIdUsuarioActual():'')||'');
+      const uid=(typeof usuarioSupabase!=='undefined'&&usuarioSupabase)?String(usuarioSupabase.id||''):'';
+      if(d.professional_id)return !!mio&&String(d.professional_id)===mio;
+      return !!uid&&!!d.uploaded_by&&String(d.uploaded_by)===uid;
+    }catch(e){return false;}
+  }
+
   function pacienteActivoPdfV1(){
     try{
       // pacienteSeleccionadoPanelId es un "let" de nivel superior en
@@ -601,7 +614,7 @@
         <button class="secondary small-btn" type="button" data-pdf-ver-v1="${escPdfV1(d.storage_path)}">${esImg?'Ver imagen':'Ver'}</button>
         ${esImg?'':`<button class="secondary small-btn" type="button" data-pdf-descargar-v1="${escPdfV1(d.storage_path)}" data-pdf-name-v1="${escPdfV1(d.original_filename)}">Descargar</button>`}
         ${puedeEnviarDocumentoV1(d)?`<button class="secondary small-btn" type="button" data-pdf-enviar-v1="${escPdfV1(d.id)}" data-pdf-patient-v1="${escPdfV1(d.patient_id)}">Enviar</button>`:''}
-        ${puedeAccederClinicaPdfV1()?`<button class="danger small-btn" type="button" data-pdf-eliminar-v1="${escPdfV1(d.id)}" data-pdf-path-v1="${escPdfV1(d.storage_path)}">Eliminar</button>`:''}
+        ${puedeEliminarDocumentoV1(d)?`<button class="danger small-btn" type="button" data-pdf-eliminar-v1="${escPdfV1(d.id)}" data-pdf-path-v1="${escPdfV1(d.storage_path)}">Eliminar</button>`:''}
       </div>
     </article>`;
   }
@@ -743,8 +756,10 @@
     try{
       const {error:rmErr}=await supabaseClient.storage.from(BUCKET_PDF_V1).remove([path]);
       if(rmErr)throw rmErr;
-      const {error:delErr}=await supabaseClient.from('cardiolink_patient_documents').delete().eq('id',id);
+      // con RLS un DELETE denegado devuelve 0 filas sin error: se verifica que la fila se haya borrado de verdad
+      const {data:delRows,error:delErr}=await supabaseClient.from('cardiolink_patient_documents').delete().eq('id',id).select('id');
       if(delErr)throw delErr;
+      if(!delRows||!delRows.length)throw new Error('no tenés permiso para eliminar este documento (sólo su emisor o un administrador) o ya no existe');
     }catch(e){
       alert('No se pudo eliminar el documento: '+(e?.message||e));
       return;
@@ -1270,9 +1285,46 @@
 
   // Guardar PDF / Enviar sobre un documento ya guardado: archivan la versión VIGENTE (si cambió desde el último archivado se archiva una nueva;
   // nunca se envía una versión anterior). Devuelve {ok,documentId,patientId,reusado,error}.
+  // Documento de OTRO profesional visto por un médico: se conserva su PDF ORIGINAL. No se regenera (la configuración saneada del médico no trae el logo ni la firma de su emisor)
+  // ni se agrega una versión. Sólo se reutiliza la fila si es exactamente la versión esperada y su contenido coincide con la copia local; ante cualquier diferencia, conflicto o falta
+  // de respaldo se rechaza con un mensaje claro (nunca se reutiliza en silencio). Devuelve {ok,rowId,patientId} o {ok:false,error}.
+  async function verificarFilaDocumentoAjenoV1(d,fin){
+    const base='Este documento fue emitido por otro profesional. ';
+    fin=fin||'No se creó ni se envió nada.';
+    if(d.conflictoV1)return {ok:false,error:base+'Hay una versión distinta en el servidor: actualizá la lista y volvé a intentar. '+fin};
+    let r;
+    try{r=await supabaseClient.from('cardiolink_patient_documents').select('id,patient_id,source_document_id,storage_path,created_at,pv:source_payload->>v,source_payload').eq('source_document_id',String(d.id)).order('created_at',{ascending:false}).order('id',{ascending:false}).limit(1);}
+    catch(e){r={error:e};}
+    if(r.error)return {ok:false,error:base+'No se pudo consultar su PDF archivado ('+((r.error&&r.error.message)||r.error)+'). '+fin};
+    const f=r.data&&r.data[0];
+    if(!f)return {ok:false,error:base+'Todavía no tiene un PDF archivado y sólo su emisor puede archivarlo. '+fin};
+    const real=typeof pacienteRealIdDeDocV1==='function'?pacienteRealIdDeDocV1(d):null;
+    if(real===null||String(f.patient_id)!==real)return {ok:false,error:base+'Su PDF archivado no corresponde a este paciente. '+fin};
+    if(String(f.pv)!=='2'||!f.source_payload)return {ok:false,error:base+'Su PDF archivado no tiene respaldo verificable del contenido. '+fin};
+    if(String(d.archivoId||'')!==String(f.id))return {ok:false,error:base+'El servidor tiene una versión distinta de la que ves: actualizá la lista y volvé a intentar. '+fin};
+    if(typeof payloadIgualDocV1!=='function'||!payloadIgualDocV1(d,f.source_payload))return {ok:false,error:base+'Su contenido difiere del archivado en el servidor. '+fin};
+    return {ok:true,rowId:f.id,patientId:String(f.patient_id),storagePath:f.storage_path};
+  }
+  // Imprimir un documento de OTRO profesional (usuario médico): se abre su PDF ORIGINAL archivado (membrete, logo y firma tal como se emitieron). No se regenera, no se crea ninguna
+  // versión ni se modifica nada. Se reutiliza la misma verificación que Guardar PDF / Enviar; si falta el PDF, hay conflicto o el contenido no coincide, se bloquea con un mensaje claro.
+  window.abrirPdfOriginalDocumentoAjenoV1=async function(d){
+    const a=await verificarFilaDocumentoAjenoV1(d,'No se imprimió nada.');
+    if(!a.ok){alert(a.error);return false;}
+    try{
+      const {data:signed,error}=await supabaseClient.storage.from(BUCKET_PDF_V1).createSignedUrl(a.storagePath,120);
+      if(error||!signed||!signed.signedUrl)throw (error||new Error('sin URL firmada'));
+      window.open(signed.signedUrl,'_blank');
+      return true;
+    }catch(e){alert('No se pudo abrir el PDF original para imprimir: '+(e?.message||e)+'. No se imprimió nada.');return false;}
+  };
   async function asegurarDocumentoArchivadoV1(docId){
     const d=(typeof data!=='undefined'&&data&&Array.isArray(data.documentosClinicos)?data.documentosClinicos:[]).find(x=>String(x.id)===String(docId));
     if(!d)return {ok:false,error:'No se encontró el documento.'};
+    if(typeof esDocumentoAjenoDeMedicoV1==='function'&&esDocumentoAjenoDeMedicoV1(d)){
+      const a=await verificarFilaDocumentoAjenoV1(d);
+      if(!a.ok)return {ok:false,error:a.error};
+      return {ok:true,documentId:a.rowId,patientId:a.patientId,reusado:true,ajeno:true};
+    }
     const r=await archivarVersionDocumentoV1(d,{baseArchivoId:d.conflictoV1||d.archivoId||''});
     if(!r.ok)return {ok:false,error:r.error};
     const live=data.documentosClinicos.find(x=>String(x.id)===String(docId));
@@ -1286,7 +1338,7 @@
     if(btn){btn.disabled=false;btn.textContent='Guardar PDF';}
     if(!r.ok){alert(r.error||'No se pudo guardar el PDF.');return;}
     if(r.patientId)await cargarYRenderizarListaPdfV1({id:r.patientId});
-    alert('Documento guardado.');
+    alert(r.ajeno?'Este documento ya está archivado: se conserva el PDF original de su emisor (no se creó una versión nueva).':'Documento guardado.');
   };
 
   window.enviarPdfDocumentoGenerado406=async function(docId,btn){

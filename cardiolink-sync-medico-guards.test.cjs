@@ -321,6 +321,82 @@ test('documentos V1 / Bloque A: el aviso distingue "versión eliminada" de "vers
   assert.match(src,/const baseArchivoId=base\?\(base\.conflictoV1\|\|base\.archivoId\|\|''\):'';/);
 });
 
+test('documentos V1 / médico: un documento de OTRO profesional ya archivado no se regenera ni se versiona; se reutiliza sólo si la fila es la esperada',()=>{
+  // app.js: ajeno = rol médico en el backend + id propio conocido + profesional distinto
+  const h=sinComentarios(between('function esDocumentoAjenoDeMedicoV1(d){','// Devuelve los documentos SIN respaldo confirmado'));
+  assert.match(h,/!esMedicoBackendV1\(\)\) return false;/);                                  // owner/admin/secretaría: comportamiento intacto
+  assert.match(h,/return !!mio&&!!de&&de!==mio;/);                                            // sin id propio no se considera ajeno
+  const e=sinComentarios(between('function payloadIgualDocV1(d,pl){','function esDocumentoAjenoDeMedicoV1(d){'));
+  ['tipo','titulo','contenido','adicional','fechaHora','profesionalId','incluirFirma'].forEach(k=>assert.ok(e.indexOf("'"+k+"'")!==-1,'falta '+k));
+  // módulo PDF: la ruta de documento ajeno va ANTES del archivado y nunca archiva ni sube nada
+  const a=sinComentarios(betweenIn(srcPdf,'async function asegurarDocumentoArchivadoV1(docId){','window.guardarPdfDocumentoGenerado406='));
+  assert.match(a,/esDocumentoAjenoDeMedicoV1\(d\)/);
+  assert.ok(a.indexOf('esDocumentoAjenoDeMedicoV1(d)')<a.indexOf('archivarVersionDocumentoV1(d,'));
+  assert.match(a,/verificarFilaDocumentoAjenoV1\(d\)/);
+  const v=sinComentarios(betweenIn(srcPdf,'async function verificarFilaDocumentoAjenoV1(d,fin){','window.abrirPdfOriginalDocumentoAjenoV1='));
+  assert.match(v,/d\.conflictoV1\)return \{ok:false/);                                       // conflicto: no se reutiliza
+  assert.match(v,/if\(!f\)return \{ok:false/);                                                // falta de respaldo: no se crea nada
+  assert.match(v,/String\(f\.patient_id\)!==real/);                                           // la fila corresponde a este paciente
+  assert.match(v,/String\(f\.pv\)!=='2'\|\|!f\.source_payload/);                              // sin payload no hay forma de validar
+  assert.match(v,/String\(d\.archivoId\|\|''\)!==String\(f\.id\)/);                           // versión esperada (la que ve el usuario)
+  assert.match(v,/payloadIgualDocV1\(d,f\.source_payload\)/);                                 // mismo contenido
+  assert.doesNotMatch(v,/archivarVersionDocumentoV1|generarPdfDocumentoGenerado406|\.upload\(|\.insert\(|\.remove\(|\.delete\(/);   // nunca genera, sube, inserta ni borra
+  assert.match(srcPdf,/return \{ok:true,documentId:a\.rowId,patientId:a\.patientId,reusado:true,ajeno:true\};/);
+});
+
+test('documentos V1 / médico: el resguardo del logout no copia documentos ajenos con respaldo confirmado y mantiene la protección de propios y pendientes',()=>{
+  const f=sinComentarios(between('async function documentosSinRespaldoConfirmadoV1(docs){','// true = es seguro eliminar la caché'));
+  // los ajenos exigen archivoId, fila del mismo documento, mismo paciente y MISMO contenido archivado
+  assert.match(f,/const ajenos=docs\.filter\(d=>!confirmados\.has\(String\(d\.id\)\)&&d\.archivoId&&esDocumentoAjenoDeMedicoV1\(d\)\);/);
+  assert.match(f,/String\(f\.source_document_id\)!==String\(d\.id\)\) return;/);
+  assert.match(f,/String\(f\.patient_id\)!==real\) return;/);
+  assert.match(f,/if\(payloadIgualDocV1\(d,f\.source_payload\)\) confirmados\.add\(String\(d\.id\)\);/);
+  // un error de consulta sigue lanzando (el llamador conserva todo) y las demás vías de confirmación no se tocaron
+  assert.match(f,/\.in\('id',lote\.map\(d=>String\(d\.archivoId\)\)\);\s*if\(error\) throw error;/);
+  assert.ok(f.indexOf('filaArchivadaConfirmaDocV1(f,d,hashes.get(String(d.id)))')<f.indexOf('const ajenos='));
+  assert.ok(f.indexOf('const ajenos=')<f.indexOf('if(!esMedicoBackendV1()){'));
+  // los propios no pasan por la vía de contenido: sólo huella; y sin archivoId (pendiente) nunca se confirma por esta vía
+  assert.doesNotMatch(f,/ajenos[^;]*profesionalId===/);
+  const lg=sinComentarios(between('async function protegerDocumentosSinRespaldoV1(){','// Tras iniciar sesión'));
+  assert.match(lg,/docsLocalesV1\(\)/);                                                       // sigue cubriendo los documentos de todos los pacientes
+});
+
+test('documentos V1 / médico: Eliminar sólo se ofrece sobre documentos propios y el borrado denegado no pasa inadvertido',()=>{
+  const f=sinComentarios(betweenIn(srcPdf,'function puedeEliminarDocumentoV1(d){','function pacienteActivoPdfV1(){'));
+  assert.match(f,/if\(!puedeAccederClinicaPdfV1\(\)\)return false;/);                          // el gate anterior se conserva
+  assert.match(f,/!esMedicoBackendV1\(\)\)return true;/);                                       // owner/admin: sin cambios
+  assert.match(f,/if\(d\.professional_id\)return !!mio&&String\(d\.professional_id\)===mio;/);   // con professional_id: sólo el suyo (haberla subido no alcanza)
+  assert.match(f,/return !!uid&&!!d\.uploaded_by&&String\(d\.uploaded_by\)===uid;/);               // sin professional_id: sólo quien la subió (uploaded_by confirmado)
+  assert.match(f,/catch\(e\)\{return false;\}/);                                                // ante la duda no se ofrece
+  assert.match(srcPdf,/\$\{puedeEliminarDocumentoV1\(d\)\?`<button class="danger small-btn" type="button" data-pdf-eliminar-v1=/);
+  assert.equal((srcPdf.match(/data-pdf-eliminar-v1="/g)||[]).length,1);                         // un solo punto de emisión del botón
+  const e=sinComentarios(betweenIn(srcPdf,'async function eliminarPdfV1(id,path,patientId){','// patientId viene'));
+  assert.match(e,/\.delete\(\)\.eq\('id',id\)\.select\('id'\);/);
+  assert.match(e,/if\(!delRows\|\|!delRows\.length\)throw new Error\(/);                        // 0 filas (RLS) => error visible, no éxito silencioso
+  assert.ok(e.indexOf('.remove([path])')<e.indexOf('.delete().eq'));                            // el orden Storage -> fila no cambia
+});
+
+test('documentos V1 / médico: imprimir un documento de OTRO profesional abre su PDF original archivado (sin regenerar ni versionar)',()=>{
+  // app.js: el desvío va ANTES de resolver/regenerar y el selector A4/A5 se omite para ajenos
+  const pr=between('function printDocument406(id,formato){','const datos406=resolverDatosDocumento406(id,formato);');
+  assert.match(pr,/esDocumentoAjenoDeMedicoV1\(dAjeno\)/);
+  assert.match(pr,/window\.abrirPdfOriginalDocumentoAjenoV1\(dAjeno\)/);
+  assert.match(pr,/No se imprimió nada\./);                                                   // sin el módulo: se bloquea, no se regenera
+  assert.match(pr,/return;\s*\}\s*$/);                                                        // el desvío termina antes de la regeneración
+  const el=sinComentarios(between('function elegirFormatoEImprimir406(id){','cerrarPrintFormatModal406();\n    const modal'));
+  assert.match(el,/esDocumentoAjenoDeMedicoV1\(d\)\)\{printDocument406\(id\);return;\}/);
+  // módulo PDF: reutiliza la verificación de Guardar PDF / Enviar y abre una URL firmada; nunca genera, archiva ni escribe
+  const v=sinComentarios(betweenIn(srcPdf,'window.abrirPdfOriginalDocumentoAjenoV1=async function(d){','async function asegurarDocumentoArchivadoV1(docId){'));
+  assert.match(v,/verificarFilaDocumentoAjenoV1\(d,'No se imprimió nada\.'\)/);
+  assert.match(v,/if\(!a\.ok\)\{alert\(a\.error\);return false;\}/);                         // falta de PDF / conflicto / contenido distinto: bloquea con el mensaje
+  assert.match(v,/createSignedUrl\(a\.storagePath,120\)/);                                    // acceso autorizado al Storage privado, URL temporal
+  assert.match(v,/window\.open\(signed\.signedUrl,'_blank'\)/);
+  assert.doesNotMatch(v,/archivarVersionDocumentoV1|generarPdfDocumentoGenerado406|\.upload\(|\.insert\(|\.update\(|\.delete\(|\.remove\(|saveConfig/);
+  const ver=sinComentarios(betweenIn(srcPdf,'async function verificarFilaDocumentoAjenoV1(d,fin){','window.abrirPdfOriginalDocumentoAjenoV1='));
+  assert.match(ver,/storagePath:f\.storage_path\}/);
+  assert.match(ver,/String\(d\.archivoId\|\|''\)!==String\(f\.id\)/);                         // las mismas validaciones que ya cubría el test anterior
+});
+
 test('documentos V1 / Bloque A: archivado por versión (módulo PDF): idempotente, con candado y sin dejar filas sin archivo',()=>{
   const m=sinComentarios(betweenIn(srcPdf,'async function archivarInternoV1(doc,opts){','// Un documento a la vez'));
   assert.match(m,/ult\.source_content_hash===gen\.sourceContentHash\)return \{ok:true,rowId:ult\.id/);   // misma huella: se reutiliza, no se duplica
