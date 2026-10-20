@@ -280,19 +280,37 @@ function pacienteRealIdDeDocV1(d){
   if(!p){ const dni=String(d.dni||'').replace(/\D/g,''); if(dni){ const c=ps.filter(x=>x&&String(x.dni||'').replace(/\D/g,'')===dni); if(c.length===1) p=c[0]; } }
   return p&&p.id!=null?String(p.id):null;
 }
-// El hash archivado sólo cubre título/contenido/adicional/profesional/fecha: NO distingue paciente, tipo ni firma. Por eso una fila archivada sólo
-// confirma un documento si, además del hash, coinciden el tipo archivado y el paciente real, y el documento nunca fue editado después de crearse
-// (una edición pudo cambiar la firma, que no queda registrada en ningún lado). Ante cualquier duda: NO confirmado => se conserva.
+// Filas archivadas por el cliente de Documentos V1 (source_payload.v = 2) llevan una huella que SÍ cubre tipo, firma, paciente y presentación del
+// profesional: coincidencia exacta de huella + paciente real = respaldo confirmado. Las filas ANTERIORES (sin payload) usaban un hash que sólo
+// cubría título/contenido/adicional/profesional/fecha y NO distingue paciente, tipo ni firma: ahí sólo confirman si, además del hash, coinciden el
+// tipo archivado y el paciente real y el documento nunca fue editado (una edición pudo cambiar la firma). Ante cualquier duda: NO confirmado.
 function filaArchivadaConfirmaDocV1(f,d,hash){
   if(!f||String(f.source_document_id)!==String(d.id)||f.source_content_hash!==hash) return false;
+  const real=pacienteRealIdDeDocV1(d);
+  if(real===null||String(f.patient_id)!==real) return false;
+  if(String(f.pv)==='2') return true;
   if(d.actualizadoEn) return false;
   if(TIPO_ARCHIVO_PDF_POR_DOC_V1[d.tipo]===undefined||f.document_type!==TIPO_ARCHIVO_PDF_POR_DOC_V1[d.tipo]) return false;
-  const real=pacienteRealIdDeDocV1(d);
-  return real!==null&&String(f.patient_id)===real;
+  return true;
 }
 // Huella completa (todos los campos que definen el documento) para comparar contra la copia remota de la config.
 function huellaDocCompletaV1(d){
   return JSON.stringify([d.id,d.tipo,d.pacienteId,d.dni,d.pacienteNombre,d.titulo,d.contenido,d.adicional,d.fechaHora,d.profesionalId,d.profesionalNombre,d.incluirFirma!==false,d.actualizadoEn||'']);
+}
+// Igualdad de CONTENIDO entre una copia local y el payload archivado (los campos que definen el documento; la presentación del profesional no cuenta).
+function payloadIgualDocV1(d,pl){
+  if(!d||!pl||typeof pl!=='object') return false;
+  const v=(x,k)=>k==='incluirFirma'?String(x[k]!==false):String(x[k]??'');
+  return ['tipo','titulo','contenido','adicional','fechaHora','profesionalId','incluirFirma'].every(k=>v(d,k)===v(pl,k));
+}
+// Documento emitido por OTRO profesional, visto por un usuario con rol médico en el backend. La configuración saneada del médico no trae el logo ni la firma de otros
+// profesionales: regenerar ese PDF (o calcular su huella) con esa vista daría un resultado distinto al archivado. Sin id propio conocido no se considera ajeno.
+function esDocumentoAjenoDeMedicoV1(d){
+  try{
+    if(!d||!esMedicoBackendV1()) return false;
+    const mio=String(profesionalIdUsuarioActual()||''), de=String(d.profesionalId||'');
+    return !!mio&&!!de&&de!==mio;
+  }catch(e){ return false; }
 }
 // Devuelve los documentos SIN respaldo confirmado. Lanza si no pudo consultar al servidor (el llamador conserva todo).
 async function documentosSinRespaldoConfirmadoV1(docs){
@@ -303,9 +321,27 @@ async function documentosSinRespaldoConfirmadoV1(docs){
   const hashes=new Map(); for(const d of docs) hashes.set(String(d.id),await hashFn(d));
   const porId=new Map(docs.map(d=>[String(d.id),d])), confirmados=new Set(), ids=docs.map(d=>String(d.id));
   for(let i=0;i<ids.length;i+=100){
-    const {data:filas,error}=await supabaseClient.from('cardiolink_patient_documents').select('source_document_id,source_content_hash,document_type,patient_id').in('source_document_id',ids.slice(i,i+100));
+    const consultaDocs=cols=>supabaseClient.from('cardiolink_patient_documents').select(cols).in('source_document_id',ids.slice(i,i+100));
+    let rr=await consultaDocs('source_document_id,source_content_hash,document_type,patient_id,pv:source_payload->>v');
+    // servidor sin la columna source_payload todavía: se confirma con las reglas estrictas de las filas anteriores (sin `pv`)
+    if(rr.error&&/source_payload|does not exist|Could not find/i.test(String(rr.error.message||''))) rr=await consultaDocs('source_document_id,source_content_hash,document_type,patient_id');
+    const {data:filas,error}=rr;
     if(error) throw error;
     (filas||[]).forEach(f=>{ const d=f&&porId.get(String(f.source_document_id)); if(d&&filaArchivadaConfirmaDocV1(f,d,hashes.get(String(d.id)))) confirmados.add(String(d.id)); });
+  }
+  // Médico: un documento de OTRO profesional, ya archivado y sin cambios locales, está respaldado (el servidor tiene exactamente ese contenido). Su huella no sirve acá: incluye el
+  // logo/firma de quien lo emitió y la configuración saneada del médico no los trae. Los propios y los pendientes siguen confirmándose sólo por huella (sin debilitar nada).
+  const ajenos=docs.filter(d=>!confirmados.has(String(d.id))&&d.archivoId&&esDocumentoAjenoDeMedicoV1(d));
+  for(let i=0;i<ajenos.length;i+=100){
+    const lote=ajenos.slice(i,i+100);
+    const {data:filas,error}=await supabaseClient.from('cardiolink_patient_documents').select('id,source_document_id,patient_id,source_payload').in('id',lote.map(d=>String(d.archivoId)));
+    if(error) throw error;
+    const porFila=new Map((filas||[]).map(f=>[String(f.id),f]));
+    lote.forEach(d=>{
+      const f=porFila.get(String(d.archivoId)); if(!f||String(f.source_document_id)!==String(d.id)) return;
+      const real=pacienteRealIdDeDocV1(d); if(real===null||String(f.patient_id)!==real) return;
+      if(payloadIgualDocV1(d,f.source_payload)) confirmados.add(String(d.id));
+    });
   }
   if(!esMedicoBackendV1()){
     const {data:filas,error}=await supabaseClient.from('cardiolink_atenciones').select('d:payload->config->documentosClinicos').eq('id',CONFIG_ROW_ID_DOCS_V1).limit(1);
@@ -4117,6 +4153,10 @@ async function refrescarDesdeSupabaseAutomatico(){
     // Corrección de evoluciones V1: mientras hay una evolución abierta para editar (o guardándose) el estado NO se reemplaza:
     // un refresco dejaría huérfana la evolución que se está editando y el guardado perdería la edición.
     if (window.__hcGuardandoEvolucionV1 || document.getElementById('hcEvolutionModal')) {
+      return;
+    }
+    // Documentos V1 / Bloque A: igual para el modal de documento (un refresco reemplaza `data` y dejaría huérfano el documento que se edita).
+    if (window.__docGuardandoV1 || document.getElementById('clinicalDocModal406')) {
       return;
     }
     await cargarAtencionesDesdeSupabase();
@@ -11767,50 +11807,197 @@ function patientInfoTextHC(p,coverage){
     $406('saveDoc406').onclick=()=>saveDocument406(p,existing,false);
     $406('savePrintDoc406').onclick=()=>saveDocument406(p,existing,true,modal.dataset.docFormato406);
   }
-  function saveDocument406(p,existing,printAfter,formatoImpresion){
+  // Documentos V1 / Bloque A - GUARDADO CONFIRMADO. El documento y su PDF se archivan en Supabase (cardiolink_patient_documents, con el contenido
+  // editable en source_payload) ANTES de tocar el estado local ni cerrar el modal. Si el servidor no confirma, el formulario queda abierto con su
+  // contenido, no se crea nada a medias y un reintento no duplica (mismo id de documento, misma huella => se reutiliza la fila ya archivada).
+  // Cada edición agrega una versión nueva; una edición concurrente desde otro dispositivo se detecta y NO se sobrescribe.
+  function mostrarErrorGuardadoDocV1(msg){
+    const m=$406('clinicalDocModal406');if(!m)return;
+    let b=m.querySelector('#docErrorGuardadoV1');
+    if(!b){
+      b=document.createElement('div');b.id='docErrorGuardadoV1';b.setAttribute('role','alert');
+      b.style.cssText='margin:8px 0;padding:10px 12px;border-radius:10px;background:#fee2e2;color:#7f1d1d;border:1px solid #fca5a5;font-weight:700;font-size:13px;line-height:1.35';
+      const acciones=m.querySelector('.hc-modal-actions');
+      if(acciones&&acciones.parentNode)acciones.parentNode.insertBefore(b,acciones);else m.appendChild(b);
+    }
+    b.textContent=msg;
+    try{b.scrollIntoView({block:'nearest'});}catch(e){}
+  }
+  function quitarErrorGuardadoDocV1(){$406('clinicalDocModal406')?.querySelector('#docErrorGuardadoV1')?.remove();}
+  async function saveDocument406(p,existing,printAfter,formatoImpresion){
     const tipo=$406('docType406')?.value||'receta',titulo=$406('docTitle406')?.value.trim()||docLabel406(tipo),contenido=$406('docBody406')?.value.trim()||'',adicional=$406('docExtra406')?.value.trim()||'';
     if(!canIssueDoc406(tipo)){alert('Tu perfil no tiene permiso para emitir este tipo de documento.');return;}
     if(existing&&!canEditDoc406(existing)){alert('Tu perfil no puede modificar este documento.');return;}
     if(!contenido&&!adicional){alert('Escribí el contenido antes de guardar.');return;}
     const profId=existing?.profesionalId||($406('docProfessional406')?.value)||(isSecretary406()?responsibleProfId406(p):(currentProfId406()||selectedProfId406())),pr=prof406(profId);if(!pr){alert('No se pudo identificar el profesional responsable.');return;}
     const now=new Date().toISOString(),fechaInput=$406('docDate406')?.value,fechaHora=fechaInput?new Date(fechaInput).toISOString():now;
-    // Comunicaciones V1 (cierre): el aviso al profesional solo aplica a
-    // documentos NUEVOS (no ediciones) - se decide acá, antes de que
-    // "existing" dejе de reflejar si esto era una creación.
+    // Comunicaciones V1 (cierre): el aviso al profesional solo aplica a documentos NUEVOS (no ediciones).
     const esDocumentoNuevo=!existing;
-    let doc=existing;
-    if(existing){Object.assign(existing,{tipo,titulo,contenido,adicional,fechaHora,incluirFirma:$406('docIncludeSignature406')?.checked!==false,actualizadoEn:now,actualizadoPor:pr.nombre});}
-    else{doc={id:'doc_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),pacienteId:patientKey406(p),dni:p.dni||'',pacienteNombre:patientName406(p),tipo,titulo,contenido,adicional,fechaHora,profesionalId:profId,profesionalNombre:pr.nombre,incluirFirma:$406('docIncludeSignature406')?.checked!==false,creadoEn:now,creadoPor:currentUser406().nombre||pr.nombre};data.documentosClinicos.push(doc);}
-    persist406();
-    // Comunicaciones V1 (cierre) - aviso automático al profesional cuando
-    // Secretaría genera un certificado/orden médica en su nombre: fire-and-
-    // forget (window.notificarDocumentoGenerado460, expuesto por el módulo
-    // "Patient Communications V1 (460)" más abajo en este archivo), nunca
-    // bloquea el guardado/impresión ni muestra error a Secretaría - el
-    // documento ya quedó guardado en la línea de arriba antes de intentar
-    // avisar. No se manda contenido/adicional/título (texto clínico): solo
-    // paciente, tipo de documento, fecha/hora y quién lo generó.
-    if(esDocumentoNuevo&&isSecretary406()&&(tipo==='constancia_atencion'||tipo==='certificado'||tipo==='orden')){
-      try{
-        window.notificarDocumentoGenerado460?.({
-          profesionalId:profId,
-          profesionalNombre:pr.nombre||'',
-          pacienteNombre:patientName406(p),
-          tipoDocumento:tipo,
-          fechaHora:doc.fechaHora,
-          generadoPor:currentUser406().nombre||'',
-          documentoId:doc.id
-        });
-      }catch(e){console.warn('No se pudo avisar al profesional sobre el documento generado:',e);}
+    if(window.__docGuardandoV1)return;                                    // doble clic / reentrada
+    ensure406();
+    const modalEl=$406('clinicalDocModal406'),btns=[$406('saveDoc406'),$406('savePrintDoc406')].filter(Boolean);
+    // id estable por modal: un reintento de un documento NUEVO reutiliza el mismo id (nunca crea otro)
+    const docId=existing?String(existing.id):(modalEl?.dataset.docIdV1||('doc_'+Date.now()+'_'+Math.random().toString(36).slice(2,7)));
+    if(modalEl&&!existing)modalEl.dataset.docIdV1=docId;
+    // el estado se resuelve POR ID al guardar (la referencia `existing` capturada al abrir puede estar obsoleta)
+    const live=data.documentosClinicos.find(x=>String(x.id)===docId)||null,base=live||existing||null;
+    const incluirFirma=$406('docIncludeSignature406')?.checked!==false;
+    // El candidato se arma ANTES de cualquier await y NO toca el estado local hasta que el servidor confirme.
+    const candidato=base
+      ?Object.assign(clone406(base),{tipo,titulo,contenido,adicional,fechaHora,incluirFirma,actualizadoEn:now,actualizadoPor:pr.nombre})
+      :{id:docId,pacienteId:patientKey406(p),dni:p.dni||'',pacienteNombre:patientName406(p),tipo,titulo,contenido,adicional,fechaHora,profesionalId:profId,profesionalNombre:pr.nombre,incluirFirma,creadoEn:now,creadoPor:currentUser406().nombre||pr.nombre};
+    // versión sobre la que se editó; si la copia local ya estaba marcada con una versión más nueva del servidor, el usuario fue avisado y acepta guardar la suya como versión nueva
+    const baseArchivoId=base?(base.conflictoV1||base.archivoId||''):'';
+    window.__docGuardandoV1=true;
+    const textos=btns.map(b=>b.textContent);btns.forEach(b=>{b.disabled=true;b.textContent='Guardando…';});
+    quitarErrorGuardadoDocV1();
+    try{
+      if(typeof window.archivarVersionDocumentoV1!=='function'){mostrarErrorGuardadoDocV1('El módulo de archivo de documentos no está disponible. Tu texto sigue acá: recargá la página y volvé a intentar.');return;}
+      const r=await window.archivarVersionDocumentoV1(candidato,{baseArchivoId});
+      if(!r||!r.ok){
+        mostrarErrorGuardadoDocV1(r&&r.conflicto?r.error:'No se pudo guardar y confirmar el documento en el servidor ('+((r&&r.error)||'error de conexión')+'). Tu texto sigue acá y no se perdió: volvé a pulsar Guardar. No se crea un documento duplicado.');
+        if(r&&r.conflicto){try{await window.sincronizarDocumentosPacienteV1?.(p);}catch(e){}}
+        return;
+      }
+      // Servidor confirmado: recién ahora se aplica al estado local (por id) y se persiste.
+      candidato.archivoId=r.rowId;candidato.archivadoEn=r.createdAt||'';delete candidato.conflictoV1;
+      const i=data.documentosClinicos.findIndex(x=>String(x.id)===docId);
+      if(i>=0)data.documentosClinicos[i]=candidato;else data.documentosClinicos.push(candidato);
+      persist406();
+      // Comunicaciones V1 (cierre) - aviso automático al profesional cuando Secretaría genera un certificado/orden médica en su nombre:
+      // fire-and-forget (window.notificarDocumentoGenerado460), nunca bloquea el guardado/impresión ni muestra error a Secretaría.
+      // No se manda contenido/adicional/título (texto clínico): solo paciente, tipo de documento, fecha/hora y quién lo generó.
+      if(esDocumentoNuevo&&isSecretary406()&&(tipo==='constancia_atencion'||tipo==='certificado'||tipo==='orden')){
+        try{
+          window.notificarDocumentoGenerado460?.({
+            profesionalId:profId,
+            profesionalNombre:pr.nombre||'',
+            pacienteNombre:patientName406(p),
+            tipoDocumento:tipo,
+            fechaHora:candidato.fechaHora,
+            generadoPor:currentUser406().nombre||'',
+            documentoId:candidato.id
+          });
+        }catch(e){console.warn('No se pudo avisar al profesional sobre el documento generado:',e);}
+      }
+      $406('clinicalDocModal406')?.remove();
+      // El historial se actualiza YA, sin recargar la página (antes enhanceHC406/enhancePatientFicha406 sólo insertaban la sección si no existía).
+      refrescarSeccionesDocs406(p);enhanceHC406();enhancePatientFicha406();
+      try{window.recargarListaPdfDocumentosV1?.(p);}catch(e){}
+      if(printAfter)printDocument406(candidato.id,formatoImpresion);
+      // Ajuste 6E.2 (Secretaría) - "Guardar PDF"/"Enviar" sólo tienen sentido con un documento YA guardado: se ofrecen en este modal chico
+      // posterior al guardado. Mismo criterio que la lista: sólo para los 3 tipos compactos.
+      if(esTipoCompacto406(candidato.tipo))abrirModalPostGuardadoDoc406(candidato.id);
+    }catch(e){
+      console.error('Error guardando el documento:',e);
+      mostrarErrorGuardadoDocV1('No se pudo guardar el documento ('+(e?.message||e)+'). Tu texto sigue acá y no se perdió: volvé a pulsar Guardar.');
+    }finally{
+      window.__docGuardandoV1=false;
+      btns.forEach((b,k)=>{if(b.isConnected){b.disabled=false;b.textContent=textos[k];}});
     }
-    $406('clinicalDocModal406')?.remove();enhanceHC406();enhancePatientFicha406();if(printAfter)printDocument406(doc.id,formatoImpresion);
-    // Ajuste 6E.2 (Secretaría) - "Guardar PDF"/"Enviar" sólo tienen
-    // sentido con un documento YA guardado (source_document_id real):
-    // se ofrecen en este modal chico posterior al guardado, no en el
-    // listado clínico (ese sigue oculto para Secretaría sin cambios,
-    // enhancePatientFicha406/isMedical406() intactos). Mismo criterio que
-    // la lista: sólo para los 3 tipos compactos.
-    if(esTipoCompacto406(doc.tipo))abrirModalPostGuardadoDoc406(doc.id);
+  }
+  // ---- Documentos V1 / Bloque A: recuperación desde el servidor, versiones, historial inmediato y documentos sólo locales ----
+  const CAMPOS_PAYLOAD406=['tipo','titulo','contenido','adicional','fechaHora','profesionalId','incluirFirma'];
+  function valorPayload406(d,k){return k==='incluirFirma'?String(d[k]!==false):String(d[k]??'');}
+  function igualesPayload406(d,pl){return !!d&&!!pl&&CAMPOS_PAYLOAD406.every(k=>valorPayload406(d,k)===valorPayload406(pl,k));}
+  function cmpFilas406(a,b){const t=new Date(a.created_at)-new Date(b.created_at);return t!==0?t:String(a.id).localeCompare(String(b.id));}
+  function docDesdePayload406(pl,row,p){
+    return {id:String(row.source_document_id),pacienteId:pl.pacienteId||p.id,dni:p.dni||'',pacienteNombre:patientName406(p),tipo:pl.tipo,titulo:pl.titulo,contenido:pl.contenido,adicional:pl.adicional||'',
+      fechaHora:pl.fechaHora,profesionalId:pl.profesionalId,profesionalNombre:pl.profesionalNombre||'',incluirFirma:pl.incluirFirma!==false,creadoEn:pl.creadoEn||'',creadoPor:pl.creadoPor||'',
+      ...(pl.actualizadoEn?{actualizadoEn:pl.actualizadoEn,actualizadoPor:pl.actualizadoPor||''}:{}),archivoId:row.id,archivadoEn:row.created_at};
+  }
+  // Agrupa las filas archivadas por documento fuente (orden cronológico: la última con payload es la VIGENTE).
+  function agruparVersiones406(rows){
+    const porFuente={};
+    (rows||[]).filter(r=>r&&r.source_document_id).forEach(r=>{(porFuente[r.source_document_id]=porFuente[r.source_document_id]||[]).push(r);});
+    Object.values(porFuente).forEach(a=>a.sort(cmpFilas406));
+    return porFuente;
+  }
+  function vigente406(filas){for(let i=filas.length-1;i>=0;i--){if(String(filas[i].pv)==='2')return filas[i];}return null;}
+  // Ids de filas cuyo payload hace falta traer (sólo las vigentes que difieren de la copia local y su versión base): el listado no trae payloads.
+  function idsPayloadNecesarios406(p,rows){
+    ensure406();const ids=new Set();
+    Object.entries(agruparVersiones406(rows)).forEach(([sid,filas])=>{
+      const v=vigente406(filas);if(!v)return;
+      const local=data.documentosClinicos.find(d=>String(d.id)===sid);
+      if(!local){ids.add(v.id);return;}
+      if(String(local.archivoId||'')!==String(v.id)){ids.add(v.id);if(local.archivoId)ids.add(local.archivoId);}
+    });
+    return [...ids];
+  }
+  // `rows` = listado del paciente (con `pv` = source_payload->>v) y, para las filas de idsPayloadNecesarios406, `source_payload`.
+  // Devuelve true si cambió algo visible. NUNCA pisa una copia local con contenido propio sin archivar.
+  function sincronizarDocumentosDesdeFilas406(p,rows){
+    ensure406();if(!p||!p.id||!isMedical406())return false;
+    const porFuente=agruparVersiones406(rows);
+    window.__docVersionesV1=window.__docVersionesV1||{};
+    window.__docVersionesV1[String(p.id)]=Object.fromEntries(Object.entries(porFuente).map(([sid,f])=>[sid,f.map(r=>({id:r.id,created_at:r.created_at,storage_path:r.storage_path,original_filename:r.original_filename,pv:r.pv||null,document_type:r.document_type}))]));
+    const porId=new Map((rows||[]).map(r=>[String(r.id),r]));let cambio=false;
+    Object.entries(porFuente).forEach(([sid,filas])=>{
+      const v=vigente406(filas);if(!v)return;
+      const vr=porId.get(String(v.id)),pl=vr&&vr.source_payload;if(!pl||typeof pl!=='object')return;
+      const local=data.documentosClinicos.find(d=>String(d.id)===sid);
+      if(!local){data.documentosClinicos.push(docDesdePayload406(pl,vr,p));cambio=true;return;}
+      if(String(local.archivoId||'')===String(v.id)){if(local.conflictoV1){delete local.conflictoV1;cambio=true;}return;}
+      if(igualesPayload406(local,pl)){local.archivoId=v.id;local.archivadoEn=vr.created_at;delete local.conflictoV1;cambio=true;return;}      // misma versión: sólo se enlaza
+      const baseRow=local.archivoId?porId.get(String(local.archivoId)):null,basePl=baseRow&&baseRow.source_payload;
+      if(basePl&&igualesPayload406(local,basePl)){Object.assign(local,docDesdePayload406(pl,vr,p));cambio=true;return;}                         // la local era la versión anterior archivada: se actualiza
+      if(String(local.conflictoV1||'')!==String(v.id)){local.conflictoV1=v.id;cambio=true;}                                                         // contenido local propio: se conserva, se avisa
+    });
+    if(cambio){try{saveConfig();}catch(e){}}
+    return cambio;
+  }
+  window.idsPayloadNecesariosV1=idsPayloadNecesarios406;
+  window.sincronizarDocumentosDesdeFilasV1=sincronizarDocumentosDesdeFilas406;
+  // Reemplaza la sección "Documentos clínicos e informes rápidos" visible (HC y/o ficha) para ese paciente: el historial se ve ya, sin recargar.
+  function refrescarSeccionesDocs406(p){
+    if(!isMedical406())return;
+    ['hcPacienteDetalle','pacienteDetalle'].forEach(rid=>{
+      const root=$406(rid),sec=root&&root.querySelector('[data-docs-section406]');if(!sec)return;
+      const key=sec.querySelector('[data-new-doc406]')?.dataset.newDoc406||'';
+      const pp=p&&patientKey406(p)===String(key)?p:(p?null:patient406(key));
+      if(pp)sec.outerHTML=docsSection406(pp);
+    });
+  }
+  window.refrescarSeccionesDocs406=refrescarSeccionesDocs406;
+  // Documentos DEL PACIENTE que todavía no tienen su PDF archivado en el servidor (sin `archivoId`). Es un conteo de archivado, no de respaldo: un documento
+  // puede figurar acá y tener igualmente copia en la config remota. El resguardo al cerrar sesión (protegerDocumentosSinRespaldoV1) es independiente y cubre a TODOS los pacientes.
+  function docsSinArchivar406(p){if(!p)return [];return docsForPatient406(p).filter(d=>d&&d.id&&!d.archivoId&&canIssueDoc406(d.tipo));}
+  // Archivado MANUAL (con confirmación) de los documentos de UN paciente que todavía no tienen su PDF archivado. No migra ni borra nada solo: las copias
+  // locales se conservan siempre; cada documento recibe su archivoId recién cuando el servidor confirma su versión.
+  async function archivarLocales406(key){
+    if(window.__docArchivandoLocalesV1||window.__docGuardandoV1)return;
+    const pac=patient406(key);if(!pac)return;
+    const pend=docsSinArchivar406(pac);if(!pend.length)return;
+    if(typeof window.archivarVersionDocumentoV1!=='function'){alert('El módulo de archivo de documentos no está disponible. Recargá la página.');return;}
+    if(!confirm('Se van a archivar en el servidor (PDF con el contenido editable) '+pend.length+' documento'+(pend.length===1?'':'s')+' de '+patientName406(pac)+' que todavía no tienen su PDF archivado. Solo se archivan los de este paciente y tus copias locales no se borran. ¿Continuar?'))return;
+    window.__docArchivandoLocalesV1=true;
+    const ok=[],fallos=[];
+    try{
+      for(const d0 of pend){
+        const d=data.documentosClinicos.find(x=>String(x.id)===String(d0.id));if(!d)continue;
+        let r;try{r=await window.archivarVersionDocumentoV1(d,{baseArchivoId:d.conflictoV1||''});}catch(e){r={ok:false,error:e?.message||String(e)};}
+        const live=data.documentosClinicos.find(x=>String(x.id)===String(d0.id));
+        if(r&&r.ok&&live){live.archivoId=r.rowId;live.archivadoEn=r.createdAt||'';delete live.conflictoV1;ok.push(live.titulo||docLabel406(live.tipo));try{saveConfig();}catch(e){}}
+        else fallos.push((d.titulo||docLabel406(d.tipo))+': '+((r&&r.error)||'error'));
+      }
+    }finally{window.__docArchivandoLocalesV1=false;}
+    refrescarSeccionesDocs406();
+    alert((ok.length?ok.length+' documento'+(ok.length===1?' guardado':'s guardados')+' en el servidor.':'No se guardó ningún documento.')+(fallos.length?'\n\nNo se pudieron guardar ('+fallos.length+'); siguen en este equipo:\n- '+fallos.join('\n- '):''));
+  }
+  function versionesDoc406(d,p){
+    const lst=(window.__docVersionesV1&&window.__docVersionesV1[String(p.id)]&&window.__docVersionesV1[String(p.id)][d.id])||[];
+    // La versión que esta copia archivó ya no figura en el servidor (fue eliminada) y la vigente es una anterior. Sólo se afirma con un listado confiable: no vacío,
+    // con la fila vigente que originó el aviso y con el archivoId ausente. Si hay cualquier duda se mantiene el texto de siempre. Es presentación: no cambia el versionado.
+    const baseEliminada=!!d.conflictoV1&&!!d.archivoId&&lst.length>0&&lst.some(r=>String(r.id)===String(d.conflictoV1))&&!lst.some(r=>String(r.id)===String(d.archivoId));
+    const txtAviso=baseEliminada?'La versión que guardaste desde este equipo ya no está en el servidor (fue eliminada) y la vigente allí es una anterior; tu copia en este equipo tiene cambios propios. Si la guardás (Editar → Guardar), se archiva como versión nueva y la del servidor queda en el historial.':'Hay una versión más nueva en el servidor y tu copia en este equipo tiene cambios propios. Si la guardás (Editar → Guardar), se archiva como versión nueva y la del servidor queda en el historial.';
+    const aviso=d.conflictoV1?`<span style="display:block;margin-top:4px;padding:6px 8px;border-radius:8px;background:#fef3c7;color:#92400e;font-size:12px;font-weight:700">${txtAviso}</span>`:'';
+    if(!lst.length)return {badge:'',detalle:'',aviso};
+    const n=lst.length,vig=vigente406(lst),esVig=vig&&String(d.archivoId||'')===String(vig.id);
+    const badge=`<span style="display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;background:${esVig?'#dcfce7':'#fef3c7'};color:${esVig?'#166534':'#92400e'};font-size:11px;font-weight:800">v${n} · ${esVig?'Vigente':'copia local distinta'}</span>`;
+    const ant=lst.slice(0,-1).reverse();
+    const detalle=ant.length?`<details style="margin-top:4px"><summary style="cursor:pointer;font-size:12px">Versiones anteriores (${ant.length})</summary>${ant.map((r,i)=>`<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12px;margin-top:3px">v${n-1-i} · ${esc406(fmtDT406(r.created_at))}<button class="secondary small-btn" type="button" data-pdf-ver-v1="${esc406(r.storage_path)}">Ver</button><button class="secondary small-btn" type="button" data-pdf-descargar-v1="${esc406(r.storage_path)}" data-pdf-name-v1="${esc406(r.original_filename||'documento.pdf')}">Descargar</button></div>`).join('')}</details>`:'';
+    return {badge,detalle,aviso};
   }
   function cerrarModalPostGuardadoDoc406(){document.getElementById('docPostSaveModal406')?.remove();}
   function abrirModalPostGuardadoDoc406(docId){
@@ -11836,8 +12023,8 @@ function patientInfoTextHC(p,coverage){
     if(!d||d.tipo!=='orden')return '';
     return String(p?.numeroAfiliadoHabitual||p?.numeroAfiliado||'').trim();
   }
-  function resolverDatosDocumento406(id,formato){
-    ensure406();const d=data.documentosClinicos.find(x=>x.id===id);if(!d)return null;
+  function resolverDatosDocumento406(id,formato,docOverride){
+    ensure406();const d=docOverride||data.documentosClinicos.find(x=>x.id===id);if(!d)return null;
     if(!canIssueDoc406(d.tipo))return {error:'Tu perfil no puede acceder a este documento.'};
     const p=patient406(d.pacienteId)||patients406().find(x=>String(x.dni||'').replace(/\D/g,'')===String(d.dni||'').replace(/\D/g,''))||{},pr=prof406(d.profesionalId)||{},color=/^#[0-9a-f]{6}$/i.test(pr.colorDocumento||'')?pr.colorDocumento:'#174b5c';
     const logo=resolveImage406(getLogo406(pr)),sig=d.incluirFirma!==false&&pr.mostrarFirmaDocumento!==false?resolveImage406(getSignature406(pr)):'';
@@ -11859,6 +12046,14 @@ function patientInfoTextHC(p,coverage){
     return {d,p,pr,color,logo,sig,contacts,licenses,brandingCL406,cardioLogo406,fechaImpresion406,fmt,isA5};
   }
   function printDocument406(id,formato){
+    // Documento de OTRO profesional visto por un médico: se imprime su PDF ORIGINAL archivado (nunca se regenera con la vista saneada del médico, que no trae su logo ni su firma).
+    ensure406();
+    const dAjeno=data.documentosClinicos.find(x=>x.id===id);
+    if(dAjeno&&esDocumentoAjenoDeMedicoV1(dAjeno)){
+      if(typeof window.abrirPdfOriginalDocumentoAjenoV1==='function')window.abrirPdfOriginalDocumentoAjenoV1(dAjeno);
+      else alert('No se puede abrir el PDF original de este documento (módulo de archivo no disponible). Recargá la página. No se imprimió nada.');
+      return;
+    }
     const datos406=resolverDatosDocumento406(id,formato);
     if(!datos406)return;
     if(datos406.error){alert(datos406.error);return;}
@@ -12000,36 +12195,63 @@ function patientInfoTextHC(p,coverage){
     pdf.text('Fecha de impresión: '+String(fechaImpresion406||''),pageW-mX,pageH-6,{align:'right'});
     return pdf.output('blob');
   }
-  async function hashContenidoDocumento406(d){
-    const payload=JSON.stringify({titulo:d.titulo||'',contenido:d.contenido||'',adicional:d.adicional||'',profesionalId:d.profesionalId||'',fechaHora:d.fechaHora||''});
+  async function sha256Hex406(texto){
     try{
-      const bytes=new TextEncoder().encode(payload);
+      const bytes=new TextEncoder().encode(String(texto));
       const digest=await crypto.subtle.digest('SHA-256',bytes);
       return Array.from(new Uint8Array(digest)).map(b=>b.toString(16).padStart(2,'0')).join('');
-    }catch(e){return payload;}
+    }catch(e){return String(texto);}
+  }
+  // Documentos V1 / Bloque A - huella de la VERSIÓN: todo lo que cambia el documento o su PDF. Antes sólo cubría título/contenido/adicional/
+  // profesional/fecha, así que un cambio de tipo, de firma o de paciente se tomaba por "mismo documento" y se reutilizaba un PDF viejo.
+  // Cubre: campos del documento, firma incluida o no, paciente (id/nombre/DNI/cobertura), presentación del profesional (membrete, matrículas,
+  // contacto, color) y una huella del logo y de la firma. La usan tanto el archivado como el cierre de sesión (misma función, mismo valor).
+  async function hashContenidoDocumento406(d){
+    const p=patient406(d.pacienteId)||patients406().find(x=>String(x.dni||'').replace(/\D/g,'')===String(d.dni||'').replace(/\D/g,'')&&String(d.dni||'').replace(/\D/g,''))||{};
+    const pr=prof406(d.profesionalId)||{};
+    const firmaOn=d.incluirFirma!==false&&pr.mostrarFirmaDocumento!==false;
+    const img=async v=>v?await sha256Hex406(String(v)):'';
+    const lic=[pr.matriculaNacional,pr.matriculaProvincial].filter(Boolean).join(' · ');
+    // N.º de afiliado: sólo en órdenes con número cargado (el PDF lo imprime únicamente ahí). Sin número, o en otro tipo de documento, la clave no existe y la huella es idéntica a la anterior.
+    const afiliado=afiliadoOrden406(d,p);
+    const payload=JSON.stringify({v:2,tipo:d.tipo||'',titulo:d.titulo||'',contenido:d.contenido||'',adicional:d.adicional||'',fechaHora:d.fechaHora||'',profesionalId:d.profesionalId||'',
+      incluirFirma:d.incluirFirma!==false,
+      paciente:{id:p.id||'',nombre:patientName406(p)||d.pacienteNombre||'',dni:p.dni||d.dni||'',cobertura:p.coberturaHabitual||'',...(afiliado?{afiliado}:{})},
+      prof:{marca:pr.marcaDocumento||'',nombre:pr.nombre||'',esp:(typeof specialities406==='function'?specialities406(pr):'')||'',lic,
+        tel:pr.telefonoDocumento||'',email:pr.emailDocumento||'',dir:pr.direccionDocumento||'',redes:pr.redesDocumento||'',color:pr.colorDocumento||''},
+      logo:await img(getLogo406(pr)),firma:firmaOn?await img(getSignature406(pr)):''});
+    return sha256Hex406(payload);
   }
   // Expuesto para el cierre de sesión (liberarCacheLocalAlCerrarSesionV1): una sola definición del hash de contenido, la misma con la que se archivó el PDF.
   window.hashContenidoDocumento406=hashContenidoDocumento406;
-  const TIPO_PDF_ARCHIVO_POR_DOC406={orden:'Orden',certificado:'Certificado',constancia_atencion:'Constancia'};
+  // Catálogo único tipo de documento -> document_type con el que se archiva el PDF (cardiolink_patient_documents.document_type es texto libre).
+  // Un solo generador resuelve todos los tipos; no hay funciones por tipo.
+  const TIPO_PDF_ARCHIVO_POR_DOC406={receta:'Receta',orden:'Orden',certificado:'Certificado',constancia_atencion:'Constancia',ecg:'ECG',ecg_riesgo_quirurgico:'ECG y riesgo quirúrgico',
+    apto_fisico:'Apto físico',ecografia:'Ecografía',holter:'Holter',mapa:'MAPA',radiografia:'Radiografía',mensaje_colega:'Mensaje a colega',indicacion_paciente:'Indicaciones'};
   // Expuesto para cardiolink-documentos-pdf-v1.js (módulo independiente,
   // 6D/6E.1): genera el PDF real + un descriptor con TODO lo necesario
   // para archivarlo en cardiolink_patient_documents, sin que ese módulo
   // tenga que resolver paciente/profesional/contenido por su cuenta (una
   // sola fuente de contenido, también entre módulos). No toca Storage ni
   // Supabase acá - sólo genera el Blob y los metadatos descriptivos.
-  window.generarPdfDocumentoGenerado406=async function(docId,formato){
-    const datos406=resolverDatosDocumento406(docId,formato);
+  window.generarPdfDocumentoGenerado406=async function(docId,formato,docOverride){
+    const datos406=resolverDatosDocumento406(docId,formato,docOverride);
     if(!datos406)return {ok:false,error:'No se encontró el documento.'};
     if(datos406.error)return {ok:false,error:datos406.error};
     const {d,p}=datos406;
     const tipoArchivo=TIPO_PDF_ARCHIVO_POR_DOC406[d.tipo];
-    if(!tipoArchivo)return {ok:false,error:'Este tipo de documento todavía no admite Guardar PDF/Enviar (6E.2 V1: sólo Orden/Certificado/Constancia).'};
+    if(!tipoArchivo)return {ok:false,error:'Este tipo de documento no está en el catálogo de archivo PDF.'};
     const patientRealId=p?.id||'';
     if(!patientRealId)return {ok:false,error:'El paciente de este documento todavía no tiene un identificador real (sincronizalo desde la ficha antes de archivar el PDF).'};
     let blob;
     try{blob=await generarPdfBlobDocumento406(datos406);}
     catch(e){return {ok:false,error:'No se pudo generar el PDF: '+(e?.message||e)};}
     const contentHash=await hashContenidoDocumento406(d);
+    // Datos para reconstruir y EDITAR el documento desde otro dispositivo (source_payload). Sin nombre ni DNI del paciente: viven en la ficha y el
+    // paciente se resuelve por patient_id de la fila.
+    const payload={v:2,tipo:d.tipo,titulo:d.titulo||'',contenido:d.contenido||'',adicional:d.adicional||'',fechaHora:d.fechaHora||'',profesionalId:d.profesionalId||'',
+      profesionalNombre:d.profesionalNombre||'',incluirFirma:d.incluirFirma!==false,pacienteId:d.pacienteId||patientRealId,
+      creadoEn:d.creadoEn||'',creadoPor:d.creadoPor||'',actualizadoEn:d.actualizadoEn||'',actualizadoPor:d.actualizadoPor||''};
     return {
       ok:true,
       blob,
@@ -12041,7 +12263,8 @@ function patientInfoTextHC(p,coverage){
       documentDate:String(d.fechaHora||'').slice(0,10)||new Date().toISOString().slice(0,10),
       originalFilename:(d.titulo||docLabel406(d.tipo)||'documento').replace(/[^a-z0-9áéíóúñ\s_-]/gi,'').trim().replace(/\s+/g,'_').slice(0,80)+'.pdf',
       sourceDocumentId:d.id,
-      sourceContentHash:contentHash
+      sourceContentHash:contentHash,
+      payload
     };
   };
 
@@ -12053,7 +12276,7 @@ function patientInfoTextHC(p,coverage){
   function cerrarPrintFormatModal406(){document.getElementById('printFormatModal406')?.remove();}
   function elegirFormatoEImprimir406(id){
     ensure406();const d=data.documentosClinicos.find(x=>x.id===id);
-    if(!d||!esTipoCompacto406(d.tipo)){printDocument406(id);return;}
+    if(!d||!esTipoCompacto406(d.tipo)||esDocumentoAjenoDeMedicoV1(d)){printDocument406(id);return;}   // ajeno: PDF original, sin selector de formato
     cerrarPrintFormatModal406();
     const modal=document.createElement('div');modal.id='printFormatModal406';modal.className='hc-modal-overlay';modal.dataset.docFormato406='A5';
     modal.innerHTML=`<div class="hc-modal-card"><div class="hc-modal-head"><h2>Formato de impresión</h2><button type="button" class="modal-close" data-close-print-format406>×</button></div><div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:6px 0 4px"><div style="display:inline-flex;border:1px solid #cbd5e1;border-radius:8px;overflow:hidden"><button type="button" class="doc-format-opt406 active" data-doc-format406-opt="A5" style="padding:6px 16px;font-size:13px;font-weight:700;border:0;cursor:pointer;background:#174b5c;color:#fff">A5</button><button type="button" class="doc-format-opt406" data-doc-format406-opt="A4" style="padding:6px 16px;font-size:13px;font-weight:700;border:0;cursor:pointer;background:#eef2f7;color:#0f172a">A4</button></div></div><div class="hc-modal-actions"><button type="button" class="secondary" data-close-print-format406>Cancelar</button><button type="button" class="primary" id="btnConfirmPrintFormat406">Imprimir</button></div></div>`;
@@ -12065,8 +12288,10 @@ function patientInfoTextHC(p,coverage){
     };
   }
   function docsSection406(p){
-    const docs=docsForPatient406(p);
-    return `<section class="clinical-docs406" data-docs-section406><div class="clinical-docs-head406"><div><h3>Documentos clínicos e informes rápidos</h3><p class="muted">Recetas, órdenes, certificados, informes breves e indicaciones emitidas para este paciente.</p></div>${isMedical406()?`<button class="primary" type="button" data-new-doc406="${esc406(patientKey406(p))}">+ Nuevo documento</button>`:''}</div><div class="clinical-doc-list406">${docs.length?docs.map(d=>`<article class="clinical-doc-row406"><div><strong>${esc406(d.titulo||docLabel406(d.tipo))}</strong><span>${esc406(fmtDT406(d.fechaHora))} · ${esc406(d.profesionalNombre||'')}</span></div><div class="clinical-doc-actions406">${canEditDoc406(d)?`<button class="secondary small-btn" type="button" data-edit-doc406="${esc406(d.id)}" data-doc-patient406="${esc406(patientKey406(p))}">Editar</button>`:''}<button class="secondary small-btn" type="button" data-print-doc406="${esc406(d.id)}">Imprimir</button>${esTipoCompacto406(d.tipo)?`<button class="secondary small-btn" type="button" data-pdf2-guardar406="${esc406(d.id)}">Guardar PDF</button><button class="secondary small-btn" type="button" data-pdf2-enviar406="${esc406(d.id)}">Enviar</button>`:''}</div></article>`).join(''):'<p class="muted">Todavía no hay documentos emitidos.</p>'}</div></section>`;
+    const docs=docsForPatient406(p),pend=isMedical406()?docsSinArchivar406(p):[];
+    const banner=pend.length?`<div class="clinical-docs-local-v1" role="status" style="margin:8px 0;padding:10px 12px;border-radius:10px;background:#fef3c7;color:#78350f;border:1px solid #fcd34d;display:flex;gap:10px;align-items:center;flex-wrap:wrap;font-size:13px;font-weight:600"><span>${pend.length} documento${pend.length===1?'':'s'} de este paciente todavía ${pend.length===1?'no tiene':'no tienen'} su PDF archivado en el servidor.</span><button class="secondary small-btn" type="button" data-docs-archivar-locales-v1="${esc406(patientKey406(p))}">Guardarlos en el servidor</button></div>`:'';
+    const fila=d=>{const v=versionesDoc406(d,p);return `<article class="clinical-doc-row406"><div><strong>${esc406(d.titulo||docLabel406(d.tipo))}</strong>${v.badge}<span>${esc406(fmtDT406(d.fechaHora))} · ${esc406(d.profesionalNombre||'')}</span>${v.aviso}${v.detalle}</div><div class="clinical-doc-actions406">${canEditDoc406(d)?`<button class="secondary small-btn" type="button" data-edit-doc406="${esc406(d.id)}" data-doc-patient406="${esc406(patientKey406(p))}">Editar</button>`:''}<button class="secondary small-btn" type="button" data-print-doc406="${esc406(d.id)}">Imprimir</button>${esTipoCompacto406(d.tipo)?`<button class="secondary small-btn" type="button" data-pdf2-guardar406="${esc406(d.id)}">Guardar PDF</button><button class="secondary small-btn" type="button" data-pdf2-enviar406="${esc406(d.id)}">Enviar</button>`:''}</div></article>`;};
+    return `<section class="clinical-docs406" data-docs-section406><div class="clinical-docs-head406"><div><h3>Documentos clínicos e informes rápidos</h3><p class="muted">Recetas, órdenes, certificados, informes breves e indicaciones emitidas para este paciente.</p></div>${isMedical406()?`<button class="primary" type="button" data-new-doc406="${esc406(patientKey406(p))}">+ Nuevo documento</button>`:''}</div>${banner}<div class="clinical-doc-list406">${docs.length?docs.map(fila).join(''):'<p class="muted">Todavía no hay documentos emitidos.</p>'}</div></section>`;
   }
   function enhanceHC406(){
     ensure406();const root=$406('hcPacienteDetalle');if(!root)return;if(!isMedical406()){root.querySelectorAll('[data-docs-section406],[data-new-doc406]').forEach(x=>x.remove());return;}const key=root.querySelector('[data-hc-new]')?.dataset.hcNew;if(!key)return;const p=patient406(key);if(!p)return;
@@ -12120,6 +12345,7 @@ function patientInfoTextHC(p,coverage){
     if(e.target.id==='ownRemoveLogo406'){removeOwnImage406('logo');return;}
     if(e.target.id==='ownRemoveSignature406'){removeOwnImage406('signature');return;}
     if(e.target.id==='saveOwnIdentity406'){saveOwnIdentity406();return;}
+    const al=e.target.closest?.('[data-docs-archivar-locales-v1]');if(al){archivarLocales406(al.dataset.docsArchivarLocalesV1);return;}
     const nd=e.target.closest?.('[data-new-doc406]');if(nd){openDocumentModal406(nd.dataset.newDoc406);return;}
     const ed=e.target.closest?.('[data-edit-doc406]');if(ed){openDocumentModal406(ed.dataset.docPatient406,ed.dataset.editDoc406);return;}
     const pd=e.target.closest?.('[data-print-doc406]');if(pd){elegirFormatoEImprimir406(pd.dataset.printDoc406);return;}
