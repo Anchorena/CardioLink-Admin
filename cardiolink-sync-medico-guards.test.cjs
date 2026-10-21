@@ -397,22 +397,23 @@ test('documentos V1 / médico: imprimir un documento de OTRO profesional abre su
   assert.match(ver,/String\(d\.archivoId\|\|''\)!==String\(f\.id\)/);                         // las mismas validaciones que ya cubría el test anterior
 });
 
-test('documentos V1 / Bloque B: el historial de envíos es sólo lectura, pide únicamente ids del paciente y nunca message ni subject',()=>{
-  const h=sinComentarios(betweenIn(srcPdf,'const COLUMNAS_HIST_ENVIOS_V1=','async function cargarYRenderizarListaPdfV1(p){'));
-  const cols=srcPdf.match(/const COLUMNAS_HIST_ENVIOS_V1='([^']+)'/)[1].split(',');
-  assert.ok(!cols.includes('message')&&!cols.includes('subject'));                            // nunca el contenido del mensaje ni el asunto
-  ['id','document_id','paciente_id','created_at','canal','status','destinatario','recipient_name','recipient_source','error_message','created_by'].forEach(c=>assert.ok(cols.includes(c),'falta '+c));
-  assert.equal(cols.length,11);                                                                // ni una columna más (provider_message_id tampoco se pide)
-  assert.match(h,/from\('cardiolink_communications'\)\.select\(COLUMNAS_HIST_ENVIOS_V1\)\.eq\('tipo','document_delivery'\)\.in\('document_id',ids\.slice\(i,i\+80\)\)/);
-  assert.match(h,/\.order\('created_at',\{ascending:true\}\)/);                                // cronológico
-  assert.doesNotMatch(h,/\.insert\(|\.update\(|\.delete\(|\.upsert\(|\.rpc\(|\.functions\.invoke\(/);   // la consulta no genera ni modifica nada
-  assert.match(h,/x\.paciente_id==null\|\|String\(x\.paciente_id\)===String\(patientId\)/);   // descarta filas que traigan otro paciente (defensa adicional; la RLS sigue siendo la barrera)
-  // los ids salen de las filas de ESTE paciente ya cargadas por la lista, y sólo de documentos enviables
+test('documentos V1 / Bloque B: el historial de envíos es sólo lectura por función del servidor, pide únicamente ids del paciente y nunca message ni subject',()=>{
+  const h=sinComentarios(betweenIn(srcPdf,'let histEnviosSeqV1=0;','function etiquetaEstadoEnvioV1(f){'));
+  assert.match(h,/supabaseClient\.rpc\('cardiolink_historial_envios_documento_v1',\{p_document_ids:ids\.slice\(i,i\+80\)\}\)/);   // lectura por la función: el servidor decide qué ve cada rol
+  assert.doesNotMatch(sinComentarios(srcPdf),/from\('cardiolink_communications'\)/);                          // ninguna lectura directa de la tabla desde el cliente
+  assert.doesNotMatch(sinComentarios(srcPdf),/\bmessage,|,message\b|select\([^)]*\b(message|subject|provider_message_id)\b/);   // nunca el contenido ni el asunto
+  assert.doesNotMatch(h,/\.insert\(|\.update\(|\.delete\(|\.upsert\(|\.functions\.invoke\(/);          // la consulta no genera ni modifica nada
+  assert.match(h,/x\.paciente_id==null\|\|String\(x\.paciente_id\)===String\(patientId\)/);   // descarta filas que traigan otro paciente (defensa adicional; la barrera real es la función/RLS)
+  // los ids salen de las filas de ESTE paciente ya cargadas por la lista, sólo de documentos enviables; el médico no pide los de otro profesional
   const l=sinComentarios(betweenIn(srcPdf,'const idsHistDe=d=>{','conts.forEach(cont=>{'));
   assert.match(l,/if\(!puedeEnviarDocumentoV1\(d\)\)return null;/);
+  assert.match(l,/esMedicoV1&&d\.professional_id&&String\(d\.professional_id\)!==miProfV1\)return 'restringido'/);
   assert.match(l,/porFuente\[d\.source_document_id\]/);
   assert.match(l,/a\.map\(r=>r\.id\):\[d\.id\]/);
   assert.match(srcPdf,/\.from\('cardiolink_patient_documents'\)\.select\(c\)\.eq\('patient_id',p\.id\)/);   // la lista de la que salen los ids es la de ese paciente
+  // el emisor se muestra con banderas calculadas por el servidor: el cliente no recibe uuids de otros usuarios
+  assert.match(srcPdf,/f\.automatico\?'proceso automático':f\.creado_por_mi\?'vos':'otro usuario'/);
+  assert.doesNotMatch(srcPdf,/f\.created_by/);
   // no bloquea la ficha: se puebla aparte, con una sola consulta por carga y descartando respuestas viejas
   assert.match(srcPdf,/poblarHistorialEnviosV1\(p,conts\)\.catch\(e=>console\.warn\(/);
   const po=sinComentarios(betweenIn(srcPdf,'async function poblarHistorialEnviosV1(p,conts){','// Tras un envío desde el modal'));

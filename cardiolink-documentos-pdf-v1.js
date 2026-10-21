@@ -609,7 +609,7 @@
         <span>${escPdfV1(d.document_type)} · ${fmtFechaCortaPdfV1(d.document_date)}${d.professional_id?' · '+escPdfV1(profNombrePdfV1(d.professional_id)):''}</span>
         ${esImg?'':`<span>${escPdfV1(d.original_filename)}${d.size_bytes?' · '+fmtTamanoPdfV1(d.size_bytes):''}</span>`}
         ${d.description?`<span>${escPdfV1(d.description)}</span>`:''}${ver?ver.detalle:''}
-        ${idsHist&&idsHist.length?`<div class="pdf-hist-envios-v1" data-hist-envios-v1="${escPdfV1(d.id)}" data-hist-docids-v1="${escPdfV1(idsHist.join(','))}" style="margin-top:4px;font-size:12px"><span class="muted">Cargando historial de envíos…</span></div>`:''}
+        ${idsHist==='restringido'?'<div class="muted" style="margin-top:4px;font-size:12px">El historial de envíos lo ve el profesional emisor.</div>':''}${Array.isArray(idsHist)&&idsHist.length?`<div class="pdf-hist-envios-v1" data-hist-envios-v1="${escPdfV1(d.id)}" data-hist-docids-v1="${escPdfV1(idsHist.join(','))}" style="margin-top:4px;font-size:12px"><span class="muted">Cargando historial de envíos…</span></div>`:''}
       </div>
       <div class="pdf-doc-actions-v1">
         <button class="secondary small-btn" type="button" data-pdf-ver-v1="${escPdfV1(d.storage_path)}">${esImg?'Ver imagen':'Ver'}</button>
@@ -667,17 +667,17 @@
   }
   window.sincronizarDocumentosPacienteV1=sincronizarDocumentosPacienteV1;
   // ---------------------------------------------------------------------
-  // Documentos V1 / Bloque B - HISTORIAL DE ENVÍOS por documento. SOLO LECTURA de cardiolink_communications (tipo 'document_delivery', escrita únicamente por la Edge Function
-  // patient-document-delivery). Se consultan únicamente los ids (documento y todas sus versiones) de las filas de ESTE paciente ya cargadas en la lista; el servidor (RLS) sigue siendo
-  // quien decide el acceso: filtrar ids acá no lo reemplaza. NUNCA se pide message ni subject. Nunca se afirma "entregado": sólo lo que el registro puede probar.
-  const COLUMNAS_HIST_ENVIOS_V1='id,document_id,paciente_id,created_at,canal,status,destinatario,recipient_name,recipient_source,error_message,created_by';
+  // Documentos V1 / Bloque B - HISTORIAL DE ENVÍOS por documento. SOLO LECTURA, a través de la función del servidor cardiolink_historial_envios_documento_v1 (tipo 'document_delivery', escrito únicamente
+  // por la Edge Function patient-document-delivery). El cliente NO lee cardiolink_communications directo: la función decide el acceso (owner/admin/secretaría: todo; médico: sólo documentos que emitió él)
+  // y nunca devuelve message, subject ni provider_message_id. Se pasan sólo los ids (documento y todas sus versiones) de las filas de ESTE paciente ya cargadas en la lista.
+  // Nunca se afirma "entregado": sólo lo que el registro puede probar.
   let histEnviosSeqV1=0;
   async function cargarHistorialEnviosV1(patientId,ids){
     if(!supabaseClient||!ids.length)return {ok:true,filas:[]};
     const filas=[];
     try{
       for(let i=0;i<ids.length;i+=80){
-        const {data:f,error}=await supabaseClient.from('cardiolink_communications').select(COLUMNAS_HIST_ENVIOS_V1).eq('tipo','document_delivery').in('document_id',ids.slice(i,i+80)).order('created_at',{ascending:true});
+        const {data:f,error}=await supabaseClient.rpc('cardiolink_historial_envios_documento_v1',{p_document_ids:ids.slice(i,i+80)});
         if(error)throw error;
         (f||[]).forEach(x=>filas.push(x));
       }
@@ -704,12 +704,11 @@
     const set=new Set(docIds.map(String));
     const lista=res.filas.filter(f=>set.has(String(f.document_id)));
     if(!lista.length)return '<span class="muted">Sin envíos registrados para este documento.</span>';
-    const yo=(typeof usuarioSupabase!=='undefined'&&usuarioSupabase)?String(usuarioSupabase.id||''):'';
     const filas=lista.map(f=>{
       const e=etiquetaEstadoEnvioV1(f);
       const canal=f.canal==='email'?'Email':f.canal==='whatsapp'?'WhatsApp':escPdfV1(f.canal||'');
       const dest=[f.recipient_name?escPdfV1(f.recipient_name):'',escPdfV1(f.destinatario||'')].filter(Boolean).join(' · ')+(f.recipient_source==='responsible_contact'?' (contacto responsable)':'');
-      const emisor=f.created_by?(String(f.created_by)===yo?'vos':'otro usuario'):'proceso automático';
+      const emisor=f.automatico?'proceso automático':f.creado_por_mi?'vos':'otro usuario';
       const motivo=f.status==='failed'&&f.error_message?` — ${escPdfV1(String(f.error_message).slice(0,200))}`:'';
       return `<li style="margin-top:3px"><span>${escPdfV1(fmtFechaHoraEnvioV1(f.created_at))}</span> · <strong>${canal}</strong> · ${dest} · <span style="color:${e.tono};font-weight:700">${escPdfV1(e.texto)}</span>${motivo} <span class="muted">· por ${escPdfV1(emisor)}</span></li>`;
     }).join('');
@@ -761,7 +760,8 @@
         detalle:`<details style="margin-top:4px"><summary style="cursor:pointer;font-size:12px">Versiones anteriores (${ant.length})</summary>${ant.map((r,i)=>`<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12px;margin-top:3px">v${n-1-i} · ${escPdfV1(new Date(r.created_at).toLocaleString('es-AR',{dateStyle:'short',timeStyle:'short'}))}<button class="secondary small-btn" type="button" data-pdf-ver-v1="${escPdfV1(r.storage_path)}">Ver</button><button class="secondary small-btn" type="button" data-pdf-descargar-v1="${escPdfV1(r.storage_path)}" data-pdf-name-v1="${escPdfV1(r.original_filename)}">Descargar</button></div>`).join('')}</details>`};
     };
     // ids a consultar en el historial de envíos: el documento y TODAS sus versiones (cada envío se registra con el id de la versión enviada); sólo filas de este paciente
-    const idsHistDe=d=>{if(!puedeEnviarDocumentoV1(d))return null;const a=d.source_document_id&&porFuente[d.source_document_id];return a?a.map(r=>r.id):[d.id];};
+    const esMedicoV1=typeof esMedicoBackendV1==='function'&&esMedicoBackendV1(),miProfV1=esMedicoV1&&typeof profesionalIdUsuarioActual==='function'?String(profesionalIdUsuarioActual()||''):'';
+    const idsHistDe=d=>{if(!puedeEnviarDocumentoV1(d))return null;if(esMedicoV1&&d.professional_id&&String(d.professional_id)!==miProfV1)return 'restringido';const a=d.source_document_id&&porFuente[d.source_document_id];return a?a.map(r=>r.id):[d.id];};
     conts.forEach(cont=>{
       const dentroDeHC=hcRoot&&hcRoot.contains(cont);
       const visibles=(dentroDeHC?rows.filter(d=>!d.evolution_id):rows).filter(d=>!ocultas.has(d.id));
