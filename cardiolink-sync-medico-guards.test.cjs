@@ -397,6 +397,46 @@ test('documentos V1 / médico: imprimir un documento de OTRO profesional abre su
   assert.match(ver,/String\(d\.archivoId\|\|''\)!==String\(f\.id\)/);                         // las mismas validaciones que ya cubría el test anterior
 });
 
+test('documentos V1 / Bloque B: el historial de envíos es sólo lectura, pide únicamente ids del paciente y nunca message ni subject',()=>{
+  const h=sinComentarios(betweenIn(srcPdf,'const COLUMNAS_HIST_ENVIOS_V1=','async function cargarYRenderizarListaPdfV1(p){'));
+  const cols=srcPdf.match(/const COLUMNAS_HIST_ENVIOS_V1='([^']+)'/)[1].split(',');
+  assert.ok(!cols.includes('message')&&!cols.includes('subject'));                            // nunca el contenido del mensaje ni el asunto
+  ['id','document_id','paciente_id','created_at','canal','status','destinatario','recipient_name','recipient_source','error_message','created_by'].forEach(c=>assert.ok(cols.includes(c),'falta '+c));
+  assert.equal(cols.length,11);                                                                // ni una columna más (provider_message_id tampoco se pide)
+  assert.match(h,/from\('cardiolink_communications'\)\.select\(COLUMNAS_HIST_ENVIOS_V1\)\.eq\('tipo','document_delivery'\)\.in\('document_id',ids\.slice\(i,i\+80\)\)/);
+  assert.match(h,/\.order\('created_at',\{ascending:true\}\)/);                                // cronológico
+  assert.doesNotMatch(h,/\.insert\(|\.update\(|\.delete\(|\.upsert\(|\.rpc\(|\.functions\.invoke\(/);   // la consulta no genera ni modifica nada
+  assert.match(h,/x\.paciente_id==null\|\|String\(x\.paciente_id\)===String\(patientId\)/);   // descarta filas que traigan otro paciente (defensa adicional; la RLS sigue siendo la barrera)
+  // los ids salen de las filas de ESTE paciente ya cargadas por la lista, y sólo de documentos enviables
+  const l=sinComentarios(betweenIn(srcPdf,'const idsHistDe=d=>{','conts.forEach(cont=>{'));
+  assert.match(l,/if\(!puedeEnviarDocumentoV1\(d\)\)return null;/);
+  assert.match(l,/porFuente\[d\.source_document_id\]/);
+  assert.match(l,/a\.map\(r=>r\.id\):\[d\.id\]/);
+  assert.match(srcPdf,/\.from\('cardiolink_patient_documents'\)\.select\(c\)\.eq\('patient_id',p\.id\)/);   // la lista de la que salen los ids es la de ese paciente
+  // no bloquea la ficha: se puebla aparte, con una sola consulta por carga y descartando respuestas viejas
+  assert.match(srcPdf,/poblarHistorialEnviosV1\(p,conts\)\.catch\(e=>console\.warn\(/);
+  const po=sinComentarios(betweenIn(srcPdf,'async function poblarHistorialEnviosV1(p,conts){','// Tras un envío desde el modal'));
+  assert.match(po,/const seq=\+\+histEnviosSeqV1;/);
+  assert.match(po,/if\(seq!==histEnviosSeqV1\)return;/);
+  assert.equal((po.match(/cargarHistorialEnviosV1\(/g)||[]).length,1);
+  // tras enviar se vuelve a leer, sin tocar el mecanismo de envío
+  assert.match(srcPdf,/mostrarEstadoEnvioV1\(partes\.join\(''\)\);\s*try\{refrescarHistorialTrasEnvioV1\(\);\}catch\(e\)\{\}/);
+});
+
+test('documentos V1 / Bloque B: los estados del historial no afirman más de lo que el registro prueba',()=>{
+  const e=sinComentarios(betweenIn(srcPdf,'function etiquetaEstadoEnvioV1(f){','function fmtFechaHoraEnvioV1(iso){'));
+  assert.match(e,/'Email aceptado por el proveedor'/);
+  assert.match(e,/'WhatsApp preparado, envío no confirmado'/);
+  assert.match(e,/'Envío fallido'/);
+  assert.doesNotMatch(e,/entregad|delivered/i);                                                // nunca "entregado" sin confirmación real
+  const r=sinComentarios(betweenIn(srcPdf,'function renderHistorialEnviosV1(res,docIds){','async function poblarHistorialEnviosV1(p,conts){'));
+  assert.match(r,/Sin envíos registrados para este documento\./);                               // estado vacío claro
+  assert.match(r,/Historial de envíos no disponible/);                                          // error informado sin romper la ficha
+  assert.match(r,/f\.status==='failed'&&f\.error_message/);                                     // el motivo sólo en fallidos
+  assert.doesNotMatch(r,/\.message\b|\.subject\b/);                                             // nunca se muestra el contenido
+  assert.doesNotMatch(r,/entregad|delivered/i);
+});
+
 test('documentos V1 / Bloque A: archivado por versión (módulo PDF): idempotente, con candado y sin dejar filas sin archivo',()=>{
   const m=sinComentarios(betweenIn(srcPdf,'async function archivarInternoV1(doc,opts){','// Un documento a la vez'));
   assert.match(m,/ult\.source_content_hash===gen\.sourceContentHash\)return \{ok:true,rowId:ult\.id/);   // misma huella: se reutiliza, no se duplica
