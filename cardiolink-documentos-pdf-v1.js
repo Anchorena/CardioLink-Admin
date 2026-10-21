@@ -601,7 +601,7 @@
     return true;
   }
 
-  function tarjetaDocumentoPdfV1(d,ver){
+  function tarjetaDocumentoPdfV1(d,ver,idsHist){
     const esImg=esImagenClinicaV1(d);
     return `<article class="pdf-doc-row-v1">
       <div>
@@ -609,6 +609,7 @@
         <span>${escPdfV1(d.document_type)} · ${fmtFechaCortaPdfV1(d.document_date)}${d.professional_id?' · '+escPdfV1(profNombrePdfV1(d.professional_id)):''}</span>
         ${esImg?'':`<span>${escPdfV1(d.original_filename)}${d.size_bytes?' · '+fmtTamanoPdfV1(d.size_bytes):''}</span>`}
         ${d.description?`<span>${escPdfV1(d.description)}</span>`:''}${ver?ver.detalle:''}
+        ${idsHist&&idsHist.length?`<div class="pdf-hist-envios-v1" data-hist-envios-v1="${escPdfV1(d.id)}" data-hist-docids-v1="${escPdfV1(idsHist.join(','))}" style="margin-top:4px;font-size:12px"><span class="muted">Cargando historial de envíos…</span></div>`:''}
       </div>
       <div class="pdf-doc-actions-v1">
         <button class="secondary small-btn" type="button" data-pdf-ver-v1="${escPdfV1(d.storage_path)}">${esImg?'Ver imagen':'Ver'}</button>
@@ -665,6 +666,71 @@
     return cambio;
   }
   window.sincronizarDocumentosPacienteV1=sincronizarDocumentosPacienteV1;
+  // ---------------------------------------------------------------------
+  // Documentos V1 / Bloque B - HISTORIAL DE ENVÍOS por documento. SOLO LECTURA de cardiolink_communications (tipo 'document_delivery', escrita únicamente por la Edge Function
+  // patient-document-delivery). Se consultan únicamente los ids (documento y todas sus versiones) de las filas de ESTE paciente ya cargadas en la lista; el servidor (RLS) sigue siendo
+  // quien decide el acceso: filtrar ids acá no lo reemplaza. NUNCA se pide message ni subject. Nunca se afirma "entregado": sólo lo que el registro puede probar.
+  const COLUMNAS_HIST_ENVIOS_V1='id,document_id,paciente_id,created_at,canal,status,destinatario,recipient_name,recipient_source,error_message,created_by';
+  let histEnviosSeqV1=0;
+  async function cargarHistorialEnviosV1(patientId,ids){
+    if(!supabaseClient||!ids.length)return {ok:true,filas:[]};
+    const filas=[];
+    try{
+      for(let i=0;i<ids.length;i+=80){
+        const {data:f,error}=await supabaseClient.from('cardiolink_communications').select(COLUMNAS_HIST_ENVIOS_V1).eq('tipo','document_delivery').in('document_id',ids.slice(i,i+80)).order('created_at',{ascending:true});
+        if(error)throw error;
+        (f||[]).forEach(x=>filas.push(x));
+      }
+    }catch(e){return {ok:false,error:String((e&&e.message)||e||'error desconocido').slice(0,160)};}
+    // defensa adicional: si una fila trae paciente_id de OTRO paciente se descarta (la protección real es la RLS del servidor)
+    const propias=filas.filter(x=>x.paciente_id==null||String(x.paciente_id)===String(patientId));
+    propias.sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));
+    return {ok:true,filas:propias};
+  }
+  function etiquetaEstadoEnvioV1(f){
+    const st=String(f.status||'');
+    if(st==='failed')return {texto:'Envío fallido',tono:'#b91c1c'};
+    if(st==='sent')return {texto:f.canal==='email'?'Email aceptado por el proveedor':'Aceptado por el proveedor',tono:'#166534'};
+    if(st==='manual_started')return {texto:f.canal==='whatsapp'?'WhatsApp preparado, envío no confirmado':'Preparado, envío no confirmado',tono:'#92400e'};
+    if(st==='pending')return {texto:'En curso',tono:'#475569'};
+    if(st==='opened')return {texto:'Abierto por el destinatario',tono:'#166534'};
+    return {texto:'Estado: '+(st||'desconocido'),tono:'#475569'};
+  }
+  function fmtFechaHoraEnvioV1(iso){
+    try{return new Intl.DateTimeFormat('es-AR',{dateStyle:'short',timeStyle:'short'}).format(new Date(iso));}catch(e){return String(iso||'');}
+  }
+  function renderHistorialEnviosV1(res,docIds){
+    if(!res||!res.ok)return `<span class="muted" style="color:#b91c1c">Historial de envíos no disponible (${escPdfV1(res&&res.error||'error')}).</span>`;
+    const set=new Set(docIds.map(String));
+    const lista=res.filas.filter(f=>set.has(String(f.document_id)));
+    if(!lista.length)return '<span class="muted">Sin envíos registrados para este documento.</span>';
+    const yo=(typeof usuarioSupabase!=='undefined'&&usuarioSupabase)?String(usuarioSupabase.id||''):'';
+    const filas=lista.map(f=>{
+      const e=etiquetaEstadoEnvioV1(f);
+      const canal=f.canal==='email'?'Email':f.canal==='whatsapp'?'WhatsApp':escPdfV1(f.canal||'');
+      const dest=[f.recipient_name?escPdfV1(f.recipient_name):'',escPdfV1(f.destinatario||'')].filter(Boolean).join(' · ')+(f.recipient_source==='responsible_contact'?' (contacto responsable)':'');
+      const emisor=f.created_by?(String(f.created_by)===yo?'vos':'otro usuario'):'proceso automático';
+      const motivo=f.status==='failed'&&f.error_message?` — ${escPdfV1(String(f.error_message).slice(0,200))}`:'';
+      return `<li style="margin-top:3px"><span>${escPdfV1(fmtFechaHoraEnvioV1(f.created_at))}</span> · <strong>${canal}</strong> · ${dest} · <span style="color:${e.tono};font-weight:700">${escPdfV1(e.texto)}</span>${motivo} <span class="muted">· por ${escPdfV1(emisor)}</span></li>`;
+    }).join('');
+    const ultimo=etiquetaEstadoEnvioV1(lista[lista.length-1]);
+    return `<details style="margin-top:2px"><summary style="cursor:pointer">Envíos (${lista.length}) · último: ${escPdfV1(ultimo.texto)}</summary><ul style="margin:4px 0 0 16px;padding:0">${filas}</ul></details>`;
+  }
+  async function poblarHistorialEnviosV1(p,conts){
+    const seq=++histEnviosSeqV1;
+    const slots=conts.flatMap(c=>Array.from(c.querySelectorAll('[data-hist-envios-v1]')));
+    if(!slots.length)return;
+    const idsDe=s=>String(s.dataset.histDocidsV1||'').split(',').filter(Boolean);
+    const ids=Array.from(new Set(slots.flatMap(idsDe)));
+    const res=await cargarHistorialEnviosV1(p.id,ids);      // una sola consulta (por lotes) para todas las tarjetas de la lista
+    if(seq!==histEnviosSeqV1)return;                         // llegó una carga más nueva: se descarta esta
+    slots.forEach(s=>{if(s.isConnected)s.innerHTML=renderHistorialEnviosV1(res,idsDe(s));});
+  }
+  // Tras un envío desde el modal: se vuelve a leer el historial de las listas visibles (no cambia el envío).
+  function refrescarHistorialTrasEnvioV1(){
+    const vistos=new Set();
+    document.querySelectorAll('[data-pdf-docs-section-v1]').forEach(sec=>{const id=sec.dataset.pdfDocsSectionV1;if(id&&!vistos.has(id)){vistos.add(id);cargarYRenderizarListaPdfV1({id}).catch(()=>{});}});
+  }
   async function cargarYRenderizarListaPdfV1(p){
     if(!p?.id)return;
     const conts=Array.from(document.querySelectorAll('[data-pdf-docs-list-v1]'))
@@ -694,11 +760,14 @@
       return {badge:` <span style="display:inline-block;margin-left:6px;padding:1px 7px;border-radius:999px;background:#dcfce7;color:#166534;font-size:11px;font-weight:800">v${n} · Vigente</span>`,
         detalle:`<details style="margin-top:4px"><summary style="cursor:pointer;font-size:12px">Versiones anteriores (${ant.length})</summary>${ant.map((r,i)=>`<div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;font-size:12px;margin-top:3px">v${n-1-i} · ${escPdfV1(new Date(r.created_at).toLocaleString('es-AR',{dateStyle:'short',timeStyle:'short'}))}<button class="secondary small-btn" type="button" data-pdf-ver-v1="${escPdfV1(r.storage_path)}">Ver</button><button class="secondary small-btn" type="button" data-pdf-descargar-v1="${escPdfV1(r.storage_path)}" data-pdf-name-v1="${escPdfV1(r.original_filename)}">Descargar</button></div>`).join('')}</details>`};
     };
+    // ids a consultar en el historial de envíos: el documento y TODAS sus versiones (cada envío se registra con el id de la versión enviada); sólo filas de este paciente
+    const idsHistDe=d=>{if(!puedeEnviarDocumentoV1(d))return null;const a=d.source_document_id&&porFuente[d.source_document_id];return a?a.map(r=>r.id):[d.id];};
     conts.forEach(cont=>{
       const dentroDeHC=hcRoot&&hcRoot.contains(cont);
       const visibles=(dentroDeHC?rows.filter(d=>!d.evolution_id):rows).filter(d=>!ocultas.has(d.id));
-      cont.innerHTML=visibles.length?visibles.map(d=>tarjetaDocumentoPdfV1(d,verDe(d))).join(''):'<p class="muted">Todavía no hay documentos subidos.</p>';
+      cont.innerHTML=visibles.length?visibles.map(d=>tarjetaDocumentoPdfV1(d,verDe(d),idsHistDe(d))).join(''):'<p class="muted">Todavía no hay documentos subidos.</p>';
     });
+    poblarHistorialEnviosV1(p,conts).catch(e=>console.warn('No se pudo cargar el historial de envíos:',e));
     if(hcRoot)inyectarDocumentosEnEvolucionesV1(hcRoot,rows.filter(d=>!ocultas.has(d.id)));
   }
   window.recargarListaPdfDocumentosV1=cargarYRenderizarListaPdfV1;
@@ -1201,6 +1270,7 @@
     const avisoProf=(resultadoEmail?.avisoProfesional)||(resultadoWhatsapp?.avisoProfesional);
     if(avisoProf?.enviado)partes.push('<p class="muted">Se avisó automáticamente al profesional.</p>');
     mostrarEstadoEnvioV1(partes.join(''));
+    try{refrescarHistorialTrasEnvioV1();}catch(e){}
   }
 
   // ---------------------------------------------------------------------
