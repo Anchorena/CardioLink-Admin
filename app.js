@@ -10519,6 +10519,10 @@ function patientInfoTextHC(p,coverage){
       }catch(e){console.warn('No se pudo revertir el estado local tras un guardado fallido:',e);}
     };
     try{
+      if(!conectado||typeof window.cardiolinkClinica410?.guardarEvolucionConfirmada!=='function'){
+        falloGuardado('Sin conexión confirmada con Supabase. No se guardó la evolución: tu texto permanece en pantalla. Reconectá e intentá nuevamente.');
+        return;
+      }
       const editId=existing?String(existing.id):(modalEl?.dataset.evoIdV1||'');
       let live=editId?(data.evolucionesClinicas||[]).find(x=>String(x.id)===editId):null;
       if(existing){
@@ -10558,7 +10562,7 @@ function patientInfoTextHC(p,coverage){
         saveConfig();try{programarSyncSupabase?.();}catch(e){}
         clearTimeout(window.__syncConfig298Timer);
         try{await window.guardarConfigEnSupabase298?.();}catch(e){}   // copia heredada de la HC en la fila de config (mejor esfuerzo)
-      }else{saveConfig();try{programarSyncSupabase?.();}catch(e){}}   // modo local sin servidor: se guarda sólo en este equipo, como siempre
+      }
       if(modalEl)modalEl.dataset.evoBaseV1=now;                       // próxima comparación: contra NUESTRA escritura confirmada
     // Bloque 6D.2 - vincular los documentos adjuntos pendientes (subidos
     // durante esta sesión del modal, o ya vinculados si se está editando)
@@ -13013,11 +13017,11 @@ function patientInfoTextHC(p,coverage){
   async function leerEvolucion410(id){
     if(!listo410()||id==null)return {existe:null};
     try{
-      const {data:filas,error}=await supabaseClient.from('cardiolink_hc_evoluciones').select('id,editado_en,creado_en,evolucion').eq('id',String(id)).limit(1);
+      const {data:filas,error}=await supabaseClient.from('cardiolink_hc_evoluciones').select('id,editado_en,creado_en,motivo,evolucion,diagnostico,conducta,peso_kg,talla_cm,imc,ta_sistolica,ta_diastolica,frecuencia_cardiaca,sato2,temperatura').eq('id',String(id)).limit(1);
       if(error)return {existe:null,error:error.message||String(error)};
       const f=Array.isArray(filas)?filas[0]:filas;
       if(!f)return {existe:false};
-      return {existe:true,editadoEn:f.editado_en||'',evolucion:f.evolucion};
+      return {existe:true,editadoEn:f.editado_en||'',evolucion:f.evolucion,fila:f};
     }catch(e){return {existe:null,error:String(e?.message||e)};}
   }
   // Guarda UNA evolución (y, si cambió, el resumen) y CONFIRMA la persistencia leyendo la fila del servidor. A diferencia de
@@ -13049,10 +13053,30 @@ function patientInfoTextHC(p,coverage){
         err=await intentar();
       }
       if(err)return {ok:false,error:err.message||String(err)};
+      if(srow){
+        const {data:resumen,error:re}=await supabaseClient.from('cardiolink_hc_resumen')
+          .select('antecedentes,alergias,medicacion_habitual,alertas').eq('paciente_id',srow.paciente_id).limit(1);
+        const fila=Array.isArray(resumen)?resumen[0]:resumen;
+        const claves=['antecedentes','alergias','medicacion_habitual','alertas'];
+        if(re||!fila||!claves.every(k=>String(fila[k]??'')===String(srow[k]??'')))
+          return {ok:false,error:'no se pudo confirmar el resumen clínico en el servidor'};
+      }
       if(erow){
         const l=await leerEvolucion410(erow.id);
         const mismoEditado=(Date.parse(l.editadoEn||0)||0)===(Date.parse(erow.editado_en||0)||0);
-        if(l.existe!==true||String(l.evolucion||'')!==String(erow.evolucion||'')||!mismoEditado)return {ok:false,error:'el servidor no devolvió la versión guardada'};
+        const claves=['motivo','evolucion','diagnostico','conducta','peso_kg','talla_cm','imc','ta_sistolica','ta_diastolica','frecuencia_cardiaca','sato2','temperatura'];
+        const numericos=new Set(['peso_kg','talla_cm','imc','ta_sistolica','ta_diastolica','frecuencia_cardiaca','sato2','temperatura']);
+        const iguales=claves.every(k=>{
+          const recibido=l.fila?.[k],enviado=erow[k];
+          if(numericos.has(k)){
+            if(recibido==null||recibido==='')return enviado==null||enviado==='';
+            if(enviado==null||enviado==='')return false;
+            const a=Number(recibido),b=Number(enviado);
+            return Number.isFinite(a)&&Number.isFinite(b)&&Math.abs(a-b)<=1e-8;
+          }
+          return String(recibido??'')===String(enviado??'');
+        });
+        if(l.existe!==true||!iguales||!mismoEditado)return {ok:false,error:'el servidor no devolvió todos los campos de la versión guardada'};
       }
       return {ok:true};
     }catch(e){return {ok:false,error:String(e?.message||e)};}
