@@ -397,6 +397,47 @@ test('documentos V1 / médico: imprimir un documento de OTRO profesional abre su
   assert.match(ver,/String\(d\.archivoId\|\|''\)!==String\(f\.id\)/);                         // las mismas validaciones que ya cubría el test anterior
 });
 
+test('documentos V1 / Bloque B: el historial de envíos es sólo lectura por función del servidor, pide únicamente ids del paciente y nunca message ni subject',()=>{
+  const h=sinComentarios(betweenIn(srcPdf,'let histEnviosSeqV1=0;','function etiquetaEstadoEnvioV1(f){'));
+  assert.match(h,/supabaseClient\.rpc\('cardiolink_historial_envios_documento_v1',\{p_document_ids:ids\.slice\(i,i\+80\)\}\)/);   // lectura por la función: el servidor decide qué ve cada rol
+  assert.doesNotMatch(sinComentarios(srcPdf),/from\('cardiolink_communications'\)/);                          // ninguna lectura directa de la tabla desde el cliente
+  assert.doesNotMatch(sinComentarios(srcPdf),/\bmessage,|,message\b|select\([^)]*\b(message|subject|provider_message_id)\b/);   // nunca el contenido ni el asunto
+  assert.doesNotMatch(h,/\.insert\(|\.update\(|\.delete\(|\.upsert\(|\.functions\.invoke\(/);          // la consulta no genera ni modifica nada
+  assert.match(h,/x\.paciente_id==null\|\|String\(x\.paciente_id\)===String\(patientId\)/);   // descarta filas que traigan otro paciente (defensa adicional; la barrera real es la función/RLS)
+  // los ids salen de las filas de ESTE paciente ya cargadas por la lista, sólo de documentos enviables; el médico no pide los de otro profesional
+  const l=sinComentarios(betweenIn(srcPdf,'const idsHistDe=d=>{','conts.forEach(cont=>{'));
+  assert.match(l,/if\(!puedeEnviarDocumentoV1\(d\)\)return null;/);
+  assert.match(l,/esMedicoV1&&d\.professional_id&&String\(d\.professional_id\)!==miProfV1\)return 'restringido'/);
+  assert.match(l,/porFuente\[d\.source_document_id\]/);
+  assert.match(l,/a\.map\(r=>r\.id\):\[d\.id\]/);
+  assert.match(srcPdf,/\.from\('cardiolink_patient_documents'\)\.select\(c\)\.eq\('patient_id',p\.id\)/);   // la lista de la que salen los ids es la de ese paciente
+  // el emisor se muestra con banderas calculadas por el servidor: el cliente no recibe uuids de otros usuarios
+  assert.match(srcPdf,/f\.automatico\?'proceso automático':f\.creado_por_mi\?'vos':'otro usuario'/);
+  assert.doesNotMatch(srcPdf,/f\.created_by/);
+  // no bloquea la ficha: se puebla aparte, con una sola consulta por carga y descartando respuestas viejas
+  assert.match(srcPdf,/poblarHistorialEnviosV1\(p,conts\)\.catch\(e=>console\.warn\(/);
+  const po=sinComentarios(betweenIn(srcPdf,'async function poblarHistorialEnviosV1(p,conts){','// Tras un envío desde el modal'));
+  assert.match(po,/const seq=\+\+histEnviosSeqV1;/);
+  assert.match(po,/if\(seq!==histEnviosSeqV1\)return;/);
+  assert.equal((po.match(/cargarHistorialEnviosV1\(/g)||[]).length,1);
+  // tras enviar se vuelve a leer, sin tocar el mecanismo de envío
+  assert.match(srcPdf,/mostrarEstadoEnvioV1\(partes\.join\(''\)\);\s*try\{refrescarHistorialTrasEnvioV1\(\);\}catch\(e\)\{\}/);
+});
+
+test('documentos V1 / Bloque B: los estados del historial no afirman más de lo que el registro prueba',()=>{
+  const e=sinComentarios(betweenIn(srcPdf,'function etiquetaEstadoEnvioV1(f){','function fmtFechaHoraEnvioV1(iso){'));
+  assert.match(e,/'Email aceptado por el proveedor'/);
+  assert.match(e,/'WhatsApp preparado, envío no confirmado'/);
+  assert.match(e,/'Envío fallido'/);
+  assert.doesNotMatch(e,/entregad|delivered/i);                                                // nunca "entregado" sin confirmación real
+  const r=sinComentarios(betweenIn(srcPdf,'function renderHistorialEnviosV1(res,docIds){','async function poblarHistorialEnviosV1(p,conts){'));
+  assert.match(r,/Sin envíos registrados para este documento\./);                               // estado vacío claro
+  assert.match(r,/Historial de envíos no disponible/);                                          // error informado sin romper la ficha
+  assert.match(r,/f\.status==='failed'&&f\.error_message/);                                     // el motivo sólo en fallidos
+  assert.doesNotMatch(r,/\.message\b|\.subject\b/);                                             // nunca se muestra el contenido
+  assert.doesNotMatch(r,/entregad|delivered/i);
+});
+
 test('documentos V1 / Bloque A: archivado por versión (módulo PDF): idempotente, con candado y sin dejar filas sin archivo',()=>{
   const m=sinComentarios(betweenIn(srcPdf,'async function archivarInternoV1(doc,opts){','// Un documento a la vez'));
   assert.match(m,/ult\.source_content_hash===gen\.sourceContentHash\)return \{ok:true,rowId:ult\.id/);   // misma huella: se reutiliza, no se duplica
