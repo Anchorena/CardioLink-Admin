@@ -157,18 +157,27 @@ function identidadBackendOwnerAdminV1(){
   if(i.role!=='owner'&&i.role!=='admin') return null;
   return {role:i.role,P:String(i.professional_id)};
 }
+function normalizarProfesionalIdV1(s){ return String(s==null?'':s).trim().replace(/\s+/g,' ').toLowerCase(); }
+// Rol base local de un usuario configurado (misma resolución que rolBaseUsuarioActual: rol configurado -> baseRole -> rol).
+function rolLocalPerfilV1(x){
+  const rolId=x.rolId||x.rol||'';
+  const rolConfigurado=(data.roles||[]).find(r=>r.id===rolId);
+  return rolConfigurado?.baseRole||x.baseRole||x.rol||'';
+}
 function perfilUsuarioActual(){
   asegurarUsuariosConfig();
   const user = usuarioActualNombreCorto();
   const email = usuarioSupabase?.email || '';
   let u=(data.usuarios||[]).find(x=>usuarioCoincide(x,user,email) && x.activo!==false);
   if(!u) u=inferirUsuarioPorLogin(user) || inferirUsuarioPorLogin(email);
-  // Médico con identidad de backend: las heurísticas de email/alias NO pueden asignarle el perfil de otro profesional.
-  // Si el perfil resuelto no está vinculado a SU professional_id, se usa el usuario configurado vinculado o, si no hay, el
-  // perfil de respaldo con el login de backend.
+  // Médico con identidad de backend: las heurísticas de email/alias NO pueden asignarle el perfil de otro profesional, y la identidad del
+  // servidor lo resuelve aunque el login no coincida con ningún alias local. El perfil sólo puede ser un usuario MÉDICO ACTIVO vinculado a SU
+  // professional_id (confirmado por auth.uid(); se comparan sin mayúsculas ni espacios de más). Sin coincidencia válida: perfil de respaldo
+  // con permisos mínimos (fail-closed). Los permisos reales siguen saliendo de rolBaseUsuarioActual() / el backend, no de este perfil.
   if(esMedicoBackendV1()){
-    const P=String(backendPendientesIdentidadV1.professional_id||'');
-    if(u && String(u.profesionalId||'')!==P) u=(data.usuarios||[]).find(x=>x.activo!==false&&String(x.profesionalId||'')===P)||null;
+    const P=normalizarProfesionalIdV1(backendPendientesIdentidadV1.professional_id);
+    const vinculado=x=>!!x&&P!==''&&x.activo!==false&&normalizarProfesionalIdV1(x.profesionalId)===P&&rolLocalPerfilV1(x)==='medico';
+    if(!vinculado(u)) u=(data.usuarios||[]).find(vinculado)||null;
   }
   // La identidad del SERVIDOR prevalece sobre la configuración local y sobre cualquier alias de email: un owner/admin con professional_id confirmado
   // por el backend se resuelve por ese profesional. Así una configuración local desactualizada, o pisada por el refresco de 30 s o por otra sesión,
