@@ -249,11 +249,58 @@ const CACHE_OWNER_KEY_V1='cardiolink_cache_owner_v1';
 const OUTBOX_NUEVAS_KEY_V1='cardiolink_nuevas_pendientes_v1_'; // + uid
 // Tras la carga desde el servidor: vuelve a encolar las filas nuevas respaldadas al cerrar sesión. Si el servidor ya tiene esa fila NO se pisa ni
 // se duplica (gana el servidor). El respaldo se descarta sólo cuando quedó confirmado.
+// Mensajes internos: un MÉDICO con identidad de backend sólo puede enviar con su login verificado por el servidor, con creadoUid propio y un destino
+// válido (lo mismo que exige la RLS). Un pendiente antiguo que no cumple NO se reenvía: se resguarda localmente (texto, destino, fecha) y se avisa una vez.
+const DESTINO_MENSAJE_VALIDO_V1=/^(todos|rol:secretaria|rol:medico|usuario:[a-z0-9_.-]+)$/;
+function mensajePendienteCompatibleV1(m){
+  if(!m||m.tipoRegistro!=='mensaje') return true;                  // no es un mensaje: no se toca
+  if(!esMedicoBackendV1()) return true;                            // Secretaría, dueño/admin y demás: comportamiento sin cambios
+  const login=backendMensajeriaV1&&backendMensajeriaV1.login;
+  if(!login||!usuarioSupabase?.id) return false;
+  return String(m.creadoUid||'')===String(usuarioSupabase.id)
+    &&usuarioLoginCorto(m.deUsuario)===login
+    &&DESTINO_MENSAJE_VALIDO_V1.test(String(m.destino||'todos'));
+}
+const MENSAJES_NO_ENVIADOS_KEY_V1='cardiolink_mensajes_no_enviados_v1';
+function resguardarMensajesNoReenviadosV1(msgs){
+  try{
+    const previos=JSON.parse(localStorage.getItem(MENSAJES_NO_ENVIADOS_KEY_V1)||'[]');
+    const lista=Array.isArray(previos)?previos:[];
+    const ya=new Set(lista.map(x=>String(x&&x.id||'')).filter(Boolean));
+    msgs.forEach(m=>{
+      if(m&&m.id!=null&&ya.has(String(m.id))) return;
+      lista.push({id:m&&m.id!=null?String(m.id):'',texto:String(m&&m.texto||''),destino:String(m&&m.destino||''),fecha:String(m&&(m.creadoEn||m.fecha)||new Date().toISOString()),
+        motivo:'pendiente antiguo con remitente o destino no verificable: no se reenvió'});
+    });
+    localStorage.setItem(MENSAJES_NO_ENVIADOS_KEY_V1,JSON.stringify(lista.slice(-50)));
+    return true;
+  }catch(e){ return false; }
+}
+// Aviso NO bloqueante (sin alert) y una sola vez por recuperación: el pendiente ya salió de la cola, no se repite en el próximo inicio.
+function avisarMensajesNoReenviadosV1(n){
+  try{
+    if(!n||document.getElementById('avisoMensajesNoReenviadosV1')) return;
+    const d=document.createElement('div');d.id='avisoMensajesNoReenviadosV1';d.setAttribute('role','status');
+    d.style.cssText='position:fixed;left:12px;right:12px;bottom:12px;z-index:99998;background:#fef3c7;color:#78350f;border:1px solid #fcd34d;border-radius:10px;padding:10px 12px;font:600 13px Arial,sans-serif;display:flex;gap:10px;align-items:center;justify-content:space-between';
+    d.innerHTML='<span>'+n+(n===1?' mensaje pendiente de una sesión anterior no se reenvió':' mensajes pendientes de una sesión anterior no se reenviaron')+' (remitente o destino no verificable). Su texto quedó guardado en este equipo.</span><button type="button" style="border:0;background:#78350f;color:#fff;border-radius:8px;padding:5px 10px;cursor:pointer">Cerrar</button>';
+    d.querySelector('button').onclick=()=>d.remove();
+    document.body.appendChild(d);
+  }catch(e){}
+}
 async function recuperarNuevasPendientesV1(){
   const uid=usuarioSupabase?.id; if(!uid) return;
   const k=OUTBOX_NUEVAS_KEY_V1+uid; let rows=[];
   try{ rows=(JSON.parse(localStorage.getItem(k)||'{}').rows)||[]; }catch(e){ rows=[]; }
   if(!Array.isArray(rows)||!rows.length){ localStorage.removeItem(k); return; }
+  // Pendientes incompatibles (ver mensajePendienteCompatibleV1): no se reenvían; se resguardan y salen de la cola de respaldo.
+  const incompatibles=rows.filter(r=>r&&!mensajePendienteCompatibleV1(r));
+  if(incompatibles.length){
+    if(!resguardarMensajesNoReenviadosV1(incompatibles)) return;   // si no se pudo resguardar el texto, NO se descarta nada: queda en la cola de respaldo
+    rows=rows.filter(r=>!incompatibles.includes(r));
+    // Se reescribe la cola de respaldo SIN los incompatibles (ya resguardados): así no vuelven a detectarse ni a avisar en el próximo inicio.
+    try{ if(rows.length) localStorage.setItem(k,JSON.stringify({rows,fecha:new Date().toISOString()})); else localStorage.removeItem(k); }catch(e){}
+    avisarMensajesNoReenviadosV1(incompatibles.length);
+  }
   const ids=new Set((atenciones||[]).map(a=>String(a&&a.id)));
   const nuevas=rows.filter(r=>r&&r.id!=null&&!ids.has(String(r.id)));
   nuevas.forEach(r=>atenciones.push(r));
@@ -4307,8 +4354,15 @@ function enviarMensajeInterno(){
   // Médico con identidad de backend: el remitente SIEMPRE es un login propio autorizado y el nombre visible sale del directorio
   // (nunca del prefijo del email). El resto de los roles conserva el comportamiento anterior.
   const medicoBk=esMedicoBackendV1()&&!!backendMensajeriaV1?.login;
+  // Un médico con sesión real SIN identidad de mensajería verificada no puede encolar mensajes: la RLS los rechazaría (remitente no verificable).
+  // No se pierde el texto: queda en el cuadro de mensaje.
+  if(usuarioSupabase&&!medicoBk&&(esMedicoBackendV1()||rolBaseUsuarioActual()==='medico')){
+    alert('No se puede enviar el mensaje: tu identidad de mensajería no está verificada todavía. Recargá la página e intentá de nuevo; tu texto sigue en el cuadro.');
+    return;
+  }
   const vinculado=medicoBk&&String(u.profesionalId||'')===String(backendPendientesIdentidadV1.professional_id||'');
-  const loginRem=medicoBk?(vinculado?usuarioLoginCorto(u.usuario):backendMensajeriaV1.login):usuarioLoginCorto(u.usuario||usuarioActualNombreCorto());
+  // Médico: el remitente es EXCLUSIVAMENTE el login verificado por el servidor (nunca el login local, el alias ni el prefijo del email).
+  const loginRem=medicoBk?backendMensajeriaV1.login:usuarioLoginCorto(u.usuario||usuarioActualNombreCorto());
   const nombreRem=medicoBk?(nombreVisibleBackendV1()||(vinculado&&u.nombre)||'Médico'):(u.nombre||u.usuario||usuarioActualNombreCorto());
   const msg={
     id:'msg_'+Date.now()+'_'+Math.random().toString(36).slice(2,7),
