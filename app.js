@@ -12167,6 +12167,16 @@ function patientInfoTextHC(p,coverage){
     const ext=m[1].toLowerCase();
     return ext==='jpg'||ext==='jpeg'?'JPEG':(ext==='webp'?'WEBP':'PNG');
   }
+  // Logo y firma/sello se dibujan DENTRO de una caja conservando su proporción (antes se forzaba un tamaño fijo y se deformaban).
+  function encajarImagen406(iw,ih,bw,bh){
+    if(!(iw>0&&ih>0))return {w:bw,h:bh,dx:0,dy:0};
+    const k=Math.min(bw/iw,bh/ih),w=iw*k,h=ih*k;
+    return {w,h,dx:(bw-w)/2,dy:(bh-h)/2};
+  }
+  function cajaImagenPdf406(pdf,imgData,bw,bh){
+    try{const ip=pdf.getImageProperties(imgData);return encajarImagen406(ip.width,ip.height,bw,bh);}
+    catch(e){return {w:bw,h:bh,dx:0,dy:0};}
+  }
   async function generarPdfBlobDocumento406(datos406){
     const jsPDFCtor=window.jspdf?.jsPDF;
     if(!jsPDFCtor)throw new Error('jsPDF no está disponible en esta página.');
@@ -12182,7 +12192,11 @@ function patientInfoTextHC(p,coverage){
     if(logo){
       try{
         const imgData=await cargarImagenComoDataUrl406(logo);
-        if(imgData){pdf.addImage(imgData,formatoImagenDesdeDataUrl406(imgData),mX,y-2,logoSize,logoSize,undefined,'FAST');textX=mX+logoSize+(isA5?3:4);}
+        if(imgData){
+          const cj=cajaImagenPdf406(pdf,imgData,logoSize*1.6,logoSize);
+          pdf.addImage(imgData,formatoImagenDesdeDataUrl406(imgData),mX,y-2+cj.dy,cj.w,cj.h,undefined,'FAST');
+          textX=mX+cj.w+(isA5?3:4);
+        }
       }catch(e){}
     }
     pdf.setTextColor(col.r,col.g,col.b);pdf.setFont('helvetica','bold');pdf.setFontSize(isA5?13:16);
@@ -12227,7 +12241,10 @@ function patientInfoTextHC(p,coverage){
     if(sig){
       try{
         const sigData=await cargarImagenComoDataUrl406(sig);
-        if(sigData)pdf.addImage(sigData,formatoImagenDesdeDataUrl406(sigData),sigX+sigW/2-15,sigY-11,30,10,undefined,'FAST');
+        if(sigData){
+          const bw=isA5?38:50,dispo=sigY-0.8-(y+1.5),bh=Math.max(isA5?10:14,Math.min(isA5?26:38,dispo)),cj=cajaImagenPdf406(pdf,sigData,bw,bh);   // caja sobre la línea de firma (hasta 26/38 mm; se achica si el texto llega cerca); conserva la proporción
+          pdf.addImage(sigData,formatoImagenDesdeDataUrl406(sigData),sigX+sigW/2-bw/2+cj.dx,sigY-0.8-bh+cj.dy,cj.w,cj.h,undefined,'FAST');
+        }
       }catch(e){}
     }
     pdf.setDrawColor(51,65,85);pdf.setLineWidth(0.3);
