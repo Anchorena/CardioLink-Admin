@@ -159,3 +159,10 @@ puede emitir certificados médicos, RCTA ni informes clínicos.
 
 Médico y Dueño/Administrador conservan acceso a documentos clínicos según sus
 permisos actuales.
+
+### Envío de documentos por WhatsApp
+WhatsApp no es un envío automático: CardioLink abre el chat (`wa.me`) con el
+mensaje y un enlace corto al documento (vigente 7 días), y la persona debe
+pulsar Enviar en WhatsApp. No adjunta el PDF y no garantiza la entrega; queda
+registrado como "preparado, envío no confirmado". El email sí queda como
+enviado cuando el proveedor lo acepta.

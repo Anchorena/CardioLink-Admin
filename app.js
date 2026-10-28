@@ -272,7 +272,7 @@ function leerOutboxDocsV1(uid){
 function docsLocalesV1(){ return (Array.isArray(data&&data.documentosClinicos)?data.documentosClinicos:[]).filter(d=>d&&d.id!=null); }
 function unirDocsPorIdV1(base,prioritarios){ const m=new Map(); base.forEach(d=>m.set(String(d.id),d)); prioritarios.forEach(d=>m.set(String(d.id),d)); return [...m.values()]; }
 // Tipos que hoy se archivan como PDF (cardiolink_patient_documents.document_type) por tipo de documento clínico. Un tipo fuera de esta tabla nunca se confirma por PDF.
-const TIPO_ARCHIVO_PDF_POR_DOC_V1={orden:'Orden',certificado:'Certificado',constancia_atencion:'Constancia'};
+const TIPO_ARCHIVO_PDF_POR_DOC_V1={orden:'Orden',certificado:'Certificado',reposo_laboral:'Certificado',constancia_atencion:'Constancia'};
 // Id real del paciente de un documento (mismas dos búsquedas que usa el generador de PDF: por id/clave y, si no, por DNI). null si no es inequívoco.
 function pacienteRealIdDeDocV1(d){
   const ps=Array.isArray(data&&data.pacientes)?data.pacientes:[];
@@ -11525,7 +11525,7 @@ function patientInfoTextHC(p,coverage){
     // Cambio mínimo: solo se amplía esta lista de tipos habilitados para
     // Secretaría, sin tocar el resto de la función ni ampliar a ningún
     // otro tipo de documento.
-    return isSecretary406()&&['constancia_atencion','certificado','orden'].includes(String(type||''));
+    return isSecretary406()&&['constancia_atencion','certificado','reposo_laboral','orden'].includes(String(type||''));
   }
   function responsibleProfId406(p){
     if(!p)return currentProfId406()||selectedProfId406()||'matias';
@@ -11563,7 +11563,37 @@ function patientInfoTextHC(p,coverage){
   }
   function patients406(){try{return typeof todosPacientes==='function'?todosPacientes():(data?.pacientes||[]);}catch(e){return data?.pacientes||[];}}
   function patient406(key){return patients406().find(p=>String(p.id||'')===String(key)||patientKey406(p)===String(key))||null;}
-  function fmtDT406(v){try{return new Intl.DateTimeFormat('es-AR',{dateStyle:'short',timeStyle:'short'}).format(new Date(v));}catch(e){return v||'';}}
+  // Fecha y hora de los documentos clínicos: SIEMPRE horario de Buenos Aires (no el del dispositivo ni UTC). fechaHora se guarda como ISO UTC (sin cambio de formato);
+  // estos helpers sólo convierten entre ese instante y el valor "AAAA-MM-DDTHH:mm" del <input type="datetime-local">.
+  const TZ_AR406='America/Argentina/Buenos_Aires';
+  function fmtDT406(v){try{return new Intl.DateTimeFormat('es-AR',{dateStyle:'short',timeStyle:'short',timeZone:TZ_AR406}).format(new Date(v));}catch(e){return v||'';}}
+  function isoAInputAR406(iso){
+    try{
+      const t=new Date(iso);if(isNaN(t.getTime()))return '';
+      const parts=new Intl.DateTimeFormat('en-CA',{timeZone:TZ_AR406,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(t);
+      const g=k=>(parts.find(x=>x.type===k)||{}).value||'';
+      return g('year')+'-'+g('month')+'-'+g('day')+'T'+g('hour')+':'+g('minute');
+    }catch(e){return '';}
+  }
+  function inputARAIso406(v){
+    const m=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(String(v||''));if(!m)return '';
+    const pared=Date.UTC(+m[1],+m[2]-1,+m[3],+m[4],+m[5]);
+    let utc=pared;
+    for(let i=0;i<3;i++){   // corrige por el corrimiento real de Buenos Aires en ese instante (hoy fijo UTC-3, sin horario de verano)
+      const w=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/.exec(isoAInputAR406(new Date(utc).toISOString()));
+      if(!w)return '';
+      const diff=Date.UTC(+w[1],+w[2]-1,+w[3],+w[4],+w[5])-pared;
+      if(diff===0)break;
+      utc-=diff;
+    }
+    return new Date(utc).toISOString();
+  }
+  // Valor a guardar: sin tocar el campo se conserva EXACTAMENTE el instante original (con segundos); editado, se interpreta en horario de Buenos Aires; vacío o inválido => ahora.
+  function resolverFechaHoraGuardado406(fechaInput,fechaIsoInicial,now){
+    if(!fechaInput)return now;
+    if(fechaIsoInicial&&fechaInput===isoAInputAR406(fechaIsoInicial))return fechaIsoInicial;
+    return inputARAIso406(fechaInput)||now;
+  }
   function fmtD406(v){try{return typeof formatFecha==='function'?formatFecha(v):new Intl.DateTimeFormat('es-AR').format(new Date(v));}catch(e){return v||'';}}
   function specialities406(p){
     const ids=Array.isArray(p?.especialidadIds)?p.especialidadIds:[];
@@ -11719,6 +11749,7 @@ function patientInfoTextHC(p,coverage){
     ['receta','Receta'],
     ['orden','Orden médica'],
     ['certificado','Certificado'],
+    ['reposo_laboral','Reposo físico laboral'],
     ['constancia_atencion','Constancia de atención'],
     ['ecg','ECG'],
     ['ecg_riesgo_quirurgico','ECG y riesgo quirúrgico'],
@@ -11734,13 +11765,15 @@ function patientInfoTextHC(p,coverage){
   function docTypeOptions406(type){return DOC_TYPES_4093.filter(([value])=>canIssueDoc406(value)).map(([value,label])=>`<option value="${esc406(value)}" ${type===value?'selected':''}>${esc406(label)}</option>`).join('');}
   function canEditDoc406(d){
     if(isAdmin406())return true;
-    const ts=new Date(d.fechaHora||d.creadoEn||0).getTime();return String(d.profesionalId)===String(currentProfId406())&&Date.now()-ts<=24*60*60*1000;
+    const ts=new Date(d.creadoEn||d.fechaHora||0).getTime();return String(d.profesionalId)===String(currentProfId406())&&Date.now()-ts<=24*60*60*1000;
   }
   function defaultDoc406(type,p){
     const name=patientName406(p)||'Paciente',dni=p?.dni||'s/d';
     if(type==='receta')return {title:'Receta médica',body:'R/P\n\n',extra:'Indicaciones:\n'};
     if(type==='orden')return {title:'Orden médica',body:'Solicito:\n\n',extra:'Diagnóstico presuntivo / indicación:\n'};
     if(type==='certificado')return {title:'Certificado médico',body:`Se deja constancia de que ${name}, DNI ${dni}, `,extra:''};
+    // Reposo físico laboral: plantilla de certificado (tipo local; se archiva como 'Certificado', sin tablas ni migraciones). Texto editable.
+    if(type==='reposo_laboral')return {title:'Reposo físico laboral',body:'Se indica reposo físico laboral por 48 horas.',extra:''};
     if(type==='constancia_atencion')return {title:'Constancia de atención',body:`Se deja constancia de que ${name}, DNI ${dni}, fue atendido/a en este consultorio en la fecha indicada.\n\nSe extiende la presente constancia a solicitud del interesado/a.`,extra:''};
     if(type==='ecg')return {title:'Informe de electrocardiograma',body:'Ritmo: ___\nFrecuencia cardíaca: ___ lpm\nEje eléctrico: ___\nIntervalos PR / QRS / QTc: ___ / ___ / ___ ms\nRepolarización: ___\n\nConclusión: ___',extra:''};
     if(type==='ecg_riesgo_quirurgico')return {title:'ECG y evaluación de riesgo quirúrgico',body:'ECG: ___\nAntecedentes cardiovasculares relevantes: ___\nCapacidad funcional estimada: ___ METS\nRiesgo cardiovascular perioperatorio: ___\n\nConclusión y recomendaciones: ___',extra:''};
@@ -11757,7 +11790,7 @@ function patientInfoTextHC(p,coverage){
   // HTML/CSS que arma printDocument406 al momento de imprimir - no se
   // guarda en ningún lado (ni en el documento, ni en config), así que no
   // hace falta ninguna migración de datos ni tocar data.documentosClinicos.
-  function esTipoCompacto406(tipo){return tipo==='orden'||tipo==='certificado'||tipo==='constancia_atencion';}
+  function esTipoCompacto406(tipo){return tipo==='orden'||tipo==='certificado'||tipo==='reposo_laboral'||tipo==='constancia_atencion';}
   function resolverFormatoImpresion406(tipo,formato){
     if(formato==='A5'||formato==='A4')return formato;
     return esTipoCompacto406(tipo)?'A5':'A4';
@@ -11781,8 +11814,10 @@ function patientInfoTextHC(p,coverage){
     // documento nuevo o uno existente (el formato nunca se persiste, así
     // que no hay "formato previo" que recordar al editar).
     const formatoInicial406=resolverFormatoImpresion406(type,null);
-    const modal=document.createElement('div');modal.id='clinicalDocModal406';modal.className='hc-modal-overlay';modal.dataset.docFormato406=formatoInicial406;
-    modal.innerHTML=`<div class="hc-modal-card clinical-doc-card406"><div class="hc-modal-head"><div><h2>${existing?'Editar documento':'Nuevo documento clínico'}</h2><p class="muted">${esc406(patientName406(p))} · <span id="docProfLabel406">${esc406(pr.nombre||'')}</span></p></div><button type="button" class="modal-close" data-close-doc406>×</button></div>${isSecretary406()?`<div class="doc-prof-selector406"><label>Profesional responsable<select id="docProfessional406">${(data.profesionales||[]).filter(x=>x.id!=='general').map(x=>`<option value="${esc406(x.id)}" ${String(x.id)===String(profId)?'selected':''}>${esc406(x.nombre)}</option>`).join('')}</select></label><p class="muted">La constancia usará el membrete del profesional seleccionado.</p></div>`:''}<div class="clinical-doc-header406" id="docIdentityPreview406">${identityPreviewHtml406(pr)}</div><div class="hc-modal-grid"><div><label>Tipo de documento</label><select id="docType406">${docTypeOptions406(type)}</select></div><div><label>Fecha</label><input id="docDate406" type="datetime-local" value="${esc406((existing?.fechaHora||new Date().toISOString()).slice(0,16))}"></div><div class="full"><div class="cl-voice-label4094"><label for="docTitle406">Título</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="docTitle406" aria-label="Dictar título del documento">🎤 Dictar</button></div><input id="docTitle406" value="${esc406(existing?.titulo||defs.title)}"></div><div class="full"><div class="cl-voice-label4094"><label id="docBodyLabel406" for="docBody406">Contenido</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="docBody406" aria-label="Dictar contenido del documento">🎤 Dictar</button></div><textarea id="docBody406" rows="8" placeholder="Escribí el contenido del documento">${esc406(existing?.contenido||defs.body)}</textarea></div><div class="full"><div class="cl-voice-label4094"><label for="docExtra406">Indicaciones / aclaraciones adicionales</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="docExtra406" aria-label="Dictar indicaciones adicionales">🎤 Dictar</button></div><textarea id="docExtra406" rows="4">${esc406(existing?.adicional||defs.extra)}</textarea></div><label class="check-row-310 full"><input type="checkbox" id="docIncludeSignature406" ${existing?.incluirFirma===false?'':'checked'}> Incluir firma cargada del profesional</label></div><div id="docFormatRow406" data-doc-format-row406 style="display:${esTipoCompacto406(type)?'flex':'none'};align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0 2px"><span style="font-size:12px;font-weight:700;color:#475569">Formato de impresión</span><div style="display:inline-flex;border:1px solid #cbd5e1;border-radius:8px;overflow:hidden"><button type="button" class="doc-format-opt406${formatoInicial406==='A5'?' active':''}" data-doc-format406-opt="A5" style="padding:5px 14px;font-size:12px;font-weight:700;border:0;cursor:pointer;${formatoInicial406==='A5'?'background:#174b5c;color:#fff':'background:#eef2f7;color:#0f172a'}">A5</button><button type="button" class="doc-format-opt406${formatoInicial406==='A4'?' active':''}" data-doc-format406-opt="A4" style="padding:5px 14px;font-size:12px;font-weight:700;border:0;cursor:pointer;${formatoInicial406==='A4'?'background:#174b5c;color:#fff':'background:#eef2f7;color:#0f172a'}">A4</button></div></div><p class="muted">El documento no se guarda si está vacío. El guardado es manual. Puede editarse durante 24 horas; el Administrador conserva edición sin límite.</p><div class="hc-modal-actions"><button class="secondary" type="button" data-close-doc406>Cancelar</button><button class="secondary" type="button" id="saveDoc406">Guardar</button><button class="primary" type="button" id="savePrintDoc406">Guardar e imprimir</button></div></div>`;
+    // Fecha y hora iniciales: las del documento existente o el instante real de apertura, ambas mostradas en horario de Buenos Aires.
+    const fechaIso406=existing?.fechaHora||new Date().toISOString();
+    const modal=document.createElement('div');modal.id='clinicalDocModal406';modal.className='hc-modal-overlay';modal.dataset.docFormato406=formatoInicial406;modal.dataset.docFechaIso406=fechaIso406;
+    modal.innerHTML=`<div class="hc-modal-card clinical-doc-card406"><div class="hc-modal-head"><div><h2>${existing?'Editar documento':'Nuevo documento clínico'}</h2><p class="muted">${esc406(patientName406(p))} · <span id="docProfLabel406">${esc406(pr.nombre||'')}</span></p></div><button type="button" class="modal-close" data-close-doc406>×</button></div>${isSecretary406()?`<div class="doc-prof-selector406"><label>Profesional responsable<select id="docProfessional406">${(data.profesionales||[]).filter(x=>x.id!=='general').map(x=>`<option value="${esc406(x.id)}" ${String(x.id)===String(profId)?'selected':''}>${esc406(x.nombre)}</option>`).join('')}</select></label><p class="muted">La constancia usará el membrete del profesional seleccionado.</p></div>`:''}<div class="clinical-doc-header406" id="docIdentityPreview406">${identityPreviewHtml406(pr)}</div><div class="hc-modal-grid"><div><label>Tipo de documento</label><select id="docType406">${docTypeOptions406(type)}</select></div><div><label>Fecha y hora</label><input id="docDate406" type="datetime-local" value="${esc406(isoAInputAR406(fechaIso406))}"></div><div class="full"><div class="cl-voice-label4094"><label for="docTitle406">Título</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="docTitle406" aria-label="Dictar título del documento">🎤 Dictar</button></div><input id="docTitle406" value="${esc406(existing?.titulo||defs.title)}"></div><div class="full"><div class="cl-voice-label4094"><label id="docBodyLabel406" for="docBody406">Contenido</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="docBody406" aria-label="Dictar contenido del documento">🎤 Dictar</button></div><textarea id="docBody406" rows="8" placeholder="Escribí el contenido del documento">${esc406(existing?.contenido||defs.body)}</textarea></div><div class="full"><div class="cl-voice-label4094"><label for="docExtra406">Indicaciones / aclaraciones adicionales</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="docExtra406" aria-label="Dictar indicaciones adicionales">🎤 Dictar</button></div><textarea id="docExtra406" rows="4">${esc406(existing?.adicional||defs.extra)}</textarea></div><label class="check-row-310 full"><input type="checkbox" id="docIncludeSignature406" ${existing?.incluirFirma===false?'':'checked'}> Incluir firma cargada del profesional</label></div><div id="docFormatRow406" data-doc-format-row406 style="display:${esTipoCompacto406(type)?'flex':'none'};align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0 2px"><span style="font-size:12px;font-weight:700;color:#475569">Formato de impresión</span><div style="display:inline-flex;border:1px solid #cbd5e1;border-radius:8px;overflow:hidden"><button type="button" class="doc-format-opt406${formatoInicial406==='A5'?' active':''}" data-doc-format406-opt="A5" style="padding:5px 14px;font-size:12px;font-weight:700;border:0;cursor:pointer;${formatoInicial406==='A5'?'background:#174b5c;color:#fff':'background:#eef2f7;color:#0f172a'}">A5</button><button type="button" class="doc-format-opt406${formatoInicial406==='A4'?' active':''}" data-doc-format406-opt="A4" style="padding:5px 14px;font-size:12px;font-weight:700;border:0;cursor:pointer;${formatoInicial406==='A4'?'background:#174b5c;color:#fff':'background:#eef2f7;color:#0f172a'}">A4</button></div></div><p class="muted">El documento no se guarda si está vacío. El guardado es manual. Puede editarse durante 24 horas; el Administrador conserva edición sin límite. <strong>Guardar</strong> sólo guarda; <strong>Imprimir</strong> y <strong>Enviar</strong> guardan primero y recién después imprimen o abren el envío.</p><div class="hc-modal-actions"><button class="secondary" type="button" data-close-doc406>Cancelar</button><button class="secondary" type="button" id="saveDoc406">Guardar</button><button class="secondary" type="button" id="savePrintDoc406">Imprimir</button><button class="primary" type="button" id="saveSendDoc406" style="display:${esTipoCompacto406(type)?'':'none'}">Enviar</button></div></div>`;
     document.body.appendChild(modal);
     $406('docType406').addEventListener('change',()=>{if(existing)return;const d=defaultDoc406($406('docType406').value,p);$406('docTitle406').value=d.title;$406('docBody406').value=d.body;$406('docExtra406').value=d.extra;});
     // Bloque E - el formato de impresión sigue al tipo elegido AUNQUE se
@@ -11793,6 +11828,7 @@ function patientInfoTextHC(p,coverage){
     // resolverFormatoImpresion406/printDocument406).
     $406('docType406').addEventListener('change',()=>{
       const nuevoTipo=$406('docType406').value,compacto=esTipoCompacto406(nuevoTipo),row=$406('docFormatRow406');
+      const btnEnviar=$406('saveSendDoc406');if(btnEnviar)btnEnviar.style.display=compacto?'':'none';   // Enviar sólo existe para los tipos compactos (Orden/Certificado/Reposo/Constancia)
       if(!row)return;
       row.style.display=compacto?'flex':'none';
       const nuevoFormato=compacto?'A5':'A4';
@@ -11810,6 +11846,7 @@ function patientInfoTextHC(p,coverage){
     });
     $406('saveDoc406').onclick=()=>saveDocument406(p,existing,false);
     $406('savePrintDoc406').onclick=()=>saveDocument406(p,existing,true,modal.dataset.docFormato406);
+    $406('saveSendDoc406').onclick=()=>saveDocument406(p,existing,false,undefined,true);
   }
   // Documentos V1 / Bloque A - GUARDADO CONFIRMADO. El documento y su PDF se archivan en Supabase (cardiolink_patient_documents, con el contenido
   // editable en source_payload) ANTES de tocar el estado local ni cerrar el modal. Si el servidor no confirma, el formulario queda abierto con su
@@ -11828,18 +11865,19 @@ function patientInfoTextHC(p,coverage){
     try{b.scrollIntoView({block:'nearest'});}catch(e){}
   }
   function quitarErrorGuardadoDocV1(){$406('clinicalDocModal406')?.querySelector('#docErrorGuardadoV1')?.remove();}
-  async function saveDocument406(p,existing,printAfter,formatoImpresion){
+  async function saveDocument406(p,existing,printAfter,formatoImpresion,sendAfter){
     const tipo=$406('docType406')?.value||'receta',titulo=$406('docTitle406')?.value.trim()||docLabel406(tipo),contenido=$406('docBody406')?.value.trim()||'',adicional=$406('docExtra406')?.value.trim()||'';
     if(!canIssueDoc406(tipo)){alert('Tu perfil no tiene permiso para emitir este tipo de documento.');return;}
     if(existing&&!canEditDoc406(existing)){alert('Tu perfil no puede modificar este documento.');return;}
     if(!contenido&&!adicional){alert('Escribí el contenido antes de guardar.');return;}
     const profId=existing?.profesionalId||($406('docProfessional406')?.value)||(isSecretary406()?responsibleProfId406(p):(currentProfId406()||selectedProfId406())),pr=prof406(profId);if(!pr){alert('No se pudo identificar el profesional responsable.');return;}
-    const now=new Date().toISOString(),fechaInput=$406('docDate406')?.value,fechaHora=fechaInput?new Date(fechaInput).toISOString():now;
+    const now=new Date().toISOString(),fechaInput=$406('docDate406')?.value,fechaIsoInicial=$406('clinicalDocModal406')?.dataset.docFechaIso406||'';
+    const fechaHora=resolverFechaHoraGuardado406(fechaInput,fechaIsoInicial,now);
     // Comunicaciones V1 (cierre): el aviso al profesional solo aplica a documentos NUEVOS (no ediciones).
     const esDocumentoNuevo=!existing;
     if(window.__docGuardandoV1)return;                                    // doble clic / reentrada
     ensure406();
-    const modalEl=$406('clinicalDocModal406'),btns=[$406('saveDoc406'),$406('savePrintDoc406')].filter(Boolean);
+    const modalEl=$406('clinicalDocModal406'),btns=[$406('saveDoc406'),$406('savePrintDoc406'),$406('saveSendDoc406')].filter(Boolean);
     // id estable por modal: un reintento de un documento NUEVO reutiliza el mismo id (nunca crea otro)
     const docId=existing?String(existing.id):(modalEl?.dataset.docIdV1||('doc_'+Date.now()+'_'+Math.random().toString(36).slice(2,7)));
     if(modalEl&&!existing)modalEl.dataset.docIdV1=docId;
@@ -11871,13 +11909,13 @@ function patientInfoTextHC(p,coverage){
       // Comunicaciones V1 (cierre) - aviso automático al profesional cuando Secretaría genera un certificado/orden médica en su nombre:
       // fire-and-forget (window.notificarDocumentoGenerado460), nunca bloquea el guardado/impresión ni muestra error a Secretaría.
       // No se manda contenido/adicional/título (texto clínico): solo paciente, tipo de documento, fecha/hora y quién lo generó.
-      if(esDocumentoNuevo&&isSecretary406()&&(tipo==='constancia_atencion'||tipo==='certificado'||tipo==='orden')){
+      if(esDocumentoNuevo&&isSecretary406()&&(tipo==='constancia_atencion'||tipo==='certificado'||tipo==='reposo_laboral'||tipo==='orden')){
         try{
           window.notificarDocumentoGenerado460?.({
             profesionalId:profId,
             profesionalNombre:pr.nombre||'',
             pacienteNombre:patientName406(p),
-            tipoDocumento:tipo,
+            tipoDocumento:tipo==='reposo_laboral'?'certificado':tipo,   // la función de avisos sólo conoce estos 3 tipos; el reposo es un certificado
             fechaHora:candidato.fechaHora,
             generadoPor:currentUser406().nombre||'',
             documentoId:candidato.id
@@ -11888,10 +11926,14 @@ function patientInfoTextHC(p,coverage){
       // El historial se actualiza YA, sin recargar la página (antes enhanceHC406/enhancePatientFicha406 sólo insertaban la sección si no existía).
       refrescarSeccionesDocs406(p);enhanceHC406();enhancePatientFicha406();
       try{window.recargarListaPdfDocumentosV1?.(p);}catch(e){}
+      // Tres acciones separadas: Guardar sólo guarda (modal chico con los pasos siguientes); Imprimir y Enviar guardan primero (ya confirmado arriba) y recién
+      // después imprimen / abren el envío, reutilizando el PDF archivado (si el contenido no cambió no se genera ni se sube otro).
       if(printAfter)printDocument406(candidato.id,formatoImpresion);
-      // Ajuste 6E.2 (Secretaría) - "Guardar PDF"/"Enviar" sólo tienen sentido con un documento YA guardado: se ofrecen en este modal chico
-      // posterior al guardado. Mismo criterio que la lista: sólo para los 3 tipos compactos.
-      if(esTipoCompacto406(candidato.tipo))abrirModalPostGuardadoDoc406(candidato.id);
+      else if(sendAfter){
+        if(typeof window.enviarPdfDocumentoGenerado406==='function')window.enviarPdfDocumentoGenerado406(candidato.id);
+        else alert('El módulo de envío no está disponible. Recargá la página; el documento ya quedó guardado.');
+      }
+      else if(esTipoCompacto406(candidato.tipo))abrirModalPostGuardadoDoc406(candidato.id);
     }catch(e){
       console.error('Error guardando el documento:',e);
       mostrarErrorGuardadoDocV1('No se pudo guardar el documento ('+(e?.message||e)+'). Tu texto sigue acá y no se perdió: volvé a pulsar Guardar.');
@@ -12008,7 +12050,7 @@ function patientInfoTextHC(p,coverage){
     cerrarModalPostGuardadoDoc406();
     const d=data.documentosClinicos.find(x=>x.id===docId);if(!d)return;
     const modal=document.createElement('div');modal.id='docPostSaveModal406';modal.className='hc-modal-overlay';
-    modal.innerHTML=`<div class="hc-modal-card"><div class="hc-modal-head"><div><h2>Documento guardado</h2><p class="muted">${esc406(d.titulo||docLabel406(d.tipo))}</p></div><button class="modal-close" type="button" data-close-postsave406>×</button></div><div class="hc-modal-actions"><button class="secondary" type="button" data-postsave-imprimir406="${esc406(docId)}">Imprimir</button><button class="secondary" type="button" data-postsave-guardarpdf406="${esc406(docId)}">Guardar PDF</button><button class="primary" type="button" data-postsave-enviar406="${esc406(docId)}">Enviar</button></div></div>`;
+    modal.innerHTML=`<div class="hc-modal-card"><div class="hc-modal-head"><div><h2>Documento guardado</h2><p class="muted">${esc406(d.titulo||docLabel406(d.tipo))}</p></div><button class="modal-close" type="button" data-close-postsave406>×</button></div><div class="hc-modal-actions"><button class="secondary" type="button" data-postsave-imprimir406="${esc406(docId)}">Imprimir</button><button class="primary" type="button" data-postsave-enviar406="${esc406(docId)}">Enviar</button></div></div>`;
     document.body.appendChild(modal);
   }
   // Bloque 6E.2 - ÚNICA fuente de contenido para un documento clínico
@@ -12125,6 +12167,16 @@ function patientInfoTextHC(p,coverage){
     const ext=m[1].toLowerCase();
     return ext==='jpg'||ext==='jpeg'?'JPEG':(ext==='webp'?'WEBP':'PNG');
   }
+  // Logo y firma/sello se dibujan DENTRO de una caja conservando su proporción (antes se forzaba un tamaño fijo y se deformaban).
+  function encajarImagen406(iw,ih,bw,bh){
+    if(!(iw>0&&ih>0))return {w:bw,h:bh,dx:0,dy:0};
+    const k=Math.min(bw/iw,bh/ih),w=iw*k,h=ih*k;
+    return {w,h,dx:(bw-w)/2,dy:(bh-h)/2};
+  }
+  function cajaImagenPdf406(pdf,imgData,bw,bh){
+    try{const ip=pdf.getImageProperties(imgData);return encajarImagen406(ip.width,ip.height,bw,bh);}
+    catch(e){return {w:bw,h:bh,dx:0,dy:0};}
+  }
   async function generarPdfBlobDocumento406(datos406){
     const jsPDFCtor=window.jspdf?.jsPDF;
     if(!jsPDFCtor)throw new Error('jsPDF no está disponible en esta página.');
@@ -12140,7 +12192,11 @@ function patientInfoTextHC(p,coverage){
     if(logo){
       try{
         const imgData=await cargarImagenComoDataUrl406(logo);
-        if(imgData){pdf.addImage(imgData,formatoImagenDesdeDataUrl406(imgData),mX,y-2,logoSize,logoSize,undefined,'FAST');textX=mX+logoSize+(isA5?3:4);}
+        if(imgData){
+          const cj=cajaImagenPdf406(pdf,imgData,logoSize*1.6,logoSize);
+          pdf.addImage(imgData,formatoImagenDesdeDataUrl406(imgData),mX,y-2+cj.dy,cj.w,cj.h,undefined,'FAST');
+          textX=mX+cj.w+(isA5?3:4);
+        }
       }catch(e){}
     }
     pdf.setTextColor(col.r,col.g,col.b);pdf.setFont('helvetica','bold');pdf.setFontSize(isA5?13:16);
@@ -12185,7 +12241,10 @@ function patientInfoTextHC(p,coverage){
     if(sig){
       try{
         const sigData=await cargarImagenComoDataUrl406(sig);
-        if(sigData)pdf.addImage(sigData,formatoImagenDesdeDataUrl406(sigData),sigX+sigW/2-15,sigY-11,30,10,undefined,'FAST');
+        if(sigData){
+          const bw=isA5?38:50,dispo=sigY-0.8-(y+1.5),bh=Math.max(isA5?10:14,Math.min(isA5?26:38,dispo)),cj=cajaImagenPdf406(pdf,sigData,bw,bh);   // caja sobre la línea de firma (hasta 26/38 mm; se achica si el texto llega cerca); conserva la proporción
+          pdf.addImage(sigData,formatoImagenDesdeDataUrl406(sigData),sigX+sigW/2-bw/2+cj.dx,sigY-0.8-bh+cj.dy,cj.w,cj.h,undefined,'FAST');
+        }
       }catch(e){}
     }
     pdf.setDrawColor(51,65,85);pdf.setLineWidth(0.3);
@@ -12230,7 +12289,7 @@ function patientInfoTextHC(p,coverage){
   window.hashContenidoDocumento406=hashContenidoDocumento406;
   // Catálogo único tipo de documento -> document_type con el que se archiva el PDF (cardiolink_patient_documents.document_type es texto libre).
   // Un solo generador resuelve todos los tipos; no hay funciones por tipo.
-  const TIPO_PDF_ARCHIVO_POR_DOC406={receta:'Receta',orden:'Orden',certificado:'Certificado',constancia_atencion:'Constancia',ecg:'ECG',ecg_riesgo_quirurgico:'ECG y riesgo quirúrgico',
+  const TIPO_PDF_ARCHIVO_POR_DOC406={receta:'Receta',orden:'Orden',certificado:'Certificado',reposo_laboral:'Certificado',constancia_atencion:'Constancia',ecg:'ECG',ecg_riesgo_quirurgico:'ECG y riesgo quirúrgico',
     apto_fisico:'Apto físico',ecografia:'Ecografía',holter:'Holter',mapa:'MAPA',radiografia:'Radiografía',mensaje_colega:'Mensaje a colega',indicacion_paciente:'Indicaciones'};
   // Expuesto para cardiolink-documentos-pdf-v1.js (módulo independiente,
   // 6D/6E.1): genera el PDF real + un descriptor con TODO lo necesario
@@ -12264,7 +12323,7 @@ function patientInfoTextHC(p,coverage){
       title:d.titulo||docLabel406(d.tipo),
       description:d.adicional||null,
       professionalId:d.profesionalId||null,
-      documentDate:String(d.fechaHora||'').slice(0,10)||new Date().toISOString().slice(0,10),
+      documentDate:(isoAInputAR406(d.fechaHora||new Date().toISOString())||isoAInputAR406(new Date().toISOString())).slice(0,10),
       originalFilename:(d.titulo||docLabel406(d.tipo)||'documento').replace(/[^a-z0-9áéíóúñ\s_-]/gi,'').trim().replace(/\s+/g,'_').slice(0,80)+'.pdf',
       sourceDocumentId:d.id,
       sourceContentHash:contentHash,
@@ -12368,8 +12427,6 @@ function patientInfoTextHC(p,coverage){
     // llegar a estas acciones, sin tocar el listado oculto.
     const psImprimir=e.target.closest?.('[data-postsave-imprimir406]');
     if(psImprimir){elegirFormatoEImprimir406(psImprimir.dataset.postsaveImprimir406);return;}
-    const psGuardarPdf=e.target.closest?.('[data-postsave-guardarpdf406]');
-    if(psGuardarPdf){window.guardarPdfDocumentoGenerado406?.(psGuardarPdf.dataset.postsaveGuardarpdf406,psGuardarPdf);return;}
     const psEnviar=e.target.closest?.('[data-postsave-enviar406]');
     if(psEnviar){window.enviarPdfDocumentoGenerado406?.(psEnviar.dataset.postsaveEnviar406,psEnviar);return;}
     if(e.target.closest?.('[data-close-postsave406]')){cerrarModalPostGuardadoDoc406();return;}
@@ -12531,7 +12588,7 @@ function patientInfoTextHC(p,coverage){
     const btn=e.target.closest?.('[data-cl-voice-target4094]');
     if(btn){e.preventDefault();e.stopPropagation();start(btn.dataset.clVoiceTarget4094,btn);return;}
     if(e.target.closest?.('[data-cl-voice-stop4094]')){e.preventDefault();stop(true);return;}
-    if(e.target.closest?.('[data-hc-close],[data-hc-close-summary],[data-close-doc406],#hcGuardarEvolucion,#saveDoc406,#savePrintDoc406'))stop(false);
+    if(e.target.closest?.('[data-hc-close],[data-hc-close-summary],[data-close-doc406],#hcGuardarEvolucion,#saveDoc406,#savePrintDoc406,#saveSendDoc406'))stop(false);
   },true);
   document.addEventListener('keydown',e=>{if(e.key==='Escape'&&recognition)stop(false);});
   document.addEventListener('visibilitychange',()=>{if(document.hidden&&recognition)stop(false);});

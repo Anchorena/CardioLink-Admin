@@ -1238,6 +1238,15 @@
     btn.disabled=true;btn.textContent='Enviando...';
     mostrarEstadoEnvioV1('<p class="muted">Enviando...</p>');
 
+    // Misma comprobación de sesión viva que el archivado: sin sesión no se invoca la función de envío ni se registra nada.
+    const ses=await asegurarSesionV1();
+    if(!ses.ok){
+      try{winWhatsapp&&!winWhatsapp.closed&&winWhatsapp.close();}catch(e){}
+      btn.disabled=false;btn.textContent='Enviar';
+      mostrarEstadoEnvioV1('<p style="color:#b91c1c">'+escPdfV1(MSG_SESION_VENCIDA_V1.replace(' No se guardó nada.',' No se envió nada.'))+'</p>');
+      return;
+    }
+
     let resultadoEmail=null,resultadoWhatsapp=null;
     if(canal==='email'||canal==='ambos'){
       resultadoEmail=await invocarEntregaDocumentoV1('send-email',documentId);
@@ -1246,7 +1255,8 @@
       resultadoWhatsapp=await invocarEntregaDocumentoV1('prepare-whatsapp',documentId);
       if(resultadoWhatsapp?.ok&&resultadoWhatsapp.telefono){
         const url='https://wa.me/'+resultadoWhatsapp.telefono+'?text='+encodeURIComponent(resultadoWhatsapp.mensaje||'');
-        navegarOFallbackWhatsappV1(winWhatsapp,url);
+        resultadoWhatsapp.url=url;
+        resultadoWhatsapp.abierto=navegarOFallbackWhatsappV1(winWhatsapp,url);
       }else{
         try{winWhatsapp&&!winWhatsapp.closed&&winWhatsapp.close();}catch(e){}
       }
@@ -1264,7 +1274,9 @@
     }
     if(resultadoWhatsapp){
       if(resultadoWhatsapp.duplicado)partes.push('<p>WhatsApp: ya se había preparado hace un instante (no se repitió).</p>');
-      else if(resultadoWhatsapp.ok)partes.push('<p>WhatsApp preparado ✓ Se abrió con el mensaje y el enlace al documento.</p>');
+      // WhatsApp NO confirma entrega: sólo se abre el chat con el mensaje y el enlace, y la persona debe pulsar Enviar allá (queda registrado como "preparado, envío no confirmado").
+      else if(resultadoWhatsapp.ok&&resultadoWhatsapp.abierto)partes.push('<p>WhatsApp abierto con el mensaje y el enlace al documento. <strong>Falta pulsar Enviar en WhatsApp</strong>: CardioLink no puede confirmar la entrega.</p>');
+      else if(resultadoWhatsapp.ok)partes.push('<p>WhatsApp preparado, pero el navegador no abrió la ventana: <a href="'+escPdfV1(resultadoWhatsapp.url||'')+'" target="_blank" rel="noopener">tocá acá para abrir WhatsApp</a> y pulsá Enviar allá. No hay confirmación de entrega.</p>');
       else partes.push('<p style="color:#b91c1c">No se pudo preparar WhatsApp'+(resultadoWhatsapp.error?' ('+resultadoWhatsapp.error+')':'')+'.</p>');
     }
     const avisoProf=(resultadoEmail?.avisoProfesional)||(resultadoWhatsapp?.avisoProfesional);
@@ -1290,8 +1302,8 @@
   // ---------------------------------------------------------------------
   async function ultimaFilaDocumentoV1(sourceId){
     const armar=cols=>supabaseClient.from('cardiolink_patient_documents').select(cols).eq('source_document_id',String(sourceId)).order('created_at',{ascending:false}).order('id',{ascending:false}).limit(1);
-    let {data:f,error}=await armar('id,source_content_hash,created_at,pv:source_payload->>v');
-    if(error&&falloColumnaPayloadV1(error))({data:f,error}=await armar('id,source_content_hash,created_at'));
+    let {data:f,error}=await armar('id,patient_id,source_content_hash,created_at,pv:source_payload->>v');
+    if(error&&falloColumnaPayloadV1(error))({data:f,error}=await armar('id,patient_id,source_content_hash,created_at'));
     if(error)throw error;
     return f&&f.length?f[0]:null;
   }
@@ -1324,13 +1336,23 @@
     if(!supabaseClient||!usuarioSupabase)return {ok:false,error:'sin sesión con el servidor'};
     const ses=await asegurarSesionV1();
     if(!ses.ok)return {ok:false,sesionVencida:true,error:MSG_SESION_VENCIDA_V1};
+    let ult;
+    try{ult=await ultimaFilaDocumentoV1(doc.id);}
+    catch(e){return {ok:false,error:falloColumnaPayloadV1(e)?'El servidor todavía no admite guardar el contenido editable de los documentos (falta aplicar la migración source_payload). No se guardó nada.':await mensajeErrorSesionV1(e,'No se pudo consultar las versiones archivadas: ')};}
+    // Reutilización SIN regenerar: si la huella del contenido actual (la misma función que usa el generador) coincide con la de la versión archivada y esa fila es del
+    // paciente real del documento, no se renderiza el PDF otra vez ni se sube nada (Guardar -> Imprimir/Enviar sobre un documento sin cambios). Ante cualquier duda
+    // (sin huella, sin función, paciente distinto, error) se sigue por el camino completo de siempre.
+    try{
+      if(ult&&ult.source_content_hash&&typeof window.hashContenidoDocumento406==='function'){
+        const h=await window.hashContenidoDocumento406(doc);
+        const real=typeof pacienteRealIdDeDocV1==='function'?pacienteRealIdDeDocV1(doc):null;
+        if(h&&h===ult.source_content_hash&&real!==null&&String(ult.patient_id)===real)return {ok:true,rowId:ult.id,createdAt:ult.created_at,patientId:real,reusado:true};
+      }
+    }catch(e){/* camino completo */}
     let gen;
     try{gen=await window.generarPdfDocumentoGenerado406?.(doc.id,null,doc);}
     catch(e){return {ok:false,error:'No se pudo generar el PDF: '+(e?.message||e)};}
     if(!gen||!gen.ok)return {ok:false,error:(gen&&gen.error)||'No se pudo generar el PDF.'};
-    let ult;
-    try{ult=await ultimaFilaDocumentoV1(doc.id);}
-    catch(e){return {ok:false,error:falloColumnaPayloadV1(e)?'El servidor todavía no admite guardar el contenido editable de los documentos (falta aplicar la migración source_payload). No se guardó nada.':await mensajeErrorSesionV1(e,'No se pudo consultar las versiones archivadas: ')};}
     // misma huella => esta versión ya está archivada (reintento / doble clic / Enviar sin cambios): se reutiliza, no se duplica
     if(ult&&ult.source_content_hash===gen.sourceContentHash)return {ok:true,rowId:ult.id,createdAt:ult.created_at,patientId:gen.patientId,reusado:true};
     // edición concurrente: el servidor tiene una versión archivada por el cliente nuevo que NO es la que este usuario editó => no se sobrescribe
