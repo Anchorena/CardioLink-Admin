@@ -1295,15 +1295,42 @@
     if(error)throw error;
     return f&&f.length?f[0]:null;
   }
+  // Sesión Supabase VIVA. usuarioSupabase (app.js) es sólo una variable en memoria que no se limpia si la sesión se pierde (signOut global desde otra
+  // pestaña/dispositivo de la misma cuenta, refresh token vencido, storage limpiado): sin sesión, supabase-js envía la clave publishable (rol anon) y
+  // la tabla responde "permission denied for table cardiolink_patient_documents". Mismo criterio que cardiolink-auth-guard.js (sesionValida).
+  const MSG_SESION_VENCIDA_V1='Tu sesión venció. Volvé a iniciar sesión. No se guardó nada.';
+  async function asegurarSesionV1(){
+    try{
+      if(!supabaseClient||!supabaseClient.auth)return {ok:false};
+      const {data:d,error}=await supabaseClient.auth.getSession();
+      let s=!error&&d&&d.session&&d.session.user?d.session:null;
+      if(!s)return {ok:false};
+      const exp=Number(s.expires_at||0);
+      if(exp&&(Date.now()/1000)>=exp){
+        const r=await supabaseClient.auth.refreshSession();
+        s=!r.error&&r.data&&r.data.session&&r.data.session.user?r.data.session:null;
+        if(!s)return {ok:false};
+      }
+      return {ok:true,userId:String(s.user.id||'')||null};
+    }catch(e){return {ok:false};}
+  }
+  // Un error de permisos (42501 / "permission denied") sólo se atribuye a la sesión si la sesión viva ya no existe; con sesión válida se conserva el mensaje original.
+  async function mensajeErrorSesionV1(e,base){
+    const m=String((e&&(e.message||e.details))||e||'');
+    if(e&&(e.code==='42501'||/permission denied/i.test(m))&&!(await asegurarSesionV1()).ok)return MSG_SESION_VENCIDA_V1;
+    return base+m;
+  }
   async function archivarInternoV1(doc,opts){
     if(!supabaseClient||!usuarioSupabase)return {ok:false,error:'sin sesión con el servidor'};
+    const ses=await asegurarSesionV1();
+    if(!ses.ok)return {ok:false,sesionVencida:true,error:MSG_SESION_VENCIDA_V1};
     let gen;
     try{gen=await window.generarPdfDocumentoGenerado406?.(doc.id,null,doc);}
     catch(e){return {ok:false,error:'No se pudo generar el PDF: '+(e?.message||e)};}
     if(!gen||!gen.ok)return {ok:false,error:(gen&&gen.error)||'No se pudo generar el PDF.'};
     let ult;
     try{ult=await ultimaFilaDocumentoV1(doc.id);}
-    catch(e){return {ok:false,error:falloColumnaPayloadV1(e)?'El servidor todavía no admite guardar el contenido editable de los documentos (falta aplicar la migración source_payload). No se guardó nada.':'No se pudo consultar las versiones archivadas: '+(e?.message||e)};}
+    catch(e){return {ok:false,error:falloColumnaPayloadV1(e)?'El servidor todavía no admite guardar el contenido editable de los documentos (falta aplicar la migración source_payload). No se guardó nada.':await mensajeErrorSesionV1(e,'No se pudo consultar las versiones archivadas: ')};}
     // misma huella => esta versión ya está archivada (reintento / doble clic / Enviar sin cambios): se reutiliza, no se duplica
     if(ult&&ult.source_content_hash===gen.sourceContentHash)return {ok:true,rowId:ult.id,createdAt:ult.created_at,patientId:gen.patientId,reusado:true};
     // edición concurrente: el servidor tiene una versión archivada por el cliente nuevo que NO es la que este usuario editó => no se sobrescribe
@@ -1317,7 +1344,7 @@
       const {error:upErr}=await supabaseClient.storage.from(BUCKET_PDF_V1).upload(storagePath,gen.blob,{contentType:'application/pdf',upsert:false});
       if(upErr)throw upErr;
       let uploadedUserId=null;
-      try{uploadedUserId=(await supabaseClient.auth.getUser())?.data?.user?.id||null;}catch(e){}
+      try{uploadedUserId=(await supabaseClient.auth.getUser())?.data?.user?.id||ses.userId||null;}catch(e){uploadedUserId=ses.userId||null;}
       const {data:inserted,error:insErr}=await supabaseClient.from('cardiolink_patient_documents').insert({
         patient_id:gen.patientId,attention_id:null,evolution_id:null,
         document_date:gen.documentDate,document_type:gen.documentType,title:gen.title,description:gen.description,professional_id:gen.professionalId,
@@ -1339,7 +1366,7 @@
       return {ok:true,rowId:inserted.id,createdAt:inserted.created_at,patientId:gen.patientId,reusado:false};
     }catch(e){
       if(falloColumnaPayloadV1(e))return {ok:false,error:'El servidor todavía no admite guardar el contenido editable de los documentos (falta aplicar la migración source_payload). No se guardó nada.'};
-      return {ok:false,error:'No se pudo archivar el PDF: '+(e?.message||e)};
+      return {ok:false,error:await mensajeErrorSesionV1(e,'No se pudo archivar el PDF: ')};
     }
   }
   // Un documento a la vez: dos llamadas simultáneas (doble clic, Guardar + Enviar) comparten la MISMA operación y no pueden duplicar la fila.
