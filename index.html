@@ -1092,10 +1092,12 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
 <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
 <!-- Fase 6 / Bloque 6E.2: PDF real (vectorial, texto seleccionable) para Orden/Certificado/Constancia. Mismo patrón de carga que chart.js/xlsx. -->
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
+<!-- Documentos V2A / F2: QR de autenticidad (qrcode-generator 1.4.4, MIT). Versión fija + SRI. Sólo se usa si la bandera CARDIOLINK_QR_V2A está activa. -->
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js" integrity="sha384-lQXOAyZwHXE55JFyrOMB7nY2Wv+m5ZWNtJcHrd1rceRQXAYNLak8ukN5TjBTcIwz" crossorigin="anonymous"></script>
 <script src="cardiolink-finanzas-v5.js?v=4b2"></script>
 <!-- Solicitudes de turno se carga antes de app.js: app.js conecta el cliente Supabase principal, igual que con Finanzas 5. -->
 <script src="cardiolink-solicitudes-turno.js?v=solicitudes-turno-2"></script>
-<script src="app.js?v=40104-documentos-v1"></script>
+<script src="app.js?v=40105-documentos-v2a-f2"></script>
 <script src="cardiolink-auth-guard.js?v=2"></script>
 <script src="cardiolink-clear-patient-fix.js?v=1"></script>
 <script src="cardiolink-pendientes-alertas.js?v=1"></script>
@@ -1111,6 +1113,6 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
 <script src="cardiolink-agenda-v1.js?v=1"></script>
 <script src="cardiolink-pedidos-rapidos-v1.js?v=1"></script>
 <!-- Fase 6 / Bloque 6D: documentos y estudios en PDF reales en la ficha del paciente (Storage privado + metadata), módulo independiente. -->
-<script src="cardiolink-documentos-pdf-v1.js?v=5-historial-envios"></script>
+<script src="cardiolink-documentos-pdf-v1.js?v=6-v2a-qr"></script>
 </body>
 </html>
