@@ -54,3 +54,6 @@ verify_jwt = false
 # STAGING para QA.
 [functions.patient-document-open]
 verify_jwt = false
+
+[functions.document-verify]
+verify_jwt = false

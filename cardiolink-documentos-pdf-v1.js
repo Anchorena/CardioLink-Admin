@@ -1338,7 +1338,7 @@
   // huella del PDF final -> Storage + fila (flujo V1) -> vincular. Si vincular falla NUNCA se muestra como guardado/verificable: se intenta deshacer la fila y el
   // archivo y se informa el error. Reutilizar un documento sin cambios no reserva ni vincula nada (mismo PDF, mismo QR).
   // ---------------------------------------------------------------------
-  const URL_VERIFICACION_BASE_V1='https://anchorena.github.io/CardioLink-Admin/portal/verificar.html';
+  const URL_VERIFICACION_BASE_V1='https://cardiolink.com.ar/verificar/';
   const QR_FALLIDOS_KEY_V1='cardiolink_qr_fallidos_v1';
   function verificacionQrActivaV1(){return window.CARDIOLINK_QR_V2A===true;}
   function tipoQrV1(doc){
