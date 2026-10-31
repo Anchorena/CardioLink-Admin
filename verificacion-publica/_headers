@@ -1,6 +1,18 @@
-# Cloudflare Pages: cabeceras de seguridad de la página pública de verificación (el sitio sólo sirve /verificar/; sin la app clínica en este origen).
-/*
+# Cloudflare Pages: cabeceras de la página pública de verificación. Se definen POR HOST (no hay regla genérica /*: las cabeceras de todas las reglas que coinciden
+# se suman, y dos CSP distintas se aplicarían a la vez bloqueando la conexión).
+#  - cardiolink.com.ar  -> Production (sólo habla con la API de Production).
+#  - *.pages.dev        -> sitio de PRUEBAS (sólo habla con la API de STAGING).
+https://cardiolink.com.ar/*
   Content-Security-Policy: default-src 'none'; script-src 'self' https://challenges.cloudflare.com; style-src 'self'; connect-src https://tupacclmhaqiahhlttyz.supabase.co; frame-src https://challenges.cloudflare.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  X-Frame-Options: DENY
+  Permissions-Policy: camera=(), microphone=(), geolocation=(), payment=()
+  Cross-Origin-Opener-Policy: same-origin
+  Cache-Control: no-store
+
+https://:proyecto.pages.dev/*
+  Content-Security-Policy: default-src 'none'; script-src 'self' https://challenges.cloudflare.com; style-src 'self'; connect-src https://yslhwdlzdknhskawqrtv.supabase.co; frame-src https://challenges.cloudflare.com; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'
   X-Content-Type-Options: nosniff
   Referrer-Policy: no-referrer
   X-Frame-Options: DENY

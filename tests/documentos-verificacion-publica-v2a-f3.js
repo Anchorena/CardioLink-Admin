@@ -105,7 +105,8 @@ caso('Edge Function: orden de defensas CORS/límite -> Turnstile -> formato -> b
   const iLim = indexTs.indexOf('limiteGlobal.permitir'), iTs = indexTs.indexOf('await verificarTurnstile('), iFmt = indexTs.indexOf('validarCodigo(body.codigo)'), iDb = indexTs.indexOf("admin.rpc('cardiolink_verificacion_consultar_v1'");
   assert.ok(iLim > 0 && iLim < iTs && iTs < iFmt && iFmt < iDb, [iLim, iTs, iFmt, iDb].join(' '));
   assert.ok(/if \(!\(await verificarTurnstile\(body\.turnstileToken, ip\)\)\) return responder\(\{ ok: false, error: 'verificacion_humana' \}, 403/.test(indexTs));
-  assert.ok(indexTs.includes("const secret = Deno.env.get('TURNSTILE_SECRET_KEY');\n  if (!secret ||"), 'Turnstile fail-closed sin secret');
+  assert.ok(/const secret = Deno\.env\.get\('VERIFY_TURNSTILE_SECRET_KEY'\);[^\n]*\n  if \(!secret \|\|/.test(indexTs), 'Turnstile fail-closed sin secret');
+  assert.ok(!/Deno\.env\.get\('TURNSTILE_SECRET_KEY'\)/.test(indexTs.replace(/\/\/.*$/gm, '')), 'sin fallback al secret del portal');
 });
 caso('Edge Function: código inválido responde lo mismo que uno inexistente y sin tocar la base', () => {
   assert.ok(/if \(!validarCodigo\(body\.codigo\)\) return responder\(RESPUESTA_NO_VERIFICABLE, 200, origen\)/.test(indexTs));
@@ -161,18 +162,21 @@ function montarFuncion(env, sim) {
   const Deno = { env: { get: k => env[k] }, serve: (f) => { handler = f; } };
   class Resp { constructor(body, init) { this.body = body; this.status = (init && init.status) || 200; this.headers = (init && init.headers) || {}; } async json() { return JSON.parse(this.body); } }
   class UP { constructor() { this.d = []; } append(k, v) { this.d.push([k, v]); } }
-  const usados = new Set();
+  const tokensUsados = new Set();
   const fetchSim = async (url, init) => {
     const token = init.body.d.find(x => x[0] === 'response')[1];
     llamadas.turnstile.push({ url, token, conSignal: !!init.signal });
     if (sim.turnstileRed) throw new Error('red caída');
-    const duplicado = usados.has(token); if (token === 'token-ok' || token === 'token-uso-unico') usados.add(token);
-    const valido = sim.turnstileOk !== false && (token === 'token-ok' || (token === 'token-uso-unico' && !duplicado));
+    llamadas.turnstileSecret = init.body.d.find(x => x[0] === 'secret')[1];
+    // Peor caso REAL observado en STAGING (2026-10-31): Siteverify acepta el mismo token más de una vez. El uso único lo impone la RPC de CardioLink.
+    const duplicado = false;
+    const valido = sim.turnstileOk !== false && (token === 'token-ok' || token === 'token-uso-unico' || token.indexOf('token-ok:') === 0);
     return { json: async () => (valido ? { success: true, hostname: sim.hostname === undefined ? 'cardiolink.com.ar' : sim.hostname, action: sim.action || 'verificar-documento', 'error-codes': [] } : { success: false, 'error-codes': [duplicado ? 'timeout-or-duplicate' : 'invalid-input-response'] }) };
   };
   const createClient = () => ({
     rpc: async (nombre, args) => {
       llamadas.rpc.push({ nombre, args });
+      if (nombre === 'cardiolink_verificacion_token_usar_v1') { let v; if (sim.tokenUsar) v = sim.tokenUsar(args); else { v = !tokensUsados.has(args.p_token_hash); tokensUsados.add(args.p_token_hash); } return v === null ? { data: null, error: { message: 'rpc caída' } } : { data: v, error: null }; }
       if (nombre === 'cardiolink_verificacion_limitar_v1') { const v = sim.limite ? sim.limite(args) : true; return v === null ? { data: null, error: { message: 'rpc caída' } } : { data: v, error: null }; } return sim.rpcError ? { data: null, error: { message: 'boom' } } : { data: sim.rpc === undefined ? { encontrado: false } : sim.rpc, error: null }; },
     from: (t) => { llamadas.from.push(t); const q = { select() { return q; }, eq() { return q; }, limit() { return Promise.resolve(sim.configError ? Promise.reject(new Error('x')) : { data: [{ payload: { config } }], error: null }); } }; return q; }
   });
@@ -181,15 +185,16 @@ function montarFuncion(env, sim) {
   const L2 = new Function(logicaSrc.replace(/^export /gm, '').replace(/Date\.now\(\)/, 'Date.now()') + '\nreturn {validarCodigo,RESPUESTA_NO_VERIFICABLE,construirRespuesta,clasificarUA,limpiarIp,crearLimitador,listaDesdeEnv,evaluarTurnstile};')();
   new Function('Deno', 'createClient', 'validarCodigo', 'RESPUESTA_NO_VERIFICABLE', 'construirRespuesta', 'clasificarUA', 'limpiarIp', 'crearLimitador', 'listaDesdeEnv', 'evaluarTurnstile', 'crypto', 'TextEncoder', 'Response', 'URLSearchParams', 'fetch', 'console', 'AbortController', 'setTimeout', 'clearTimeout', fuente)(
     Deno, createClient, L2.validarCodigo, L2.RESPUESTA_NO_VERIFICABLE, L2.construirRespuesta, L2.clasificarUA, L2.limpiarIp, L2.crearLimitador, L2.listaDesdeEnv, L2.evaluarTurnstile, CR, TE, Resp, UP, fetchSim, { error() {}, log() {} }, class { constructor() { this.signal = {}; } abort() {} }, () => 0, () => {});
+  let nPedido = 0;
   const pedir = async (o) => {
     o = o || {};
-    const cuerpo = o.raw !== undefined ? o.raw : JSON.stringify(o.body === undefined ? { codigo: 'Qa1_Wb2-Ec3Rd4Tf5Yg6Hw', turnstileToken: 'token-ok' } : o.body);
+    const cuerpo = o.raw !== undefined ? o.raw : JSON.stringify(o.body === undefined ? { codigo: 'Qa1_Wb2-Ec3Rd4Tf5Yg6Hw', turnstileToken: 'token-ok:' + (++nPedido) } : o.body);
     const req = { method: o.method || 'POST', headers: { get: (k) => ({ origin: o.origin === undefined ? 'https://cardiolink.com.ar' : o.origin, 'x-forwarded-for': o.ip || '190.1.2.3', 'user-agent': 'Mozilla/5.0 (iPhone) Mobile' })[String(k).toLowerCase()] || null }, text: async () => cuerpo };
     const r = await handler(req); return { status: r.status, headers: r.headers, json: r.body ? JSON.parse(r.body) : null };
   };
   return { pedir, llamadas };
 }
-const ENV = { SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'srv', TURNSTILE_SECRET_KEY: 'sec', VERIFY_ALLOWED_ORIGINS: 'https://cardiolink.com.ar', VERIFY_TURNSTILE_HOSTNAMES: 'cardiolink.com.ar' };
+const ENV = { SUPABASE_URL: 'https://x.supabase.co', SUPABASE_SERVICE_ROLE_KEY: 'srv', VERIFY_TURNSTILE_SECRET_KEY: 'sec', VERIFY_ALLOWED_ORIGINS: 'https://cardiolink.com.ar', VERIFY_TURNSTILE_HOSTNAMES: 'cardiolink.com.ar' };
 const UNI = '{"ok":true,"resultado":"no_verificable"}';
 
 caso('handler: código válido y vigente => verificado, con la RPC llamada con HASH (no con el código) y la IP hasheada', async () => {
@@ -218,7 +223,7 @@ caso('handler: sin Turnstile válido => 403 y NO se consulta la base (no se pued
     const f = montarFuncion(ENV, { rpc: rpcOk() }); const r = await f.pedir({ body });
     assert.equal(r.status, 403); assert.equal(r.json.error, 'verificacion_humana'); assert.equal(f.llamadas.rpc.length, 0, 'ni siquiera el límite persistente (los bots sin desafío no escriben en la base)'); assert.equal(f.llamadas.from.length, 0);
   }
-  const sinSecret = montarFuncion(Object.assign({}, ENV, { TURNSTILE_SECRET_KEY: '' }), { rpc: rpcOk() }); const r2 = await sinSecret.pedir();
+  const sinSecret = montarFuncion(Object.assign({}, ENV, { VERIFY_TURNSTILE_SECRET_KEY: '' }), { rpc: rpcOk() }); const r2 = await sinSecret.pedir();
   assert.equal(r2.status, 403, 'fail-closed sin secret'); assert.equal(sinSecret.llamadas.rpc.length, 0);
 });
 caso('handler: límite de tasa por IP => 429 sin consultar', async () => {
@@ -252,11 +257,20 @@ caso('página: sin innerHTML/eval/document.write/almacenamiento/cookies (todo co
   assert.ok(!/<script[^>]+src="https?:/.test(pagHtml) && !/<link[^>]+href="https?:/.test(pagHtml) && !/<img/.test(pagHtml) && !/ style="/.test(pagHtml) && !/ on[a-z]+=/.test(pagHtml), 'sin recursos externos, estilos ni manejadores en línea');
   assert.ok(pagJs.includes("https://challenges.cloudflare.com/turnstile/v0/api.js"));
 });
-caso('página: fail-closed en Production hasta configurar la sitekey; en local usa STAGING y la clave de prueba; el override ?api= sólo en local', () => {
-  assert.ok(pagJs.includes("SITEKEY_PRODUCCION = 'SITEKEY_PRODUCCION_PENDIENTE'") && pagJs.includes("sitekey === 'SITEKEY_PRODUCCION_PENDIENTE'"));
-  assert.ok(pagJs.includes("var FUNCION_PRODUCCION = 'https://tupacclmhaqiahhlttyz.supabase.co/functions/v1/document-verify'"));
-  assert.ok(/if \(esLocal\) \{\s*\n\s*urlFuncion = FUNCION_STAGING; sitekey = SITEKEY_TEST;\s*\n\s*var api = params\.get\('api'\);\s*\n\s*if \(api && \/\^http:/.test(pagJs), 'el override de API vive dentro de la rama local');
-  assert.ok(pagJs.includes("SITEKEY_TEST = '1x00000000000000000000BB'"));
+caso('página: entorno por hostname con LISTA CERRADA (producción, pruebas *.pages.dev, local); cualquier otro host queda fuera de servicio', () => {
+  const fuente = leer('verificacion-publica/verificar/verificar.js');
+  const tramo = fuente.slice(fuente.indexOf('var FUNCION_PRODUCCION'), fuente.indexOf('  function ocultar'));
+  const entorno = (hostname, query) => new Function('location', 'document', 'URLSearchParams', tramo + '\nreturn {urlFuncion,sitekey};')(
+    { hostname, search: query || '' }, { getElementById() { return null; } },
+    class { constructor(q) { this.m = {}; String(q || '').replace(/^\?/, '').split('&').filter(Boolean).forEach(kv => { const [k, v] = kv.split('='); this.m[k] = decodeURIComponent(v || ''); }); } get(k) { return k in this.m ? this.m[k] : null; } });
+  const prod = entorno('cardiolink.com.ar'); assert.equal(prod.urlFuncion, 'https://tupacclmhaqiahhlttyz.supabase.co/functions/v1/document-verify'); assert.equal(prod.sitekey, 'SITEKEY_PRODUCCION_PENDIENTE');
+  const pruebas = entorno('cardiolink-verificacion-test.pages.dev'); assert.equal(pruebas.urlFuncion, 'https://yslhwdlzdknhskawqrtv.supabase.co/functions/v1/document-verify'); assert.equal(pruebas.sitekey, '0x4AAAAAAFtDuw3xlPO1jtXy'); assert.ok(/^0x4[A-Za-z0-9_-]{15,}$/.test(pruebas.sitekey) && !/_PENDIENTE$/.test(pruebas.sitekey), 'sitekey real (pública) del sitio de pruebas');
+  const local = entorno('127.0.0.1'); assert.equal(local.sitekey, '1x00000000000000000000BB'); assert.ok(local.urlFuncion.indexOf('yslhwdlzdknhskawqrtv') > 0);
+  assert.equal(entorno('127.0.0.1', '?api=http://127.0.0.1:9/').urlFuncion, 'http://127.0.0.1:9/');
+  for (const raro of ['evil.example', 'cardiolink.com.ar.evil.example', 'www.cardiolink.com.ar', 'pages.dev.evil.example', 'xpages.dev']) { const e = entorno(raro, '?api=http://127.0.0.1:9/'); assert.equal(e.urlFuncion, '', raro); assert.equal(e.sitekey, '', raro); }
+  assert.equal(entorno('cardiolink.com.ar', '?api=http://127.0.0.1:9/').urlFuncion, 'https://tupacclmhaqiahhlttyz.supabase.co/functions/v1/document-verify', 'el override ?api= no existe fuera de local');
+  assert.ok(fuente.includes("/_PENDIENTE$/.test(sitekey)") && fuente.includes('!urlFuncion'), 'sin sitekey real o sin entorno: fuera de servicio (fail-closed)');
+  assert.ok(fuente.includes("SITEKEY_TEST = '1x00000000000000000000BB'"));
 });
 caso('página: código con formato inválido no genera ninguna consulta; envía sólo codigo + turnstileToken, sin credenciales ni referer', () => {
   assert.ok(pagJs.includes("if (!CODIGO_RE.test(codigo)) { mostrarMensaje('neutro', 'No verificable', MENSAJE_NO_VERIFICABLE); return; }"));
@@ -271,12 +285,20 @@ caso('página: noindex, sin referrer, robots.txt cierra el sitio', () => {
   assert.ok(pagHtml.includes('noindex, nofollow, noarchive') && pagHtml.includes('<meta name="referrer" content="no-referrer">'));
   assert.ok(/Disallow: \//.test(leer('verificacion-publica/robots.txt')));
 });
-caso('cabeceras (_headers): CSP estricta sin unsafe-inline/unsafe-eval, sólo Turnstile y la API de Production; sin framing ni caché', () => {
-  const csp = /Content-Security-Policy: (.*)/.exec(headers)[1];
-  assert.ok(csp.includes("default-src 'none'") && csp.includes("frame-ancestors 'none'") && csp.includes("base-uri 'none'") && csp.includes("form-action 'none'"));
-  assert.ok(!/unsafe-inline|unsafe-eval|\*/.test(csp));
-  assert.ok(csp.includes('connect-src https://tupacclmhaqiahhlttyz.supabase.co') && !csp.includes('yslhwdl') && !/127\.0\.0\.1|localhost/.test(csp), 'Production sólo habla con Production');
-  assert.ok(/X-Content-Type-Options: nosniff/.test(headers) && /Referrer-Policy: no-referrer/.test(headers) && /X-Frame-Options: DENY/.test(headers) && /Cache-Control: no-store/.test(headers));
+caso('cabeceras (_headers): reglas POR HOST (sin regla genérica), CSP estricta; Production sólo con Production y pruebas sólo con STAGING', () => {
+  const bloques = {}; let actual = null;
+  headers.split('\n').forEach(l => { if (/^https:\/\//.test(l)) { actual = l.trim(); bloques[actual] = []; } else if (actual && /^\s+\S/.test(l)) bloques[actual].push(l.trim()); });
+  assert.equal(Object.keys(bloques).join(' | '), 'https://cardiolink.com.ar/* | https://:proyecto.pages.dev/*');
+  assert.ok(!/^\/\*/m.test(headers), 'sin regla genérica /*: dos CSP se aplicarían a la vez');
+  for (const [host, lineas] of Object.entries(bloques)) {
+    const csp = (lineas.find(x => x.startsWith('Content-Security-Policy:')) || '').replace('Content-Security-Policy: ', '');
+    assert.ok(csp.includes("default-src 'none'") && csp.includes("frame-ancestors 'none'") && csp.includes("base-uri 'none'") && csp.includes("form-action 'none'") && csp.includes("script-src 'self' https://challenges.cloudflare.com") && csp.includes('frame-src https://challenges.cloudflare.com'), host);
+    assert.ok(!/unsafe-inline|unsafe-eval|\*/.test(csp) && !/127\.0\.0\.1|localhost/.test(csp), host + ': sin comodines ni localhost');
+    for (const h of ['X-Content-Type-Options: nosniff', 'Referrer-Policy: no-referrer', 'X-Frame-Options: DENY', 'Cache-Control: no-store']) assert.ok(lineas.includes(h), host + ' ' + h);
+    const conn = /connect-src ([^;]+)/.exec(csp)[1];
+    if (host.indexOf('cardiolink.com.ar') > 0) assert.equal(conn, 'https://tupacclmhaqiahhlttyz.supabase.co', 'Production sólo habla con Production');
+    else assert.equal(conn, 'https://yslhwdlzdknhskawqrtv.supabase.co', 'el sitio de pruebas sólo habla con STAGING');
+  }
 });
 caso('aislamiento: la página pública vive en su propia carpeta, sin la app clínica ni credenciales', () => {
   const todo = pagJs + pagHtml + headers + leer('verificacion-publica/verificar/verificar.css');
@@ -360,6 +382,62 @@ caso('página: pide el desafío con la acción "verificar-documento" (la misma q
   assert.ok(leer('verificacion-publica/verificar/verificar.js').includes("action: 'verificar-documento'"));
 });
 
+caso('Turnstile: la función usa SOLO su secret propio (VERIFY_TURNSTILE_SECRET_KEY); sin él, fail-closed aunque exista el del portal', async () => {
+  const a = montarFuncion(Object.assign({}, ENV, { VERIFY_TURNSTILE_SECRET_KEY: 'secreto-verificacion', TURNSTILE_SECRET_KEY: 'portal' }), { rpc: rpcOk() }); await a.pedir();
+  assert.equal(a.llamadas.turnstileSecret, 'secreto-verificacion');
+  const c = montarFuncion(Object.assign({}, ENV, { VERIFY_TURNSTILE_SECRET_KEY: '', TURNSTILE_SECRET_KEY: '1x0000000000000000000000000000000AA' }), { rpc: rpcOk() }); const r = await c.pedir();
+  assert.equal(r.status, 403, 'la clave de prueba / del portal NO se usa como fallback'); assert.equal(c.llamadas.rpc.length, 0); assert.equal(c.llamadas.turnstile.length, 0, 'ni siquiera se llama a Siteverify');
+});
+caso('uso único: aunque Siteverify acepte el mismo token dos veces, el segundo uso se rechaza (403) y no consulta ni cuenta nada', async () => {
+  const f = montarFuncion(ENV, { rpc: rpcOk() });
+  const uno = await f.pedir({ body: { codigo: 'Qa1_Wb2-Ec3Rd4Tf5Yg6Hw', turnstileToken: 'token-uso-unico' } });
+  const dos = await f.pedir({ body: { codigo: 'Qa1_Wb2-Ec3Rd4Tf5Yg6Hw', turnstileToken: 'token-uso-unico' } });
+  const tres = await f.pedir({ body: { codigo: 'Qa1_Wb2-Ec3Rd4Tf5Yg6Hw', turnstileToken: 'token-uso-unico' } });
+  assert.equal(uno.status, 200); assert.equal(dos.status, 403); assert.equal(tres.status, 403); assert.equal(dos.json.error, 'verificacion_humana');
+  assert.equal(f.llamadas.turnstile.length, 3, 'Siteverify se consultó las tres veces y aceptó las tres (peor caso)');
+  assert.equal(f.llamadas.rpc.filter(x => x.nombre === 'cardiolink_verificacion_consultar_v1').length, 1, 'sólo el primer uso consulta certificados');
+  assert.equal(f.llamadas.rpc.filter(x => x.nombre === 'cardiolink_verificacion_limitar_v1').length, 2, 'los reusos rechazados no llegan al límite ni a la base');
+  const otro = await f.pedir({ body: { codigo: 'Qa1_Wb2-Ec3Rd4Tf5Yg6Hw', turnstileToken: 'token-ok:nuevo' } }); assert.equal(otro.status, 200, 'un token nuevo sí pasa');
+});
+caso('uso único: a la base viaja SOLO el SHA-256 del token (nunca el token), con vencimiento, y antes del límite y de la consulta', async () => {
+  const f = montarFuncion(ENV, { rpc: rpcOk() });
+  await f.pedir({ body: { codigo: 'Qa1_Wb2-Ec3Rd4Tf5Yg6Hw', turnstileToken: 'token-uso-unico' } });
+  const llamada = f.llamadas.rpc.filter(x => x.nombre === 'cardiolink_verificacion_token_usar_v1'); assert.equal(llamada.length, 1);
+  assert.equal(llamada[0].args.p_token_hash, await hexDe('token-uso-unico')); assert.equal(llamada[0].args.p_ttl_seg, 600);
+  assert.ok(JSON.stringify(f.llamadas.rpc).indexOf('token-uso-unico') < 0, 'el token no viaja en claro a la base');
+  const orden = f.llamadas.rpc.map(x => x.nombre);
+  assert.deepEqual(orden.slice(0, 3), ['cardiolink_verificacion_token_usar_v1', 'cardiolink_verificacion_limitar_v1', 'cardiolink_verificacion_limitar_v1']);
+  const iTs = indexTs.indexOf('await verificarTurnstile('), iTok = indexTs.indexOf('await consumirToken('), iLim = indexTs.indexOf('await limitarPersistente(admin'), iDb = indexTs.indexOf("admin.rpc('cardiolink_verificacion_consultar_v1'");
+  assert.ok(iTs > 0 && iTs < iTok && iTok < iLim && iLim < iDb, [iTs, iTok, iLim, iDb].join(' '));
+});
+caso('uso único: dos pedidos SIMULTÁNEOS con el mismo token => exactamente uno pasa (200) y el otro 403', async () => {
+  const f = montarFuncion(ENV, { rpc: rpcOk() });
+  const cuerpo = { body: { codigo: 'Qa1_Wb2-Ec3Rd4Tf5Yg6Hw', turnstileToken: 'token-uso-unico' } };
+  const rs = await Promise.all([f.pedir(cuerpo), f.pedir(cuerpo), f.pedir(cuerpo), f.pedir(cuerpo)]);
+  assert.deepEqual(rs.map(r => r.status).sort(), [200, 403, 403, 403]);
+  assert.equal(f.llamadas.rpc.filter(x => x.nombre === 'cardiolink_verificacion_consultar_v1').length, 1);
+});
+caso('uso único: si la RPC del token falla => 503 fail-closed, sin límite ni consulta ni reintento permisivo', async () => {
+  for (const tokenUsar of [() => null, () => 'si']) {
+    const f = montarFuncion(ENV, { rpc: rpcOk(), tokenUsar }); const r = await f.pedir();
+    assert.equal(r.status, 503); assert.equal(r.json.error, 'no_disponible');
+    assert.equal(f.llamadas.rpc.length, 1, 'sólo el intento de consumir el token'); assert.equal(f.llamadas.from.length, 0);
+  }
+});
+caso('uso único (SQL propuesto): tabla sin acceso del cliente, INSERT .. ON CONFLICT DO NOTHING, sólo service_role, sin guardar el token', () => {
+  const sql = leer('docs/propuestas/pending_review_documentos_v2a_verificacion_tokens_v1.sql');
+  const rb = leer('docs/propuestas/pending_review_documentos_v2a_verificacion_tokens_v1_rollback.sql');
+  assert.ok(/token_hash text primary key check \(token_hash ~ '\^\[0-9a-f\]\{64\}\$'\)/.test(sql), 'clave primaria = SHA-256 hexadecimal');
+  assert.ok(/on conflict \(token_hash\) do nothing\s+returning true into v_nuevo/.test(sql), 'decisión atómica en un solo INSERT');
+  assert.ok(sql.includes('security definer set search_path = pg_catalog, public') && sql.includes('enable row level security'));
+  assert.ok(/revoke all privileges on table public\.cardiolink_verificacion_tokens_usados from public, anon, authenticated;/.test(sql));
+  assert.ok(/revoke all privileges on function public\.cardiolink_verificacion_token_usar_v1\(text, integer\) from public, anon, authenticated;/.test(sql));
+  assert.ok(/grant execute on function public\.cardiolink_verificacion_token_usar_v1\(text, integer\) to service_role;/.test(sql) && !/grant [^;]*\bto (anon|authenticated|public)\b/i.test(sql));
+  assert.ok(sql.includes('skip locked') && sql.includes('limit 50'), 'limpieza acotada');
+  assert.ok(!/\btoken\s+text\b|\bip\b\s+(text|inet)/i.test(sql), 'no hay columna para el token en claro ni para la IP');
+  assert.ok(/^begin;/m.test(sql) && /^commit;/m.test(sql) && /drop function if exists/.test(rb) && /drop table if exists/.test(rb));
+  if (typeof fs.readdirSync === 'function') assert.equal(fs.readdirSync(path.join(root, 'supabase/migrations')).filter(n => n.indexOf('tokens_usados') >= 0 || n.indexOf('verificacion_tokens') >= 0).length, 0, 'no está en supabase/migrations');
+});
 caso('el QR de F2 apunta al dominio objetivo cardiolink.com.ar/verificar/', () => {
   const m = leer('cardiolink-documentos-pdf-v1.js');
   assert.ok(m.includes("const URL_VERIFICACION_BASE_V1='https://cardiolink.com.ar/verificar/';"));

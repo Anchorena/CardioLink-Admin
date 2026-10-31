@@ -3,8 +3,10 @@
   'use strict';
   var FUNCION_PRODUCCION = 'https://tupacclmhaqiahhlttyz.supabase.co/functions/v1/document-verify';
   var FUNCION_STAGING = 'https://yslhwdlzdknhskawqrtv.supabase.co/functions/v1/document-verify';
-  var SITEKEY_PRODUCCION = 'SITEKEY_PRODUCCION_PENDIENTE';          // se completa al crear el sitio Turnstile de Cloudflare (no es secreta)
-  var SITEKEY_TEST = '1x00000000000000000000BB';                    // clave pública de prueba de Cloudflare (siempre pasa, widget invisible)
+  var HOST_PRODUCCION = 'cardiolink.com.ar';
+  var SITEKEY_PRODUCCION = 'SITEKEY_PRODUCCION_PENDIENTE';          // widget de cardiolink.com.ar (clave pública; se completa al crearlo en Cloudflare)
+  var SITEKEY_PRUEBAS_PAGES = '0x4AAAAAAFtDuw3xlPO1jtXy';           // widget del sitio de pruebas *.pages.dev (clave PÚBLICA de Turnstile; la secreta nunca va en el código)
+  var SITEKEY_TEST = '1x00000000000000000000BB';                    // clave pública de prueba de Cloudflare (siempre pasa, widget invisible): sólo en local
   var CODIGO_RE = /^[A-Za-z0-9_-]{22}$/;
   var MENSAJE_NO_VERIFICABLE = 'No se pudo verificar este documento. Comprobá que escaneaste el código QR completo. Si el problema continúa, consultá con el profesional que lo emitió.';
 
@@ -14,12 +16,17 @@
   var params = new URLSearchParams(location.search);
   var codigo = params.get('c') || '';
 
-  // Entorno: en local se prueba contra STAGING (o un servidor simulado con ?api=, sólo en local); en cualquier otro host, Production.
-  var urlFuncion = FUNCION_PRODUCCION, sitekey = SITEKEY_PRODUCCION;
+  // Entorno por hostname (LISTA CERRADA; cualquier otro host queda fuera de servicio):
+  //   cardiolink.com.ar -> Production · *.pages.dev (sitio de pruebas) -> STAGING · localhost -> STAGING (o servidor simulado con ?api=, sólo en local).
+  var urlFuncion = '', sitekey = '';
   if (esLocal) {
     urlFuncion = FUNCION_STAGING; sitekey = SITEKEY_TEST;
     var api = params.get('api');
     if (api && /^http:\/\/(localhost|127\.0\.0\.1)(:\d+)?\//.test(api)) urlFuncion = api;
+  } else if (host === HOST_PRODUCCION) {
+    urlFuncion = FUNCION_PRODUCCION; sitekey = SITEKEY_PRODUCCION;
+  } else if (/\.pages\.dev$/.test(host)) {
+    urlFuncion = FUNCION_STAGING; sitekey = SITEKEY_PRUEBAS_PAGES;
   }
 
   function ocultar(el) { el.hidden = true; }
@@ -92,7 +99,7 @@
   }
 
   function obtenerToken(cb) {
-    if (!sitekey || sitekey === 'SITEKEY_PRODUCCION_PENDIENTE') { mostrarMensaje('error', 'Servicio en configuración', 'La verificación todavía no está habilitada.'); return; }
+    if (!sitekey || !urlFuncion || /_PENDIENTE$/.test(sitekey)) { mostrarMensaje('error', 'Servicio en configuración', 'La verificación todavía no está habilitada.'); return; }
     var s = document.createElement('script');
     s.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit';
     s.async = true; s.defer = true;

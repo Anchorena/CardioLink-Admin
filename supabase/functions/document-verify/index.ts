@@ -3,7 +3,7 @@
 // (vigente / reemplazado / anulado), tipo genérico, fecha de emisión, profesional y matrículas y una huella corta. Nunca datos del paciente ni del contenido.
 // Códigos inválidos / inexistentes / no disponibles => la MISMA respuesta. Protección: Turnstile fail-closed antes de tocar la base, CORS por lista de
 // orígenes, límite de tasa (mejor esfuerzo) y bitácora con IP hasheada (la escribe la propia RPC).
-// Secrets (ninguno en el repo): TURNSTILE_SECRET_KEY (la misma del portal), VERIFY_TURNSTILE_HOSTNAMES (OBLIGATORIO: hostnames autorizados del widget,
+// Secrets (ninguno en el repo): VERIFY_TURNSTILE_SECRET_KEY (widget propio de esta verificación; OBLIGATORIO y sin fallback: nunca se usa TURNSTILE_SECRET_KEY, la del portal), VERIFY_TURNSTILE_HOSTNAMES (OBLIGATORIO: hostnames autorizados del widget,
 // separados por comas; sin lista no se acepta ningún token), VERIFY_TURNSTILE_ACTION (opcional: acción esperada), VERIFY_ALLOWED_ORIGINS (CORS; localhost siempre
 // permitido para pruebas), VERIFY_IP_SALT (opcional: por defecto se deriva del service role).
 // Límite de tasa: en memoria (barato, primera barrera) + PERSISTENTE y compartido entre instancias vía cardiolink_verificacion_limitar_v1 (SQL propuesto aparte).
@@ -47,7 +47,7 @@ async function sha256Hex(texto) {
 
 // Turnstile: obligatorio y fail-closed (sin secret, sin hostnames autorizados, sin token válido, con otro hostname/acción o ante cualquier error no se consulta nada).
 async function verificarTurnstile(token, ip) {
-  const secret = Deno.env.get('TURNSTILE_SECRET_KEY');
+  const secret = Deno.env.get('VERIFY_TURNSTILE_SECRET_KEY');   // sólo el secret propio de la verificación: sin fallback a otro widget ni a una clave de prueba
   if (!secret || typeof token !== 'string' || !token || token.length > 2048) return false;
   const ctl = new AbortController();
   const timer = setTimeout(() => ctl.abort(), 5000);
@@ -63,6 +63,18 @@ async function verificarTurnstile(token, ip) {
     return false;
   } finally {
     clearTimeout(timer);
+  }
+}
+
+// Uso ÚNICO del token, impuesto por CardioLink: en STAGING (2026-10-31) Siteverify aceptó dos veces el mismo token real. Sólo viaja el SHA-256 del token; la
+// RPC (INSERT .. ON CONFLICT DO NOTHING) decide atómicamente quién llegó primero. true = primer uso; false = ya usado; null = falla => FAIL-CLOSED (503).
+async function consumirToken(admin, tokenHash) {
+  try {
+    const { data, error } = await admin.rpc('cardiolink_verificacion_token_usar_v1', { p_token_hash: tokenHash, p_ttl_seg: 600 });
+    if (error || typeof data !== 'boolean') return null;
+    return data;
+  } catch (_e) {
+    return null;
   }
 }
 
@@ -109,8 +121,13 @@ Deno.serve(async function (req) {
     // Turnstile ANTES de cualquier consulta: sin desafío resuelto no hay forma de probar códigos.
     if (!(await verificarTurnstile(body.turnstileToken, ip))) return responder({ ok: false, error: 'verificacion_humana' }, 403, origen);
 
-    // Límite persistente (sólo para quien ya resolvió Turnstile: los bots sin desafío no escriben en la base). Cuenta también los códigos inválidos.
+    // Uso único del token: un token ya consumido (aunque Siteverify lo acepte) se rechaza igual que uno inválido; si no se puede comprobar, 503 y no se consulta nada.
     const admin = clienteServicio();
+    const tokenNuevo = await consumirToken(admin, await sha256Hex(body.turnstileToken));
+    if (tokenNuevo === null) return responder({ ok: false, error: 'no_disponible' }, 503, origen);
+    if (tokenNuevo === false) return responder({ ok: false, error: 'verificacion_humana' }, 403, origen);
+
+    // Límite persistente (sólo para quien ya resolvió Turnstile: los bots sin desafío no escriben en la base). Cuenta también los códigos inválidos.
     const limiteIp = await limitarPersistente(admin, 'ip:' + (ipHash || 'sin-ip'), 30, 600);
     if (limiteIp === null) return responder({ ok: false, error: 'no_disponible' }, 503, origen);            // fail-closed: no se consulta nada
     if (limiteIp === false) return responder({ ok: false, error: 'demasiados_intentos' }, 429, origen);
