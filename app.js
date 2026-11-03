@@ -12240,6 +12240,20 @@ function patientInfoTextHC(p,coverage){
     try{const ip=pdf.getImageProperties(imgData);return encajarImagen406(ip.width,ip.height,bw,bh);}
     catch(e){return {w:bw,h:bh,dx:0,dy:0};}
   }
+  // Documentos V2A / F2 - QR de autenticidad. Se dibuja como RECTÁNGULOS VECTORIALES (nítido en cualquier resolución, sin imagen) con la librería
+  // qrcode-generator (MIT, versión fija en index.html). Nivel de corrección M, zona de silencio de 4 módulos incluida en el tamaño pedido.
+  function matrizQr406(texto){
+    if(typeof qrcode!=='function')return null;
+    try{const q=qrcode(0,'M');q.addData(String(texto));q.make();return q;}catch(e){return null;}
+  }
+  function dibujarQrPdf406(pdf,texto,x,y,tam){
+    const q=matrizQr406(texto);if(!q)return false;
+    const n=q.getModuleCount(),quiet=4,cell=tam/(n+2*quiet);
+    pdf.setFillColor(255,255,255);pdf.rect(x,y,tam,tam,'F');
+    pdf.setFillColor(0,0,0);
+    for(let r=0;r<n;r++)for(let c=0;c<n;c++)if(q.isDark(r,c))pdf.rect(x+(quiet+c)*cell,y+(quiet+r)*cell,cell+0.02,cell+0.02,'F');   // +0.02 mm: sin líneas blancas entre módulos
+    return true;
+  }
   async function generarPdfBlobDocumento406(datos406){
     const jsPDFCtor=window.jspdf?.jsPDF;
     if(!jsPDFCtor)throw new Error('jsPDF no está disponible en esta página.');
@@ -12316,6 +12330,18 @@ function patientInfoTextHC(p,coverage){
     pdf.text(String(pr.nombre||d.profesionalNombre||''),sigX+sigW/2,sigY+4,{align:'center'});
     pdf.setFont('helvetica','normal');pdf.setFontSize(isA5?7:8);pdf.setTextColor(71,85,105);
     if(especialidadTxt)pdf.text(especialidadTxt,sigX+sigW/2,sigY+7.5,{align:'center'});
+    // QR de autenticidad (sólo si el archivado lo pidió): abajo a la izquierda, a la altura del bloque de firma; no toca la firma ni el membrete.
+    if(datos406.qr&&datos406.qr.url){
+      const tam=isA5?24:28,qx=mX,qy=sigY+9-tam;
+      if(!dibujarQrPdf406(pdf,datos406.qr.url,qx,qy,tam))throw new Error('No se pudo dibujar el QR de verificación (librería no disponible).');
+      const tx=qx+tam+2,tw=Math.max(20,sigX-3-tx);
+      pdf.setFont('helvetica','bold');pdf.setFontSize(isA5?7:8);pdf.setTextColor(17,24,39);
+      pdf.text('Verificá la autenticidad de este documento',tx,qy+tam/2-3,{maxWidth:tw});
+      pdf.setFont('helvetica','normal');pdf.setFontSize(isA5?6:7);pdf.setTextColor(71,85,105);
+      const vu=String(datos406.qr.url).replace(/^https?:\/\//,'').replace(/\?.*$/,'');
+      pdf.text(pdf.splitTextToSize('Escaneá el código QR o ingresá en '+vu,tw),tx,qy+tam/2+0.5);
+      if(datos406.qr.codigo)pdf.text('Código: '+datos406.qr.codigo,tx,qy+tam/2+(isA5?8:9.5),{maxWidth:tw});
+    }
     pdf.setFontSize(isA5?6.5:7.5);pdf.setTextColor(100,116,139);
     pdf.text(String(brandingCL406.nombre||'CardioLink')+(brandingCL406.slogan?' · '+brandingCL406.slogan:''),mX,pageH-6);
     pdf.text('Fecha de impresión: '+String(fechaImpresion406||''),pageW-mX,pageH-6,{align:'right'});
@@ -12360,10 +12386,11 @@ function patientInfoTextHC(p,coverage){
   // tenga que resolver paciente/profesional/contenido por su cuenta (una
   // sola fuente de contenido, también entre módulos). No toca Storage ni
   // Supabase acá - sólo genera el Blob y los metadatos descriptivos.
-  window.generarPdfDocumentoGenerado406=async function(docId,formato,docOverride){
+  window.generarPdfDocumentoGenerado406=async function(docId,formato,docOverride,opciones){
     const datos406=resolverDatosDocumento406(docId,formato,docOverride);
     if(!datos406)return {ok:false,error:'No se encontró el documento.'};
     if(datos406.error)return {ok:false,error:datos406.error};
+    if(opciones&&opciones.qr&&opciones.qr.url)datos406.qr={url:String(opciones.qr.url),codigo:String(opciones.qr.codigo||'')};   // V2A/F2: sólo lo pide el archivado
     const {d,p}=datos406;
     const tipoArchivo=TIPO_PDF_ARCHIVO_POR_DOC406[d.tipo];
     if(!tipoArchivo)return {ok:false,error:'Este tipo de documento no está en el catálogo de archivo PDF.'};

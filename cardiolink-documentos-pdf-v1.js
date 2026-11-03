@@ -1332,6 +1332,61 @@
     if(e&&(e.code==='42501'||/permission denied/i.test(m))&&!(await asegurarSesionV1()).ok)return MSG_SESION_VENCIDA_V1;
     return base+m;
   }
+  // ---------------------------------------------------------------------
+  // Documentos V2A / F2 - QR de autenticidad por VERSIÓN archivada. Detrás de una bandera APAGADA por defecto (window.CARDIOLINK_QR_V2A === true): sin ella
+  // el archivado es exactamente el de V1 (Production hasta que se active). Secuencia: código aleatorio (128 bits) -> reservar(hash) -> PDF con QR ->
+  // huella del PDF final -> Storage + fila (flujo V1) -> vincular. Si vincular falla NUNCA se muestra como guardado/verificable: se intenta deshacer la fila y el
+  // archivo y se informa el error. Reutilizar un documento sin cambios no reserva ni vincula nada (mismo PDF, mismo QR).
+  // ---------------------------------------------------------------------
+  const URL_VERIFICACION_BASE_V1='https://cardiolink.com.ar/verificar/';
+  const QR_FALLIDOS_KEY_V1='cardiolink_qr_fallidos_v1';
+  function verificacionQrActivaV1(){return window.CARDIOLINK_QR_V2A===true;}
+  function tipoQrV1(doc){
+    const t=String(doc&&doc.tipo||'');
+    if(t==='certificado'||t==='reposo_laboral')return 'certificado';
+    if(t==='constancia_atencion')return 'constancia';
+    if(t==='orden')return 'orden';
+    return null;   // recetas y el resto: sin verificación
+  }
+  function codigoQrAleatorioV1(){
+    const b=new Uint8Array(16);crypto.getRandomValues(b);   // 128 bits
+    let s='';b.forEach(x=>{s+=String.fromCharCode(x);});
+    return btoa(s).replace(/\+/g,'-').replace(/\//g,'_').replace(/=+$/,'');
+  }
+  async function sha256HexBytesV1(bytes){
+    const d=await crypto.subtle.digest('SHA-256',bytes);
+    return Array.from(new Uint8Array(d)).map(x=>x.toString(16).padStart(2,'0')).join('');
+  }
+  function urlVerificacionV1(codigo){return String(window.CARDIOLINK_VERIF_URL_BASE||URL_VERIFICACION_BASE_V1)+'?c='+encodeURIComponent(codigo);}
+  function qrFallidoV1(rowId){try{return JSON.parse(localStorage.getItem(QR_FALLIDOS_KEY_V1)||'[]').includes(String(rowId));}catch(e){return false;}}
+  function marcarQrFallidoV1(rowId){try{const l=JSON.parse(localStorage.getItem(QR_FALLIDOS_KEY_V1)||'[]');l.push(String(rowId));localStorage.setItem(QR_FALLIDOS_KEY_V1,JSON.stringify(l.slice(-50)));}catch(e){}}
+  async function vincularQrV1(qr,rowId,pdfSha){
+    let ultimo=null;
+    for(let i=0;i<3;i++){
+      try{
+        const r=await supabaseClient.rpc('cardiolink_verificacion_vincular_v1',{p_id:qr.id,p_document_id:rowId,p_pdf_sha256:pdfSha});
+        if(!r.error&&r.data&&r.data.ok)return {ok:true};
+        ultimo=(r.error&&r.error.message)||'respuesta inesperada';
+      }catch(e){ultimo=(e&&e.message)||String(e);}
+      if(i<2)await new Promise(res=>setTimeout(res,400*(i+1)));
+    }
+    return {ok:false,error:ultimo};
+  }
+  // Deshace lo recién archivado cuando no se pudo vincular. Devuelve true si la fila quedó eliminada. Si no se puede (p. ej. Secretaría no elimina), la fila se marca
+  // como "QR fallido": no se reutiliza ni cuenta para conflictos, y la próxima vez se archiva una versión nueva con código nuevo.
+  async function deshacerArchivadoQrV1(rowId,storagePath){
+    let borrada=false;
+    try{const r=await supabaseClient.from('cardiolink_patient_documents').delete().eq('id',rowId).select('id');borrada=!r.error&&Array.isArray(r.data)&&r.data.length>0;}catch(e){borrada=false;}
+    if(borrada){try{await supabaseClient.storage.from(BUCKET_PDF_V1).remove([storagePath]);}catch(e){}}
+    else marcarQrFallidoV1(rowId);
+    return borrada;
+  }
+  async function finalizarQrV1(qr,rowId,pdfSha,storagePath){
+    const v=await vincularQrV1(qr,rowId,pdfSha);
+    if(v.ok)return {ok:true};
+    const deshecho=await deshacerArchivadoQrV1(rowId,storagePath);
+    return {ok:false,verificacionFallida:true,error:'No se pudo verificar el documento ('+v.error+'). '+(deshecho?'No se guardó: volvé a intentar.':'El PDF archivado NO es verificable y no se reutiliza: volvé a guardar para emitir una versión nueva.')};
+  }
   async function archivarInternoV1(doc,opts){
     if(!supabaseClient||!usuarioSupabase)return {ok:false,error:'sin sesión con el servidor'};
     const ses=await asegurarSesionV1();
@@ -1342,17 +1397,40 @@
     // Reutilización SIN regenerar: si la huella del contenido actual (la misma función que usa el generador) coincide con la de la versión archivada y esa fila es del
     // paciente real del documento, no se renderiza el PDF otra vez ni se sube nada (Guardar -> Imprimir/Enviar sobre un documento sin cambios). Ante cualquier duda
     // (sin huella, sin función, paciente distinto, error) se sigue por el camino completo de siempre.
+    if(ult&&qrFallidoV1(ult.id))ult=null;   // versión archivada cuyo QR no se pudo vincular: no se reutiliza ni genera conflicto
+    let hActual=null;
+    try{if(typeof window.hashContenidoDocumento406==='function')hActual=await window.hashContenidoDocumento406(doc);}catch(e){hActual=null;}
     try{
-      if(ult&&ult.source_content_hash&&typeof window.hashContenidoDocumento406==='function'){
-        const h=await window.hashContenidoDocumento406(doc);
+      if(ult&&ult.source_content_hash&&hActual){
         const real=typeof pacienteRealIdDeDocV1==='function'?pacienteRealIdDeDocV1(doc):null;
-        if(h&&h===ult.source_content_hash&&real!==null&&String(ult.patient_id)===real)return {ok:true,rowId:ult.id,createdAt:ult.created_at,patientId:real,reusado:true};
+        if(hActual===ult.source_content_hash&&real!==null&&String(ult.patient_id)===real)return {ok:true,rowId:ult.id,createdAt:ult.created_at,patientId:real,reusado:true};
       }
     }catch(e){/* camino completo */}
+    // V2A/F2: QR de verificación (sólo con la bandera activa y para certificado/constancia/orden)
+    const tipoQr=verificacionQrActivaV1()?tipoQrV1(doc):null;
+    let qr=null;
+    if(tipoQr){
+      if(!hActual)return {ok:false,error:'No se pudo preparar la verificación del documento (huella de contenido no disponible). No se guardó nada.'};
+      // un documento editado desde otro dispositivo no debe consumir una reserva: el conflicto se decide ANTES de reservar
+      if(ult&&String(ult.pv)==='2'&&String(ult.id)!==String(opts.baseArchivoId||'')){
+        return {ok:false,conflicto:true,latestId:ult.id,error:'Este documento tiene una versión más reciente guardada desde otro dispositivo o sesión. No se sobrescribió nada. Copiá tu texto, cerrá y volvé a abrir el documento para ver la versión nueva (o guardalo de nuevo para archivar el tuyo como versión nueva).'};
+      }
+      try{
+        const codigo=codigoQrAleatorioV1();
+        const rs=await supabaseClient.rpc('cardiolink_verificacion_reservar_v1',{p_chain_id:String(doc.id),p_kind:tipoQr,p_code_hash:await sha256HexBytesV1(new TextEncoder().encode(codigo))});
+        if(rs.error||!rs.data)throw (rs.error||new Error('respuesta vacía'));
+        qr={id:String(rs.data),codigo,url:urlVerificacionV1(codigo)};
+      }catch(e){return {ok:false,error:await mensajeErrorSesionV1(e,'No se pudo reservar la verificación del documento: ')+' No se guardó nada.'};}
+    }
     let gen;
-    try{gen=await window.generarPdfDocumentoGenerado406?.(doc.id,null,doc);}
+    try{gen=await window.generarPdfDocumentoGenerado406?.(doc.id,null,doc,qr?{qr:{url:qr.url,codigo:qr.codigo}}:undefined);}
     catch(e){return {ok:false,error:'No se pudo generar el PDF: '+(e?.message||e)};}
     if(!gen||!gen.ok)return {ok:false,error:(gen&&gen.error)||'No se pudo generar el PDF.'};
+    let pdfSha=null;
+    if(qr){
+      try{pdfSha=await sha256HexBytesV1(await gen.blob.arrayBuffer());}
+      catch(e){return {ok:false,error:'No se pudo calcular la huella del PDF verificable. No se guardó nada.'};}
+    }
     // misma huella => esta versión ya está archivada (reintento / doble clic / Enviar sin cambios): se reutiliza, no se duplica
     if(ult&&ult.source_content_hash===gen.sourceContentHash)return {ok:true,rowId:ult.id,createdAt:ult.created_at,patientId:gen.patientId,reusado:true};
     // edición concurrente: el servidor tiene una versión archivada por el cliente nuevo que NO es la que este usuario editó => no se sobrescribe
@@ -1381,11 +1459,17 @@
           const {data:v,error:ve}=await supabaseClient.from('cardiolink_patient_documents').select('id,created_at').eq('storage_path',storagePath).limit(1);
           if(!ve)existe=(v&&v[0])||false;
         }catch(e2){existe=null;}
-        if(existe)return {ok:true,rowId:existe.id,createdAt:existe.created_at,patientId:gen.patientId,reusado:false};
+        if(existe){
+          const vE=qr?await finalizarQrV1(qr,existe.id,pdfSha,storagePath):null;
+          if(vE&&!vE.ok)return vE;
+          return {ok:true,rowId:existe.id,createdAt:existe.created_at,patientId:gen.patientId,reusado:false,verificacion:qr?{id:qr.id,estado:'ok'}:undefined};
+        }
         if(existe===false){try{await supabaseClient.storage.from(BUCKET_PDF_V1).remove([storagePath]);}catch(e2){console.warn('No se pudo revertir el PDF huérfano en Storage:',e2);}}
         throw insErr;
       }
-      return {ok:true,rowId:inserted.id,createdAt:inserted.created_at,patientId:gen.patientId,reusado:false};
+      const vI=qr?await finalizarQrV1(qr,inserted.id,pdfSha,storagePath):null;
+      if(vI&&!vI.ok)return vI;
+      return {ok:true,rowId:inserted.id,createdAt:inserted.created_at,patientId:gen.patientId,reusado:false,verificacion:qr?{id:qr.id,estado:'ok'}:undefined};
     }catch(e){
       if(falloColumnaPayloadV1(e))return {ok:false,error:'El servidor todavía no admite guardar el contenido editable de los documentos (falta aplicar la migración source_payload). No se guardó nada.'};
       return {ok:false,error:await mensajeErrorSesionV1(e,'No se pudo archivar el PDF: ')};
