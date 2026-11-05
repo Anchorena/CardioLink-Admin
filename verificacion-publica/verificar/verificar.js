@@ -4,7 +4,7 @@
   var FUNCION_PRODUCCION = 'https://tupacclmhaqiahhlttyz.supabase.co/functions/v1/document-verify';
   var FUNCION_STAGING = 'https://yslhwdlzdknhskawqrtv.supabase.co/functions/v1/document-verify';
   var HOST_PRODUCCION = 'cardiolink.com.ar';
-  var SITEKEY_PRODUCCION = 'SITEKEY_PRODUCCION_PENDIENTE';          // widget de cardiolink.com.ar (clave pública; se completa al crearlo en Cloudflare)
+  var SITEKEY_PRODUCCION = '0x4AAAAAAF0AxYzaP58oXCMy';          // widget de cardiolink.com.ar (clave pública; se completa al crearlo en Cloudflare)
   var SITEKEY_PRUEBAS_PAGES = '0x4AAAAAAFtDuw3xlPO1jtXy';           // widget del sitio de pruebas *.pages.dev (clave PÚBLICA de Turnstile; la secreta nunca va en el código)
   var SITEKEY_TEST = '1x00000000000000000000BB';                    // clave pública de prueba de Cloudflare (siempre pasa, widget invisible): sólo en local
   var CODIGO_RE = /^[A-Za-z0-9_-]{22}$/;
