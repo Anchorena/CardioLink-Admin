@@ -1109,6 +1109,8 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
 <script src="cardiolink-prestaciones-perfil.js?v=1"></script>
 <!-- Configuración V1A se carga después de los editores existentes para reorganizar su presentación sin reemplazar handlers. -->
 <script src="cardiolink-config-v1.js?v=1a-fase6-branding-pdf"></script>
+<!-- Seguridad clínica V1 / Bloque 3: asociaciones Secretaría–Médicos dentro de Usuarios y accesos (solo STAGING; falla cerrado en Production). Debe cargar después de app.js. -->
+<script src="cardiolink-asociaciones-ui-v1.js?v=1"></script>
 <script src="cardiolink-dashboard-v1.js?v=1"></script>
 <script src="cardiolink-agenda-v1.js?v=1"></script>
 <script src="cardiolink-pedidos-rapidos-v1.js?v=1"></script>
