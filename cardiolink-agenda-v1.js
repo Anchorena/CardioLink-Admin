@@ -107,6 +107,12 @@
       delete data.duracionesPrestacion[nombrePrestacion]; // vuelve al fallback de 30 min
     }
     try { saveConfig(); } catch (e) { console.warn('Agenda V1: no se pudo guardar la duración de la prestación:', e); }
+    // Bloque 4B v3: si el servidor no confirma la duración, se avisa que quedó sólo en este equipo (antes era un guardado silencioso).
+    try {
+      if (typeof window.confirmarConfigAdministrativaV1 === 'function') {
+        window.confirmarConfigAdministrativaV1().then(function (ok) { if (ok === false && typeof window.avisarConfigNoConfirmadaV1 === 'function') window.avisarConfigNoConfirmadaV1('La duración del turno'); }).catch(function () {});
+      }
+    } catch (e) { /* sin confirmación disponible */ }
   }
 
   // Duración "de bloque" de un turno para superposición: si tiene

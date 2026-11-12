@@ -190,6 +190,13 @@ function perfilUsuarioActual(){
       ||{id:esDuenio?'matias':'backend_'+ib.P,usuario:esDuenio?'matias':ib.P,nombre:nombreProfesionalPorIdV1(ib.P)||ib.P,
          rol:rolLocalOk,profesionalId:ib.P,soloMatias:esDuenio,especialidad:'',activo:true};
   }
+  // Secretaría CONFIRMADA por el backend: el perfil (y su etiqueta de rol, y la auditoría creadoRol/nombre) no puede ser el de otro rol por una coincidencia de
+  // alias del login (p. ej. un usuario cuyo nombre contiene "matias" quedaba como "Matías / dueño"). Se usa el usuario configurado con rol secretaría que
+  // coincide con el login o, si no hay, un perfil de Secretaría. No concede nada: los permisos salen de rolBaseUsuarioActual() / el backend.
+  if(usuarioSupabase&&backendRolCargado===true&&!backendEsAdminOwner&&!esMedicoBackendV1()&&backendTieneAccesoTurnos===true&&(!u||rolLocalPerfilV1(u)!=='secretaria')){
+    u=(data.usuarios||[]).find(x=>x&&x.activo!==false&&rolLocalPerfilV1(x)==='secretaria'&&usuarioCoincide(x,user,email))
+      ||{id:'backend_secretaria',usuario:user,nombre:'Secretaría',rol:'secretaria',profesionalId:'',especialidad:'Administración',activo:true};
+  }
   // Si no se reconoce el usuario, entra con permisos mínimos. No cae en Matías para evitar exposición de caja/reportes.
   if(!u) u={id:'usr_sin_config',usuario:(esMedicoBackendV1()&&backendMensajeriaV1?.login)||user,nombre:(esMedicoBackendV1()&&(nombreVisibleBackendV1()||nombreProfesionalPorIdV1(backendPendientesIdentidadV1.professional_id)))||user||'Usuario sin configurar',rol:'sin_configurar',profesionalId:'',especialidad:'Perfil no configurado',activo:true};
   usuarioPerfilActual=u;
@@ -229,6 +236,26 @@ let pendientesOperacionEnCursoV1=false;
 let backendMensajeriaV1=null;
 let directorioMensajesV1=null; // [{destino,nombre,rol}] sin emails, alias, ids ni datos comerciales
 function esMedicoBackendV1(){ return backendPendientesIdentidadV1?.role==='medico'; }
+// Bloque 4B v3: la fila COMPLETA de configuración (__cardiolink_config_v1) sólo se lee o se escribe con un owner/admin CONFIRMADO por el servidor. Con el rol
+// sin confirmar (consulta pendiente o fallida) NO se accede a ella por ninguna vía; Secretaría usa las RPC administrativas; el médico no la escribe nunca.
+function configCompletaPermitidaV1(){ return !!usuarioSupabase && backendRolCargado===true && backendEsAdminOwner===true && !esMedicoBackendV1(); }
+// Persistencia de la configuración desde las pantallas visibles de Coberturas y valores: true = el servidor confirmó, false = NO (se avisa), null = no corresponde.
+// El llamador debe afirmar éxito SÓLO si el resultado no es false.
+async function persistirConfigVisibleV1(que){
+  try{ saveConfig(); }catch(e){ console.warn(e); }
+  let ok=null;
+  try{ if(typeof window.confirmarConfigAdministrativaV1==='function') ok=await window.confirmarConfigAdministrativaV1(); }catch(e){ ok=false; }
+  if(ok===false&&typeof window.avisarConfigNoConfirmadaV1==='function') window.avisarConfigNoConfirmadaV1(que);
+  return ok;
+}
+// La sesión VIVA de supabase-js (la que firmará la próxima llamada) debe seguir siendo la del usuario que inició la operación (cierre de sesión / otro usuario en otra pestaña).
+async function sesionVivaCoincideV1(uidEsperado){
+  try{
+    if(!supabaseClient||!supabaseClient.auth||typeof supabaseClient.auth.getSession!=='function'||uidEsperado==null) return false;
+    const r=await supabaseClient.auth.getSession(); const u=r&&r.data&&r.data.session&&r.data.session.user;
+    return !!u&&String(u.id)===String(uidEsperado);
+  }catch(e){ return false; }
+}
 // Nombre visible CONFIABLE del médico: sale del directorio del backend, nunca del prefijo del email.
 function nombreVisibleBackendV1(){
   const login=backendMensajeriaV1?.login; if(!login) return '';
@@ -399,7 +426,7 @@ async function documentosSinRespaldoConfirmadoV1(docs){
       if(payloadIgualDocV1(d,f.source_payload)) confirmados.add(String(d.id));
     });
   }
-  if(!esMedicoBackendV1()){
+  if(configCompletaPermitidaV1()){   // v3: con el rol sin confirmar o sin permiso NO se lee la fila completa (lo no confirmado queda resguardado, nunca se descarta)
     const {data:filas,error}=await supabaseClient.from('cardiolink_atenciones').select('d:payload->config->documentosClinicos').eq('id',CONFIG_ROW_ID_DOCS_V1).limit(1);
     if(error) throw error;
     const remotos=Array.isArray(filas&&filas[0]&&filas[0].d)?filas[0].d:[];
@@ -428,9 +455,34 @@ async function protegerDocumentosSinRespaldoV1(){
 }
 // Tras iniciar sesión: devuelve a la memoria los documentos resguardados que falten (por id; nunca pisa uno existente). El resguardo NO se borra acá:
 // sólo lo descarta un cierre de sesión posterior que los encuentre confirmados en el servidor.
+// Documentos que el rol CONFIRMADO puede tener en memoria/caché de configuración. El resguardo (outbox) conserva TODO; esto sólo decide qué vuelve a la sesión.
+// owner/admin confirmado: todos. Rol sin confirmar: ninguno (fail-closed, quedan resguardados hasta confirmarse). Médico confirmado: como antes.
+// Secretaría confirmada: sólo los tipos que la RPC administrativa le entrega (constancia_atencion); los clínicos heredados (certificados, órdenes…) no vuelven.
+const TIPOS_DOC_SECRETARIA_V1=['constancia_atencion'];
+function documentoRestaurableV1(d){
+  if(configCompletaPermitidaV1()) return true;
+  if(backendRolCargado!==true) return false;
+  if(esMedicoBackendV1()) return true;
+  return TIPOS_DOC_SECRETARIA_V1.includes(String(d&&d.tipo||''));
+}
+// Secretaría confirmada: lo que ya esté en memoria/caché y no le corresponda se APARTA. Primero se asegura el respaldo en el resguardo; sólo si quedó escrito se quita
+// de la memoria y de la caché de configuración (si el respaldo no se pudo escribir, no se quita nada).
+function apartarDocumentosNoPermitidosV1(){
+  const uid=usuarioSupabase&&usuarioSupabase.id;
+  if(!uid||!data||!Array.isArray(data.documentosClinicos)) return 0;
+  if(!(backendRolCargado===true&&!backendEsAdminOwner&&!esMedicoBackendV1()&&backendTieneAccesoTurnos===true)) return 0;
+  const fuera=data.documentosClinicos.filter(d=>d&&d.id!=null&&!documentoRestaurableV1(d));
+  if(!fuera.length) return 0;
+  try{ localStorage.setItem(OUTBOX_DOCS_KEY_V1+uid,JSON.stringify({docs:unirDocsPorIdV1(leerOutboxDocsV1(uid),fuera),fecha:new Date().toISOString()})); }
+  catch(e){ console.warn('No se pudo asegurar el respaldo de los documentos; no se apartan de la memoria:',e); return 0; }
+  const ids=new Set(fuera.map(d=>String(d.id)));
+  data.documentosClinicos=data.documentosClinicos.filter(d=>!(d&&d.id!=null&&ids.has(String(d.id))));
+  try{ localStorage.setItem(storageConfig,JSON.stringify(data)); }catch(e){}
+  return fuera.length;
+}
 function recuperarDocumentosPendientesV1(){
   const uid=usuarioSupabase&&usuarioSupabase.id; if(!uid||!data) return 0;
-  const docs=leerOutboxDocsV1(uid); if(!docs.length) return 0;
+  const docs=leerOutboxDocsV1(uid).filter(documentoRestaurableV1); if(!docs.length) return 0;
   if(!Array.isArray(data.documentosClinicos)) data.documentosClinicos=[];
   const ids=new Set(data.documentosClinicos.map(d=>String(d&&d.id)));
   const faltan=docs.filter(d=>!ids.has(String(d.id)));
@@ -3766,7 +3818,7 @@ function cargarValoresConfig(){
   if($('cfgCopagoEstudio')) $('cfgCopagoEstudio').value=v.copagoEstudio||0;
 }
 
-function guardarValores(){
+async function guardarValores(){
   if(!exigirConfigComercial('Tu perfil no puede modificar valores comerciales.'))return;
   if(!$('cfgProfesionalValores')) return;
   const p=(data.profesionales||[]).find(x=>x.id===$('cfgProfesionalValores').value);
@@ -3781,8 +3833,8 @@ function guardarValores(){
     copagoElectro:Number($('cfgCopagoElectro')?.value||0),
     copagoEstudio:Number($('cfgCopagoEstudio')?.value||0)
   };
-  saveConfig();
-  alert('Valores del perfil guardados');
+  const okValores=await persistirConfigVisibleV1('Los valores del perfil');
+  if(okValores!==false) alert('Valores del perfil guardados');
   if(typeof aplicarRegla==='function') aplicarRegla();
   renderStats();
 }
@@ -3791,11 +3843,12 @@ function cargarReglaConfig(){
   if($('cfgTipoRegla') && $('cfgReglaOS')) $('cfgTipoRegla').value=getRegla($('cfgReglaOS').value);
 }
 
-function guardarReglaConfig(){
+async function guardarReglaConfig(){
   if(!exigirConfigComercial('Tu perfil no puede modificar reglas de obras sociales.'))return;
   if(!$('cfgReglaOS') || !$('cfgTipoRegla')) return;
   setRegla($('cfgReglaOS').value,$('cfgTipoRegla').value);
-  alert('Regla guardada');
+  const okRegla=await persistirConfigVisibleV1('La regla de la obra social');
+  if(okRegla!==false) alert('Regla guardada');
   if(typeof aplicarRegla==='function') aplicarRegla();
 }
 
@@ -3813,20 +3866,22 @@ function delProfesional(id){
   data.profesionales=(data.profesionales||[]).filter(p=>p.id!==id);
   saveConfig();refreshSelects();renderConfig();
 }
-function addOS(){
+async function addOS(){
   if(!exigirConfigComercial('Tu perfil no puede crear obras sociales.'))return;
   const n=$('nuevaOS')?.value.trim();
   if(!n)return;
   data.obrasSociales=data.obrasSociales||[];
   if(!data.obrasSociales.includes(n))data.obrasSociales.push(n);
-  saveConfig();refreshSelects();renderConfig();
+  await persistirConfigVisibleV1('La obra social');
+  refreshSelects();renderConfig();
 }
-function delOS(enc){
+async function delOS(enc){
   if(!exigirConfigComercial('Tu perfil no puede borrar obras sociales.'))return;
   const n=decodeURIComponent(enc);
   if(!confirm('¿Borrar obra social?'))return;
   data.obrasSociales=(data.obrasSociales||[]).filter(o=>o!==n);
-  saveConfig();refreshSelects();renderConfig();
+  await persistirConfigVisibleV1('La baja de la obra social');
+  refreshSelects();renderConfig();
 }
 function addPrestacion(){
   if(!exigirConfigComercial('Tu perfil no puede crear prestaciones.'))return;
@@ -4811,6 +4866,8 @@ async function guardarPacientePanel(id){
   // variante "basica" (nunca toca tablas de HC) porque este flujo lo dispara
   // Secretaria, no Medico.
   try{window.cardiolinkClinica410?.sincronizarFichaBasica?.(p)?.catch?.(e=>console.warn('No se pudo sincronizar la capa clínica relacional:',e));}catch(e){console.warn('No se pudo sincronizar la capa clínica relacional:',e);}
+  // v3: la ficha "guardada" se muestra recién con la confirmación del servidor; si no se confirma, se avisa antes de mostrarla como guardada.
+  try{ if(await confirmarConfigAdministrativaV1()===false) avisarConfigNoConfirmadaV1('La ficha del paciente'); }catch(e){ console.warn(e); }
   pacienteSeleccionadoPanelId=p.id;
   renderPacientesPanel($('pacientesBuscar')?.value||'',false);
   seleccionarPacientePanel(p.id);
@@ -6688,7 +6745,9 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       }
       if(resultado && typeof resultado==='object')r={...r,paciente:resultado};
     }
-    try{saveConfig(); guardarConfigEnSupabase298(); renderPacientesPanel('',true); seleccionarPacientePanel(r.paciente.id);}catch(e){console.warn(e)}
+    // v3: el éxito se afirma sólo con la confirmación del servidor (null = modo local / médico: no corresponde confirmar).
+    let okCfg298=null;
+    try{saveConfig(); okCfg298=await confirmarConfigAdministrativaV1(); renderPacientesPanel('',true); seleccionarPacientePanel(r.paciente.id);}catch(e){console.warn(e);okCfg298=false;}
     // v4.1.0-hc: mismo hook que upsertPacienteDesdeCarga()/guardarPacientePanel()/
     // guardarPacienteGlobal350() - este modal ("Cargar paciente") es una via de
     // alta separada que quedó afuera del relevamiento original y no sincronizaba
@@ -6697,7 +6756,8 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     // formulario, sin id).
     try{window.cardiolinkClinica410?.sincronizarFichaBasica?.(r.paciente)?.catch?.(e=>console.warn('No se pudo sincronizar la capa clínica relacional:',e));}catch(e){console.warn('No se pudo sincronizar la capa clínica relacional:',e);}
     cerrarModalPaciente298();
-    alert(r.creado?'Paciente cargado.':'Ficha del paciente actualizada.');
+    if(okCfg298===false) avisarConfigNoConfirmadaV1(r.creado?'El paciente':'La ficha del paciente');
+    else alert(r.creado?'Paciente cargado.':'Ficha del paciente actualizada.');
   }
   window.guardarPacientePuro298=guardarPacientePuro298;
 
@@ -6765,7 +6825,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       ${previewImportPacientes298.length>80?'<p class="muted">Vista previa limitada a las primeras 80 filas.</p>':''}
       <div class="modal-actions"><button class="secondary" type="button" onclick="cerrarModalPaciente298()">Cancelar</button><button class="primary" type="button" id="btnConfirmarImportPacientes298">Importar pacientes</button></div>`);
   }
-  function confirmarImportPacientes298(){
+  async function confirmarImportPacientes298(){
     if(!previewImportPacientes298.length){alert('No hay pacientes para importar.');return;}
     let creados=0, actualizados=0, omitidos=0;
     previewImportPacientes298.forEach(x=>{
@@ -6775,9 +6835,10 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       const r=aplicarPaciente298(p,ex);
       if(r.creado) creados++; else actualizados++;
     });
-    try{saveConfig(); guardarConfigEnSupabase298(); renderPacientesPanel('',true);}catch(e){console.warn(e)}
+    let syncCfg298=true;
+    try{saveConfig(); syncCfg298=await guardarConfigEnSupabase298(); renderPacientesPanel('',true);}catch(e){console.warn(e);syncCfg298=false;}
     cerrarModalPaciente298();
-    alert(`Importación terminada. Nuevos: ${creados}. Actualizados: ${actualizados}. Omitidos: ${omitidos}.`);
+    alert(`Importación terminada. Nuevos: ${creados}. Actualizados: ${actualizados}. Omitidos: ${omitidos}.`+(syncCfg298===false&&usuarioSupabase?'\n\nATENCIÓN: los pacientes quedaron SOLO en este equipo; NO se pudieron sincronizar con el servidor (ver el aviso rojo).':''));
   }
   window.confirmarImportPacientes298=confirmarImportPacientes298;
 
@@ -6786,8 +6847,18 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     if(!supabaseClient || !usuarioSupabase) return false;
     // El médico nunca escribe la fila compartida de configuración (sólo la lee saneada por RPC).
     if(esMedicoBackendV1()) return false;
+    // Bloque 4B v3: la fila completa sólo la escribe un owner/admin CONFIRMADO. Rol sin confirmar → no se escribe nada. Secretaría confirmada guarda sólo lo
+    // administrativo por RPC (el servidor fusiona y conserva lo clínico). SIN fallback: si la RPC no existe o falla devuelve false (el módulo avisa y resguarda).
+    if(!configCompletaPermitidaV1()){
+      if(backendRolCargado===true && window.cardiolinkConfigSecretariaV1?.aplica?.()) return await window.cardiolinkConfigSecretariaV1.guardar(data);
+      console.warn('Configuración: no se guarda (rol no confirmado o sin permiso para escribir la fila completa).');
+      return false;
+    }
+    const uidInicio=usuarioSupabase.id;
     try{
       const payload={tipoRegistro:'config', version:VERSION_298, config:data, updatedAt:new Date().toISOString()};
+      // Cambio de sesión: si la sesión viva ya no es la del usuario que inició el guardado, no se envía con credenciales ajenas.
+      if(!(await sesionVivaCoincideV1(uidInicio))){ console.warn('Configuración: la sesión cambió o se cerró; no se guarda con otras credenciales.'); return false; }
       const {error}=await supabaseClient.from('cardiolink_atenciones').upsert([{id:CONFIG_ROW_ID,payload,updated_at:new Date().toISOString()}],{onConflict:'id'});
       if(error){
         console.warn('No se pudo guardar config/pacientes en Supabase:',error.message);
@@ -6797,18 +6868,43 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       return !error;
     }catch(e){console.warn('Error config Supabase:',e);return false;}
   }
+  // Bloque 4B v3: persistencia CONFIRMADA. true = el servidor confirmó; false = NO se confirmó (queda sólo en este equipo); null = no corresponde confirmar
+  // (modo local sin sesión, o médico que nunca escribe esta fila). Cancela el guardado diferido de saveConfig para no duplicar la escritura.
+  async function confirmarConfigAdministrativaV1(){
+    clearTimeout(window.__syncConfig298Timer);
+    if(!supabaseClient||!usuarioSupabase||esMedicoBackendV1()) return null;
+    try{ return (await guardarConfigEnSupabase298())===true; }catch(e){ console.warn(e); return false; }
+  }
+  window.confirmarConfigAdministrativaV1=confirmarConfigAdministrativaV1;
+  window.avisarConfigNoConfirmadaV1=function(que){
+    alert((que||'El cambio')+': el cambio quedó guardado SOLO en este equipo; NO se pudo confirmar con el servidor. No se pierde, pero nadie más lo verá hasta que se sincronice. Revisá la conexión y repetí el guardado (si aparece un aviso rojo, usá «Reintentar» ahí).');
+  };
   window.guardarConfigEnSupabase298=guardarConfigEnSupabase298;
 
   if(typeof cargarAtencionesDesdeSupabase==='function'){
     const cargarOld298=cargarAtencionesDesdeSupabase;
     window.cargarAtencionesDesdeSupabase = cargarAtencionesDesdeSupabase = async function(){
       if(!supabaseClient || !usuarioSupabase) return cargarOld298.apply(this,arguments);
-      const { data: rows, error } = await supabaseClient.from('cardiolink_atenciones').select('id,payload,updated_at').order('updated_at',{ascending:false});
+      // v3: con el rol sin confirmar o sin permiso sobre la fila completa (Secretaría, owner/admin no confirmado) la fila de configuración ni siquiera se pide.
+      const pideCfgCompleta298=configCompletaPermitidaV1() || (backendRolCargado===true && esMedicoBackendV1());
+      let consulta298=supabaseClient.from('cardiolink_atenciones').select('id,payload,updated_at');
+      if(!pideCfgCompleta298) consulta298=consulta298.neq('id',CONFIG_ROW_ID);
+      const { data: rows, error } = await consulta298.order('updated_at',{ascending:false});
       if(error){ console.error(error); alert('No se pudieron cargar las atenciones desde Supabase: '+error.message); throw error; }
-      const cfgRow=(rows||[]).find(r=>r.id===CONFIG_ROW_ID || r.payload?.tipoRegistro==='config');
+      let cfgRow=(rows||[]).find(r=>r.id===CONFIG_ROW_ID || r.payload?.tipoRegistro==='config');
+      // Bloque 4B v3: rol SIN confirmar → nunca se toma la fila completa. Rol confirmado que no es owner/admin ni médico (Secretaría) → RPC administrativa; si falla,
+      // hay cambios locales sin guardar ({retenido}) o no hay configuración, se conserva la config local (el módulo avisa). Sin fallback a la fila completa.
+      if(backendRolCargado!==true){
+        cfgRow=null;
+      }else if(backendEsAdminOwner!==true && !esMedicoBackendV1()){
+        const mSec=window.cardiolinkConfigSecretariaV1, rSec=(mSec&&mSec.aplica&&mSec.aplica())?await mSec.cargar():null;
+        cfgRow=(rSec&&rSec.config)?{payload:{config:rSec.config}}:null;
+      }
       if(cfgRow?.payload?.config){
         try{ const cfgRemota298=normalizarConfigCritica(cfgRow.payload.config); respaldarIdentidadesLocalesPreviasV1(data,cfgRemota298); data=cfgRemota298; localStorage.setItem(storageConfig,JSON.stringify(data)); }catch(e){console.warn('Config remota inválida:',e);}
       }
+      // v3.3: terminó la carga inicial de configuración de este usuario (con o sin éxito): libera a los guardados de Secretaría que esperaban la versión base.
+      try{ window.cardiolinkConfigSecretariaV1?.cargaTerminada?.(); }catch(e){}
       // B1.5: se conserva la fila cruda (con updated_at), no solo el payload -
       // antes ese updated_at se descartaba acá y ya no quedaba disponible en
       // ningún lado para proteger contra un upsert ciego posterior.
@@ -6854,6 +6950,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       snapshotBaselineAtenciones298(atenciones);
       cargandoDesdeNube=false;
       try{ await recuperarNuevasPendientesV1(); }catch(e){ console.warn('No se pudieron recuperar las filas nuevas pendientes:',e); }
+      try{ apartarDocumentosNoPermitidosV1(); }catch(e){ console.warn('No se pudieron apartar los documentos no permitidos:',e); }
       try{ recuperarDocumentosPendientesV1(); }catch(e){ console.warn('No se pudieron recuperar los documentos clínicos resguardados:',e); }
     };
   }
@@ -7988,7 +8085,8 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
     const ats=atencionesPac(original);
     ats.forEach(a=>{a.pacienteId=p.id; a.paciente=p.nombreCompleto; a.dni=p.dni; a.telefono=p.telefono; a.email=p.email; a.fechaNacimiento=p.fechaNacimiento;});
-    try{saveConfig();saveAtenciones();}catch(e){}
+    let okCfg350=null;   // v3: null = modo local / médico (no corresponde confirmar), true = confirmado por el servidor, false = NO confirmado
+    try{saveConfig();saveAtenciones();okCfg350=await confirmarConfigAdministrativaV1();}catch(e){okCfg350=false;}
     // v4.1.0-hc: toda alta/edicion de paciente sincroniza tambien la ficha
     // administrativa en la capa relacional (cardiolink_pacientes). Usa la
     // variante "basica" (nunca toca tablas de HC) porque este flujo lo dispara
@@ -7996,7 +8094,8 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     try{window.cardiolinkClinica410?.sincronizarFichaBasica?.(p)?.catch?.(e=>console.warn('No se pudo sincronizar la capa clínica relacional:',e));}catch(e){console.warn('No se pudo sincronizar la capa clínica relacional:',e);}
     try{renderPacientesPanel?.('',true);renderTabla?.();renderAgenda?.();renderEstadisticas?.();renderStats?.();}catch(e){}
     abrirPacienteGlobalDetalle350(pacienteClave(p));
-    try{copyText300('Ficha guardada','') }catch(e){ alert('Ficha guardada'); }
+    if(okCfg350===false) avisarConfigNoConfirmadaV1('La ficha del paciente');
+    else{ try{copyText300('Ficha guardada','') }catch(e){ alert('Ficha guardada'); } }
   }
   window.abrirPacienteGlobalDetalle350=abrirPacienteGlobalDetalle350;
   window.editarPacienteGlobal350=editarPacienteGlobal350;
@@ -9322,8 +9421,10 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     else if(currentKind==='provincia')p.provincia=val(`q310_${dom}_provincia`).trim();
     else {p.telefono=val(`q310_${dom}_tel`).trim();p.email=val(`q310_${dom}_mail`).trim();p.contactoResponsableTelefono=val(`q310_${dom}_rtel`).trim();p.contactoResponsableEmail=val(`q310_${dom}_rmail`).trim()}
     p.actualizadoEn=new Date().toISOString();
-    try{saveConfig();if(typeof guardarConfigEnSupabase298==='function')guardarConfigEnSupabase298();renderPacientesPanel?.('',true)}catch(e){console.error('Calidad: error guardando',e)}
+    try{saveConfig();renderPacientesPanel?.('',true)}catch(e){console.error('Calidad: error guardando',e)}
     window.renderQuality382();renderModal();
+    // v3: si el servidor no confirma el cambio, se avisa (no queda como un guardado silencioso).
+    confirmarConfigAdministrativaV1().then(ok=>{if(ok===false)avisarConfigNoConfirmadaV1('La corrección del paciente');}).catch(e=>console.warn(e));
   }
   window.qualityPatients383=function(kind='dni'){
     currentKind=Object.prototype.hasOwnProperty.call(labels,kind)?kind:'dni';currentQuery='';
@@ -9802,7 +9903,9 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     c.bonoConsulta=$3102('convBonoConsulta3102').checked;c.bonoEstudio=$3102('convBonoEstudio3102').checked;
     c.firmaRequerida=$3102('convFirma3102').checked;c.copiaRequerida=$3102('convCopia3102').checked;c.incluirFacturaRogelio=$3102('convFacturaRogelio3102').checked;
     if(!data.reglasOS)data.reglasOS={};data.reglasOS[os]=c.regla;
-    saveConfig();try{guardarConfigEnSupabase298?.()}catch(e){};renderConvenios3102();refreshSelects?.();alert('Convenio guardado. Las nuevas atenciones usarán esta configuración.');
+    saveConfig();renderConvenios3102();refreshSelects?.();
+    // v3: el éxito se afirma sólo con la confirmación del servidor; si no se confirma se dice claramente que quedó sólo en este equipo.
+    (async()=>{ const ok=await confirmarConfigAdministrativaV1(); if(ok===false) avisarConfigNoConfirmadaV1('El convenio'); else alert('Convenio guardado. Las nuevas atenciones usarán esta configuración.'); })().catch(e=>{console.warn(e);avisarConfigNoConfirmadaV1('El convenio');});
   }
   function newConvenio3102(){
     if(!exigirConfigComercial('Tu perfil no puede crear convenios.'))return;
@@ -9810,6 +9913,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     if(!(data.obrasSociales||[]).includes(nombre))data.obrasSociales.push(nombre);
     data.conveniosFacturacion.push({obraSocial:nombre,activo:true,regla:'GENERAL_CONSULTA_EXTRA',destinoConsulta:'Matías',destinoEstudio:'Matías',facturadorConsulta:'Matías',facturadorEstudio:'Matías',bonoConsulta:true,bonoEstudio:true,firmaRequerida:true,copiaRequerida:true,incluirFacturaRogelio:false});
     saveConfig();renderConvenios3102();$3102('convOS3102').value=nombre;loadConvenio3102();
+    confirmarConfigAdministrativaV1().then(ok=>{if(ok===false)avisarConfigNoConfirmadaV1('El convenio nuevo');}).catch(e=>console.warn(e));
   }
   function addArancel3102(){
     if(!exigirConfigComercial('Tu perfil no puede modificar aranceles.'))return;
@@ -9817,6 +9921,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     if(!obraSocial||!prestacion||!vigenteDesde){alert('Seleccioná convenio, prestación y fecha de vigencia.');return}
     data.arancelesConvenios.push({id:'ar_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),obraSocial,prestacion,valor,vigenteDesde,activo:true});
     saveConfig();$3102('arValor3102').value='';renderConvenios3102();
+    confirmarConfigAdministrativaV1().then(ok=>{if(ok===false)avisarConfigNoConfirmadaV1('El arancel');}).catch(e=>console.warn(e));
   }
 
   // Aplica la configuración editable después de la regla histórica existente.
@@ -9855,7 +9960,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     if(e.target.id==='agregarArancel3102')addArancel3102();
     if(e.target.id==='calcularEstimacion3102')calcularEstimacion3102Final();
     if(e.target.id==='limpiarEstimacion3102')ocultarEstimacion3102Final();
-    const del=e.target.closest?.('[data-del-arancel3102]');if(del){if(!exigirConfigComercial('Tu perfil no puede borrar aranceles.'))return;if(confirm('¿Borrar este arancel?')){data.arancelesConvenios=data.arancelesConvenios.filter(a=>a.id!==del.dataset.delArancel3102);saveConfig();renderConvenios3102();}}
+    const del=e.target.closest?.('[data-del-arancel3102]');if(del){if(!exigirConfigComercial('Tu perfil no puede borrar aranceles.'))return;if(confirm('¿Borrar este arancel?')){data.arancelesConvenios=data.arancelesConvenios.filter(a=>a.id!==del.dataset.delArancel3102);saveConfig();renderConvenios3102();confirmarConfigAdministrativaV1().then(ok=>{if(ok===false)avisarConfigNoConfirmadaV1('La baja del arancel');}).catch(e=>console.warn(e));}}
   });
   function version3102(){document.title=`CardioLink Admin v${VERSION_3102}`;document.querySelectorAll('.brand-main span,.mobile-app-title-370 span').forEach(el=>el.textContent=`v${VERSION_3102}`);document.querySelectorAll('.login-meta').forEach(el=>el.textContent=`Versión ${VERSION_3102} · 2026`);}
   function boot3102(){ensureConvenios3102();saveConfig();injectConvenios3102();renderConvenios3102();version3102();}
@@ -11099,13 +11204,15 @@ function patientInfoTextHC(p,coverage){
     const prest=[...new Set((prof402(pid)?.prestaciones||[]).concat(typeof allPrestaciones==='function'?allPrestaciones():[]))].filter(Boolean).sort((a,b)=>a.localeCompare(b,'es'));if($402('billPrest402'))$402('billPrest402').innerHTML=opts402(prest,$402('billPrest402').value||prest[0]);if($402('billVigencia402')&&!$402('billVigencia402').value)$402('billVigencia402').value=new Date().toISOString().slice(0,10);
     const ars=data.arancelesPorProfesional[pid]||[];if($402('billArancelList402'))$402('billArancelList402').innerHTML=ars.slice().sort((a,b)=>String(b.vigenteDesde||'').localeCompare(String(a.vigenteDesde||''))||String(a.obraSocial||'').localeCompare(String(b.obraSocial||''),'es')).map(a=>`<div class="arancel-row-3102 arancel-row-fin411f"><span><strong>${esc402(a.obraSocial)}</strong> · ${esc402(a.prestacion)}</span><span>${typeof money==='function'?money(a.valor):'$ '+Number(a.valor||0).toLocaleString('es-AR')}</span><span>${Number(a.copago||0)>0?(typeof money==='function'?money(a.copago):'$ '+Number(a.copago||0).toLocaleString('es-AR')):'—'}</span><span>desde ${esc402(a.vigenteDesde||'s/f')}</span><button type="button" class="small-btn" data-del-bill-arancel402="${esc402(a.id)}">Borrar</button></div>`).join('')||'<p class="muted">Sin aranceles cargados para este profesional.</p>';
   }
-  function saveBillConv402(){
+  async function saveBillConv402(){
     if(!exigirConfigComercial('Tu perfil no puede modificar convenios.'))return;
     const pid=selectedBillProf402(),os=$402('billOS402')?.value;if(!pid||!os)return;const c=conv402(pid,os,true);c.activo=$402('billActivo402').checked;c.regla=$402('billRegla402').value;c.destinoConsulta=$402('billDestConsulta402').value;c.destinoEstudio=$402('billDestEstudio402').value;c.facturadorConsulta=$402('billFactConsulta402').value;c.facturadorEstudio=$402('billFactEstudio402').value;c.bonoConsulta=$402('billBonoConsulta402').checked;c.bonoEstudio=$402('billBonoEstudio402').checked;c.firmaRequerida=$402('billFirma402').checked;c.copiaRequerida=$402('billCopia402').checked;c.incluirFacturaRogelio=$402('billRogelio402').checked;
-    if(pid==='matias')data.conveniosFacturacion=copy402(data.conveniosPorProfesional.matias);persist402();renderBilling402();alert(`Convenio guardado para ${profName402(pid)}.`);
+    if(pid==='matias')data.conveniosFacturacion=copy402(data.conveniosPorProfesional.matias);
+    // v3.2: el éxito se afirma sólo con la confirmación del servidor; sin ella se avisa que quedó SOLO en este equipo.
+    const okConv=await persistirConfigVisibleV1('El convenio');try{programarSyncSupabase?.();}catch(e){}renderBilling402();if(okConv!==false)alert(`Convenio guardado para ${profName402(pid)}.`);
   }
-  function newGlobalConv402(){if(!exigirConfigComercial('Tu perfil no puede crear convenios.'))return;const name=prompt('Nombre de la nueva obra social, prepaga o convenio:');if(!name)return;if(!(data.obrasSociales||[]).includes(name))data.obrasSociales.push(name);persist402();renderBilling402();$402('billOS402').value=name;loadBillConv402();}
-  function saveBillArancel402(){if(!exigirConfigComercial('Tu perfil no puede modificar aranceles.'))return;const pid=selectedBillProf402(),obraSocial=$402('billArancelOS404')?.value||$402('billOS402')?.value,prestacion=$402('billPrest402')?.value,valor=Number($402('billValor402')?.value||0),copago=Number($402('billCopago402')?.value||0),vigenteDesde=$402('billVigencia402')?.value;if(!obraSocial||!prestacion||!vigenteDesde){alert('Completá convenio, prestación y fecha de vigencia.');return;}if(!Number.isFinite(valor)||valor<0||!Number.isFinite(copago)||copago<0){alert('Ingresá valores válidos.');return;}data.arancelesPorProfesional[pid].push({id:'arp_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),profesionalId:pid,obraSocial,prestacion,valor,copago,vigenteDesde,activo:true});if(pid==='matias')data.arancelesConvenios=copy402(data.arancelesPorProfesional.matias);persist402();$402('billValor402').value='';if($402('billCopago402'))$402('billCopago402').value='';renderBilling402();}
+  async function newGlobalConv402(){if(!exigirConfigComercial('Tu perfil no puede crear convenios.'))return;const name=prompt('Nombre de la nueva obra social, prepaga o convenio:');if(!name)return;if(!(data.obrasSociales||[]).includes(name))data.obrasSociales.push(name);await persistirConfigVisibleV1('El convenio nuevo');try{programarSyncSupabase?.();}catch(e){}renderBilling402();$402('billOS402').value=name;loadBillConv402();}
+  async function saveBillArancel402(){if(!exigirConfigComercial('Tu perfil no puede modificar aranceles.'))return;const pid=selectedBillProf402(),obraSocial=$402('billArancelOS404')?.value||$402('billOS402')?.value,prestacion=$402('billPrest402')?.value,valor=Number($402('billValor402')?.value||0),copago=Number($402('billCopago402')?.value||0),vigenteDesde=$402('billVigencia402')?.value;if(!obraSocial||!prestacion||!vigenteDesde){alert('Completá convenio, prestación y fecha de vigencia.');return;}if(!Number.isFinite(valor)||valor<0||!Number.isFinite(copago)||copago<0){alert('Ingresá valores válidos.');return;}data.arancelesPorProfesional[pid].push({id:'arp_'+Date.now()+'_'+Math.random().toString(36).slice(2,6),profesionalId:pid,obraSocial,prestacion,valor,copago,vigenteDesde,activo:true});if(pid==='matias')data.arancelesConvenios=copy402(data.arancelesPorProfesional.matias);await persistirConfigVisibleV1('El arancel');try{programarSyncSupabase?.();}catch(e){}$402('billValor402').value='';if($402('billCopago402'))$402('billCopago402').value='';renderBilling402();}
 
   const oldApply402=window.aplicarRegla;
   window.aplicarRegla=function(){
@@ -11128,7 +11235,7 @@ function patientInfoTextHC(p,coverage){
     if(e.target.id==='newBillConv402'){newGlobalConv402();return;}
     if(e.target.id==='saveBillArancel402'){saveBillArancel402();return;}
     const row=e.target.closest?.('[data-load-bill-os402]');if(row){$402('billOS402').value=row.dataset.loadBillOs402;if($402('billArancelOS404'))$402('billArancelOS404').value=row.dataset.loadBillOs402;loadBillConv402();row.scrollIntoView({behavior:'smooth',block:'nearest'});return;}
-    const del=e.target.closest?.('[data-del-bill-arancel402]');if(del){if(!exigirConfigComercial('Tu perfil no puede borrar aranceles.'))return;if(confirm('¿Borrar este arancel?')){const pid=selectedBillProf402();data.arancelesPorProfesional[pid]=data.arancelesPorProfesional[pid].filter(a=>a.id!==del.dataset.delBillArancel402);if(pid==='matias')data.arancelesConvenios=copy402(data.arancelesPorProfesional.matias);persist402();renderBilling402();}}
+    const del=e.target.closest?.('[data-del-bill-arancel402]');if(del){if(!exigirConfigComercial('Tu perfil no puede borrar aranceles.'))return;if(confirm('¿Borrar este arancel?')){const pid=selectedBillProf402();data.arancelesPorProfesional[pid]=data.arancelesPorProfesional[pid].filter(a=>a.id!==del.dataset.delBillArancel402);if(pid==='matias')data.arancelesConvenios=copy402(data.arancelesPorProfesional.matias);persistirConfigVisibleV1('La baja del arancel').then(()=>{try{programarSyncSupabase?.();}catch(e){}renderBilling402();});}}
   },true);
   document.addEventListener('change',e=>{
     if(e.target.id==='cfgProfEditar310'){setTimeout(loadDocumentFields402,0);const b=$402('billProf402');if(b&&[...b.options].some(o=>o.value===e.target.value)){b.value=e.target.value;renderBilling402();}}
