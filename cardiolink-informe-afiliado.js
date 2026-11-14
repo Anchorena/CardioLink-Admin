@@ -33,6 +33,8 @@
     try {
       var meta = ventana.document && ventana.document.querySelector('.patient-box .meta');
       if (!meta) return;
+      // Orden, certificado, reposo y constancia: la app ya resolvió el N.º de afiliado (o decidió no ponerlo) con el par cobertura/afiliado vigente.
+      if (meta.getAttribute('data-afiliado-resuelto') === '1') return;
       var texto = meta.textContent || '';
       if (texto.indexOf('afiliado') !== -1) return; // ya se agrego una vez
       var m = /DNI\s*([\d.]+)/.exec(texto);

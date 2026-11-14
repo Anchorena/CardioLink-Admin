@@ -276,10 +276,11 @@ caso('página: código con formato inválido no genera ninguna consulta; envía 
   assert.ok(pagJs.includes("if (!CODIGO_RE.test(codigo)) { mostrarMensaje('neutro', 'No verificable', MENSAJE_NO_VERIFICABLE); return; }"));
   assert.ok(pagJs.includes("JSON.stringify({ codigo: codigo, turnstileToken: token })") && pagJs.includes("credentials: 'omit'") && pagJs.includes("referrerPolicy: 'no-referrer'") && pagJs.includes("cache: 'no-store'"));
 });
-caso('página: el acceso al PDF con PIN (F4) sólo se ofrece en documentos vigentes y sigue deshabilitado', () => {
-  assert.ok(pagJs.includes("if (estado === 'vigente') {"));
-  assert.ok(/<form id="form-pin"[^>]*hidden>/.test(pagHtml) && /<input id="pin"[^>]*disabled>/.test(pagHtml) && /<button type="submit" disabled>/.test(pagHtml));
-  assert.ok(pagJs.includes("$('form-pin').hidden = ap.disponible !== true"));
+caso('página: no existe la sección "Documento completo" ni ninguna referencia al PIN o a funciones futuras', () => {
+  for (const [nombre, texto] of [['index.html', pagHtml], ['verificar.js', pagJs]]) {
+    assert.ok(!/Documento completo|acceso-pdf|form-pin|\bPIN\b|id="pin"|pr[oó]ximamente|se habilitar/i.test(texto), nombre + ' no debe mencionar el PIN ni el documento completo');
+  }
+  assert.ok(pagHtml.includes('id="resultado"') && pagJs.includes("fila('Especialidad', d.profesional.especialidad)") && pagJs.includes("ETIQUETAS = { vigente: 'Documento vigente'"), 'se conserva la verificación de autenticidad y vigencia');
 });
 caso('página: noindex, sin referrer, robots.txt cierra el sitio', () => {
   assert.ok(pagHtml.includes('noindex, nofollow, noarchive') && pagHtml.includes('<meta name="referrer" content="no-referrer">'));

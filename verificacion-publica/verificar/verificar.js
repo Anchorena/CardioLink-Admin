@@ -44,7 +44,7 @@
     r.appendChild(nodo('span', 'estado ' + clase, titulo));
     if (texto) r.appendChild(nodo('p', 'aviso ' + (clase === 'neutro' ? '' : clase), texto));
     if (reintentar) { var b = nodo('button', null, 'Reintentar'); b.type = 'button'; b.addEventListener('click', function () { location.reload(); }); r.appendChild(b); }
-    ocultar($('cargando')); mostrar(r); ocultar($('acceso-pdf'));
+    ocultar($('cargando')); mostrar(r);
   }
 
   var ETIQUETAS = { vigente: 'Documento vigente', reemplazado: 'Documento reemplazado', anulado: 'Documento anulado' };
@@ -72,13 +72,6 @@
     if (d.firma && d.firma !== 'sin_firma_digital') fila('Firma digital', d.firma === 'firmado_pades' ? 'Firmado digitalmente' : 'Firmado externamente');
     r.appendChild(dl);
     ocultar($('cargando')); mostrar(r);
-    // F4: acceso protegido al documento completo (PIN temporal). Hoy el servidor informa disponible=false: sólo se muestra la explicación.
-    var a = $('acceso-pdf'), ap = d.acceso_pdf || {};
-    if (estado === 'vigente') {        // un documento anulado o reemplazado no ofrece acceso al PDF
-      $('acceso-pdf-texto').textContent = 'El documento completo sólo puede verlo su titular con el PIN temporal que recibió al emitirse. Esta función se habilitará próximamente.';
-      mostrar(a);
-      $('form-pin').hidden = ap.disponible !== true;
-    } else { ocultar(a); }
   }
 
   function aplicarRespuesta(status, d) {

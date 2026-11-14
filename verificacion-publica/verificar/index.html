@@ -17,16 +17,6 @@
     <p>Verificando el documento…</p>
   </section>
   <section id="resultado" class="bloque" hidden></section>
-  <section id="acceso-pdf" class="bloque" hidden>
-    <h2>Documento completo</h2>
-    <p id="acceso-pdf-texto" class="nota"></p>
-    <!-- F4: el formulario del PIN sólo se muestra cuando el servidor informe acceso_pdf.disponible = true (hoy nunca). -->
-    <form id="form-pin" autocomplete="off" hidden>
-      <label for="pin">PIN de 6 dígitos</label>
-      <input id="pin" name="pin" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="off" disabled>
-      <button type="submit" disabled>Ver documento</button>
-    </form>
-  </section>
   <div id="turnstile" class="turnstile" aria-hidden="true"></div>
   <p class="pie">Esta verificación confirma que el documento fue emitido a través de CardioLink. No muestra datos del paciente ni el contenido del documento.</p>
 </main>

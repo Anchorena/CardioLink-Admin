@@ -21,10 +21,9 @@ h2{font-size:16px;margin:0 0 6px}
 dl{margin:14px 0 0;display:grid;grid-template-columns:max-content 1fr;gap:6px 14px}
 dt{color:var(--muted);font-size:14px}
 dd{margin:0;font-weight:600;word-break:break-word}
-.nota,.pie{color:var(--muted);font-size:13px}
+.pie{color:var(--muted);font-size:13px}
 .pie{margin:16px 0 0;padding-top:12px;border-top:1px solid var(--line)}
 button{font:inherit;padding:10px 16px;border-radius:10px;border:0;background:var(--acc);color:#fff;font-weight:600;cursor:pointer}
 @media (prefers-color-scheme:dark){button{color:#0b1220}}
-input{font:inherit;padding:10px;border:1px solid var(--line);border-radius:10px;background:transparent;color:var(--txt);letter-spacing:.3em;width:10ch}
 .turnstile{min-height:0}
 [hidden]{display:none!important}

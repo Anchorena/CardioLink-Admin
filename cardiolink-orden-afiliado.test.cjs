@@ -13,8 +13,32 @@ test('helper único: sólo para órdenes, usa el nº de afiliado habitual (o el 
   assert.match(h,/String\(p\?\.numeroAfiliadoHabitual\|\|p\?\.numeroAfiliado\|\|''\)\.trim\(\)/);
 });
 
+test('helper de render: orden, certificado, reposo y constancia; sólo con cobertura (no Particular) y el número habitual vigente, nunca el historial',()=>{
+  const h=between('function afiliadoDocumento406(d,p){','\n  }\n');
+  assert.match(src,/const TIPOS_CON_AFILIADO406=\['orden','certificado','reposo_laboral','constancia_atencion'\];/);
+  assert.match(h,/TIPOS_CON_AFILIADO406\.includes\(d\.tipo\)/);
+  assert.match(h,/!cobertura\|\|cobertura\.toLowerCase\(\)==='particular'\)return ''/);
+  assert.match(h,/const habitual=String\(p\?\.numeroAfiliadoHabitual\|\|''\)\.trim\(\);/);
+  assert.match(h,/String\(a\.pacienteId\|\|''\)===pid&&igual\(a\.coberturaAtencion\|\|a\.obraSocial\)/,'la atención debe ser del mismo paciente y de la misma cobertura');
+  assert.ok(!/historialCoberturas|numeroAfiliado\b/.test(h),'no mezcla el historial ni el campo antiguo');
+});
+
 test('la impresión HTML y el PDF agregan "N.º de afiliado" junto a DNI y cobertura usando el helper; la impresión escapa el valor',()=>{
-  assert.match(src,/<div class="meta">DNI \$\{esc406\(p\.dni\|\|d\.dni\|\|'s\/d'\)\}\$\{p\.coberturaHabitual\?' · '\+esc406\(p\.coberturaHabitual\):''\}\$\{afiliadoOrden406\(d,p\)\?' · N\.º de afiliado '\+esc406\(afiliadoOrden406\(d,p\)\):''\}<\/div>/);
-  assert.match(src,/pdf\.text\('DNI '\+\(p\.dni\|\|d\.dni\|\|'s\/d'\)\+\(p\.coberturaHabitual\?' · '\+p\.coberturaHabitual:''\)\+\(afiliadoOrden406\(d,p\)\?' · N\.º de afiliado '\+afiliadoOrden406\(d,p\):''\),mX\+3,y\+boxH\/2\+3\.5\);/);
-  assert.equal((src.match(/afiliadoOrden406\(/g)||[]).length,1+2+2+0,'el helper se usa en los dos renderers y nada más');
+  assert.match(src,/\$\{afiliadoDocumento406\(d,p\)\?' · N\.º de afiliado '\+esc406\(afiliadoDocumento406\(d,p\)\):''\}<\/div>/);
+  assert.match(src,/<div class="meta"\$\{TIPOS_CON_AFILIADO406\.includes\(d\.tipo\)\?' data-afiliado-resuelto="1"':''\}>DNI /);
+  assert.match(src,/\(afiliadoDocumento406\(d,p\)\?' · N\.º de afiliado '\+afiliadoDocumento406\(d,p\):''\)/);
+  assert.equal((src.match(/afiliadoDocumento406\(/g)||[]).length,1+2+2,'el helper de render se usa en los dos renderers');
+  assert.equal((src.match(/afiliadoOrden406\(/g)||[]).length,1+1,'afiliadoOrden406 queda sólo para la huella (documentos ya emitidos no cambian de versión)');
+});
+
+test('el parche de impresión no vuelve a agregar un número de otra fuente cuando la app ya lo resolvió',()=>{
+  const patch=fs.readFileSync(path.join(__dirname,'cardiolink-informe-afiliado.js'),'utf8');
+  assert.match(patch,/meta\.getAttribute\('data-afiliado-resuelto'\) === '1'\) return;/);
+});
+
+test('especialidades de Rogelio: se leen de lo persistido (catálogo + area), sin lista fija; guardar el perfil sincroniza area; la huella no cambia',()=>{
+  assert.ok(!/ESPECIALIDADES_FIJAS406|else if\(p\.id==='rogelio'\)/.test(src),'no hay especialidades hardcodeadas ni sembrado forzado');
+  assert.match(src,/const PERFILES_ESPECIALIDAD_EN_AREA406=\['rogelio'\];/);
+  assert.match(src,/if\(faltantesArea\.length\)p\.area=\[p\.area\]\.filter\(Boolean\)\.concat\(faltantesArea\)\.join\(' \/ '\);/);
+  assert.match(src,/esp:especialidadesParaHuella406\(pr\),lic,/);
 });
