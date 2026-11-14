@@ -40,13 +40,25 @@ Puede:
 - modificar convenios, aranceles, valores particulares y copagos;
 - cargar pagos, bonos, autorizaciones, médico solicitante y motivo/indicación;
 - importar o restaurar backups;
-- emitir constancias administrativas cuando corresponda.
+- emitir constancias, certificados y órdenes médicas, por indicación de un
+  profesional autorizado (uno de los médicos a los que está asociada) y con su
+  membrete, sello y firma;
+- subir, consultar, gestionar, descargar, imprimir y enviar los documentos del
+  paciente: los anteriores, ECG, Holter, MAPA, ecocardiogramas, estudios,
+  informes, laboratorios, recetas, indicaciones, aptos físicos y otros
+  documentos administrativos y médicos, **solo de profesionales con los que
+  tiene una asociación activa** (los documentos sin profesional identificable
+  no le son visibles).
 
 No puede:
 - acceder a Historia Clínica, resumen clínico, evoluciones, antecedentes,
   alergias, medicación habitual, signos vitales almacenados en HC ni notas
-  privadas médicas;
-- acceder a RCTA o informes clínicos, ni emitir certificados médicos;
+  clínicas privadas;
+- acceder a RCTA, ni modificar el contenido clínico de documentos médicos
+  firmados (la gestión administrativa no lo autoriza);
+- ver las imágenes clínicas adjuntas a evoluciones ni el «Mensaje a colega»
+  (reservado a médicos);
+- eliminar documentos (no autorizado todavía; solo Dueño/Administrador y Médico);
 - acceder a usuarios y roles;
 - acceder a Caja, producción financiera, sueldo de Secretaría o liquidaciones;
 - ejecutar borrado global o reparaciones administrativas sensibles;
@@ -154,11 +166,64 @@ Si hubo seña:
 ## Documentos
 El membrete/documento usa la identidad del profesional responsable.
 
-Secretaría puede emitir constancias administrativas cuando corresponda. No
-puede emitir certificados médicos, RCTA ni informes clínicos.
+Secretaría puede emitir constancias, certificados y órdenes médicas, por
+indicación de un profesional autorizado y con su membrete, sello y firma: el
+documento queda a nombre de un profesional con el que la Secretaría está
+asociada. Puede subir, consultar, gestionar, descargar, imprimir y enviar los
+documentos anteriores y también ECG, Holter, MAPA, ecocardiogramas, estudios,
+informes, laboratorios, recetas, indicaciones, aptos físicos y otros documentos
+administrativos y médicos. No accede a RCTA.
 
-Médico y Dueño/Administrador conservan acceso a documentos clínicos según sus
-permisos actuales.
+Regla de asociación: Secretaría solo consulta, visualiza, descarga, imprime y
+envía documentos de profesionales con los que tiene una asociación activa en
+CardioLink. Se verifica en el servidor (listados, búsquedas, vista previa,
+descargas, envíos, historial de envíos y acceso directo por API) y no depende
+de filtros del cliente. Al desactivar la asociación, Secretaría pierde de
+inmediato el acceso a esos documentos; los documentos sin profesional
+identificable no le son visibles. Owner y admin conservan el acceso
+administrativo y los médicos sus permisos actuales.
+
+Una versión nueva de un documento (mismo identificador de documento) conserva el
+paciente y el profesional del original y solo la emite ese profesional, la
+Secretaría autorizada para él u owner/admin; la fecha de alta la fija el
+servidor.
+
+La gestión administrativa no autoriza modificar el contenido clínico de
+documentos médicos firmados: un documento firmado (emitido) no se edita, se
+emite una versión nueva; su tipo, profesional, fecha, paciente y archivo no se
+modifican. La eliminación de documentos por Secretaría no está autorizada.
+
+Se distinguen dos clases de imágenes: las imágenes de estudios independientes
+(documentos del paciente, accesibles según lo anterior) y las imágenes adjuntas
+a evoluciones (tipo «Imagen clínica»), que pertenecen a la Historia Clínica y
+tienen acceso clínico (Dueño/Administrador y médicos), no de Secretaría.
+
+El «Mensaje a colega» está reservado a médicos.
+
+Médico: accede a los documentos de un paciente si es el titular del documento
+(profesional responsable, o quien lo subió cuando no tiene profesional) o si está
+asociado al paciente (tiene evoluciones o atenciones con él). Modifica
+únicamente sus documentos; sobre los de otros profesionales solo puede
+vincularlos a su atención o evolución.
+
+Dueño/Administrador conserva acceso a documentos clínicos según sus permisos
+actuales.
+
+Trazabilidad: cada documento registra qué usuario lo emite o sube (lo fija el
+servidor, no el navegador) y a nombre de qué profesional; cada envío registra
+qué usuario lo envía.
+
+Hoja de ruta (no implementado): envío de recetas, indicaciones y aptos físicos
+por Secretaría (hoy sin plantilla de envío) y módulo de copias para facturación
+(copias de documentos para obras sociales, que no alteran el original).
+
+### Notas clínicas privadas (excepción absoluta)
+Las notas clínicas privadas son accesibles exclusivamente por su autor, incluso
+frente a otros médicos, Dueño/Administrador y otros perfiles administrativos. No
+están disponibles para Secretaría. Esta excepción prevalece sobre cualquier otro
+permiso de acceso. (Bloque 4C-2: pendiente de implementar; las notas hoy
+guardadas en la fila de configuración deben migrarse a un almacén por autor y las
+que no tengan autor verificable se conservan en cuarentena segura.)
 
 ### Envío de documentos por WhatsApp
 WhatsApp no es un envío automático: CardioLink abre el chat (`wa.me`) con el

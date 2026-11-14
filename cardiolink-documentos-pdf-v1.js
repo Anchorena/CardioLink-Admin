@@ -87,7 +87,7 @@
   'use strict';
   const BUCKET_PDF_V1='patient-documents';
   const MAX_BYTES_PDF_V1=20*1024*1024;
-  const TIPOS_PDF_V1=['Estudio','Informe','Laboratorio','ECG','Holter','MAPA','Ecocardiograma','Orden','Certificado','Otro'];
+  const TIPOS_PDF_V1=['Estudio','Informe','Laboratorio','ECG','Holter','MAPA','Ecocardiograma','Orden','Certificado','Receta','Indicaciones','Apto físico','Otro'];   // Bloque 4C-1: Secretaría también sube recetas, indicaciones y aptos físicos
   // Bloque 6D.3
   const TIPO_IMAGEN_CLINICA_V1='Imagen clínica';
   // Documentos V1 / Bloque A: estos tipos ya se archivan como PDF pero su envío aún no tiene plantilla propia (el WhatsApp diría "estudio"):
@@ -170,6 +170,43 @@
   function opcionesTipoPdfV1(sel){
     return TIPOS_PDF_V1.map(t=>`<option value="${escPdfV1(t)}"${t===sel?' selected':''}>${escPdfV1(t)}</option>`).join('');
   }
+  // Bloque 4C-1 - Secretaría sólo sube/emite a nombre de profesionales AUTORIZADOS (los de sus asociaciones activas). El SERVIDOR lo exige (RLS); acá sólo se ofrece la lista
+  // correcta y se pide el profesional. Si la función del servidor todavía no existe (o falla) se devuelve null y el formulario se comporta como antes: el servidor decide.
+  function esSecretariaPdfV1(){try{return typeof esSecretaria==='function'&&!!esSecretaria();}catch(e){return false;}}
+  let profsAutorizadosV1={uid:null,lista:null};
+  async function cargarProfesionalesAutorizadosV1(){
+    if(!esSecretariaPdfV1())return null;
+    try{
+      const uid=(await supabaseClient.auth.getUser())?.data?.user?.id||null;
+      if(!uid)return null;
+      if(profsAutorizadosV1.uid===uid&&Array.isArray(profsAutorizadosV1.lista))return profsAutorizadosV1.lista;
+      const {data:lista,error}=await supabaseClient.rpc('cardiolink_profesionales_autorizados_secretaria_v1');
+      if(error||!Array.isArray(lista))return null;
+      profsAutorizadosV1={uid,lista:lista.map(String)};
+      return profsAutorizadosV1.lista;
+    }catch(e){return null;}
+  }
+  async function aplicarProfesionalesAutorizadosV1(){
+    const lista=await cargarProfesionalesAutorizadosV1();
+    const sel=document.getElementById('pdfProfesionalV1'),lab=document.querySelector('label[for="pdfProfesionalV1"]'),btn=document.getElementById('pdfSubirBtnV1');
+    if(!lista||!sel)return;
+    if(lab)lab.textContent='Profesional autorizado (obligatorio)';
+    if(!lista.length){
+      sel.innerHTML='<option value="">(sin profesionales asociados)</option>';
+      if(btn)btn.disabled=true;
+      mostrarErrorPdfV1('No tenés profesionales asociados: pedile al administrador que te asocie a un médico para poder subir documentos.');
+      return;
+    }
+    const profs=((typeof data!=='undefined'&&data&&data.profesionales)||[]).filter(pr=>lista.includes(String(pr.id)));
+    const opciones=profs.length?profs.map(pr=>({id:String(pr.id),nombre:pr.nombre||pr.id})):lista.map(id=>({id,nombre:id}));
+    sel.innerHTML=(opciones.length===1?'':'<option value="">(elegí el profesional)</option>')+opciones.map(o=>`<option value="${escPdfV1(o.id)}">${escPdfV1(o.nombre)}</option>`).join('');
+  }
+  function textoErrorPermisoPdfV1(e,base){
+    const m=String((e&&(e.message||e.details))||e||'');
+    if(e&&(e.code==='42501'||/row-level security|violates row|permission denied/i.test(m)))
+      return base+'no tenés permiso para este documento (revisá el tipo, el profesional autorizado y el paciente). Si corresponde, pedile al administrador que revise tus asociaciones.';
+    return base+m;
+  }
   function opcionesProfesionalPdfV1(){
     const profs=(typeof data!=='undefined'&&data&&data.profesionales)||[];
     return '<option value="">(sin especificar)</option>'+profs.map(pr=>`<option value="${escPdfV1(pr.id)}">${escPdfV1(pr.nombre||pr.id)}</option>`).join('');
@@ -195,6 +232,7 @@
       <div class="hc-modal-actions"><button class="secondary" type="button" data-pdf-close-v1>Cancelar</button><button class="primary" type="button" id="pdfSubirBtnV1" data-pdf-patient-v1="${escPdfV1(patientId)}">Subir</button></div>
     </div>`;
     document.body.appendChild(modal);
+    aplicarProfesionalesAutorizadosV1().catch(e=>console.warn('No se pudo consultar los profesionales autorizados:',e));
   }
 
   function mostrarErrorPdfV1(msg){
@@ -232,6 +270,14 @@
     const tipo=document.getElementById('pdfTipoV1')?.value||'Otro';
     const fecha=document.getElementById('pdfFechaV1')?.value||hoyIsoPdfV1();
     const profesionalId=document.getElementById('pdfProfesionalV1')?.value||null;
+    // Bloque 4C-1: Secretaría debe elegir un profesional AUTORIZADO (el servidor también lo exige)
+    if(esSecretariaPdfV1()){
+      const autorizados=await cargarProfesionalesAutorizadosV1();
+      if(autorizados){
+        if(!profesionalId){mostrarErrorPdfV1('Elegí el profesional autorizado para este documento.');return;}
+        if(!autorizados.includes(String(profesionalId))){mostrarErrorPdfV1('Ese profesional no está entre los que tenés autorizados.');return;}
+      }
+    }
     const descripcion=(document.getElementById('pdfDescripcionV1')?.value||'').trim()||null;
 
     btn.disabled=true;btn.textContent='Subiendo...';
@@ -245,7 +291,7 @@
       if(upErr)throw upErr;
     }catch(e){
       btn.disabled=false;btn.textContent='Subir';
-      mostrarErrorPdfV1('No se pudo subir el archivo: '+(e?.message||e));
+      mostrarErrorPdfV1(textoErrorPermisoPdfV1(e,'No se pudo subir el archivo: '));
       return;
     }
 
@@ -275,7 +321,7 @@
     if(insErr){
       try{await supabaseClient.storage.from(BUCKET_PDF_V1).remove([storagePath]);}catch(e2){console.warn('No se pudo revertir el archivo huérfano en Storage:',e2);}
       btn.disabled=false;btn.textContent='Subir';
-      mostrarErrorPdfV1('No se pudo guardar la información del documento (se revirtió la subida): '+(insErr?.message||insErr));
+      mostrarErrorPdfV1(textoErrorPermisoPdfV1(insErr,'No se pudo guardar la información del documento (se revirtió la subida): '));
       return;
     }
 

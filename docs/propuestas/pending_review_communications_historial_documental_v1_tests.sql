@@ -1,6 +1,8 @@
 -- CardioLink · PRUEBAS SQL del historial documental seguro (STAGING). NO ejecutar en Production.
 -- BORRADOR SIN EJECUTAR. Ejecutar con la PARTE 1 aplicada (y, para las pruebas 12-14, también la PARTE 2). Si la PARTE 2 no está aplicada,
 -- esas pruebas se informan como PENDIENTE (no como falla) y la prueba 12 mide cuánto expone hoy la lectura directa.
+-- v2.3: requiere el Bloque 4C-1 aplicado (la función valida a Secretaría por asociación activa). La matriz completa de Secretaría (propio autorizado, ajeno, asociación desactivada/reactivada, owner/admin, médico) está en
+-- pending_review_documentos_seguridad_4c1_tests.sql (pruebas 25 a 29 y 35); acá sólo se comprueba que esta suite sigue coherente con esa regla.
 -- Todo corre dentro de UNA transacción que termina en ROLLBACK: no deja filas. Usa las cuentas REALES de STAGING (owner, médico vinculado a un
 -- profesional, secretaría, y un segundo médico si existe) con claims JWT simulados y rol `authenticated`; no crea cuentas.
 -- Las filas de prueba usan patient_id '__qa_hist' y ids fijos. Resultado: tabla temporal _res al final (OK / FALLA / PENDIENTE / OMITIDA).
@@ -117,10 +119,13 @@ BEGIN
   IF v_sec <> '' THEN
     PERFORM set_config('request.jwt.claims', json_build_object('sub',v_sec,'role','authenticated')::text, true);
     PERFORM set_config('request.jwt.claim.sub', v_sec, true);
+    -- v2.3: Secretaría sólo ve los envíos de documentos de profesionales con asociación ACTIVA (aquí: b1, de v_prof; b2 es de otro profesional, b3/b4 no tienen profesional y c6 es huérfano)
     SELECT count(*) INTO n FROM public.cardiolink_historial_envios_documento_v1(todos);
-    INSERT INTO _res(prueba,resultado) VALUES ('11 secretaría: ve todos los envíos pedidos (acceso operativo)', CASE WHEN n=6 THEN 'OK' ELSE 'FALLA (ve '||n||')' END);
+    INSERT INTO _res(prueba,resultado) VALUES ('11 secretaría: sólo ve los envíos de documentos de profesionales con asociación activa (b1 si v_prof está asociado; nunca b2, b3, b4, b5 ni el huérfano)',
+      CASE WHEN n = (CASE WHEN public.cardiolink_secretaria_autorizada_prof_v1(current_setting('qa.prof')) THEN 1 ELSE 0 END) THEN 'OK' ELSE 'FALLA (ve '||n||')' END);
     SELECT count(*) INTO n FROM public.cardiolink_communications WHERE id::text LIKE '00000000-0000-4000-8000-0000000000c%';
-    INSERT INTO _res(prueba,resultado) VALUES ('11b secretaría: sigue leyendo la tabla directa (acceso operativo intacto)', CASE WHEN n=7 THEN 'OK' ELSE 'FALLA (lee '||n||')' END);
+    INSERT INTO _res(prueba,resultado) VALUES ('11b secretaría: la lectura directa de la tabla sólo muestra envíos de documentos que ella ve (c1 y c7 son de b1)',
+      CASE WHEN n = (CASE WHEN public.cardiolink_secretaria_autorizada_prof_v1(current_setting('qa.prof')) THEN 2 ELSE 0 END) THEN 'OK' ELSE 'FALLA (lee '||n||')' END);
   ELSE
     INSERT INTO _res(prueba,resultado) VALUES ('11 secretaría', 'OMITIDA: no hay una secretaría activa');
   END IF;

@@ -145,13 +145,28 @@ prueba('acceso exclusivo: sin sesión Supabase o sin cliente se bloquea', async 
   }
 });
 
-prueba('Production: cliente apuntando a Production o a otra URL → fail-closed, sin RPC', async () => {
-  for (const url of [PRODUCTION, PRODUCTION + '/', 'https://otro.supabase.co', STAGING + '.evil.com', 'http://yslhwdlzdknhskawqrtv.supabase.co']) {
+prueba('Backend: sólo los dos proyectos de CardioLink; cualquier otra URL → fail-closed, sin RPC', async () => {
+  for (const url of ['https://otro.supabase.co', STAGING + '.evil.com', PRODUCTION + '.evil.com', 'http://yslhwdlzdknhskawqrtv.supabase.co', 'http://tupacclmhaqiahhlttyz.supabase.co', 'https://evil.com/' + PRODUCTION]) {
     const env = makeEnv({ url });
     await botonCargar(env).click();
     assert.equal(env.llamadas.length, 0, url);
-    assert.match(estado(env), /únicamente para Supabase STAGING/, url);
+    assert.match(estado(env), /únicamente para los proyectos Supabase de CardioLink/, url);
   }
+});
+
+prueba('Production habilitado (v1.1): carga por la RPC, etiqueta de entorno PRODUCCIÓN y exige sesión owner/admin', async () => {
+  for (const url of [PRODUCTION, PRODUCTION + '/']) {
+    const env = makeEnv({ url });
+    await botonCargar(env).click();
+    assert.deepEqual(env.llamadas.map(l => l.name), ['cardiolink_listar_asociaciones_v1'], url);
+    assert.match(estado(env), /sincronizadas/, url);
+  }
+  const env = makeEnv({ url: PRODUCTION, sinSesion: true });
+  await botonCargar(env).click();
+  assert.equal(env.llamadas.length, 0);
+  assert.match(estado(env), /dueño o administrador/);
+  const src = fs.readFileSync(require('node:path').join(__dirname, '..', 'cardiolink-asociaciones-ui-v1.js'), 'utf8');
+  assert.ok(/'PRODUCCIÓN'/.test(src) && !/service_role/.test(src), 'etiqueta de entorno y sin service_role');
 });
 
 prueba('carga: lista usuarios y marca las asociaciones activas del servidor', async () => {
@@ -296,7 +311,11 @@ prueba('alcance: el módulo solo usa las dos RPC autorizadas y no toca tablas, R
   const usadas = [...SRC.matchAll(/rpc\('([a-z0-9_]+)'/g)].map(m => m[1]);
   assert.deepEqual([...new Set(usadas)].sort(), ['cardiolink_asociar_secretaria_medico_v1', 'cardiolink_listar_asociaciones_v1']);
   assert.ok(!/\.from\(|\.auth\.|signUp|admin\.|service_role|localStorage/.test(SRC));
-  assert.ok(!/tupacclmhaqiahhlttyz/.test(SRC.replace(/\/\*[\s\S]*?\*\//g, '')), 'no referencia Production');
+  // v1.1: sólo los dos proyectos de CardioLink (STAGING y Production), cada uno en la expresión del candado y en la etiqueta de entorno; ningún otro ref de Supabase
+  const linea = SRC.split('\n').find(l => /supabase\\\.co/.test(l) && !/^\s*\/\//.test(l)) || '';
+  const refs = [...new Set(linea.match(/[a-z0-9]{20}/g) || [])].sort();
+  assert.deepEqual(refs, ['tupacclmhaqiahhlttyz', 'yslhwdlzdknhskawqrtv'].sort(), 'solo STAGING y Production');
+  assert.ok(!/https:\/\/[a-z0-9]{20}\.supabase\.co/.test(SRC.replace(/\/\*[\s\S]*?\*\//g, '')), 'sin URL completa de backend (solo el candado por expresión regular)');
 });
 
 (async () => {

@@ -50,8 +50,12 @@ const prueba = (nombre, fn) => pruebas.push({ nombre, fn });
 
 // ---------------------------------------------------------------- A) contrato cliente <-> SQL
 prueba('A1 todas las listas del módulo (claves y campos anidados) coinciden con las del SQL', () => {
-  ['CLAVES_LECTURA', 'CLAVES_ESCRITURA', 'CAMPOS_PACIENTE', 'CAMPOS_PROFESIONAL', 'TIPOS_DOC', 'CAMPOS_IDENTIDAD'].forEach(m =>
+  ['CLAVES_LECTURA', 'CLAVES_ESCRITURA', 'CAMPOS_PACIENTE', 'CAMPOS_PROFESIONAL', 'CAMPOS_IDENTIDAD'].forEach(m =>
     assert.deepEqual(ordenadas(js(m)), ordenadas(sql(m)), 'lista distinta: ' + m));
+  // TIPOS_DOC: la etapa A de 4B instala la lista ORIGINAL (constancia_atencion; es lo que está aplicado en STAGING) y el Bloque 4C-1b la AMPLÍA.
+  // El módulo cliente lleva la lista FINAL (la del SQL de 4C-1b); antes de aplicar 4C-1b el servidor sólo entrega la original (subconjunto), por lo que es inocuo.
+  assert.deepEqual(sql('TIPOS_DOC'), ['constancia_atencion'], 'la etapa A de 4B debe conservar la lista original');
+  assert.deepEqual(ordenadas(js('TIPOS_DOC')), ordenadas(lista(leer('docs/propuestas/pending_review_documentos_seguridad_4c1b_heredados.sql'), 'TIPOS_DOC', '--')), 'el módulo debe llevar la lista final de 4C-1b');
 });
 
 prueba('A2 escritura ⊆ lectura; la diferencia es exactamente usuarios/roles/branding/migraciones/documentosClinicos', () => {
@@ -100,7 +104,7 @@ function crearEntorno(opc) {
   const respuestas = Object.assign({
     leer: { data: { ok: true, config: { profesionales: [{ id: 'p1', nombre: 'Dr', logoDocumentoData: 'LOGO', campoRaro: 'X' }], obrasSociales: ['OS'],
         pacientes: [{ id: 'pac1', nombreCompleto: 'QA', notaOculta: 'CLINICO' }], evolucionesClinicas: [{ id: 'x' }], configFinanzas411F: { a: 1 }, usuarios: [{ id: 'u' }],
-        documentosClinicos: [{ id: 'd1', tipo: 'certificado', contenido: 'CLINICO-D1' }, { id: 'd2', tipo: 'constancia_atencion' }] },
+        documentosClinicos: [{ id: 'd1', tipo: 'certificado', contenido: 'CERTIFICADO-D1' }, { id: 'd2', tipo: 'constancia_atencion' }, { id: 'd3', tipo: 'receta', contenido: 'CLINICO-D3' }] },
       updated_at: '2026-01-01 00:00:00+00', vista_hash: 'h1' }, error: null },
     guardar: { data: { ok: true, updated_at: '2026-01-02 00:00:00+00', vista_hash: 'h2' }, error: null }
   }, opc.respuestas || {});
@@ -161,7 +165,8 @@ prueba('B2 cargar(): sólo claves de lectura y campos anidados permitidos; docum
   assert.deepEqual(Object.keys(r.config).sort(), ['documentosClinicos', 'obrasSociales', 'pacientes', 'profesionales', 'usuarios']);
   assert.deepEqual(r.config.pacientes, [{ id: 'pac1', nombreCompleto: 'QA' }]);
   assert.deepEqual(r.config.profesionales, [{ id: 'p1', nombre: 'Dr', logoDocumentoData: 'LOGO' }]);
-  assert.deepEqual(r.config.documentosClinicos.map(d => d.id), ['d2']);
+  // Bloque 4C-1b: constancia, certificado, reposo laboral y orden heredados se LEEN; la receta (y todo otro tipo) no
+  assert.deepEqual(r.config.documentosClinicos.map(d => d.id), ['d1', 'd2']);
   assert.ok(!JSON.stringify(r).includes('CLINICO'));
 });
 
@@ -875,7 +880,7 @@ prueba('C14 DOCUMENTOS HEREDADOS: Secretaría no los recibe en la sesión (ni en
   const codigo = ['documentoRestaurableV1', 'apartarDocumentosNoPermitidosV1', 'recuperarDocumentosPendientesV1', 'leerOutboxDocsV1', 'unirDocsPorIdV1'].map(n => funcionApp(n)).join('\n')
     + '\n' + APP.match(/const TIPOS_DOC_SECRETARIA_V1=\[[^\]]*\];/)[0] + '\n' + APP.match(/const OUTBOX_DOCS_KEY_V1='[^']*';/)[0];
   const doc = (id, tipo) => ({ id, tipo, titulo: 't' + id, contenido: 'CLINICO-' + id, pacienteId: 'p1' });
-  const LEGADOS = [doc('d1', 'certificado'), doc('d2', 'orden'), doc('d3', 'reposo_laboral')], CONSTANCIA = doc('c1', 'constancia_atencion');
+  const LEGADOS = [doc('d1', 'receta'), doc('d2', 'ecg'), doc('d3', 'informe')], CONSTANCIA = doc('c1', 'constancia_atencion');   // Bloque 4C-1b: certificado, orden y reposo_laboral YA se restauran (ver más abajo)
   function entorno(o) {
     const almacen = Object.assign({}, o.almacen || {}), uid = 'uid-1';
     const g = { data: { documentosClinicos: (o.enMemoria || []).slice() }, usuarioSupabase: { id: uid }, storageConfig: 'cfg',
@@ -894,6 +899,11 @@ prueba('C14 DOCUMENTOS HEREDADOS: Secretaría no los recibe en la sesión (ni en
   assert.deepEqual(e.outbox(), ['c1', 'd1', 'd2', 'd3'], 'el resguardo queda intacto');
   assert.ok(!(e.almacen.cfg || '').includes('CLINICO-d'), 'la caché de configuración no recibe los clínicos heredados');
   assert.equal(e.f.recuperar(), 0, 'idempotente');
+  // Bloque 4C-1b: los certificados, órdenes y reposos laborales heredados SÍ se restauran para Secretaría (la fila completa sigue cerrada)
+  const PERMITIDOS = [doc('p1', 'certificado'), doc('p2', 'orden'), doc('p3', 'reposo_laboral'), CONSTANCIA];
+  e = entorno({ almacen: { 'cardiolink_docs_pendientes_v1_uid-1': JSON.stringify({ docs: PERMITIDOS, fecha: 'x' }) } });
+  assert.equal(e.f.recuperar(), 4); assert.deepEqual(e.g.data.documentosClinicos.map(d => d.id).sort(), ['c1', 'p1', 'p2', 'p3']);
+  e = entorno({ enMemoria: PERMITIDOS.slice() }); assert.equal(e.f.apartar(), 0, 'los tipos permitidos no se apartan');
   // lo que ya estaba en memoria/caché (cliente viejo): primero se asegura el respaldo y recién después se aparta
   e = entorno({ enMemoria: LEGADOS.concat([CONSTANCIA]), almacen: { cardiolink_docs_pendientes_v1_dummy: '{}' } });
   assert.equal(e.f.apartar(), 3);
@@ -904,7 +914,7 @@ prueba('C14 DOCUMENTOS HEREDADOS: Secretaría no los recibe en la sesión (ni en
   e = entorno({ enMemoria: LEGADOS.slice(), falloOutbox: true });
   assert.equal(e.f.apartar(), 0); assert.equal(e.g.data.documentosClinicos.length, 3);
   // se suma al resguardo existente sin pisarlo
-  e = entorno({ enMemoria: [doc('d9', 'orden')], almacen: { 'cardiolink_docs_pendientes_v1_uid-1': JSON.stringify({ docs: [LEGADOS[0]], fecha: 'x' }) } });
+  e = entorno({ enMemoria: [doc('d9', 'receta')], almacen: { 'cardiolink_docs_pendientes_v1_uid-1': JSON.stringify({ docs: [LEGADOS[0]], fecha: 'x' }) } });
   assert.equal(e.f.apartar(), 1); assert.deepEqual(e.outbox(), ['d1', 'd9']);
   // owner/admin confirmado: recupera todo; médico confirmado: como antes; rol SIN confirmar: nada (queda resguardado hasta confirmarse)
   e = entorno({ almacen: outboxInicial, admin: true }); assert.equal(e.f.recuperar(), 4); assert.equal(e.f.apartar(), 0);

@@ -56,7 +56,7 @@
   const CAMPOS_PROFESIONAL_ADMIN = ['id', 'nombre', 'area', 'prestaciones', 'valores', 'especialidadIds', 'bloquesPrestaciones', 'activo'];
   // CAMPOS_PROFESIONAL_FIN
   // TIPOS_DOC_INICIO
-  const TIPOS_DOC_LECTURA = ['constancia_atencion'];
+  const TIPOS_DOC_LECTURA = ['constancia_atencion', 'certificado', 'reposo_laboral', 'orden'];
   // TIPOS_DOC_FIN
 
   // Dos ranuras por usuario: PENDIENTE (reintentable; una recarga no la pisa) y CONFLICTO (conflicto/rechazo; se conserva hasta que el usuario la descargue o descarte).

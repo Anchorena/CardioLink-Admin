@@ -1,4 +1,4 @@
-/* CardioLink · Seguridad clínica V1 · Bloque 3 (STAGING)
+/* CardioLink · Seguridad clínica V1 · Bloque 3 (STAGING y Production)
    Asociaciones Secretaría–Médicos. No crea cuentas Auth ni cambia RLS.
    Cargar DESPUÉS de app.js; depende del cliente y permisos existentes.
 */
@@ -22,12 +22,15 @@
         typeof puedeGestionarUsuariosPermisos !== 'function' || !puedeGestionarUsuariosPermisos()) {
       throw new Error('Se requiere una sesión de dueño o administrador confirmada.');
     }
-    // Fail closed: this module is for STAGING only, regardless of the page URL.
+    // Fail closed: solo los dos proyectos Supabase de CardioLink (STAGING y Production), cualquiera sea la URL de la página. La autorización real (owner/admin) la valida la RPC en el servidor.
     const backendUrl = String(supabaseClient.supabaseUrl || '');
-    if (!/^https:\/\/yslhwdlzdknhskawqrtv\.supabase\.co\/?$/i.test(backendUrl)) {
-      throw new Error('Módulo habilitado únicamente para Supabase STAGING. No se enviaron cambios.');
+    if (!/^https:\/\/(yslhwdlzdknhskawqrtv|tupacclmhaqiahhlttyz)\.supabase\.co\/?$/i.test(backendUrl)) {
+      throw new Error('Módulo habilitado únicamente para los proyectos Supabase de CardioLink (STAGING y Production). No se enviaron cambios.');
     }
     return supabaseClient;
+  }
+  function entorno() {
+    try { return /tupacclmhaqiahhlttyz/i.test(String(supabaseClient.supabaseUrl || '')) ? 'PRODUCCIÓN' : 'STAGING'; } catch (e) { return 'STAGING'; }
   }
   function status(message, isError = false) {
     const node = document.getElementById('asociacionesEstadoV1');
@@ -47,7 +50,7 @@
     const secretarias = cache.usuarios.filter(u => u.rol === 'secretaria');
     const medicos = cache.usuarios.filter(u => u.rol === 'medico' || u.rol === 'owner');
     if (!secretarias.length || !medicos.length) {
-      area.append(el('p', {className: 'muted'}, 'Faltan cuentas reales de Secretaría o médicos en STAGING.')); return;
+      area.append(el('p', {className: 'muted'}, 'Faltan cuentas reales de Secretaría o médicos en ' + entorno() + '.')); return;
     }
     const label = el('label', {}, 'Secretaria');
     const select = el('select', {id: 'asocSecretariaSelectV1'});
@@ -74,7 +77,7 @@
         return {doctorId, next: c.checked, prev};
       }).filter(x => x.next !== x.prev);
       if (!changes.length) return status('Sin cambios para guardar.');
-      if (!window.confirm('¿Confirmás ' + changes.length + ' cambio(s) de asociación en STAGING?')) return;
+      if (!window.confirm('¿Confirmás ' + changes.length + ' cambio(s) de asociación en ' + entorno() + '?')) return;
       save.disabled = true; select.disabled = true; status('Guardando asociaciones…');
       try {
         for (const change of changes) {
@@ -90,7 +93,7 @@
         paint();
         const refreshed = document.getElementById('asocSecretariaSelectV1');
         if (refreshed) { refreshed.value = secretariaId; refreshed.dispatchEvent(new Event('change')); }
-        status('Asociaciones guardadas y verificadas en STAGING.');
+        status('Asociaciones guardadas y verificadas en ' + entorno() + '.');
       } catch (error) {
         // Las operaciones son sucesivas (no una transacción): tras una falla parcial
         // se recarga el estado real desde el servidor antes de permitir reintentar.
@@ -116,7 +119,7 @@
   }
   async function load() {
     try {
-      status('Consultando asociaciones reales de STAGING…');
+      status('Consultando asociaciones reales de ' + entorno() + '…');
       cache = await rpc('cardiolink_listar_asociaciones_v1');
       if (!Array.isArray(cache.usuarios) || !Array.isArray(cache.asociaciones)) throw new Error('Formato inesperado del servidor');
       paint(); status('Asociaciones sincronizadas.');
@@ -133,7 +136,7 @@
     const panel = el('div', {id: rootId});
     panel.style.borderTop = '1px solid currentColor'; panel.style.marginTop = '22px'; panel.style.paddingTop = '12px';
     panel.append(el('h3', {}, 'Asociaciones Secretaría–Médicos'),
-      el('p', {className:'muted'}, 'Administrá las asociaciones reales de Supabase STAGING. Esto no crea usuarios ni modifica historias clínicas.'));
+      el('p', {className:'muted'}, 'Administrá las asociaciones reales de Supabase ' + entorno() + '. Esto no crea usuarios ni modifica historias clínicas.'));
     const loadButton = el('button', {type: 'button', className: 'secondary'}, 'Cargar asociaciones');
     loadButton.addEventListener('click', load);
     panel.append(loadButton, el('p', {id:'asociacionesEstadoV1', className:'muted'}), el('div', {id:'asociacionesEditorV1'}));

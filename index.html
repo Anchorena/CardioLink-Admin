@@ -1111,13 +1111,13 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
 <script src="cardiolink-prestaciones-perfil.js?v=1"></script>
 <!-- Configuración V1A se carga después de los editores existentes para reorganizar su presentación sin reemplazar handlers. -->
 <script src="cardiolink-config-v1.js?v=1a-fase6-branding-pdf"></script>
-<!-- Seguridad clínica V1 / Bloque 3: asociaciones Secretaría–Médicos dentro de Usuarios y accesos (solo STAGING; falla cerrado en Production). Debe cargar después de app.js. -->
-<script src="cardiolink-asociaciones-ui-v1.js?v=1"></script>
+<!-- Seguridad clínica V1 / Bloque 3: asociaciones Secretaría–Médicos dentro de Usuarios y accesos (STAGING y Production; falla cerrado en cualquier otro backend; la autorización owner/admin la valida la RPC). Debe cargar después de app.js. -->
+<script src="cardiolink-asociaciones-ui-v1.js?v=2-prod"></script>
 <script src="cardiolink-dashboard-v1.js?v=1"></script>
 <script src="cardiolink-agenda-v1.js?v=1"></script>
 <script src="cardiolink-pedidos-rapidos-v1.js?v=1"></script>
 <!-- Fase 6 / Bloque 6D: documentos y estudios en PDF reales en la ficha del paciente (Storage privado + metadata), módulo independiente. -->
 <script>window.CARDIOLINK_QR_V2A = true;</script>
-<script src="cardiolink-documentos-pdf-v1.js?v=6-v2a-qr"></script>
+<script src="cardiolink-documentos-pdf-v1.js?v=7-4c1"></script>
 </body>
 </html>

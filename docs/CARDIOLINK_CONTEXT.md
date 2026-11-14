@@ -45,13 +45,18 @@ Puede:
   valores particulares y copagos;
 - cargar pagos, bonos, autorizaciones, médico solicitante y motivo/indicación;
 - importar o restaurar backups;
-- emitir constancias administrativas cuando corresponda.
+- emitir constancias, certificados y órdenes médicas, por indicación de un profesional autorizado y con su membrete, sello y firma;
+- subir, consultar, gestionar, descargar, imprimir y enviar documentos del
+  paciente: los anteriores, ECG, Holter, MAPA, ecocardiogramas, estudios,
+  informes, laboratorios, recetas, indicaciones, aptos físicos y otros documentos.
 
 No puede:
 - acceder a Historia Clínica, resumen clínico, evoluciones, antecedentes,
   alergias, medicación habitual, signos vitales almacenados dentro de HC ni
-  notas privadas médicas;
-- acceder a RCTA o informes clínicos, ni emitir certificados médicos;
+  notas clínicas privadas;
+- acceder a RCTA, ni modificar el contenido clínico de documentos médicos
+  firmados, ni ver imágenes clínicas adjuntas a evoluciones ni el «Mensaje a
+  colega» (reservado a médicos), ni eliminar documentos (no autorizado todavía);
 - gestionar usuarios/roles, seguridad o autenticación;
 - acceder a Caja, producción financiera, sueldo de Secretaría o liquidaciones;
 - ejecutar borrado global de datos ni reparaciones administrativas sensibles;
@@ -161,9 +166,18 @@ Incluyen:
 
 El membrete pertenece al profesional responsable del documento, no necesariamente al usuario que lo genera.
 
-Secretaría solo puede emitir constancias administrativas: no puede emitir
-certificados médicos, RCTA ni informes clínicos. Médico y Dueño/Administrador
-mantienen el acceso a documentos clínicos que corresponda a sus permisos.
+Secretaría puede emitir constancias, certificados y órdenes médicas, y subir,
+consultar, gestionar, descargar, imprimir y enviar documentos del paciente
+(ECG, Holter, MAPA, ecocardiogramas, estudios, informes, laboratorios, recetas,
+indicaciones, aptos físicos y otros), siempre a nombre de un profesional
+autorizado y solo de profesionales con los que tiene una asociación activa
+(verificado en el servidor; sin profesional identificable, no se ve). No accede a RCTA, no modifica el contenido clínico de documentos
+firmados y no ve las imágenes clínicas adjuntas a evoluciones.
+Médico y Dueño/Administrador mantienen el acceso a documentos clínicos que
+corresponda a sus permisos. Las notas clínicas privadas son accesibles
+exclusivamente por su autor, incluso frente a otros médicos, Dueño y Administrador
+(excepción absoluta; implementación pendiente: Bloque 4C-2). Ver
+`docs/BUSINESS_RULES.md`.
 
 ## Backups
 Secretaría puede importar y restaurar backups operativos, pero no exportar un

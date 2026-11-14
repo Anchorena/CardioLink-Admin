@@ -1,0 +1,14 @@
+{
+  "name": "cardiolink-tests",
+  "private": true,
+  "description": "Pruebas del Bloque 4C-1 y suites relacionadas (Bloque 3, Bloque 4B, documentos y QR). Sin dependencias externas: sólo módulos nativos de Node.",
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "test:bloque4c1": "node run-bloque4c1.js",
+    "test:4c1": "node run-bloque4c1.js --solo 4c1",
+    "test:4b": "node run-bloque4c1.js --solo 4b",
+    "test:bloque3": "node run-bloque4c1.js --solo bloque3",
+    "test:qr": "node run-bloque4c1.js --solo qr",
+    "test:documentos": "node run-bloque4c1.js --solo documentos"
+  }
+}

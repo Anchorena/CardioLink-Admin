@@ -457,8 +457,8 @@ async function protegerDocumentosSinRespaldoV1(){
 // sólo lo descarta un cierre de sesión posterior que los encuentre confirmados en el servidor.
 // Documentos que el rol CONFIRMADO puede tener en memoria/caché de configuración. El resguardo (outbox) conserva TODO; esto sólo decide qué vuelve a la sesión.
 // owner/admin confirmado: todos. Rol sin confirmar: ninguno (fail-closed, quedan resguardados hasta confirmarse). Médico confirmado: como antes.
-// Secretaría confirmada: sólo los tipos que la RPC administrativa le entrega (constancia_atencion); los clínicos heredados (certificados, órdenes…) no vuelven.
-const TIPOS_DOC_SECRETARIA_V1=['constancia_atencion'];
+// Secretaría confirmada: sólo los tipos que la RPC administrativa le entrega (Bloque 4C-1b: constancia_atencion, certificado, reposo_laboral y orden); el resto de los clínicos heredados (recetas, ECG, informes…) no vuelve.
+const TIPOS_DOC_SECRETARIA_V1=['constancia_atencion','certificado','reposo_laboral','orden'];
 function documentoRestaurableV1(d){
   if(configCompletaPermitidaV1()) return true;
   if(backendRolCargado!==true) return false;
