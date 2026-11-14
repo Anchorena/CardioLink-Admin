@@ -146,6 +146,7 @@ const API = window.CardioLinkCopiasFacturacionV1;
     ok(/0 copia\(s\)/.test($q('.copias-fact-resumen').textContent) && /No hay copias/.test($q('.copias-fact-tabla tbody').textContent), 'lista vacía con mensaje claro');
     ok(['Mes y año', 'Profesional', 'Obra social', 'Estado'].every((t) => $$('.copias-fact-filtros label').some((l) => l.textContent === t)), 'filtros: mes y año, profesional, obra social, estado');
 
+    ok($$('#cfFiltroProf option').map((o) => o.value).join() === ',rogelio', 'filtro Profesional: con la lista vacía igual ofrece los profesionales autorizados de Secretaría (regresión del humo en Production)', $$('#cfFiltroProf option').map((o) => o.value).join());
     // ---- subir desde la sección (sin atención): validaciones
     $q('.copias-fact-head-acciones button').click(); await until(() => $q('#copiasFactModalV1'));
     $q('#cfSubir').click(); await wait(80);

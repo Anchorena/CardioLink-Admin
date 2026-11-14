@@ -383,6 +383,7 @@
   // ---------------------------------------------------------------- Sección "Copias para facturación"
   const filtros = { mes: mesActual(), prof: '', os: '', estado: '', texto: '' };
   let filas = [];
+  let elegiblesFiltro = [];   // profesionales que el usuario puede ver (aunque todavía no tengan copias): alimentan el filtro «Profesional»
   let cargando = false;
   let ultimaCarga = 0;
   const seccionVisible = () => !!document.getElementById(SECCION)?.classList.contains('visible');
@@ -446,7 +447,7 @@
       && (!texto || norm(f.patient_name).includes(texto) || (digitos.length >= 3 && soloDigitos(f.patient_dni).includes(digitos))));
     const pendientes = visibles.filter((f) => f.print_status !== 'impreso').length;
     const profs = new Map(); filas.forEach((f) => profs.set(f.professional_id, f.professional_name || nombreProfesional(f.professional_id)));
-    profesionales().forEach((p) => { if (!profs.has(String(p.id)) && (esOwnerAdmin())) profs.set(String(p.id), p.nombre || p.id); });
+    elegiblesFiltro.forEach((p) => { if (!profs.has(String(p.id))) profs.set(String(p.id), p.nombre || p.id); });
     const selProf = el('select', { id: 'cfFiltroProf', 'aria-label': 'Profesional' }, [el('option', { value: '', text: 'Todos los profesionales' })]
       .concat([...profs.entries()].sort((a, b) => String(a[1]).localeCompare(String(b[1]), 'es')).map(([id, nom]) => el('option', { value: id, text: nom, selected: id === filtros.prof ? true : null }))));
     const oss = [...new Set(filas.map((f) => f.obra_social).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'es'));
@@ -489,6 +490,7 @@
   async function cargarLista() {
     if (!sb()) return;
     const rango = rangoMes(filtros.mes);
+    try { elegiblesFiltro = await profesionalesElegibles(); } catch (e) { /* el filtro igual lista los de las copias */ }
     cargando = true; pintar();
     try {
       let q = sb().from(TABLA).select(COLS).order('study_date', { ascending: true }).order('patient_name', { ascending: true }).limit(1000);
