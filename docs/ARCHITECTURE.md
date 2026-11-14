@@ -48,6 +48,12 @@ Renderiza únicamente la portada y reutiliza los bindings ya inicializados por
 `app.js` para perfiles, agenda, Pendientes y acciones rápidas. Sus estilos están
 aislados en `cardiolink-dashboard-v1.css`.
 
+`cardiolink-copias-facturacion-v1.js` (+ `.css`) es el módulo de Copias para
+facturación: bucket privado `billing-copies`, tabla `cardiolink_copias_facturacion`
+y RPC de impresión (SQL en `docs/propuestas/pending_review_copias_facturacion_v1*.sql`).
+Se engancha por envoltura (`seccionPermitida`, `showSection`, `abrirAgendaModal`,
+`renderTabla`) sin modificar `app.js`.
+
 Antes de crear otro módulo:
 1. revisar los existentes;
 2. verificar si ya interceptan la misma función;
