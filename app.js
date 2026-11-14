@@ -9536,6 +9536,9 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const p=(data.profesionales||[]).find(x=>x.id===document.getElementById('cfgProfEditar310')?.value);if(!p)return;
     p.nombre=document.getElementById('cfgProfNombre310').value.trim()||p.nombre;
     p.area=document.getElementById('cfgProfArea310').value.trim();p.activo=document.getElementById('cfgProfActivo310').checked;p.especialidadIds=selectedSpecialties();
+    // `area` es lo único que reciben los médicos y lo que muestra la verificación pública del QR: debe nombrar todas las especialidades tildadas.
+    const faltantesArea=p.especialidadIds.map(id=>(data.especialidades||[]).find(e=>e.id===id)?.nombre).filter(n=>n&&!slug(p.area).includes(slug(n)));
+    if(faltantesArea.length)p.area=[p.area].filter(Boolean).concat(faltantesArea).join(' / ');
     saveConfig();refreshSelects();renderConfig();alert('Perfil profesional guardado.');
   }
   function addRole(){if(!exigirConfigAdministrativa('Tu perfil no puede crear roles ni permisos.'))return;const input=document.getElementById('nuevoRol310');const nombre=input.value.trim();if(!nombre)return;let id=slug(nombre);if(data.roles.some(r=>r.id===id))id+='_'+Date.now();data.roles.push({id,nombre,baseRole:document.getElementById('baseRol310').value,activo:true});input.value='';saveConfig();renderSmartConfig();}
@@ -11765,9 +11768,19 @@ function patientInfoTextHC(p,coverage){
     return inputARAIso406(fechaInput)||now;
   }
   function fmtD406(v){try{return typeof formatFecha==='function'?formatFecha(v):new Intl.DateTimeFormat('es-AR').format(new Date(v));}catch(e){return v||'';}}
+  // El médico NO recibe del servidor el catálogo ni especialidadIds (config_medico_v1 sólo envía `area`). En los perfiles de esta lista `area` (persistida en la
+  // configuración, igual que lee la verificación pública del QR) también aporta especialidades: lo que figure ahí se muestra aunque el catálogo local no lo conozca.
+  const PERFILES_ESPECIALIDAD_EN_AREA406=['rogelio'];
+  const sinTildes406=t=>String(t||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().trim();
   function specialities406(p){
     const ids=Array.isArray(p?.especialidadIds)?p.especialidadIds:[];
     const names=ids.map(id=>(data?.especialidades||[]).find(e=>e.id===id)?.nombre).filter(Boolean);
+    if(PERFILES_ESPECIALIDAD_EN_AREA406.includes(String(p?.id||''))){
+      String(p?.area||'').split(/\s*[\/·,;]\s*|\s+y\s+/i).map(t=>t.trim()).filter(Boolean).forEach(t=>{
+        const n=sinTildes406(t);
+        if(!names.some(x=>{const m=sinTildes406(x);return m===n||m.includes(n)||n.includes(m);}))names.push(t);
+      });
+    }
     return names.length?names.join(' · '):(p?.area||p?.especialidad||'');
   }
   function persist406(){
@@ -12239,6 +12252,27 @@ function patientInfoTextHC(p,coverage){
     if(!d||d.tipo!=='orden')return '';
     return String(p?.numeroAfiliadoHabitual||p?.numeroAfiliado||'').trim();
   }
+  // Certificado, orden, reposo y constancia: el N.º de afiliado va junto a la cobertura del paciente. Se toma SIEMPRE el par vigente
+  // (coberturaHabitual + numeroAfiliadoHabitual), nunca del historial de coberturas; sin cobertura (o Particular) no se imprime ningún número.
+  // No entra en la huella (afiliadoOrden406 sigue siendo la única que lo hace, sólo para órdenes): así los documentos ya emitidos no cambian de versión.
+  const TIPOS_CON_AFILIADO406=['orden','certificado','reposo_laboral','constancia_atencion'];
+  function afiliadoDocumento406(d,p){
+    if(!d||!TIPOS_CON_AFILIADO406.includes(d.tipo))return '';
+    const cobertura=String(p?.coberturaHabitual||'').trim();
+    if(!cobertura||cobertura.toLowerCase()==='particular')return '';
+    const habitual=String(p?.numeroAfiliadoHabitual||'').trim();
+    if(habitual)return habitual;
+    // Falta en la ficha: se mira la atención MÁS RECIENTE del MISMO paciente (por id) con ESA MISMA cobertura. Nunca el historial ni otra cobertura.
+    const pid=String(p?.id||'');
+    if(!pid)return '';
+    try{
+      const lista=(typeof atenciones!=='undefined'&&Array.isArray(atenciones))?atenciones:[];
+      const igual=t=>String(t||'').trim().toLowerCase()===cobertura.toLowerCase();
+      const cand=lista.filter(a=>a&&String(a.pacienteId||'')===pid&&igual(a.coberturaAtencion||a.obraSocial)&&String(a.numeroAfiliadoAtencion||'').trim()&&a.estadoTurno!=='cancelado')
+        .sort((x,y)=>String(y.fecha||'').localeCompare(String(x.fecha||''))||String(y.horaInicio||'').localeCompare(String(x.horaInicio||'')));
+      return cand.length?String(cand[0].numeroAfiliadoAtencion).trim():'';
+    }catch(e){return '';}
+  }
   function resolverDatosDocumento406(id,formato,docOverride){
     ensure406();const d=docOverride||data.documentosClinicos.find(x=>x.id===id);if(!d)return null;
     if(!canIssueDoc406(d.tipo))return {error:'Tu perfil no puede acceder a este documento.'};
@@ -12304,7 +12338,7 @@ function patientInfoTextHC(p,coverage){
     const sigMetaFontSize=isA5?'9.5px':'11px';
     const footerFontSize=isA5?'7.5px':'9px';
     const w=window.open('','_blank');if(!w)return;
-    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc406(d.titulo)} - ${esc406(patientName406(p)||d.pacienteNombre)}</title><style>${pageCss}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#111827;margin:0;font-size:${baseFontSize}}.doc-head{display:grid;grid-template-columns:${headCols};gap:${headGap};align-items:center;border-bottom:3px solid ${color};padding-bottom:${headPadBottom};margin-bottom:${headMarginBottom}}.doc-logo{width:${logoSize};height:${logoSize};object-fit:contain}.brand{font-size:${brandFontSize};font-weight:800;color:${color}}.doctor{font-size:${doctorFontSize};font-weight:800;margin-top:3px}.meta,.contact{color:#475569;line-height:1.45}.doc-title{text-align:center;text-transform:uppercase;letter-spacing:.08em;font-size:${titleFontSize};margin:${titleMargin};color:${color}}.patient-box{border:1px solid #cbd5e1;border-radius:10px;padding:${patientBoxPad};margin-bottom:${patientBoxMarginBottom};display:grid;grid-template-columns:1fr auto;gap:14px}.patient-name{font-size:${patientNameFontSize};font-weight:800}.body{${bodyMinHeight}font-size:${bodyFontSize};line-height:${bodyLineHeight};white-space:pre-wrap}.extra{margin-top:${extraMarginTop};padding-top:${extraPadTop};border-top:1px solid #e2e8f0;white-space:pre-wrap;line-height:1.55}.signature{margin-top:${sigMarginTop};margin-left:auto;width:${sigWidth};text-align:center;page-break-inside:avoid}.signature img{max-width:${sigImgMaxWidth};max-height:${sigImgMaxHeight};object-fit:contain;display:block;margin:0 auto 4px}.sig-line{border-top:1px solid #334155;padding-top:5px;font-weight:700}.sig-meta{font-size:${sigMetaFontSize};color:#475569;line-height:1.35}.footer{position:fixed;bottom:0;left:0;right:0;border-top:1px solid #cbd5e1;padding-top:6px;color:#64748b;font-size:${footerFontSize};display:flex;justify-content:space-between;gap:12px}</style></head><body><header class="doc-head">${logo?`<img class="doc-logo" src="${esc406(logo)}">`:''}<div><div class="brand">${esc406(pr.marcaDocumento||pr.nombre||'')}</div><div class="doctor">${esc406(pr.nombre||d.profesionalNombre||'')}</div><div class="meta">${esc406(specialities406(pr))}${licenses?' · '+esc406(licenses):''}</div>${contacts?`<div class="contact">${esc406(contacts)}</div>`:''}</div></header><h1 class="doc-title">${esc406(d.titulo||docLabel406(d.tipo))}</h1><section class="patient-box"><div><div class="patient-name">${esc406(patientName406(p)||d.pacienteNombre||'Paciente')}</div><div class="meta">DNI ${esc406(p.dni||d.dni||'s/d')}${p.coberturaHabitual?' · '+esc406(p.coberturaHabitual):''}${afiliadoOrden406(d,p)?' · N.º de afiliado '+esc406(afiliadoOrden406(d,p)):''}</div></div><div class="meta">${esc406(fmtDT406(d.fechaHora))}</div></section><main class="body">${esc406(d.contenido||'')}</main>${d.adicional?`<section class="extra">${esc406(d.adicional)}</section>`:''}<section class="signature">${sig?`<img src="${esc406(sig)}">`:''}<div class="sig-line">${esc406(pr.nombre||d.profesionalNombre||'')}</div><div class="sig-meta">${esc406(specialities406(pr))}<br>${esc406(licenses)}</div></section><footer class="footer"><span>${cardioLogo406?`<img src="${esc406(cardioLogo406)}" style="height:16px;vertical-align:middle;object-fit:contain">`:esc406(brandingCL406.nombre)+(brandingCL406.slogan?' · '+esc406(brandingCL406.slogan):'')}</span><span>Fecha de impresión: ${esc406(fechaImpresion406)}</span></footer></body></html>`);
+    w.document.write(`<!doctype html><html><head><meta charset="utf-8"><title>${esc406(d.titulo)} - ${esc406(patientName406(p)||d.pacienteNombre)}</title><style>${pageCss}*{box-sizing:border-box}body{font-family:Arial,Helvetica,sans-serif;color:#111827;margin:0;font-size:${baseFontSize}}.doc-head{display:grid;grid-template-columns:${headCols};gap:${headGap};align-items:center;border-bottom:3px solid ${color};padding-bottom:${headPadBottom};margin-bottom:${headMarginBottom}}.doc-logo{width:${logoSize};height:${logoSize};object-fit:contain}.brand{font-size:${brandFontSize};font-weight:800;color:${color}}.doctor{font-size:${doctorFontSize};font-weight:800;margin-top:3px}.meta,.contact{color:#475569;line-height:1.45}.doc-title{text-align:center;text-transform:uppercase;letter-spacing:.08em;font-size:${titleFontSize};margin:${titleMargin};color:${color}}.patient-box{border:1px solid #cbd5e1;border-radius:10px;padding:${patientBoxPad};margin-bottom:${patientBoxMarginBottom};display:grid;grid-template-columns:1fr auto;gap:14px}.patient-name{font-size:${patientNameFontSize};font-weight:800}.body{${bodyMinHeight}font-size:${bodyFontSize};line-height:${bodyLineHeight};white-space:pre-wrap}.extra{margin-top:${extraMarginTop};padding-top:${extraPadTop};border-top:1px solid #e2e8f0;white-space:pre-wrap;line-height:1.55}.signature{margin-top:${sigMarginTop};margin-left:auto;width:${sigWidth};text-align:center;page-break-inside:avoid}.signature img{max-width:${sigImgMaxWidth};max-height:${sigImgMaxHeight};object-fit:contain;display:block;margin:0 auto 4px}.sig-line{border-top:1px solid #334155;padding-top:5px;font-weight:700}.sig-meta{font-size:${sigMetaFontSize};color:#475569;line-height:1.35}.footer{position:fixed;bottom:0;left:0;right:0;border-top:1px solid #cbd5e1;padding-top:6px;color:#64748b;font-size:${footerFontSize};display:flex;justify-content:space-between;gap:12px}</style></head><body><header class="doc-head">${logo?`<img class="doc-logo" src="${esc406(logo)}">`:''}<div><div class="brand">${esc406(pr.marcaDocumento||pr.nombre||'')}</div><div class="doctor">${esc406(pr.nombre||d.profesionalNombre||'')}</div><div class="meta">${esc406(specialities406(pr))}${licenses?' · '+esc406(licenses):''}</div>${contacts?`<div class="contact">${esc406(contacts)}</div>`:''}</div></header><h1 class="doc-title">${esc406(d.titulo||docLabel406(d.tipo))}</h1><section class="patient-box"><div><div class="patient-name">${esc406(patientName406(p)||d.pacienteNombre||'Paciente')}</div><div class="meta"${TIPOS_CON_AFILIADO406.includes(d.tipo)?' data-afiliado-resuelto="1"':''}>DNI ${esc406(p.dni||d.dni||'s/d')}${p.coberturaHabitual?' · '+esc406(p.coberturaHabitual):''}${afiliadoDocumento406(d,p)?' · N.º de afiliado '+esc406(afiliadoDocumento406(d,p)):''}</div></div><div class="meta">${esc406(fmtDT406(d.fechaHora))}</div></section><main class="body">${esc406(d.contenido||'')}</main>${d.adicional?`<section class="extra">${esc406(d.adicional)}</section>`:''}<section class="signature">${sig?`<img src="${esc406(sig)}">`:''}<div class="sig-line">${esc406(pr.nombre||d.profesionalNombre||'')}</div><div class="sig-meta">${esc406(specialities406(pr))}<br>${esc406(licenses)}</div></section><footer class="footer"><span>${cardioLogo406?`<img src="${esc406(cardioLogo406)}" style="height:16px;vertical-align:middle;object-fit:contain">`:esc406(brandingCL406.nombre)+(brandingCL406.slogan?' · '+esc406(brandingCL406.slogan):'')}</span><span>Fecha de impresión: ${esc406(fechaImpresion406)}</span></footer></body></html>`);
     w.document.close();setTimeout(()=>w.print(),350);
   }
 
@@ -12405,8 +12439,15 @@ function patientInfoTextHC(p,coverage){
     pdf.setTextColor(15,23,42);pdf.setFont('helvetica','bold');pdf.setFontSize(isA5?10:12);
     pdf.text(String((typeof patientName406==='function'?patientName406(p):'')||d.pacienteNombre||'Paciente'),mX+3,y+boxH/2-1);
     pdf.setFont('helvetica','normal');pdf.setFontSize(isA5?8:9);pdf.setTextColor(71,85,105);
-    pdf.text('DNI '+(p.dni||d.dni||'s/d')+(p.coberturaHabitual?' · '+p.coberturaHabitual:'')+(afiliadoOrden406(d,p)?' · N.º de afiliado '+afiliadoOrden406(d,p):''),mX+3,y+boxH/2+3.5);
-    pdf.text(String(fmtDT406(d.fechaHora)||''),pageW-mX-3,y+boxH/2+1,{align:'right'});
+    const lineaCobertura406='DNI '+(p.dni||d.dni||'s/d')+(p.coberturaHabitual?' · '+p.coberturaHabitual:'')+(afiliadoDocumento406(d,p)?' · N.º de afiliado '+afiliadoDocumento406(d,p):'');
+    const fechaBox406=String(fmtDT406(d.fechaHora)||'');
+    // Con cobertura + afiliado largos la línea puede pisar la fecha (sobre todo en A5): se achica la letra hasta que entre.
+    const anchoMaxLinea406=(pageW-mX*2)-6-pdf.getTextWidth(fechaBox406)-4;
+    let tamLinea406=isA5?8:9;
+    while(tamLinea406>6&&pdf.getTextWidth(lineaCobertura406)>anchoMaxLinea406){tamLinea406-=0.5;pdf.setFontSize(tamLinea406);}
+    pdf.text(lineaCobertura406,mX+3,y+boxH/2+3.5);
+    pdf.setFontSize(isA5?8:9);
+    pdf.text(fechaBox406,pageW-mX-3,y+boxH/2+1,{align:'right'});
     y+=boxH+(isA5?6:9);
     pdf.setTextColor(17,24,39);pdf.setFont('helvetica','normal');pdf.setFontSize(isA5?10:11);
     const bodyW=pageW-mX*2;
@@ -12465,6 +12506,14 @@ function patientInfoTextHC(p,coverage){
   // profesional/fecha, así que un cambio de tipo, de firma o de paciente se tomaba por "mismo documento" y se reutilizaba un PDF viejo.
   // Cubre: campos del documento, firma incluida o no, paciente (id/nombre/DNI/cobertura), presentación del profesional (membrete, matrículas,
   // contacto, color) y una huella del logo y de la firma. La usan tanto el archivado como el cierre de sesión (misma función, mismo valor).
+  // Compatibilidad: agregar Clínica Médica al perfil de Rogelio NO debe cambiar la huella de sus documentos ya archivados (la huella incluye las especialidades).
+  // Para la huella se sigue leyendo exactamente lo que leía antes: el catálogo/area SIN Clínica Médica. Sólo cambia lo que se imprime, no la versión del documento.
+  function especialidadesParaHuella406(pr){
+    if(String(pr?.id||'')!=='rogelio')return (typeof specialities406==='function'?specialities406(pr):'')||'';
+    const ids=(Array.isArray(pr?.especialidadIds)?pr.especialidadIds:[]).filter(id=>id!=='clinica_medica');
+    const names=ids.map(id=>(data?.especialidades||[]).find(e=>e.id===id)?.nombre).filter(Boolean);
+    return names.length?names.join(' · '):'Cardiología';
+  }
   async function hashContenidoDocumento406(d){
     const p=patient406(d.pacienteId)||patients406().find(x=>String(x.dni||'').replace(/\D/g,'')===String(d.dni||'').replace(/\D/g,'')&&String(d.dni||'').replace(/\D/g,''))||{};
     const pr=prof406(d.profesionalId)||{};
@@ -12476,7 +12525,7 @@ function patientInfoTextHC(p,coverage){
     const payload=JSON.stringify({v:2,tipo:d.tipo||'',titulo:d.titulo||'',contenido:d.contenido||'',adicional:d.adicional||'',fechaHora:d.fechaHora||'',profesionalId:d.profesionalId||'',
       incluirFirma:d.incluirFirma!==false,
       paciente:{id:p.id||'',nombre:patientName406(p)||d.pacienteNombre||'',dni:p.dni||d.dni||'',cobertura:p.coberturaHabitual||'',...(afiliado?{afiliado}:{})},
-      prof:{marca:pr.marcaDocumento||'',nombre:pr.nombre||'',esp:(typeof specialities406==='function'?specialities406(pr):'')||'',lic,
+      prof:{marca:pr.marcaDocumento||'',nombre:pr.nombre||'',esp:especialidadesParaHuella406(pr),lic,
         tel:pr.telefonoDocumento||'',email:pr.emailDocumento||'',dir:pr.direccionDocumento||'',redes:pr.redesDocumento||'',color:pr.colorDocumento||''},
       logo:await img(getLogo406(pr)),firma:firmaOn?await img(getSignature406(pr)):''});
     return sha256Hex406(payload);
