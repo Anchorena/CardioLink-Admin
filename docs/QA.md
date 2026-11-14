@@ -105,6 +105,19 @@ Probar al menos:
 - ancho tipo iPad;
 - ancho tipo teléfono si el cambio es visual.
 
+## 11. Copias para facturación (si se toca el módulo)
+Con Secretaría asociada, Médico y Dueño/Administrador:
+- subir un PDF desde una atención de Holter/MAPA/Eco: se vinculan solos los datos
+  y la atención muestra «Copia de facturación subida»;
+- subir desde la sección sin atención;
+- filtros (mes, profesional, obra social, estado), descargar, imprimir, marcar
+  impreso, reimprimir y eliminar con confirmación;
+- Secretaría no ve copias de médicos no asociados; al desactivar la asociación
+  pierde el acceso; Médico sólo las suyas;
+- eliminar una copia no toca el informe clínico ni documentos de HC; el paciente
+  no ve nada en el portal.
+Suite estática: `node tests/copias-facturacion-v1.js`.
+
 ## Antes de commit
 Informar:
 - qué se cambió;

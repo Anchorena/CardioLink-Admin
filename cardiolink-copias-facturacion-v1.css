@@ -1,0 +1,33 @@
+/* CardioLink · Copias para facturación V1 — estilos aislados del módulo (usan las variables de tema existentes) */
+.copias-fact-head{display:flex;justify-content:space-between;gap:16px;align-items:flex-start;flex-wrap:wrap}
+.copias-fact-head h2{margin:0 0 4px}
+.copias-fact-head-acciones{display:flex;gap:8px}
+.copias-fact-filtros{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:10px;margin:14px 0 6px}
+.copias-fact-filtros label{display:block;font-size:12px;font-weight:700;color:var(--muted,#4b5563);margin-bottom:3px}
+.copias-fact-filtros input,.copias-fact-filtros select{width:100%}
+.copias-fact-resumen{margin:8px 0;font-weight:700}
+.copias-fact-resumen.error{color:#b91c1c}
+.copias-fact-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch;border:1px solid var(--line,#e5e7eb);border-radius:12px}
+.copias-fact-tabla{width:100%;border-collapse:collapse;min-width:860px}
+.copias-fact-tabla th,.copias-fact-tabla td{padding:8px 10px;text-align:left;vertical-align:top;border-bottom:1px solid var(--line,#e5e7eb);font-size:13px}
+.copias-fact-tabla th{font-size:12px;color:var(--muted,#4b5563);background:rgba(148,163,184,.1);white-space:nowrap}
+.copias-fact-tabla tbody tr:hover{background:rgba(148,163,184,.08)}
+.copias-fact-tipo{font-weight:800}
+.copias-fact-estado{display:inline-block;padding:3px 10px;border-radius:999px;font-size:12px;font-weight:800}
+.copias-fact-estado.pendiente{background:#fef3c7;color:#92400e}
+.copias-fact-estado.impreso{background:#dcfce7;color:#166534}
+body.dark .copias-fact-estado.pendiente{background:#78350f;color:#fde68a}
+body.dark .copias-fact-estado.impreso{background:#14532d;color:#bbf7d0}
+.copias-fact-acciones{display:flex;gap:6px;flex-wrap:wrap}
+.copias-fact-acciones button,.copias-fact-listado{min-height:34px;padding:4px 10px;font-size:12px}
+.copias-fact-chip{display:inline-block;margin-top:4px;padding:3px 10px;border-radius:999px;font-size:11.5px;font-weight:800;background:#dbeafe;color:#1e40af}
+body.dark .copias-fact-chip{background:#1e3a8a;color:#dbeafe}
+.copias-fact-bloque{margin-top:14px;padding-top:10px;border-top:1px solid var(--line,#e5e7eb)}
+.copias-fact-bloque h3{margin:0 0 8px}
+.copias-fact-bloque-fila{display:flex;gap:10px;align-items:center;flex-wrap:wrap}
+.copias-fact-error{color:#b91c1c;font-weight:700;margin:0}
+.copias-fact-sugerencias{display:grid;gap:6px;margin-top:6px}
+.copias-fact-sugerencia{text-align:left;padding:8px 10px;font-size:13px;font-weight:500;border:1px solid var(--line,#e5e7eb);border-radius:10px;background:var(--card,#fff);color:var(--text,#111827)}
+.copias-fact-vinculo{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px;padding:8px 10px;border-radius:10px;background:rgba(21,101,192,.08);font-size:13px}
+.copias-fact-vinculo[hidden],.copias-fact-error[hidden]{display:none}
+@media print{#copiasFacturacion .no-print,#copiasFacturacion .copias-fact-head-acciones,#copiasFacturacion .copias-fact-filtros{display:none!important}}

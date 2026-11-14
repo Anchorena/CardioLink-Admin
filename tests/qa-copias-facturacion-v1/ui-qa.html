@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>QA UI · Copias para facturación V1</title>
+<link rel="stylesheet" href="../../styles.css"><link rel="stylesheet" href="../../cardiolink-copias-facturacion-v1.css">
+<style>#qaLog{white-space:pre-wrap;font:12px/1.5 ui-monospace,monospace;padding:8px;background:#0b1220;color:#e5e7eb;margin:8px}.qok{color:#86efac}.qfail{color:#fca5a5}</style></head>
+<body>
+<aside class="sidebar"><div class="nav-group-label">Administrativo</div>
+  <button class="nav" data-section="listado">Listado</button>
+  <button class="nav" data-section="copiasFacturacion">Copias para facturación</button></aside>
+<main class="main">
+  <header class="topbar"><h1 id="tituloBienvenida"></h1><p id="subtituloPerfil"></p></header>
+  <section id="listado" class="section"><div class="card"><table><tbody id="tablaAtenciones"></tbody></table></div></section>
+  <section id="copiasFacturacion" class="section"></section>
+  <div id="agendaModal" class="modal-backdrop hidden"><div class="modal agenda-modal-card"><h2 id="agendaModalTitulo"></h2><div id="agendaModalBody"></div></div></div>
+</main>
+<pre id="qaLog"></pre>
+
+<script>
+// ===== Globales que app.js define (let de nivel superior: NO son propiedades de window; funciones declaradas: sí) =====
+let rolActual = 'secretaria', profActual = '', uidActual = 'uid-sec';
+let usuarioSupabase = { id: 'uid-sec' };
+let data = { profesionales: [{ id: 'general', nombre: 'General' }, { id: 'rogelio', nombre: 'Rogelio' }, { id: 'drago', nombre: 'Drago' }, { id: 'matias', nombre: 'Matías' }] };
+let atenciones = [
+  { id: 101, pacienteId: 'pac_1', paciente: 'Perez Juan', dni: '30111222', fecha: '2026-11-10', prestacion: 'Holter 24 hs', obraSocial: 'OSDE', profesionalId: 'rogelio', profesional: 'Rogelio' },
+  { id: 102, pacienteId: '', paciente: 'Gomez Ana', dni: '25999888', fecha: '2026-11-11', prestacion: 'MAPA', obraSocial: 'PAMI', profesionalId: 'rogelio', profesional: 'Rogelio' },
+  { id: 103, pacienteId: 'pac_3', paciente: 'Lopez Luis', dni: '20111000', fecha: '2026-11-12', prestacion: 'Consulta cardiológica', obraSocial: 'OSDE', profesionalId: 'rogelio', profesional: 'Rogelio' },
+  { id: 104, pacienteId: 'pac_4', paciente: 'Ruiz Eva', dni: '28123123', fecha: '2026-11-12', prestacion: 'Ecocardiograma', obraSocial: 'Swiss', profesionalId: 'drago', profesional: 'Drago' }
+];
+function esMatiasDuenio() { return rolActual === 'owner'; }
+function esAdminComun() { return rolActual === 'admin'; }
+function esMedico() { return rolActual === 'medico'; }
+function esSecretaria() { return rolActual === 'secretaria'; }
+function profesionalIdUsuarioActual() { return profActual; }
+function tipoPrest(p) { const s = (p || '').toLowerCase(); if (s.includes('consulta')) return 'CONSULTA'; if (s.includes('holter')) return 'HOLTER'; if (s.includes('mapa')) return 'MAPA'; if (s.includes('eco')) return 'ECO'; return 'ESTUDIO'; }
+function atencionesOperativas(d) { return d; }
+function pacienteIdPorDni(d) { return d === '25999888' ? 'pac_2' : ''; }
+function seccionPermitida(s) { if (s === 'listado') return true; return false; }
+function aplicarPermisosUI() { document.querySelectorAll('.nav').forEach((b) => b.classList.toggle('hidden-permission', !seccionPermitida(b.dataset.section))); }
+function showSection(id) {
+  if (!seccionPermitida(id)) { alert('Tu perfil no tiene permiso para abrir esta sección.'); return; }
+  aplicarPermisosUI();
+  document.querySelectorAll('.section').forEach((s) => s.classList.remove('visible'));
+  document.getElementById(id)?.classList.add('visible');
+}
+function abrirAgendaModal(id) {
+  const a = atenciones.find((x) => String(x.id) === String(id)); const body = document.getElementById('agendaModalBody');
+  document.getElementById('agendaModalTitulo').textContent = a.paciente; body.innerHTML = '<div class="agenda-modal-grid"><strong>' + a.prestacion + '</strong></div><div class="agenda-actions modal-actions"><button data-action="listado-editar" data-id="' + a.id + '">Editar atención</button></div>';
+  document.getElementById('agendaModal').classList.remove('hidden');
+}
+function renderTabla() {
+  document.getElementById('tablaAtenciones').innerHTML = atenciones.map((a) => '<tr><td>' + a.fecha + '</td><td><strong>' + a.paciente + '</strong></td><td>' + a.prestacion + '</td><td class="estado-cell"><span class="badge ok">OK</span></td><td class="no-print actions-cell"><div class="edit-actions"><button type="button" data-action="listado-editar" data-id="' + a.id + '">Editar</button></div></td></tr>').join('');
+}
+window.renderTabla = renderTabla;   // igual que app.js:4247
+
+// ===== Cliente Supabase en memoria (sólo para probar la UI; la RLS real se probó aparte contra PostgreSQL) =====
+const store = { copias: [], files: new Map(), calls: [] };
+let seq = 0;
+const sinPermisoDelete = new Set();
+function fakeClient() {
+  const mk = (table) => {
+    const st = { table, op: 'select', filters: [], payload: null, sel: false, single: false, lim: null, order: [] };
+    const b = {
+      select(c) { st.sel = true; return b; }, order(c, o) { st.order.push([c, o && o.ascending !== false]); return b; }, limit(n) { st.lim = n; return b; },
+      eq(c, v) { st.filters.push((r) => String(r[c]) === String(v)); return b; }, gte(c, v) { st.filters.push((r) => String(r[c]) >= v); return b; }, lte(c, v) { st.filters.push((r) => String(r[c]) <= v); return b; },
+      in(c, vs) { st.filters.push((r) => vs.map(String).includes(String(r[c]))); return b; }, single() { st.single = true; return b; },
+      insert(o) { st.op = 'insert'; st.payload = o; return b; }, delete() { st.op = 'delete'; return b; },
+      then(res, rej) { return Promise.resolve().then(() => run()).then(res, rej); }
+    };
+    const vis = (r) => (rolActual === 'owner' || rolActual === 'admin') ? true : rolActual === 'medico' ? r.professional_id === profActual : r.professional_id === 'rogelio';
+    function run() {
+      store.calls.push(st.op + ':' + table);
+      if (st.op === 'insert') {
+        if (window.__insertError) return { data: null, error: { code: '42501', message: 'new row violates row-level security policy' } };
+        if (window.__noSync && st.payload.attention_id) return { data: null, error: { code: 'CF001', message: 'La atención vinculada no existe en el servidor (puede no estar sincronizada todavía): cargá la copia sin vincular a la atención' } };
+        const row = Object.assign({ id: 'c' + (++seq), print_status: 'pendiente', print_count: 0, printed_at: null, uploaded_by: uidActual, created_at: new Date().toISOString() }, st.payload);
+        store.copias.push(row); return { data: st.single ? row : [row], error: null };
+      }
+      let rows = store.copias.filter(vis).filter((r) => st.filters.every((f) => f(r)));
+      if (st.op === 'delete') {
+        rows = rows.filter((r) => !sinPermisoDelete.has(r.id));
+        store.copias = store.copias.filter((r) => !rows.includes(r)); return { data: rows.map((r) => ({ id: r.id })), error: null };
+      }
+      st.order.slice().reverse().forEach(([c, asc]) => rows.sort((x, y) => (String(x[c]) < String(y[c]) ? -1 : 1) * (asc ? 1 : -1)));
+      if (st.lim) rows = rows.slice(0, st.lim);
+      if (st.single) return rows.length ? { data: rows[0], error: null } : { data: null, error: { message: 'no rows' } };
+      return { data: rows, error: null };
+    }
+    return b;
+  };
+  return {
+    from: mk,
+    storage: { from: (bucket) => ({
+      upload: async (p, f) => { if (window.__uploadError) return { error: { message: 'Bucket not found' } }; store.files.set(bucket + '/' + p, f); return { error: null }; },
+      download: async (p) => { const f = store.files.get(bucket + '/' + p); return f ? { data: f, error: null } : { data: null, error: { message: 'Object not found' } }; },
+      remove: async (ps) => { if (window.__removeFail) return { data: null, error: { message: 'network error' } }; const out = ps.filter((p) => store.files.delete(bucket + '/' + p)).map((name) => ({ name })); return { data: out, error: null }; }
+    }) },
+    rpc: async (name, args) => {
+      store.calls.push('rpc:' + name + ':' + (args && args.p_accion || ''));
+      if (name === 'cardiolink_profesionales_autorizados_secretaria_v1') return { data: ['rogelio'], error: null };
+      if (name === 'cardiolink_copia_facturacion_puede_eliminar_v1') {
+        const okp = rolActual === 'owner' || rolActual === 'admin' || (rolActual === 'medico' && args.p_prof === profActual) || (rolActual === 'secretaria' && args.p_prof === 'rogelio' && args.p_uploaded_by === uidActual);
+        return { data: okp, error: null };
+      }
+      if (name === 'cardiolink_copia_facturacion_impresion_v1') {
+        const r = store.copias.find((x) => x.id === args.p_id); if (!r) return { data: null, error: { code: '42501', message: 'Copia inexistente o sin permiso' } };
+        if (args.p_accion === 'marcar_impreso') { if (r.print_status === 'pendiente') { r.print_status = 'impreso'; r.print_count = Math.max(1, r.print_count); r.printed_at = new Date().toISOString(); } }
+        else { r.print_status = 'impreso'; r.print_count += 1; r.printed_at = new Date().toISOString(); }
+        return { data: { ok: true, id: r.id, print_status: r.print_status, print_count: r.print_count }, error: null };
+      }
+      return { data: null, error: { message: 'rpc desconocida' } };
+    }
+  };
+}
+let supabaseClient = fakeClient();
+</script>
+<script src="../../cardiolink-copias-facturacion-v1.js"></script>
+<script>
+// ===== Pruebas =====
+const logEl = document.getElementById('qaLog'); const R = []; window.__R = R;
+const ok = (c, n, x) => { R.push({ ok: !!c, n, x: x || '' }); logEl.innerHTML += `<span class="${c ? 'qok' : 'qfail'}">${c ? 'OK  ' : 'FALLA'}</span> ${n}${x ? ' — ' + x : ''}\n`; };
+const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+const until = async (f, ms = 3000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { try { if (f()) return true; } catch (e) {} await wait(40); } return false; };
+const $q = (s, r) => (r || document).querySelector(s);
+const $$ = (s, r) => [...(r || document).querySelectorAll(s)];
+const pdf = (n) => new File([new TextEncoder().encode('%PDF-1.4\n' + 'x'.repeat(300) + '\n%%EOF')], n || 'copia.pdf', { type: 'application/pdf' });
+function setFile(input, file) { const dt = new DataTransfer(); dt.items.add(file); input.files = dt.files; }
+let confirmas = [], respuesta = true; window.confirm = (m) => { confirmas.push(m); return respuesta; }; let alertas = []; window.alert = (m) => alertas.push(m);
+window.__printed = 0;
+Object.defineProperty(HTMLIFrameElement.prototype, 'contentWindow', { configurable: true, get() { return { focus() {}, print() { window.__printed++; } }; } });
+const API = window.CardioLinkCopiasFacturacionV1;
+
+(async () => {
+  try {
+    ok(!!API, 'módulo cargado e idempotente (una sola instancia)');
+    // ---- permisos de sección por envoltura
+    const permisos = {};
+    for (const r of ['owner', 'admin', 'medico', 'secretaria', 'otro']) { rolActual = r; permisos[r] = seccionPermitida('copiasFacturacion'); }
+    ok(JSON.stringify(permisos) === JSON.stringify({ owner: true, admin: true, medico: true, secretaria: true, otro: false }), 'seccionPermitida: owner/admin/médico/secretaría sí; otro rol no', JSON.stringify(permisos));
+    rolActual = 'secretaria'; ok(seccionPermitida('listado') === true && seccionPermitida('caja') === false, 'las demás secciones conservan su permiso original');
+    aplicarPermisosUI(); ok(!$q('.nav[data-section="copiasFacturacion"]').classList.contains('hidden-permission'), 'el botón del menú es visible para Secretaría');
+    rolActual = 'otro'; aplicarPermisosUI(); ok($q('.nav[data-section="copiasFacturacion"]').classList.contains('hidden-permission'), 'y oculto para un rol sin acceso'); rolActual = 'secretaria'; aplicarPermisosUI();
+
+    // ---- sección vacía
+    showSection('copiasFacturacion'); await until(() => $q('.copias-fact'));
+    ok(document.getElementById('tituloBienvenida').textContent === 'Copias para facturación', 'título de la sección');
+    await until(() => /0 copia/.test($q('.copias-fact-resumen').textContent));
+    ok(/0 copia\(s\)/.test($q('.copias-fact-resumen').textContent) && /No hay copias/.test($q('.copias-fact-tabla tbody').textContent), 'lista vacía con mensaje claro');
+    ok(['Mes y año', 'Profesional', 'Obra social', 'Estado'].every((t) => $$('.copias-fact-filtros label').some((l) => l.textContent === t)), 'filtros: mes y año, profesional, obra social, estado');
+
+    // ---- subir desde la sección (sin atención): validaciones
+    $q('.copias-fact-head-acciones button').click(); await until(() => $q('#copiasFactModalV1'));
+    $q('#cfSubir').click(); await wait(80);
+    ok(/Elegí el archivo PDF/.test($q('.copias-fact-error').textContent), 'valida: falta el archivo');
+    setFile($q('#cfFile'), new File([new TextEncoder().encode('hola')], 'x.txt', { type: 'text/plain' })); $q('#cfSubir').click(); await wait(80);
+    ok(/PDF válido/.test($q('.copias-fact-error').textContent), 'valida: extensión/tipo no PDF');
+    setFile($q('#cfFile'), new File([new TextEncoder().encode('NOPDF' + 'x'.repeat(200))], 'x.pdf', { type: 'application/pdf' })); $q('#cfSubir').click(); await wait(120);
+    ok(/no parece un PDF/.test($q('.copias-fact-error').textContent), 'valida: contenido que no es PDF (cabecera %PDF-)');
+    setFile($q('#cfFile'), pdf()); $q('#cfSubir').click(); await wait(80);
+    ok(/nombre del paciente/.test($q('.copias-fact-error').textContent), 'valida: falta paciente');
+    ok($$('#cfProf option').map((o) => o.value).join() === 'rogelio' && $q('#cfProf').value === 'rogelio', 'Secretaría sólo ve a su profesional autorizado (rogelio), ya preseleccionado', $$('#cfProf option').map((o) => o.value).join(','));
+
+    // ---- vincular a una atención desde el buscador
+    $q('#cfBuscar').value = 'perez'; $q('#cfBuscar').dispatchEvent(new Event('input')); await until(() => $q('.copias-fact-sugerencia'));
+    ok($$('.copias-fact-sugerencia').length === 1, 'el buscador sugiere sólo atenciones de estudio del profesional autorizado');
+    $q('.copias-fact-sugerencia').click(); await wait(60);
+    ok($q('#cfNombre').value === 'Perez Juan' && $q('#cfDni').value === '30111222' && $q('#cfTipo').value === 'Holter' && $q('#cfProf').value === 'rogelio' && $q('#cfOs').value === 'OSDE' && $q('#cfFecha').value === '2026-11-10' && $q('#cfServicio').value === 'Holter 24 hs',
+       'al elegir la atención se autocompletan paciente, DNI, tipo, profesional, obra social, fecha y prestación');
+    ok($q('#cfNombre').readOnly && !$q('.copias-fact-vinculo').hidden, 'paciente/DNI quedan bloqueados mientras está vinculada');
+    $q('#cfSubir').click(); await until(() => !$q('#copiasFactModalV1'));
+    ok(store.copias.length === 1, 'se guardó la fila');
+    const c1 = store.copias[0];
+    ok(c1.attention_id === '101' && c1.patient_id === 'pac_1' && c1.patient_dni === '30111222' && c1.professional_id === 'rogelio' && c1.service === 'Holter 24 hs' && c1.obra_social === 'OSDE' && c1.study_date === '2026-11-10' && c1.copy_type === 'Holter' && /^[0-9a-f-]{36}\.pdf$/.test(c1.storage_path) && c1.mime_type === 'application/pdf',
+       'vinculación automática: paciente, DNI, atención, profesional, prestación, obra social y fecha', JSON.stringify(c1).slice(0, 220));
+    ok(store.files.has('billing-copies/' + c1.storage_path), 'el archivo quedó en el bucket billing-copies (privado, ruta {uuid}.pdf)');
+    ok(!JSON.stringify(store.calls).includes('patient-documents') && !store.calls.some((c) => /patient_documents|communications/.test(c)), 'no toca patient-documents ni comunicaciones');
+    await until(() => /1 copia/.test($q('.copias-fact-resumen').textContent));
+    ok(/1 copia\(s\) · 1 pendiente/.test($q('.copias-fact-resumen').textContent) && /Perez Juan/.test($q('.copias-fact-tabla').textContent), 'la sección lista la copia nueva como Pendiente');
+
+    // ---- paciente sin pacienteId: se resuelve por DNI
+    $q('.copias-fact-head-acciones button').click(); await until(() => $q('#copiasFactModalV1'));
+    $q('#cfBuscar').value = '25999888'; $q('#cfBuscar').dispatchEvent(new Event('input')); await until(() => $q('.copias-fact-sugerencia')); $q('.copias-fact-sugerencia').click();
+    setFile($q('#cfFile'), pdf('mapa.pdf')); $q('#cfSubir').click(); await until(() => !$q('#copiasFactModalV1'));
+    ok(store.copias.length === 2 && store.copias[1].patient_id === 'pac_2' && store.copias[1].copy_type === 'MAPA', 'atención sin pacienteId: se resuelve por DNI (pacienteIdPorDni)');
+
+    // ---- duplicado: pregunta
+    confirmas = []; respuesta = false;
+    $q('.copias-fact-head-acciones button').click(); await until(() => $q('#copiasFactModalV1'));
+    $q('#cfBuscar').value = 'perez'; $q('#cfBuscar').dispatchEvent(new Event('input')); await until(() => $q('.copias-fact-sugerencia')); $q('.copias-fact-sugerencia').click();
+    setFile($q('#cfFile'), pdf()); $q('#cfSubir').click(); await wait(250);
+    ok(confirmas.some((m) => /ya tiene una copia de facturación de tipo Holter/.test(m)) && store.copias.length === 2 && !!$q('#copiasFactModalV1'), 'avisa si la atención ya tiene una copia del mismo tipo y respeta "Cancelar"');
+    respuesta = true; $q('#copiasFactModalV1 .hc-modal-actions .secondary').click();
+
+    // ---- error de servidor: se revierte el archivo
+    window.__insertError = true; const filesAntes = store.files.size;
+    $q('.copias-fact-head-acciones button').click(); await until(() => $q('#copiasFactModalV1'));
+    $q('#cfNombre').value = 'Manual Test'; $q('#cfDni').value = '11222333'; $q('#cfTipo').value = 'Ecocardiograma'; $q('#cfProf').value = 'rogelio'; setFile($q('#cfFile'), pdf());
+    $q('#cfSubir').click(); await until(() => /se revirtió la subida/.test($q('.copias-fact-error')?.textContent || ''));
+    ok(/no tenés permiso/.test($q('.copias-fact-error').textContent) && store.files.size === filesAntes, 'si falla el alta de la fila se elimina el archivo huérfano y se explica el permiso');
+    window.__insertError = false; window.__uploadError = true; $q('#cfSubir').click(); await until(() => /No se pudo subir/.test($q('.copias-fact-error').textContent));
+    ok(/No se pudo subir el archivo/.test($q('.copias-fact-error').textContent), 'error de subida a Storage informado');
+    window.__uploadError = false; $q('#cfSubir').click(); await until(() => !$q('#copiasFactModalV1'));
+    ok(store.copias.length === 3 && store.copias[2].attention_id === null && store.copias[2].copy_type === 'Ecocardiograma' && store.copias[2].patient_id === 'legacy_11222333', 'carga manual sin atención: attention_id nulo y paciente legacy_<DNI>');
+
+    // ---- integridad del vínculo con la atención y huérfanos
+    window.__noSync = true; const n0 = store.copias.length, f0 = store.files.size;
+    $q('.copias-fact-head-acciones button').click(); await until(() => $q('#copiasFactModalV1'));
+    $q('#cfBuscar').value = 'perez'; $q('#cfBuscar').dispatchEvent(new Event('input')); await until(() => $q('.copias-fact-sugerencia')); $q('.copias-fact-sugerencia').click();
+    setFile($q('#cfFile'), pdf('sinsync.pdf')); $q('#cfSubir').click(); await until(() => !$q('#cfSinVincular').hidden);
+    ok(/todavía no está sincronizada/.test($q('.copias-fact-error').textContent) && store.copias.length === n0 && store.files.size === f0, 'atención no sincronizada: mensaje claro y NO quedan archivo ni fila huérfanos');
+    $q('#cfSinVincular').click(); await until(() => !$q('#copiasFactModalV1'));
+    const sv = store.copias[store.copias.length - 1];
+    ok(store.copias.length === n0 + 1 && sv.attention_id === null && sv.patient_dni === '30111222' && store.files.size === f0 + 1, 'se carga explícitamente SIN atención vinculada (attention_id nulo) conservando paciente y DNI');
+    store.files.delete('billing-copies/' + sv.storage_path); store.copias.pop();   // se retira para no alterar los conteos de las pruebas siguientes
+    window.__noSync = false;
+    window.__insertError = true; window.__removeFail = true; const n1 = store.copias.length;
+    $q('.copias-fact-head-acciones button').click(); await until(() => $q('#copiasFactModalV1'));
+    $q('#cfNombre').value = 'Huerfano Test'; $q('#cfDni').value = '10101010'; $q('#cfTipo').value = 'MAPA'; $q('#cfProf').value = 'rogelio'; setFile($q('#cfFile'), pdf('h.pdf'));
+    $q('#cfSubir').click(); await until(() => /limpieza/.test($q('.copias-fact-error')?.textContent || ''));
+    ok(/TAMBIÉN falló la limpieza/.test($q('.copias-fact-error').textContent) && store.copias.length === n1, 'si falla el alta y también la limpieza del archivo, se avisa explícitamente (para que el administrador lo retire)');
+    window.__insertError = false; window.__removeFail = false; $q('#copiasFactModalV1 .hc-modal-actions .secondary').click();
+    await API.recargar(); await until(() => !!$q('.copias-fact-tabla'));
+    {
+      const ajena = { id: 'zz', professional_id: 'rogelio', uploaded_by: 'otro-usuario', storage_path: 'x' };
+      const nF = store.files.size; const e = await API._test.eliminarCopia(ajena).then(() => null, (x) => x);
+      ok(e && e.code === '42501' && store.files.size === nF, 'eliminar sin permiso se corta ANTES de tocar el archivo (no queda fila sin archivo)');
+    }
+
+    // ---- acciones
+    await API.recargar(); await until(() => $$('.copias-fact-tabla tbody tr').length === 3);
+    const fila = (n) => $$('.copias-fact-tabla tbody tr').find((tr) => tr.textContent.includes(n));
+    const btn = (tr, t) => $$('button', tr).find((b) => b.textContent === t);
+    ok(!!btn(fila('Perez'), 'Descargar') && !!btn(fila('Perez'), 'Imprimir') && !!btn(fila('Perez'), 'Marcar impreso') && !!btn(fila('Perez'), 'Eliminar'), 'una copia pendiente muestra Descargar, Imprimir, Marcar impreso y Eliminar (Secretaría la subió)');
+    let descargado = null; const origClick = HTMLAnchorElement.prototype.click; HTMLAnchorElement.prototype.click = function () { descargado = this.download; };
+    btn(fila('Perez'), 'Descargar').click(); await until(() => descargado);
+    HTMLAnchorElement.prototype.click = origClick;
+    ok(descargado === 'Copia_facturacion_holter_perez_juan_2026-11-10.pdf', 'descarga individual con nombre claro', descargado);
+    btn(fila('Perez'), 'Imprimir').click(); await until(() => window.__printed === 1, 4000);
+    ok(window.__printed === 1 && !store.calls.some((c) => c.startsWith('rpc:cardiolink_copia_facturacion_impresion_v1')), 'Imprimir abre el diálogo de impresión y NO marca como impreso por sí solo');
+    btn(fila('Perez'), 'Marcar impreso').click(); await until(() => /Impreso/.test(fila('Perez')?.textContent || ''));
+    ok(/Impreso/.test(fila('Perez').textContent) && !btn(fila('Perez'), 'Marcar impreso') && !!btn(fila('Perez'), 'Reimprimir'), 'Marcar impreso → estado Impreso; aparece Reimprimir');
+    btn(fila('Perez'), 'Reimprimir').click(); await until(() => /×2/.test(fila('Perez')?.textContent || ''), 4000);
+    ok(window.__printed === 2 && /Impreso ×2/.test(fila('Perez').textContent), 'Reimprimir imprime y registra la reimpresión (×2)');
+    ok(/1 pendiente|2 pendiente/.test($q('.copias-fact-resumen').textContent), 'el resumen cuenta pendientes', $q('.copias-fact-resumen').textContent);
+
+    // ---- filtros
+    const sel = (id, v) => { const e = document.getElementById(id); e.value = v; e.dispatchEvent(new Event('change')); };
+    sel('cfFiltroEstado', 'impreso'); await until(() => $$('.copias-fact-tabla tbody tr').length === 1);
+    ok($$('.copias-fact-tabla tbody tr').length === 1 && /Perez/.test($q('.copias-fact-tabla tbody').textContent), 'filtro Estado = impresos');
+    sel('cfFiltroEstado', ''); await until(() => $$('.copias-fact-tabla tbody tr').length === 3);
+    sel('cfFiltroOs', 'PAMI'); await until(() => $$('.copias-fact-tabla tbody tr').length === 1);
+    ok(/Gomez/.test($q('.copias-fact-tabla tbody').textContent), 'filtro Obra social = PAMI'); sel('cfFiltroOs', ''); await until(() => $$('.copias-fact-tabla tbody tr').length === 3);
+    sel('cfFiltroMes', '2026-10'); document.getElementById('cfFiltroMes').value = '2026-10'; document.getElementById('cfFiltroMes').dispatchEvent(new Event('change')); await until(() => /No hay copias/.test($q('.copias-fact-tabla tbody').textContent));
+    ok(/No hay copias/.test($q('.copias-fact-tabla tbody').textContent), 'filtro Mes y año: otro mes no muestra copias');
+    document.getElementById('cfFiltroMes').value = '2026-11'; document.getElementById('cfFiltroMes').dispatchEvent(new Event('change')); await until(() => $$('.copias-fact-tabla tbody tr').length === 3);
+    const tx = document.getElementById('cfFiltroTexto'); tx.value = '2599'; tx.dispatchEvent(new Event('input')); await wait(400);
+    ok($$('.copias-fact-tabla tbody tr').length === 1 && /Gomez/.test($q('.copias-fact-tabla tbody').textContent), 'búsqueda por DNI'); document.getElementById('cfFiltroTexto').value = ''; document.getElementById('cfFiltroTexto').dispatchEvent(new Event('input')); await wait(400);
+    ok(await until(() => $$('#cfFiltroProf option').length >= 2), 'filtro Profesional poblado');
+
+    // ---- atención: agenda
+    rolActual = 'secretaria'; await API.recargar();
+    abrirAgendaModal(101); await until(() => $q('.copias-fact-bloque .copias-fact-chip'));
+    ok(/Copia de facturación subida/.test($q('#agendaModalBody .copias-fact-bloque').textContent), 'la ficha del turno muestra «Copia de facturación subida»', $q('.copias-fact-bloque').textContent);
+    abrirAgendaModal(103); await wait(300); ok(!$q('#agendaModalBody .copias-fact-bloque'), 'una consulta (no estudio) no muestra el bloque');
+    abrirAgendaModal(104); await wait(400); ok(!$q('#agendaModalBody .copias-fact-bloque'), 'Secretaría no ve el bloque para un profesional no asociado (drago)');
+    abrirAgendaModal(102); await until(() => $q('.copias-fact-bloque'));
+    ok(/Sin copia de facturación cargada/.test($q('.copias-fact-bloque').textContent) === false, 'MAPA de Gomez ya tiene copia (cargada antes)');
+    // subir desde la atención:
+    { const gm = store.copias.find((c) => c.attention_id === '102'); store.files.delete('billing-copies/' + gm.storage_path); store.copias = store.copias.filter((c) => c !== gm); } await API.recargar();
+    abrirAgendaModal(102); await until(() => /Sin copia/.test($q('.copias-fact-bloque')?.textContent || ''));
+    $$('.copias-fact-bloque button')[0].click(); await until(() => $q('#copiasFactModalV1'));
+    ok($q('#cfNombre').value === 'Gomez Ana' && $q('#cfTipo').value === 'MAPA', 'subir desde la atención abre el formulario ya vinculado');
+    setFile($q('#cfFile'), pdf('m.pdf')); $q('#cfSubir').click(); await until(() => !$q('#copiasFactModalV1'));
+    await until(() => /Copia de facturación subida/.test($q('.copias-fact-bloque')?.textContent || ''));
+    ok(/Copia de facturación subida/.test($q('.copias-fact-bloque').textContent), 'al terminar, el bloque de la atención se actualiza solo');
+
+    // ---- atención: listado
+    renderTabla(); await until(() => $q('#tablaAtenciones .copias-fact-chip'), 4000);
+    const filaLista = (n) => $$('#tablaAtenciones tr').find((tr) => tr.textContent.includes(n));
+    ok(/Copia de facturación subida/.test(filaLista('Perez').textContent) && /Copia de facturación subida/.test(filaLista('Gomez').textContent), 'el listado marca las atenciones con copia');
+    ok(!/Copia de facturación/.test(filaLista('Lopez').textContent) && !/Copia fact/.test(filaLista('Ruiz').textContent), 'sin botón ni marca en consultas ni en profesionales no autorizados');
+    ok(!!$$('button', filaLista('Perez')).find((b) => /Copia fact/.test(b.textContent)), 'botón «Copia fact.» por atención de estudio');
+    ok($$('.copias-fact-listado', filaLista('Perez')).length === 2, 'sin duplicar al re-renderizar', String($$('.copias-fact-listado', filaLista('Perez')).length));
+    renderTabla(); await wait(500); ok($$('.copias-fact-listado', filaLista('Perez')).length === 2, 're-render no duplica marcas ni botones');
+
+    // ---- eliminar
+    await API.recargar(); await until(() => $$('.copias-fact-tabla tbody tr').length === 3);
+    const subidasPorOtro = store.copias.find((c) => c.copy_type === 'Ecocardiograma'); subidasPorOtro.uploaded_by = 'uid-medico';
+    await API.recargar(); await until(() => $$('.copias-fact-tabla tbody tr').length === 3);
+    ok(!btn(fila('Manual Test'), 'Eliminar') && !!btn(fila('Perez'), 'Eliminar'), 'Secretaría NO ve Eliminar en lo que subió otro usuario');
+    confirmas = []; respuesta = false; btn(fila('Perez'), 'Eliminar').click(); await wait(250);
+    ok(confirmas.length === 1 && /Se elimina SÓLO esta copia/.test(confirmas[0]) && /informe clínico/.test(confirmas[0]) && store.copias.length === 3, 'Eliminar pide confirmación explícita y, si se cancela, no borra nada');
+    respuesta = true; const totalFiles = store.files.size; btn(fila('Perez'), 'Eliminar').click(); await until(() => store.copias.length === 2);
+    await until(() => !fila('Perez'));
+    ok(store.copias.length === 2 && store.files.size === totalFiles - 1 && !fila('Perez'), 'confirmado: se elimina el archivo y la fila; desaparece de la lista');
+    const idx = store.calls.indexOf('delete:cardiolink_copias_facturacion'); ok(idx > -1, 'se ejecutó la baja de la fila');
+    sinPermisoDelete.add(store.copias[0].id); store.copias[0].uploaded_by = 'uid-sec'; await API.recargar(); await until(() => $$('.copias-fact-tabla tbody tr').length === 2);
+    const prim = fila(store.copias[0].patient_name); alertas = []; btn(prim, 'Eliminar').click(); await until(() => alertas.length);
+    ok(/no tenés permiso|sin permiso/i.test(alertas[0]) && store.copias.length === 2, 'si el servidor no elimina la fila, se informa (no se muestra como borrada)', alertas[0]);
+
+    // ---- médico y owner
+    rolActual = 'medico'; profActual = 'rogelio'; uidActual = 'uid-med'; usuarioSupabase = { id: 'uid-med' }; aplicarPermisosUI(); await API.recargar();
+    ok(!!$q('.nav[data-section="copiasFacturacion"]') && seccionPermitida('copiasFacturacion'), 'Médico accede a la sección');
+    ok($$('.copias-fact-tabla tbody tr').length === 2, 'Médico ve las de su profesional', String($$('.copias-fact-tabla tbody tr').length));
+    $q('.copias-fact-head-acciones button').click(); await until(() => $q('#copiasFactModalV1'));
+    ok($$('#cfProf option').map((o) => o.value).join() === 'rogelio', 'Médico sólo puede cargar para sí mismo (profesional preseleccionado)', $$('#cfProf option').map((o) => o.value).join());
+    $q('#copiasFactModalV1 .hc-modal-actions .secondary').click();
+    ok(!!btn($$('.copias-fact-tabla tbody tr')[0], 'Eliminar'), 'Médico puede eliminar las de su profesional');
+    rolActual = 'owner'; uidActual = 'uid-own'; usuarioSupabase = { id: 'uid-own' }; await API.recargar(); abrirAgendaModal(104); await until(() => $q('.copias-fact-bloque'));
+    ok(!!$q('.copias-fact-bloque'), 'Owner ve el bloque en la atención de cualquier profesional');
+    ok($$('.copias-fact-tabla tbody tr').every((tr) => !!btn(tr, 'Eliminar')), 'Owner puede eliminar cualquiera');
+    $q('.copias-fact-head-acciones button').click(); await until(() => $q('#copiasFactModalV1'));
+    ok($$('#cfProf option').length === 4, 'Owner elige entre todos los profesionales (sin "general")', String($$('#cfProf option').length)); $q('#copiasFactModalV1 .hc-modal-actions .secondary').click();
+
+    { const ext = { id: 105, pacienteId: 'pac_5', paciente: 'Ext Prof', dni: '27000111', fecha: '2026-11-12', prestacion: 'MAPA', obraSocial: 'OSDE', profesionalId: 'prof_fuera_de_config', profesional: 'Médico Externo' };
+      await API.abrirModalSubir({ atencion: ext }); await until(() => $q('#copiasFactModalV1'));
+      ok($q('#cfProf').value === 'prof_fuera_de_config' && /Médico Externo/.test($q('#cfProf').selectedOptions[0].text), 'Owner: si el profesional de la atención no está en la configuración local, se ofrece y queda preseleccionado'); $q('#copiasFactModalV1 .hc-modal-actions .secondary').click(); }
+
+    // ---- sin errores no controlados
+    ok(window.__errores === 0, 'sin errores de JavaScript no controlados durante toda la sesión', String(window.__errores));
+  } catch (e) { ok(false, 'EXCEPCIÓN GENERAL', e.stack || e.message); }
+  const f = R.filter((r) => !r.ok).length; logEl.innerHTML += `\n<b>${R.length - f}/${R.length} OK · ${f} falla(s)</b>`; window.__done = true;
+})();
+window.__errores = 0; window.addEventListener('error', (e) => { window.__errores++; logEl.innerHTML += 'ERROR JS: ' + e.message + '\n'; });
+window.addEventListener('unhandledrejection', (e) => { window.__errores++; logEl.innerHTML += 'REJECTION: ' + (e.reason && e.reason.message || e.reason) + '\n'; });
+</script></body></html>

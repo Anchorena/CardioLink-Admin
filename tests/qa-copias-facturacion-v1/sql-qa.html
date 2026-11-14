@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>QA SQL · Copias para facturación V1</title>
+<style>body{font:13px/1.5 system-ui;margin:16px}pre{white-space:pre-wrap}.ok{color:#166534}.fail{color:#b91c1c;font-weight:700}</style></head>
+<body><h2>QA SQL · Copias para facturación V1 (PostgreSQL real vía PGlite)</h2><pre id="out">cargando…</pre>
+<script type="module">
+import { PGlite } from 'https://cdn.jsdelivr.net/npm/@electric-sql/pglite@0.2.17/dist/index.js';
+const out = document.getElementById('out');
+const results = []; window.__results = results; window.__done = false;
+const log = (ok, name, extra) => { results.push({ ok, name, extra: extra || '' }); out.innerHTML += `\n<span class="${ok ? 'ok' : 'fail'}">${ok ? 'OK  ' : 'FALLA'}</span> ${name}${extra ? ' — ' + extra : ''}`; };
+const U = { O: '00000000-0000-0000-0000-0000000000a1', A: '00000000-0000-0000-0000-0000000000a2', M1: '00000000-0000-0000-0000-0000000000b1', M2: '00000000-0000-0000-0000-0000000000b2',
+            S1: '00000000-0000-0000-0000-0000000000c1', S2: '00000000-0000-0000-0000-0000000000c2', D1: '00000000-0000-0000-0000-0000000000d1' };
+const P = (n) => { const x = String(n).repeat(32).slice(0, 32); return `${x.slice(0, 8)}-${x.slice(8, 12)}-4${x.slice(13, 16)}-8${x.slice(17, 20)}-${x.slice(20, 32)}.pdf`; };   // uuid en minúsculas a partir de 1+ caracteres hex
+let db;
+async function sql(file) { return (await fetch(file + '?' + Date.now())).text(); }
+async function as(uid, fn, role = 'authenticated') {
+  await db.exec(`reset role; select set_config('request.jwt.claims', '${uid ? JSON.stringify({ sub: uid, role }) : ''}', false); set role ${role};`);
+  try { return await fn(); } finally { await db.exec('reset role; select set_config(\'request.jwt.claims\', \'\', false);'); }
+}
+async function err(fn) { try { await fn(); return null; } catch (e) { try { await db.exec('rollback'); } catch (e2) {} return String(e.message || e); } }
+const q = (s, p) => db.query(s, p).then((r) => r.rows);
+async function t(name, fn) { try { const r = await fn(); if (r === false) log(false, name); else log(true, name, typeof r === 'string' ? r : ''); } catch (e) { log(false, name, 'EXCEPCIÓN: ' + (e.message || e)); } }
+const expectErr = (e, re) => { if (!e) throw new Error('se esperaba un error y no ocurrió'); if (re && !re.test(e)) throw new Error('error distinto: ' + e); return e.slice(0, 90); };
+const subir = (uid, name) => as(uid, () => db.query(`insert into storage.objects(bucket_id,name,owner) values ('billing-copies',$1,$2)`, [name, uid]));
+const fila = (over) => Object.assign({ copy_type: 'Holter', patient_id: 'pac1', patient_name: 'Perez Juan', patient_dni: '30111222', attention_id: null, professional_id: 'rogelio',
+  professional_name: 'Rogelio', service: 'Holter 24 hs', obra_social: 'OSDE', study_date: '2026-11-10', storage_path: P(1), original_filename: 'x.pdf', mime_type: 'application/pdf', size_bytes: 1234 }, over || {});
+const ins = (uid, f) => as(uid, () => db.query(`insert into public.cardiolink_copias_facturacion (${Object.keys(f).join(',')}) values (${Object.keys(f).map((_, i) => '$' + (i + 1)).join(',')}) returning id,uploaded_by,print_status,print_count,printed_at`, Object.values(f)).then((r) => r.rows[0]));
+const vis = (uid) => as(uid, () => q('select id from public.cardiolink_copias_facturacion order by id').then((r) => r.length));
+const visObj = (uid, name) => as(uid, () => q(`select name from storage.objects where bucket_id='billing-copies' and name=$1`, [name]).then((r) => r.length));
+
+try {
+  db = new PGlite();
+  await db.exec(await sql('stubs.sql'));
+  const APPLY = await sql('../../docs/propuestas/pending_review_copias_facturacion_v1.sql'), ROLLBACK = await sql('../../docs/propuestas/pending_review_copias_facturacion_v1_rollback.sql');
+
+  await t('00 aplicar el SQL completo (precondiciones + postcondiciones) sobre estado limpio', async () => { await db.exec(APPLY); });
+  await t('01 re-aplicar es rechazado ("ya está aplicado")', async () => expectErr(await err(() => db.exec(APPLY)), /ya está aplicado/));
+
+  // ---- altas
+  let f1, f2;
+  await subir(U.S1, P(1)); await subir(U.S1, P(2)); await subir(U.S2, P(3)); await subir(U.M1, P(4)); await subir(U.M2, P(5)); await subir(U.O, P(6)); await subir(U.M1, P(7));
+  await t('02 Secretaría asociada sube a billing-copies y da de alta la fila para su médico; el servidor fija autor y estado (aunque el cliente mande otros)', async () => {
+    f1 = await ins(U.S1, fila({ uploaded_by: U.O, print_status: 'impreso', print_count: 9, printed_at: '2026-01-01', printed_by: U.O }));
+    if (f1.uploaded_by !== U.S1 || f1.print_status !== 'pendiente' || f1.print_count !== 0 || f1.printed_at) throw new Error(JSON.stringify(f1));
+  });
+  await t('03 Secretaría NO puede dar de alta una copia para un médico con el que no está asociada', async () => expectErr(await err(() => ins(U.S1, fila({ storage_path: P(2), professional_id: 'drago' }))), /row-level security/));
+  await t('04 Secretaría sin asociaciones NO puede dar de alta (aunque suba el archivo)', async () => expectErr(await err(() => ins(U.S2, fila({ storage_path: P(3) }))), /row-level security/));
+  await t('05 no se puede apuntar a un archivo de OTRO usuario (path ajeno)', async () => expectErr(await err(() => ins(U.S1, fila({ storage_path: P(3) }))), /row-level security/));
+  await t('06 no se puede apuntar a un archivo inexistente', async () => expectErr(await err(() => ins(U.S1, fila({ storage_path: P(8) }))), /row-level security/));
+  await t('07 un archivo subido hace más de 1 hora ya no es asignable', async () => {
+    await db.exec(`insert into storage.objects(bucket_id,name,owner,created_at) values ('billing-copies','${P(9)}','${U.S1}', now() - interval '2 hours')`);
+    return expectErr(await err(() => ins(U.S1, fila({ storage_path: P(9) }))), /row-level security/);
+  });
+  await t('08 la ruta debe ser "{uuid}.pdf" (constraint en tabla y política de Storage)', async () => {
+    const e1 = await err(() => ins(U.O, fila({ storage_path: 'carpeta/x.pdf' })));
+    const e2 = await err(() => as(U.S1, () => db.query(`insert into storage.objects(bucket_id,name,owner) values ('billing-copies','dato personal.pdf',$1)`, [U.S1])));
+    expectErr(e1); return expectErr(e2, /row-level security/);
+  });
+  await t('09 Médico da de alta para SU profesional y no para otro', async () => {
+    await ins(U.M1, fila({ storage_path: P(4), patient_name: 'Gomez Ana' }));
+    return expectErr(await err(() => ins(U.M1, fila({ storage_path: P(7), professional_id: 'drago' }))), /row-level security/);
+  });
+  await t('10 otro médico (drago) da de alta para sí; owner da de alta para cualquiera', async () => { await ins(U.M2, fila({ storage_path: P(5), professional_id: 'drago', patient_name: 'Lopez Luis' })); await ins(U.O, fila({ storage_path: P(6), professional_id: 'matias', patient_name: 'Ruiz Eva' })); });
+  await t('11 constraints: tipo inválido / mime no PDF / tamaño 0 y >10MB / paciente vacío', async () => {
+    for (const [i, over] of [{ copy_type: 'ECG' }, { mime_type: 'image/png' }, { size_bytes: 0 }, { size_bytes: 10485761 }, { patient_name: '  ' }].entries()) {
+      await subir(U.O, P('a')); // reutiliza el mismo path: si el INSERT de fila falla no queda fila
+      expectErr(await err(() => ins(U.O, fila(Object.assign({ storage_path: P('a'), professional_id: 'matias' }, over)))));
+      await db.exec(`delete from storage.objects where name='${P('a')}'`);
+    }
+  });
+
+  // ---- vínculo con la atención (integridad)
+  await t('11b atención vinculada correcta (mismo paciente y profesional) se acepta; también por DNI si pacienteId no coincide o está vacío; "" se guarda como NULL', async () => {
+    for (const [n, att, pid] of [['f', '201', 'pac1'], ['0', '203', 'pacZ']]) { await subir(U.O, P(n)); const r = await ins(U.O, fila({ storage_path: P(n), attention_id: att, patient_id: pid })); if (!r.id) throw new Error('sin id'); }
+    await subir(U.O, P('ab')); await ins(U.O, fila({ storage_path: P('ab'), attention_id: '   ' }));
+    const r = await q(`select attention_id from public.cardiolink_copias_facturacion where storage_path='${P('ab')}'`); if (r[0].attention_id !== null) throw new Error('no es NULL: ' + r[0].attention_id);
+    for (const n of ['f', '0', 'ab']) await db.exec(`delete from public.cardiolink_copias_facturacion where storage_path='${P(n)}'; delete from storage.objects where name='${P(n)}'`);
+  });
+  await t('11c atención de OTRO profesional / de otro paciente / tipo mensaje: se rechaza con CF002 (no corresponde) o CF001 (mensaje = inexistente)', async () => {
+    const casos = [['202', 'pac9', 'CF002'], ['204', 'pac1', 'CF002'], ['205', 'pac1', 'CF001']];
+    for (const [i, [att, pid, code]] of casos.entries()) {
+      await subir(U.O, P('c' + i)); const e = await err(() => as(U.O, () => db.query(`insert into public.cardiolink_copias_facturacion (copy_type,patient_id,patient_name,patient_dni,attention_id,professional_id,study_date,storage_path,original_filename,mime_type) values ('Holter',$1,'Test','30111222',$2,'rogelio','2026-11-10',$3,'x.pdf','application/pdf')`, [pid, att, P('c' + i)])));
+      if (!e) throw new Error('se aceptó ' + att); const ok2 = code === 'CF002' ? /no corresponde/.test(e) : /no existe en el servidor/.test(e); if (!ok2) throw new Error(att + ': ' + e);
+      await db.exec(`delete from storage.objects where name='${P('c' + i)}'`);
+    }
+  });
+  await t('11d atención inexistente / no sincronizada: CF001 con mensaje claro; sin vincular (NULL) se acepta', async () => {
+    await subir(U.S1, P('d')); const e = await err(() => ins(U.S1, fila({ storage_path: P('d'), attention_id: '99999' })));
+    if (!e || !/no existe en el servidor \(puede no estar sincronizada todavía\)/.test(e)) throw new Error(String(e));
+    const r = await ins(U.S1, fila({ storage_path: P('d'), attention_id: null })); if (!r.id) throw new Error('no se aceptó sin vincular');
+    await db.exec(`delete from public.cardiolink_copias_facturacion where storage_path='${P('d')}'; delete from storage.objects where name='${P('d')}'`);
+  });
+  await t('11e el validador de vínculo no es ejecutable por los clientes y la RPC puede_eliminar sí (la usa el cliente antes de eliminar)', async () => {
+    expectErr(await err(() => as(U.S1, () => q(`select public.cardiolink_copia_facturacion_vinculo_v1('p','d','rogelio','201')`))), /permission denied/);
+    const r = await as(U.S1, () => q(`select public.cardiolink_copia_facturacion_puede_eliminar_v1('rogelio', '${U.S1}') as a, public.cardiolink_copia_facturacion_puede_eliminar_v1('rogelio', '${U.M1}') as b, public.cardiolink_copia_facturacion_puede_eliminar_v1('drago', '${U.S1}') as c`));
+    if (r[0].a !== true || r[0].b !== false || r[0].c !== false) throw new Error(JSON.stringify(r[0]));
+  });
+  await t('11f un alta fallida no deja filas: si el trigger rechaza, el archivo sigue sin fila y el autor puede borrarlo (limpieza del cliente)', async () => {
+    await subir(U.S1, P('e')); expectErr(await err(() => ins(U.S1, fila({ storage_path: P('e'), attention_id: '99999' }))));
+    const filas = await q(`select count(*)::int n from public.cardiolink_copias_facturacion where storage_path='${P('e')}'`); if (filas[0].n !== 0) throw new Error('quedó una fila');
+    const borrados = await as(U.S1, () => q(`delete from storage.objects where bucket_id='billing-copies' and name='${P('e')}' returning name`)); if (borrados.length !== 1) throw new Error('no pudo limpiar su huérfano');
+  });
+
+  // ---- visibilidad
+  await t('12 visibilidad de filas: owner 4, admin 4, rogelio 2, drago 1, S1(asociada a rogelio) 2, S2 0, médico inactivo 0', async () => {
+    const r = { O: await vis(U.O), A: await vis(U.A), M1: await vis(U.M1), M2: await vis(U.M2), S1: await vis(U.S1), S2: await vis(U.S2), D1: await vis(U.D1) };
+    const exp = { O: 4, A: 4, M1: 2, M2: 1, S1: 2, S2: 0, D1: 0 };
+    if (JSON.stringify(r) !== JSON.stringify(exp)) throw new Error(JSON.stringify(r) + ' ≠ ' + JSON.stringify(exp));
+    return JSON.stringify(r);
+  });
+  await t('13 anon no accede a la tabla ni a las funciones', async () => {
+    expectErr(await err(() => as(null, () => q('select * from public.cardiolink_copias_facturacion', []), 'anon')), /permission denied/);
+    return expectErr(await err(() => as(null, () => q(`select public.cardiolink_copia_facturacion_impresion_v1('${f1.id}','marcar_impreso')`), 'anon')), /permission denied/);
+  });
+  await t('14 Storage: S1 ve su objeto con fila; no ve el de drago; S2 ve SÓLO su huérfano propio; owner ve todos; drago no ve el de rogelio', async () => {
+    const r = [await visObj(U.S1, P(1)), await visObj(U.S1, P(5)), await visObj(U.S2, P(3)), await visObj(U.S2, P(1)), await visObj(U.O, P(1)), await visObj(U.O, P(5)), await visObj(U.M2, P(1)), await visObj(U.M1, P(1))];
+    if (r.join() !== '1,0,1,0,1,1,0,1') throw new Error(r.join()); return r.join();
+  });
+  await t('15 anon no ve objetos de billing-copies', async () => expectErr(await err(() => as(null, () => q(`select * from storage.objects`), 'anon')), /permission denied/));
+
+  // ---- impresión
+  await t('16 UPDATE directo no está permitido a authenticated (ni owner)', async () => {
+    expectErr(await err(() => as(U.S1, () => q(`update public.cardiolink_copias_facturacion set print_status='impreso' where id='${f1.id}'`))), /permission denied/);
+    return expectErr(await err(() => as(U.O, () => q(`update public.cardiolink_copias_facturacion set patient_name='x'`))), /permission denied/);
+  });
+  const rpc = (uid, id, a) => as(uid, () => q(`select public.cardiolink_copia_facturacion_impresion_v1($1,$2) as r`, [id, a]).then((r) => r[0].r));
+  await t('17 marcar_impreso: pendiente→impreso (count 1) e idempotente; reimprimir suma 1', async () => {
+    let r = await rpc(U.S1, f1.id, 'marcar_impreso'); if (r.print_status !== 'impreso' || r.print_count !== 1) throw new Error(JSON.stringify(r));
+    r = await rpc(U.S1, f1.id, 'marcar_impreso'); if (r.print_count !== 1) throw new Error('no idempotente ' + JSON.stringify(r));
+    r = await rpc(U.S1, f1.id, 'reimprimir'); if (r.print_count !== 2) throw new Error(JSON.stringify(r)); return JSON.stringify(r);
+  });
+  await t('18 RPC rechaza: Secretaría sin asociación, otro médico, id inexistente, acción inválida', async () => {
+    const m = 'Copia inexistente o sin permiso';
+    expectErr(await err(() => rpc(U.S2, f1.id, 'marcar_impreso')), new RegExp(m));
+    expectErr(await err(() => rpc(U.M2, f1.id, 'reimprimir')), new RegExp(m));
+    expectErr(await err(() => rpc(U.S1, '00000000-0000-0000-0000-00000000dead', 'marcar_impreso')), new RegExp(m));
+    return expectErr(await err(() => rpc(U.S1, f1.id, 'borrar')), /Parámetros inválidos/);
+  });
+  await t('19 RPC permitido a médico titular y a owner', async () => { await rpc(U.M1, f1.id, 'reimprimir'); const r = await rpc(U.O, f1.id, 'reimprimir'); if (r.print_count !== 4) throw new Error(JSON.stringify(r)); });
+  await t('20 trigger: la identidad de la copia es inmutable aun para service_role/postgres; el estado de impresión sí cambia', async () => {
+    expectErr(await err(() => db.exec(`update public.cardiolink_copias_facturacion set patient_name='x' where id='${f1.id}'`)), /no se modifica/);
+    expectErr(await err(() => db.exec(`update public.cardiolink_copias_facturacion set professional_id='drago' where id='${f1.id}'`)), /no se modifica/);
+    await db.exec(`update public.cardiolink_copias_facturacion set print_count=print_count where id='${f1.id}'`);
+  });
+
+  // ---- asociación activa
+  await t('21 al DESACTIVAR la asociación Secretaría pierde de inmediato filas y archivo; al reactivar vuelve', async () => {
+    await db.exec(`update public.cardiolink_secretaria_medicos set activo=false`);
+    const a = [await vis(U.S1), await visObj(U.S1, P(1))];
+    expectErr(await err(() => rpc(U.S1, f1.id, 'reimprimir')), /sin permiso/);
+    await db.exec(`update public.cardiolink_secretaria_medicos set activo=true`);
+    const b = [await vis(U.S1), await visObj(U.S1, P(1))];
+    if (a.join() !== '0,0' || b.join() !== '2,1') throw new Error(a.join() + ' | ' + b.join()); return 'desactivada 0,0 · reactivada 2,1';
+  });
+
+  // ---- eliminar
+  const del = (uid, id) => as(uid, () => q(`delete from public.cardiolink_copias_facturacion where id='${id}' returning id`).then((r) => r.length));
+  const delObj = (uid, name) => as(uid, () => q(`delete from storage.objects where bucket_id='billing-copies' and name='${name}' returning name`).then((r) => r.length));
+  await t('22 eliminar: S1 NO elimina lo que subió un médico; drago NO elimina lo de rogelio', async () => {
+    const [{ id: idM1 }] = await q(`select id from public.cardiolink_copias_facturacion where uploaded_by='${U.M1}'`);
+    const a = [await del(U.S1, idM1), await del(U.M2, idM1), await delObj(U.S1, P(4)), await delObj(U.M2, P(4))];
+    if (a.join() !== '0,0,0,0') throw new Error(a.join()); return a.join();
+  });
+  await t('23 eliminar: S1 elimina lo SUYO (archivo y fila); con asociación desactivada ya no puede', async () => {
+    await subir(U.S1, P('b')); const x = await ins(U.S1, fila({ storage_path: P('b'), patient_name: 'Temporal' }));
+    await db.exec(`update public.cardiolink_secretaria_medicos set activo=false`);
+    const sin = [await del(U.S1, x.id), await delObj(U.S1, P('b'))];
+    await db.exec(`update public.cardiolink_secretaria_medicos set activo=true`);
+    const con = [await delObj(U.S1, P('b')), await del(U.S1, x.id)];
+    if (sin.join() !== '0,0' || con.join() !== '1,1') throw new Error(sin.join() + ' | ' + con.join()); return 'sin asoc 0,0 · con asoc 1,1';
+  });
+  await t('24 eliminar: médico elimina las de su profesional; owner elimina cualquiera', async () => {
+    const [{ id: idM1 }] = await q(`select id from public.cardiolink_copias_facturacion where uploaded_by='${U.M1}'`);
+    const [{ id: idM2 }] = await q(`select id from public.cardiolink_copias_facturacion where uploaded_by='${U.M2}'`);
+    const a = [await delObj(U.M1, P(4)), await del(U.M1, idM1), await delObj(U.O, P(5)), await del(U.O, idM2)];   // mismo orden que la app: primero el archivo, después la fila
+    if (a.join() !== '1,1,1,1') throw new Error(a.join()); return a.join();
+  });
+  await t('25 limpieza de huérfano: el autor elimina su archivo sin fila; otro usuario no', async () => {
+    const a = [await delObj(U.S2, P(1)), await delObj(U.M2, P(3)), await delObj(U.S2, P(3))];
+    if (a.join() !== '0,0,1') throw new Error(a.join()); return a.join();
+  });
+  await t('26 las funciones de Storage no interfieren con patient-documents (política restrictiva de 4C-1 filtra por bucket)', async () => {
+    await db.exec(`insert into storage.objects(bucket_id,name,owner) values ('patient-documents','x/y.pdf','${U.O}')`);
+    const n = await visObj(U.S1, 'x/y.pdf'); if (n !== 0) throw new Error('S1 vio un objeto de patient-documents (no debería: no es de este módulo)');
+  });
+
+  // ---- rollback
+  await t('27 rollback ABORTA si hay copias/archivos y no se fuerza', async () => expectErr(await err(() => db.exec(ROLLBACK)), /Rollback abortado/));
+  await t('28 rollback con confirmación elimina todo (tabla, RPC, funciones, políticas) y deja el bucket privado vacío de políticas', async () => {
+    await db.exec(`select set_config('cardiolink.copias_rollback_forzar','si',false)`);
+    await db.exec(ROLLBACK);
+    await db.exec(`select set_config('cardiolink.copias_rollback_forzar','',false)`);
+    const r = await q(`select (to_regclass('public.cardiolink_copias_facturacion') is null) as tabla,
+        (select count(*) from pg_policies where policyname like 'cardiolink\\_copias\\_fact\\_%')::int as pol,
+        (select count(*) from pg_proc where proname like 'cardiolink\\_copia%facturacion%')::int as fn,
+        (select public from storage.buckets where id='billing-copies') as publico`);
+    if (!r[0].tabla || r[0].pol !== 0 || r[0].fn !== 0 || r[0].publico !== false) throw new Error(JSON.stringify(r[0])); return JSON.stringify(r[0]);
+  });
+  await t('29 tras el rollback (bucket ya existente) el apply se rechaza: hay que quitar el bucket antes (comportamiento seguro, sin pisar)', async () => expectErr(await err(() => db.exec(APPLY)), /ya está aplicado/));
+  await t('30 con el bucket eliminado, apply → rollback → apply en base vacía funciona (ciclo completo)', async () => {
+    await db.exec(`delete from storage.objects where bucket_id='billing-copies'; delete from storage.buckets where id='billing-copies';`);
+    await db.exec(APPLY);
+  });
+} catch (e) { log(false, 'EXCEPCIÓN GENERAL', e.message || String(e)); }
+const fallas = results.filter((r) => !r.ok).length;
+out.innerHTML += `\n\n<b>${results.length - fallas}/${results.length} OK · ${fallas} falla(s)</b>`;
+window.__done = true;
+</script></body></html>

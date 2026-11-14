@@ -17,6 +17,7 @@
 <link rel="stylesheet" href="cardiolink-finanzas-v5.css?v=4a">
 <link rel="stylesheet" href="cardiolink-config-v1.css?v=1a">
 <link rel="stylesheet" href="cardiolink-solicitudes-turno.css?v=1">
+<link rel="stylesheet" href="cardiolink-copias-facturacion-v1.css?v=1">
 <script>
 window.CARDIOLINK_BUILD="4.0.9.6";
 if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.serviceWorker.getRegistrations().then(rs=>rs.forEach(r=>r.update())).catch(()=>{});});}
@@ -47,6 +48,7 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
   <div class="nav-group-label">Administrativo</div>
   <button class="nav" data-section="mensajes">Mensajes</button>
   <button class="nav" data-section="solicitudesTurno">Solicitudes de turno</button>
+  <button class="nav" data-section="copiasFacturacion">Copias para facturación</button>
   <button class="nav" data-section="listado">Listado / filtros</button>
   <button class="nav solo-matias" data-section="caja">Caja / reportes</button>
   <button class="nav" data-section="estadisticas">Estadísticas</button>
@@ -435,6 +437,8 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
       <div id="solicitudesTurnoRoot"></div>
     </div>
   </section>
+
+  <section id="copiasFacturacion" class="section"></section>
 
   <section id="pacientes" class="section">
     <div class="card">
@@ -1116,6 +1120,7 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
 <script src="cardiolink-dashboard-v1.js?v=1"></script>
 <script src="cardiolink-agenda-v1.js?v=1"></script>
 <script src="cardiolink-pedidos-rapidos-v1.js?v=1"></script>
+<script src="cardiolink-copias-facturacion-v1.js?v=1"></script>
 <!-- Fase 6 / Bloque 6D: documentos y estudios en PDF reales en la ficha del paciente (Storage privado + metadata), módulo independiente. -->
 <script>window.CARDIOLINK_QR_V2A = true;</script>
 <script src="cardiolink-documentos-pdf-v1.js?v=7-4c1"></script>

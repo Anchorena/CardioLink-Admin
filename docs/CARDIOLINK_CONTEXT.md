@@ -179,6 +179,12 @@ exclusivamente por su autor, incluso frente a otros médicos, Dueño y Administr
 (excepción absoluta; implementación pendiente: Bloque 4C-2). Ver
 `docs/BUSINESS_RULES.md`.
 
+## Copias para facturación
+Módulo independiente (V1): PDF para la facturación mensual al Círculo Médico
+(Holter/MAPA: primera página firmada y sellada; Eco: versión EcoApp), que
+Secretaría descarga e imprime uno por uno. Separado de los informes clínicos y
+del portal del paciente. Ver `docs/BUSINESS_RULES.md`.
+
 ## Backups
 Secretaría puede importar y restaurar backups operativos, pero no exportar un
 backup completo con información financiera o clínica sensible ni ejecutar un

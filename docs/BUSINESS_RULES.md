@@ -214,8 +214,36 @@ servidor, no el navegador) y a nombre de qué profesional; cada envío registra
 qué usuario lo envía.
 
 Hoja de ruta (no implementado): envío de recetas, indicaciones y aptos físicos
-por Secretaría (hoy sin plantilla de envío) y módulo de copias para facturación
-(copias de documentos para obras sociales, que no alteran el original).
+por Secretaría (hoy sin plantilla de envío). El módulo de copias para
+facturación se describe en la sección siguiente.
+
+## Copias para facturación (V1)
+Archivos PDF **independientes** de los informes clínicos, destinados a la
+facturación mensual al Círculo Médico: Holter y MAPA (primera página firmada y
+sellada) y Ecocardiograma (versión para facturación de EcoApp). Secretaría los
+descarga e imprime uno por uno para adjuntarlos a los bonos.
+
+- Se cargan desde Secretaría, desde el perfil médico o desde una atención (en
+  ese caso se vinculan solos paciente, DNI, atención, profesional, prestación,
+  obra social y fecha del estudio). Sección propia «Copias para facturación»
+  (grupo Administrativo) con filtros por mes y año, profesional, obra social y
+  estado; la atención muestra «Copia de facturación subida».
+- Acciones: descargar, imprimir, marcar como impreso, reimprimir y eliminar con
+  confirmación.
+- Acceso verificado en el servidor: Dueño/Administrador todas; Médico las de su
+  profesional; Secretaría las de profesionales con asociación activa (al
+  desactivarla pierde el acceso al instante). Archivos en un bucket privado
+  propio; sin URL pública.
+- **Eliminar** (decisión por defecto): Dueño/Administrador; Médico las de su
+  profesional; Secretaría sólo las que ella misma subió y mientras siga asociada.
+  Eliminar una copia no toca informes clínicos ni documentos de HC.
+- No se envían al portal del paciente ni por email/WhatsApp, no alteran ni
+  reemplazan los documentos de la historia clínica y no se generan ni recortan
+  automáticamente.
+- Retención: las copias se conservan para reimprimir; no hay borrado automático
+  hasta definir el plazo.
+- No modifica los indicadores existentes de la atención (`copiaImpresa`,
+  «Falta: copia»): son un control manual separado.
 
 ### Notas clínicas privadas (excepción absoluta)
 Las notas clínicas privadas son accesibles exclusivamente por su autor, incluso
