@@ -86,6 +86,19 @@ Si se toca Caja:
 - filtro por período;
 - perfil correcto.
 
+Si se toca Pendientes de cobro:
+- atención histórica (sin estado de cobro): su importe no cambia en Caja;
+- atención nueva con "Cobro pendiente": 0 en Caja del día, Listado y Finanzas;
+- confirmar con Secretaría: entra una sola vez, en la caja del profesional
+  correcto y con el medio elegido (fecha/usuario/medio quedan registrados);
+- doble clic y segunda sesión confirmando lo mismo: no se duplica;
+- Médico: ve solo los pendientes de su caja y no puede confirmar;
+- Secretaría: confirma sin ver totales de Caja.
+- Secretaría asociada al profesional confirma; no asociada no confirma (mensaje de falta de autorización) pero sigue operando Agenda/Sala/Carga;
+- si cambia la caja (profesional) o el importe mientras se ve el cobro: no confirma y pide volver a confirmar;
+- cobro "No cobrar" y cobro pendiente de bono/firma siguen diferenciados del pendiente de pago;
+- procedimiento completo de STAGING: `docs/PENDIENTES_COBRO_V1_QA_STAGING.md`.
+
 ## 8. Prestaciones
 Si se toca configuración:
 - cambiar profesional;

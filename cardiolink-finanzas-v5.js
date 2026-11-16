@@ -45,6 +45,19 @@
     return detalle;
   }
 
+  // Fecha (AAAA-MM-DD, hora local) en que entró el dinero. Solo difiere de la
+  // fecha de la atención cuando el cobro estuvo pendiente y se confirmó luego;
+  // las atenciones históricas y las cobradas al registrar usan atencion.fecha.
+  function fechaCobroAtencion(atencion) {
+    if (!atencion || atencion.estadoCobro !== 'cobrado' || !atencion.cobroPendienteEn || !atencion.cobroConfirmadoEn) {
+      return atencion ? atencion.fecha : '';
+    }
+    const d = new Date(atencion.cobroConfirmadoEn);
+    if (Number.isNaN(d.getTime())) return atencion.fecha;
+    const dos = (n) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${dos(d.getMonth() + 1)}-${dos(d.getDate())}`;
+  }
+
   function calcularIngresosCanonicos(opciones = {}) {
     const listaCompleta = Array.isArray(opciones.atenciones) ? opciones.atenciones : [];
     const desde = String(opciones.desde || '');
@@ -66,11 +79,25 @@
       ? opciones.tipoPrestacion
       : () => 'ESTUDIO';
 
+    const enRango = (fecha) => (!desde || fecha >= desde) && (!hasta || fecha <= hasta);
+    const delPerfil = (atencion) => !perfil || atencion.profesionalId === perfil || atencion.cajaPerfil === perfil;
+
     // Mantiene exactamente el filtro histórico de renderFinance411C.
     const lista = listaCompleta.filter((atencion) => atencion
-      && (!desde || atencion.fecha >= desde)
-      && (!hasta || atencion.fecha <= hasta)
-      && (!perfil || atencion.profesionalId === perfil || atencion.cajaPerfil === perfil));
+      && enRango(atencion.fecha)
+      && delPerfil(atencion));
+
+    // Pendientes de cobro V1: un cobro que estuvo pendiente y se confirmó
+    // después entra en la caja del día del PAGO, no en la de la prestación.
+    // Si la prestación quedó fuera del rango pero el pago cae dentro, solo
+    // aporta su dinero (la actividad y la producción siguen en la fecha de la
+    // atención). Sin esas marcas, fechaCobro === fecha y nada cambia.
+    const soloCobro = listaCompleta.filter((atencion) => atencion
+      && !enRango(atencion.fecha)
+      && fechaCobroAtencion(atencion) !== atencion.fecha
+      && enRango(fechaCobroAtencion(atencion))
+      && delPerfil(atencion)
+      && !['ausente', 'cancelado'].includes(String(obtenerEstado(atencion) || '').toLowerCase()));
 
     const ingresos = { particular: 0, copago: 0, os: 0, facturaOtro: 0, senias: 0 };
     const mediosPago = { Efectivo: 0, Transferencia: 0, 'Débito': 0, Mixto: 0, 'No aplica': 0, Otro: 0 };
@@ -109,16 +136,21 @@
 
       const noCobrarParticular = atencion.noCobrar === true
         && normalizar(atencion.obraSocial || atencion.coberturaAtencion) === 'particular';
-      const montoConsulta = noCobrarParticular ? 0 : numero(atencion.montoConsulta);
-      const montoEstudio = noCobrarParticular ? 0 : numero(atencion.montoEstudio);
+      // Pendientes de cobro V1: una atención con cobro pendiente sigue siendo
+      // una prestación realizada, pero su importe todavía no es dinero cobrado.
+      // Las atenciones históricas no tienen estadoCobro y no cambian.
+      const cobroFueraDeRango = !enRango(fechaCobroAtencion(atencion));
+      const sinCobroEfectivo = noCobrarParticular || atencion.estadoCobro === 'pendiente' || cobroFueraDeRango;
+      const montoConsulta = sinCobroEfectivo ? 0 : numero(atencion.montoConsulta);
+      const montoEstudio = sinCobroEfectivo ? 0 : numero(atencion.montoEstudio);
       const particular = montoConsulta + montoEstudio;
-      const copago = noCobrarParticular ? 0 : numero(atencion.montoCopago);
+      const copago = sinCobroEfectivo ? 0 : numero(atencion.montoCopago);
       const formaPago = atencion.formaPago || 'Otro';
       const tipo = String(tipoPrestacion(atencion.prestacion) || 'ESTUDIO');
 
       ingresos.particular += particular;
       ingresos.copago += copago;
-      if (!noCobrarParticular) agregarMedio(formaPago, particular + copago);
+      if (!sinCobroEfectivo) agregarMedio(formaPago, particular + copago);
 
       detalle.cantidadRealizadas += 1;
       detalle.particulares += particular;
@@ -148,6 +180,24 @@
       if (!['particular', 'pami'].includes(normalizar(atencion.obraSocial)) && arancel <= 0) {
         sinArancel += 1;
       }
+    });
+
+    soloCobro.forEach((atencion) => {
+      const noCobrarParticular = atencion.noCobrar === true
+        && normalizar(atencion.obraSocial || atencion.coberturaAtencion) === 'particular';
+      if (noCobrarParticular || atencion.estadoCobro === 'pendiente') return;
+      const montoConsulta = numero(atencion.montoConsulta);
+      const montoEstudio = numero(atencion.montoEstudio);
+      const particular = montoConsulta + montoEstudio;
+      const copago = numero(atencion.montoCopago);
+      const detalle = detallePara(atencion);
+      ingresos.particular += particular;
+      ingresos.copago += copago;
+      agregarMedio(atencion.formaPago || 'Otro', particular + copago);
+      detalle.particulares += particular;
+      detalle.copagos += copago;
+      actividad.consultas.particulares += montoConsulta;
+      actividad.estudiosPrestaciones.particulares += montoEstudio;
     });
 
     const totalCajaCobrada = ingresos.particular + ingresos.copago + ingresos.senias;
@@ -1821,6 +1871,7 @@
   const api = Object.freeze({
     version: '5.0.0-etapa-4b',
     calcularIngresosCanonicos,
+    fechaCobroAtencion,
     calcularResumenEgresos,
     conectarProveedor,
     conectarProveedorObligacionesF4,

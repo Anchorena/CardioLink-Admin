@@ -1,6 +1,6 @@
 # CardioLink Admin — Reglas de negocio
 
-Última actualización: 2026-08-15
+Última actualización: 2026-11-14
 
 ## Permisos
 
@@ -39,6 +39,8 @@ Puede:
 - agregar o eliminar obras sociales/prepagas;
 - modificar convenios, aranceles, valores particulares y copagos;
 - cargar pagos, bonos, autorizaciones, médico solicitante y motivo/indicación;
+- registrar cobros pendientes y confirmar los de los profesionales con los que tiene
+  una asociación activa (fecha, usuario y medio de pago);
 - importar o restaurar backups;
 - emitir constancias, certificados y órdenes médicas, por indicación de un
   profesional autorizado (uno de los médicos a los que está asociada) y con su
@@ -103,6 +105,52 @@ Importes esperados de:
 - terceros/facturación definida.
 
 No confundir producción esperada con dinero ya cobrado.
+
+### Pendientes de cobro
+Una prestación realizada puede registrarse con **cobro pendiente**: el importe
+esperado queda guardado, pero **no cuenta como Caja cobrada** hasta que
+Secretaría (o Dueño/Administrador) confirme el cobro.
+
+- Aplica solo a atenciones nuevas con importe a cobrar (particular, copago o
+  ambos). Las atenciones históricas no tienen estado de cobro y no se
+  recalculan: siguen contando exactamente como antes.
+- Al confirmar se registra fecha, usuario, rol y medio de pago
+  (Efectivo, Transferencia, Débito o Mixto). Confirmar dos veces no duplica el
+  cobro: la segunda confirmación no cambia nada.
+- El dinero se atribuye a la caja del profesional (`cajaPerfil`). Un cobro
+  confirmado después entra en la caja del día del **pago**; la actividad y la
+  producción siguen en la fecha de la atención y los períodos históricos no se
+  modifican.
+- **Quién confirma**: Dueño/Administrador, cualquier cobro; Secretaría, solo los
+  de profesionales con los que tiene una **asociación activa** (las mismas de
+  documentos y Copias para facturación). Una Secretaría no asociada no puede
+  confirmar, ni cambiar el estado de cobro, ni reescribir o borrar un cobro
+  confirmado; sí conserva Agenda, Sala de espera, Carga y la edición asistencial
+  y administrativa de las atenciones. Médico: nunca confirma.
+- **A quién corresponde el cobro**: al destinatario económico, `cajaPerfil` y, si
+  falta, el profesional que atiende (`profesionalId`). Pueden ser personas
+  distintas: la asociación se exige contra el destinatario económico, no contra
+  quien atiende.
+- **Quién confirmó queda auditado con la identidad autenticada** (usuario, email y rol real de la
+  sesión), no con un nombre que envíe el cliente; la fecha efectiva la valida el servidor. Esto rige
+  también para Dueño/Administrador: nadie puede atribuir una confirmación a otra persona.
+- Un cobro confirmado no se vuelve a confirmar ni a reescribir (solo
+  Dueño/Administrador). **Revertir una confirmación equivocada no existe en V1**
+  y queda como mejora posterior.
+- Si el profesional (caja) o el importe de la atención cambian mientras
+  Secretaría la tiene a la vista, el cobro **no se confirma**: se actualiza la
+  lista y hay que volver a confirmar.
+- Secretaría ve el importe de cada cobro pendiente que debe cobrar, pero no ve
+  totales de Caja ni de producción. Dueño/Administrador ven además el subtotal
+  pendiente por profesional.
+- El Médico ve solo los cobros pendientes de su propia caja y no puede
+  confirmarlos. Nadie fuera de Dueño/Administrador puede dar de alta una
+  atención atribuyendo falsamente una confirmación a otra persona.
+- Una atención cancelada o ausente no genera cobro pendiente visible; la seña
+  se rige por su propio circuito.
+- Un cobro pendiente de pago es distinto de un pendiente de bono/firma: el
+  primero afecta solo a Caja; el segundo se resuelve en la bandeja de Pendientes
+  (Firma / bono).
 
 ### Egresos
 - sueldo Secretaría;

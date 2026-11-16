@@ -15,7 +15,11 @@ try {
 }
 
 let usuarioSupabase = null;
-let cargandoDesdeNube = false;
+// Arranca en true: la sincronización de atenciones permanece bloqueada hasta completar la PRIMERA carga remota y establecer el baseline
+// (versión remota de cada fila). Antes de eso la copia local (localStorage) puede estar desactualizada y todas sus filas se verían como
+// "nuevas": una subida en ese momento sería un upsert ciego que pisaría lo que otra sesión cambió (p. ej. un cobro ya confirmado).
+// Las cargas posteriores lo vuelven a poner en false al terminar, como antes; el bootstrap forzar=true lo pone en false de forma explícita.
+let cargandoDesdeNube = true;
 let syncTimer = null;
 // true entre que se programa un push a Supabase (programarSyncSupabase) y
 // que ese push termina de confirmarse (sincronizarAtencionesSupabase) - ver
