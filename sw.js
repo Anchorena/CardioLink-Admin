@@ -1,4 +1,4 @@
-const CACHE='cardiolink-v4.1.0-pendientes-cobro-v1-casilla';
+const CACHE='cardiolink-v4.1.0-copias-pendientes-v1';
 const SHELL=['./','./index.html?v=40096','./styles.css?v=40098-fase7-ui-interna-v1','./app.js?v=40107-sync-arranque','./manifest.webmanifest?v=40096','./icons/icon-192.png?v=40096','./icons/icon-512.png?v=40096'];
 self.addEventListener('install',e=>{e.waitUntil(caches.open(CACHE).then(c=>c.addAll(SHELL)).then(()=>self.skipWaiting()))});
 self.addEventListener('activate',e=>{e.waitUntil(caches.keys().then(keys=>Promise.all(keys.filter(k=>k!==CACHE).map(k=>caches.delete(k)))).then(()=>self.clients.claim()))});

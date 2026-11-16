@@ -138,3 +138,14 @@ Informar:
 - qué falta probar;
 - riesgo;
 - rollback.
+
+## Copias para facturación → Pendientes (V1.1)
+Tests: `node --test cardiolink-copias-pendientes-v1.test.cjs`. STAGING con datos sintéticos: sin PDF amarillo; subir verde (abre el PDF);
+eliminar no impresa vuelve a amarillo; marcar impreso cierra el pendiente (sale de Pendientes sin otros pendientes; con otros, se conservan);
+eliminar copia impresa no reabre; fallo parcial (impresión registrada, cierre fallido) → chip «cerrar pendiente», reintento sin reimprimir ni duplicar
+auditoría; copia sin vincular → amarillo; médico, Secretaría asociada y no asociada; sin consultas repetidas (caché en lote).
+
+**Deuda técnica registrada (preexistente, no corregida en esta rama):** si otra sesión abierta reescribe la misma atención justo antes de que
+un usuario guarde un cambio (p. ej. cerrar un pendiente), la sincronización detecta el conflicto, adopta la versión remota y el cambio local se
+pierde sin aviso. Ocurre igual con el botón existente de cada pendiente. En Copias el chip «Copia impresa · cerrar pendiente» permite reintentar.
+Mejora futura: avisar el conflicto y reaplicar el cambio sobre la versión remota.
