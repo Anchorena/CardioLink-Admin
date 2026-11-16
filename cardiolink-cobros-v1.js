@@ -377,10 +377,22 @@
       if (!aplica) check.checked = false;
       $id('cobroPendienteBox')?.classList.toggle('is-disabled', !aplica);
     }
-    ['tipoCobro', 'noCobrar', 'obraSocial', 'prestacion'].forEach((id) => {
+    ['tipoCobro', 'noCobrar', 'obraSocial', 'prestacion', 'profesional'].forEach((id) => {
       $id(id)?.addEventListener('change', sincronizarCasilla);
       $id(id)?.addEventListener('input', sincronizarCasilla);
     });
+    // app.js fija el tipo de cobro por regla escribiendo `.value` (sin disparar eventos): al elegir paciente, cobertura, prestación,
+    // profesional o perfil la casilla quedaba con el estado de "Sin cobro en caja". Se recalcula después de cada aplicación de la regla.
+    if (typeof w.aplicarRegla === 'function' && !w.aplicarRegla.__cobrosV1) {
+      const original = w.aplicarRegla;
+      const envuelta = function () {
+        const r = original.apply(this, arguments);
+        sincronizarCasilla();
+        return r;
+      };
+      envuelta.__cobrosV1 = true;
+      w.aplicarRegla = envuelta;
+    }
     $id('formAtencion')?.addEventListener('reset', () => setTimeout(sincronizarCasilla, 0));
     sincronizarCasilla();
 
