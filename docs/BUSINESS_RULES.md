@@ -290,8 +290,19 @@ descarga e imprime uno por uno para adjuntarlos a los bonos.
   automáticamente.
 - Retención: las copias se conservan para reimprimir; no hay borrado automático
   hasta definir el plazo.
-- No modifica los indicadores existentes de la atención (`copiaImpresa`,
-  «Falta: copia»): son un control manual separado.
+- Integración con Pendientes (V1.1): el pendiente existente «Falta copia
+  facturación» se muestra amarillo sin copia vinculada; verde «Copia subida»
+  (abre el PDF) con una copia subida de esa atención y prestación
+  (`attention_id` + tipo de copia); al «Marcar impreso» se cierra con el
+  mecanismo existente (`resolverPendiente383` → `copiaImpresa`, con su
+  auditoría) y la atención sale de Pendientes si no quedan otros pendientes.
+  Eliminar o reemplazar copias nunca reabre un pendiente ya cerrado. El
+  estado verde se calcula (no se guarda). Una copia sin vincular no cambia el
+  pendiente. Sin «Deshacer» en este flujo. Si la impresión quedó registrada
+  pero el cierre falló (o es una copia impresa anterior a la integración),
+  la tarjeta muestra «Copia impresa · cerrar pendiente»: cierre explícito,
+  atención por atención y con el usuario auditado; no hay conciliación
+  automática ni masiva.
 
 ### Notas clínicas privadas (excepción absoluta)
 Las notas clínicas privadas son accesibles exclusivamente por su autor, incluso

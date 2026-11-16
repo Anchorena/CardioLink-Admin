@@ -195,6 +195,7 @@
     if (error) throw error;
     if (!borradas || !borradas.length) throw new Error('El servidor no eliminó la copia: sin permiso para eliminarla.');
     rutas.delete(fila.id);
+    invalidarPendientes();
   }
 
   // Quita un archivo recién subido cuyo alta de fila falló. Un reintento; devuelve true si quedó limpio (false = hay que avisar: el archivo sigue en Storage sin fila).
@@ -351,6 +352,7 @@
       }
       cerrarModal();
       cacheAtencion.delete(String(st.atencionId || ''));
+      invalidarPendientes();
       if (opciones && typeof opciones.alTerminar === 'function') opciones.alTerminar(insertada);
       if (seccionVisible()) cargarLista();
     });
@@ -416,7 +418,15 @@
         if (f.print_status === 'impreso') { await registrarImpresion(f.id, 'reimprimir'); await cargarLista(); }
       }, 'No se pudo imprimir la copia:')
     ]);
-    if (f.print_status !== 'impreso') acciones.append(b('Marcar impreso', 'primary', async () => { await registrarImpresion(f.id, 'marcar_impreso'); await cargarLista(); }, 'No se pudo marcar la copia:'));
+    if (f.print_status !== 'impreso') acciones.append(b('Marcar impreso', 'primary', async () => {
+      await registrarImpresion(f.id, 'marcar_impreso');
+      // La impresión ya quedó registrada. Si falla el cierre del pendiente se informa y se reintenta SOLO ese paso desde Pendientes.
+      const r = await cerrarPendienteCopia(f.attention_id, f.copy_type).catch((e) => ({ ok: false, motivo: String((e && e.message) || e) }));
+      invalidarPendientes();
+      await cargarLista();
+      if (!r.ok) window.alert('La copia quedó marcada como impresa, pero no se pudo cerrar el pendiente de la atención: ' + r.motivo +
+        '\n\nNo se registró ninguna impresión nueva. Podés reintentar el cierre desde Pendientes (botón «Copia impresa · cerrar pendiente»).');
+    }, 'No se pudo marcar la copia:'));
     if (puedeEliminar(f)) {
       acciones.append(b('Eliminar', 'danger', async () => {
         const ok = window.confirm('¿Eliminar esta copia para facturación?\n\n' + f.copy_type + ' · ' + f.patient_name + ' · ' + fmtFecha(f.study_date) +
@@ -588,6 +598,118 @@
     }, 150);
   }
 
+  // ---------------------------------------------------------------- Integración con Pendientes (etiqueta de copia de facturación)
+  // Fuentes de verdad (sin estado nuevo): el ARCHIVO y su impresión viven en cardiolink_copias_facturacion; el CIERRE del pendiente vive en
+  // el indicador existente `copiaImpresa` de la atención (lo que ya resuelve resolverPendiente383). La etiqueta verde se calcula, no se guarda.
+  // Vínculo por atención (attention_id) y por prestación (copy_type == tipo de la prestación de la atención), nunca solo por paciente.
+  // Nunca se modifica una atención por el solo hecho de mostrar Pendientes: cerrar es siempre una acción explícita del usuario.
+  const LISTA_PEND = 'pendientesLista383';
+  const TTL_PEND_MS = 30000;
+  const cachePend = new Map();   // attention_id -> { t, filas: [{ id, attention_id, copy_type, print_status }] }
+  function repintarPendientes() {
+    try {
+      const box = document.getElementById(LISTA_PEND);
+      const f = g('renderPendientes383');
+      if (box && box.offsetParent !== null && typeof f === 'function') f();
+    } catch (e) { /* nunca rompe el flujo de Copias */ }
+  }
+  function invalidarPendientes() { cachePend.clear(); repintarPendientes(); }
+  // Una sola consulta por lote de atenciones; lo ya consultado (incluidos los "sin copia") se reutiliza TTL_PEND_MS.
+  async function copiasPorAtenciones(ids) {
+    const ahora = Date.now();
+    const faltan = [...new Set(ids.map(String).filter(Boolean))].filter((id) => { const c = cachePend.get(id); return !c || ahora - c.t > TTL_PEND_MS; });
+    for (let i = 0; i < faltan.length && sb(); i += 100) {
+      const lote = faltan.slice(i, i + 100);
+      const marca = Date.now();
+      lote.forEach((id) => cachePend.set(id, { t: marca, filas: [] }));   // también si falla la consulta: queda el estado amarillo actual, sin reintentar en cada repintado
+      try {
+        const { data: r, error } = await sb().from(TABLA).select('id,attention_id,copy_type,print_status,created_at').in('attention_id', lote).order('created_at', { ascending: false }).limit(1000);
+        if (error) throw error;
+        (r || []).forEach((x) => { const c = cachePend.get(String(x.attention_id)); if (c) c.filas.push(x); });
+      } catch (e) { /* sin tabla o sin permiso: no se muestra nada nuevo */ }
+    }
+    return cachePend;
+  }
+  function copiasDeLaPrestacion(a, cache) {
+    const tipo = a ? tipoDesdePrestacion(a.prestacion) : '';
+    const c = a && cache.get(String(a.id));
+    return tipo && c ? c.filas.filter((f) => f.copy_type === tipo) : [];
+  }
+  async function abrirCopia(fila) {
+    const ventana = window.open('', '_blank');   // se abre en el clic (antes del await) para que el navegador no la bloquee
+    try {
+      const blob = await obtenerBlob(fila);
+      const url = URL.createObjectURL(new Blob([blob], { type: 'application/pdf' }));
+      if (ventana) ventana.location.href = url; else window.open(url, '_blank');
+      setTimeout(() => URL.revokeObjectURL(url), 180000);
+    } catch (e) { if (ventana) ventana.close(); throw e; }
+  }
+  // Un cierre manual/automático NO es reversible junto con print_status: se oculta el "Deshacer" de este flujo (nunca queda copiaImpresa sin su impresión).
+  function ocultarDeshacer() { const t = document.getElementById('undoToast383'); if (t) { t.classList.remove('show'); t.innerHTML = ''; } }
+  // Cierra el pendiente "copia" de la atención con el mecanismo existente (médico: RPC; resto: guardado local + sync), con su auditoría.
+  // Idempotente: si el pendiente ya no está abierto no hace nada (un reintento no duplica auditoría ni impresiones).
+  async function cerrarPendienteCopia(attentionId, copyType) {
+    const id = String(attentionId || '');
+    if (!id) return { ok: true, omitido: 'sin_vinculo' };           // copia sin vincular: no hay atención que cerrar
+    const a = atencionPorId(id);
+    if (!a) return { ok: false, motivo: 'la atención no está cargada en este equipo (esperá la sincronización y reintentá).' };
+    const tipo = tipoDesdePrestacion(a.prestacion);
+    if (!tipo || (copyType && tipo !== copyType)) return { ok: true, omitido: 'otra_prestacion' };
+    const pendientes = g('pendientesDeAtencion383'), resolver = g('resolverPendiente383');
+    if (typeof pendientes !== 'function' || typeof resolver !== 'function') return { ok: false, motivo: 'Pendientes no está disponible.' };
+    if (!pendientes(a).includes('copia')) return { ok: true, omitido: 'sin_pendiente' };
+    await resolver(id, 'copia');
+    ocultarDeshacer();
+    const despues = atencionPorId(id) || a;
+    return pendientes(despues).includes('copia') ? { ok: false, motivo: 'el pendiente sigue abierto (¿sin permiso o sin conexión?).' } : { ok: true };
+  }
+  function chipCopiaSubida(fila) {
+    const b = el('button', { type: 'button', className: 'pend-tag383 p-copia-subida', text: 'Copia subida', title: 'Abrir la copia para facturación (PDF)', dataset: { copiasV1: 'subida' } });
+    b.addEventListener('click', () => accion(b, () => abrirCopia(fila), 'No se pudo abrir la copia:'));
+    return b;
+  }
+  function chipCerrarCopia(a, fila) {
+    const b = el('button', { type: 'button', className: 'pend-tag383 p-copia-cerrar', text: 'Copia impresa · cerrar pendiente', dataset: { copiasV1: 'cerrar' },
+      title: 'La copia ya figura impresa pero el pendiente sigue abierto. Cerrarlo queda registrado con tu usuario.' });
+    b.addEventListener('click', () => accion(b, async () => {
+      const r = await cerrarPendienteCopia(a.id, fila.copy_type);
+      if (!r.ok) throw new Error(r.motivo);
+      invalidarPendientes();
+    }, 'No se pudo cerrar el pendiente:'));
+    return b;
+  }
+  let procesandoPend = false, repetirPend = false, timerPend = null;
+  async function decorarPendientes() {
+    if (procesandoPend) { repetirPend = true; return; }
+    procesandoPend = true;
+    try {
+      const box = document.getElementById(LISTA_PEND);
+      if (!box || !puedeUsar()) return;
+      const marcadas = [...box.querySelectorAll('.pend-tag383.p-copia:not([data-copias-v1])')]
+        .map((btn) => ({ btn, id: ((/resolverPendiente383\('([^']*)',\s*'copia'\)/.exec(btn.getAttribute('onclick') || '')) || [])[1] || '' })).filter((x) => x.id);
+      if (!marcadas.length) return;
+      const cache = await copiasPorAtenciones(marcadas.map((x) => x.id));
+      for (const { btn, id } of marcadas) {
+        if (!btn.isConnected) continue;                       // Pendientes se repintó mientras se consultaba
+        const a = atencionPorId(id);
+        const filas = copiasDeLaPrestacion(a, cache);
+        if (!filas.length) { btn.dataset.copiasV1 = 'falta'; continue; }   // sin copia vinculada de esa prestación: sigue el amarillo
+        const impresa = filas.find((f) => f.print_status === 'impreso');
+        btn.replaceWith(impresa ? chipCerrarCopia(a, impresa) : chipCopiaSubida(filas[0]));
+      }
+    } catch (e) { /* nunca rompe Pendientes */ }
+    finally { procesandoPend = false; if (repetirPend) { repetirPend = false; programarDecorado(); } }
+  }
+  function programarDecorado() { clearTimeout(timerPend); timerPend = setTimeout(decorarPendientes, 60); }
+  function observarPendientes() {
+    const box = document.getElementById(LISTA_PEND);
+    if (!box || box.__copiasFactV1) return;
+    box.__copiasFactV1 = true;
+    // Solo hijos directos: el reemplazo de una etiqueta dentro de una tarjeta no vuelve a disparar el observador (sin bucles).
+    new MutationObserver(programarDecorado).observe(box, { childList: true });
+    programarDecorado();
+  }
+
   // ---------------------------------------------------------------- Enganches (sin tocar app.js)
   function instalar() {
     const prevPermitida = g('seccionPermitida');
@@ -623,10 +745,11 @@
       w.__copiasFactV1 = true;
       window.renderTabla = w;
     }
+    try { observarPendientes(); } catch (e) { /* sin sección Pendientes */ }
     // El botón del menú puede haber quedado oculto por aplicarPermisosUI antes de instalar el enganche
     try { const ap = g('aplicarPermisosUI'); if (typeof ap === 'function') ap(); } catch (e) { /* sin sesión todavía */ }
   }
   instalar();
 
-  window.CardioLinkCopiasFacturacionV1 = { abrirModalSubir, recargar: cargarLista, _test: { rangoMes, tipoDesdePrestacion, nombreArchivoDescarga, eliminarCopia } };
+  window.CardioLinkCopiasFacturacionV1 = { abrirModalSubir, recargar: cargarLista, _test: { rangoMes, tipoDesdePrestacion, nombreArchivoDescarga, eliminarCopia, cerrarPendienteCopia, copiasPorAtenciones, decorarPendientes } };
 })();

@@ -31,3 +31,6 @@ body.dark .copias-fact-chip{background:#1e3a8a;color:#dbeafe}
 .copias-fact-vinculo{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:6px;padding:8px 10px;border-radius:10px;background:rgba(21,101,192,.08);font-size:13px}
 .copias-fact-vinculo[hidden],.copias-fact-error[hidden]{display:none}
 @media print{#copiasFacturacion .no-print,#copiasFacturacion .copias-fact-head-acciones,#copiasFacturacion .copias-fact-filtros{display:none!important}}
+/* Integración con Pendientes: etiqueta de copia de facturación (amarillo = .p-copia existente) */
+.p-copia-subida{background:#dff5e3;color:#14602b}
+.p-copia-cerrar{background:#e1ecff;color:#1f3f8f}
