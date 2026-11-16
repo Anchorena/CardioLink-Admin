@@ -832,6 +832,13 @@ test('12b versionado: index.html y sw.js apuntan a la nueva versión de app.js y
   assert.match(idx,/<script src="app\.js\?v=40107-sync-arranque"><\/script>/);
   assert.match(sw,/'\.\/app\.js\?v=40107-sync-arranque'/);
   const cache=sw.match(/const CACHE='([^']+)'/)[1];
-  assert.equal(cache,'cardiolink-v4.1.0-pendientes-cobro-v1-sync-arranque');
+  assert.equal(cache,'cardiolink-v4.1.0-pendientes-cobro-v1-casilla');
   assert.ok(!['cardiolink-v4.1.0-documentos-v1','cardiolink-v4.1.0-pendientes-cobro-v1','cardiolink-v4.1.0-pendientes-cobro-v1-int'].includes(cache),'no reutiliza nombres de caché anteriores');
+});
+test('casilla Cobro pendiente: se recalcula tras aplicarRegla (app.js fija tipoCobro con .value, sin eventos) y al cambiar profesional',()=>{
+  const src=leer('cardiolink-cobros-v1.js');
+  assert.match(src,/\['tipoCobro',\s*'noCobrar',\s*'obraSocial',\s*'prestacion',\s*'profesional'\]/);
+  assert.match(src,/w\.aplicarRegla\.__cobrosV1/);
+  assert.match(src,/original\.apply\(this, arguments\);\s*sincronizarCasilla\(\);/);
+  assert.match(leer('index.html'),/cardiolink-cobros-v1\.js\?v=1b-casilla-regla/);
 });
