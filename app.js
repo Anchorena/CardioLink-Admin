@@ -6463,9 +6463,12 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     (Array.isArray(lista)?lista:[]).forEach(a=>{ if(a && a.id!=null && baselineVersionAtenciones298.has(String(a.id))) m.set(String(a.id), stableStringify298(a)); });
     // R1: las filas protegidas conservan su base de contenido para seguir figurando como modificadas (sin base = fila nueva, se sube).
     if(protegidasR1){ protegidasR1.forEach((p,id)=>{ if(p.contPrev===undefined) m.delete(id); else m.set(id,p.contPrev); }); }
+    // R2A: si la base ya se fijó al cargar (antes de la sincronización por corruptos), una fila editada desde entonces NO se re-base: sigue figurando como modificada.
+    if(baseContInicialR2A){ baseContInicialR2A.forEach((c,id)=>{ if(m.has(id)) m.set(id,c); }); baseContInicialR2A=null; }
     baselineAtenciones298=m;
     protegidasR1=null;
   }
+  function fijarBaseContenidoInicialR2A(){ snapshotBaselineAtenciones298(atenciones); baseContInicialR2A=new Map(baselineAtenciones298); }
   function atencionModificada298(a){
     if(!a || a.id==null) return true;
     const prev=baselineAtenciones298.get(String(a.id));
@@ -6491,6 +6494,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
        * configuración: no se reemplaza `data` si hay un guardado pendiente/en curso, si cambió mientras la respuesta estaba en vuelo o si tiene
          modificaciones sin guardar; el guardado pendiente se reintenta en cada ciclo y, si no se confirma, se avisa (nunca se descarta en silencio). */
   let primeraCargaAplicada298=false;
+  let baseContInicialR2A=null;   // R2A: base de contenido fijada ANTES de la sincronización inicial por registros corruptos (la preserva el snapshot final)
   let protegidasR1=null;   // filas protegidas por la mezcla del ciclo en curso (las aplican los snapshots de baseline y se limpian al terminar)
   let configPendiente298=false, seqCambioConfig298=0, guardandoConfig298=0, baselineClaves298=null;
   let ciclosConfigDiferidos298=0, clavesMezcladas298=[];
@@ -7074,6 +7078,10 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       if(remotas.length>0){
         atenciones=remotas;
         const corruptosEliminados=limpiarRegistrosCorruptosSilencioso();
+        // R2A: en la PRIMERA carga de la sesión la base de contenido todavía está vacía; si hay registros corruptos, el sync de abajo vería TODAS las filas
+        // como modificadas y las reescribiría una por una (subiendo su updated_at sin cambio real). Se fija ya, con lo recién bajado del servidor
+        // (nada asíncrono entre la asignación y esta línea: no puede haber ediciones locales todavía).
+        if(!primeraCargaAplicada298) fijarBaseContenidoInicialR2A();
         localStorage.setItem(storageAtenciones,JSON.stringify(atenciones));
         // HOTFIX stale-overwrite (audit de forzar=true): `atenciones` acaba de
         // reemplazarse por lo recien bajado de Supabase (remotas), solo se le
