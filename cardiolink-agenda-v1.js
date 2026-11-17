@@ -338,6 +338,14 @@
     } catch (_) {}
   }
   asegurarHorarioDefaultMatias411AG();
+  // Persistencia V1 / R2B (sólo lectura, no cambia el comportamiento): informa a la capa de guardado de configuración si data.horariosProfesionales.matias es el seed
+  // transitorio en memoria (misma comparación por REFERENCIA que usa estadoHorarioProfesionalDia411AG), para NO persistirlo por un guardado ajeno. Un guardado explícito
+  // de horarios reemplaza el objeto (`= nuevo`), por lo que deja de ser el seed y se persiste normalmente.
+  window.cardiolinkAgendaSemillaV1 = function () {
+    try {
+      return (horarioSeedMatiasRef411AG && typeof data !== 'undefined' && data && data.horariosProfesionales && data.horariosProfesionales.matias === horarioSeedMatiasRef411AG) ? horarioSeedMatiasRef411AG : null;
+    } catch (_) { return null; }
+  };
 
   // Horarios libres para profesionalId/fecha con bloques de `duracionMinutos`.
   // Reutiliza turnoQueSuperpone411AG (misma lógica de choque/duración/grupos/

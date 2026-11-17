@@ -64,6 +64,21 @@
   const CLAVE_CONFLICTO = 'cardiolink_config_conflicto_v1_';
   const ID_AVISO = 'cardiolinkConfigSecretariaAviso';
 
+  // R2B: proyección de ESCRITURA (sólo claves autorizadas) de la última vista confirmada/cargada: es la «base» de la fusión de tres vías (motor cardiolink-config-merge-v1.js).
+  let baseVista = null, ultimaCarga = null;
+  function motor() { return (typeof window !== 'undefined' && window.cardiolinkConfigMergeV1) ? window.cardiolinkConfigMergeV1 : null; }
+  function neutroSec(b) {
+    try { return sanear(normalizarConfigCritica(JSON.parse(JSON.stringify(b))), CLAVES_ESCRITURA, true); } catch (e) { return undefined; }
+  }
+  // R2B: el local que ve el motor excluye la semilla en memoria de horariosProfesionales (agenda-v1), que no debe persistirse por un guardado ajeno.
+  function r2b() { return (typeof window !== 'undefined' && window.cardiolinkConfigR2B) ? window.cardiolinkConfigR2B : null; }
+  function localEsc() {
+    if (typeof data === 'undefined' || !data) return {};
+    const rr = r2b();
+    const fuente = (rr && rr.localSinSemilla) ? rr.localSinSemilla(baseVista) : data;
+    return sanear(fuente, CLAVES_ESCRITURA, true);
+  }
+  function conSemilla(fn) { const rr = r2b(); const s = rr && rr.semilla ? rr.semilla() : null; fn(); if (s && rr.reponerSemilla) rr.reponerSemilla(s); }
   let base = { updatedAt: null, hash: null, uid: null };   // versión administrativa recibida / confirmada por el servidor, atada al usuario que la leyó
   // estado: 'ok' | 'pendiente' (reintentable: red, RPC ausente, sin versión base) | 'rechazo' (el servidor rechazó el contenido) | 'conflicto'
   let estado = 'ok';
@@ -295,14 +310,19 @@
       const r = res.data;
       if (!r || r.ok !== true) { mostrarAviso('Respuesta inesperada del servidor al cargar la configuración. Se usa la copia de este equipo.'); return pend ? { retenido: true } : { error: 'respuesta inesperada del servidor' }; }
       if (r.config === null || r.config === undefined) return pend ? { retenido: true } : { config: null };
-      base = { updatedAt: r.updated_at || null, hash: r.vista_hash || null, uid: u };
+      // R2B: la base sólo AVANZA si no hay cambios locales sin guardar; con cambios pendientes se conserva la base sobre la que se editó (la fusión la usa).
+      const vistaEsc = clonar(sanear(r.config, CLAVES_ESCRITURA, true)), metaNueva = { updatedAt: r.updated_at || null, hash: r.vista_hash || null, uid: u };
+      let avanzo = true; const mo = motor();
+      if (mo && baseVista && !pend) { try { avanzo = !mo.hayCambiosLocales(baseVista, localEsc(), { neutro: neutroSec(baseVista) }); } catch (e) { avanzo = true; } }
+      ultimaCarga = { meta: metaNueva, vistaEsc: vistaEsc, avanzo: avanzo };
+      if (avanzo) { base = metaNueva; baseVista = vistaEsc; }
       vistaServidor = vistaEscritura(r.config);
       let sinBase = null;
       if (pend) {
         sinBase = resolverSinBase(u, pend);
         if (sinBase === 'no_resuelto') return { retenido: true };
       } else if (estado === 'ok') ocultarAviso();
-      const out = { config: sanear(r.config, CLAVES_LECTURA, false) };   // aunque el servidor mande más, se descarta
+      const out = { config: sanear(r.config, CLAVES_LECTURA, false), meta: metaNueva, vistaEsc: vistaEsc, avanzo: avanzo };   // aunque el servidor mande más, se descarta
       if (sinBase) out.sinBase = sinBase;
       return out;
     } catch (e) {
@@ -365,7 +385,8 @@
 
   // ---------- guardado ----------
   // cfg: instantánea ya saneada (tomada en el momento de iniciar la operación); u: usuario que la inició; b: versión base explícita (reintento) o null.
-  async function ejecutarGuardar(cfg, b, u) {
+  async function ejecutarGuardar(cfg, b, u, intento) {
+    intento = intento || 0;
     const c = cliente();
     if (!c) return false;
     vigilarSesion(c);
@@ -388,6 +409,11 @@
     if (!baseUsada.updatedAt || (baseUsada.uid && String(baseUsada.uid) !== String(u))) {
       return fallo('pendiente', 'sin_base', 'No se pudo guardar la configuración: todavía no se leyó la versión del servidor. Recargá la aplicación.', cfg, u, baseUsada);
     }
+    // R2B: sin cambios reales respecto de la base confirmada no se llama a la RPC (cero escrituras innecesarias).
+    const mo0 = motor();
+    if (mo0 && baseVista && !b && intento === 0 && baseUsada.updatedAt === base.updatedAt) {
+      try { if (!mo0.hayCambiosLocales(baseVista, cfg, { neutro: neutroSec(baseVista) })) return true; } catch (e) { /* se guarda normalmente */ }
+    }
     let res;
     try {
       // p_uid_esperado: el servidor también verifica que el token que firma la llamada sea el de `u` (cierra la ventana entre la comprobación y el envío).
@@ -408,6 +434,9 @@
     }
     const r = res.data;
     if (r && r.conflict === true) {
+      // R2B: antes de dar por conflicto, se relee la vista, se fusiona por entidad y campo y se reintenta (máx. 3). Sólo los choques reales llegan al usuario.
+      const fus = await fusionarYReintentar(cfg, baseUsada, u, intento, null);
+      if (fus !== null) return fus;
       resguardar('conflicto', 'conflicto', cfg, u, baseUsada);
       if (aun) {
         estado = 'conflicto';
@@ -419,12 +448,80 @@
     limpiarResguardo('pendiente', u);
     if (aun) {
       base = { updatedAt: r.updated_at || base.updatedAt, hash: r.vista_hash || base.hash, uid: u };
+      baseVista = clonar(cfg);                       // R2B: la base es lo ENVIADO
       const cg = leerResguardo('conflicto', u);
       if (cg) { estado = 'conflicto'; avisoDescartable(textoConflicto(cg)); }
       else { estado = 'ok'; ocultarAviso(); }
     }
     return true;
   }
+  // ---------- R2B: fusión de tres vías ante un conflicto de la RPC ----------
+  async function leerVistaRemota() {
+    const c = cliente(); if (!c) return null;
+    const res = await c.rpc('cardiolink_config_administrativa_v1');
+    if (res.error || !res.data || res.data.ok !== true || !res.data.config) return null;
+    return { meta: { updatedAt: res.data.updated_at || null, hash: res.data.vista_hash || null }, vista: res.data.config, vistaEsc: clonar(sanear(res.data.config, CLAVES_ESCRITURA, true)) };
+  }
+  // Tras guardar una fusión: lo que otra sesión aportó entra en `data` (sólo claves autorizadas); las ediciones hechas durante el guardado se conservan.
+  function adoptarEnData(localEnviado, enviado) {
+    const mo = motor(); if (!mo || typeof data === 'undefined' || !data) return;
+    if (mo.iguales(enviado, localEnviado)) return;
+    const m = mo.fusionar(localEnviado, localEsc(), enviado);
+    const nuevo = Object.assign({}, data);
+    CLAVES_ESCRITURA.forEach(function (k) { if (m.config && Object.prototype.hasOwnProperty.call(m.config, k)) nuevo[k] = m.config[k]; });
+    try { conSemilla(function () { data = nuevo; }); localStorage.setItem(storageConfig, JSON.stringify(data)); } catch (e) { /* sin almacenamiento */ }
+  }
+  // null = no aplica (sin motor / sin base): se sigue con el flujo anterior. true/false = resultado final del guardado.
+  async function fusionarYReintentar(cfg, baseUsada, u, intento, resoluciones) {
+    const mo = motor();
+    if (!mo || !baseVista || !base.updatedAt || (intento === 0 && baseUsada.updatedAt !== base.updatedAt) || intento >= 3) return null;
+    const rem = await leerVistaRemota();
+    if (!rem) return null;
+    const m = mo.fusionar(baseVista, cfg, rem.vistaEsc, { neutro: neutroSec(baseVista), resoluciones: resoluciones || {} });
+    if (!m.ok) {
+      resguardar('conflicto', 'conflicto_fusion', cfg, u, baseUsada);
+      estado = 'conflicto';
+      const ui = window.cardiolinkConfigR2B;
+      if (ui && ui.presentarConflictos) { ocultarAviso(); ui.presentarConflictos(m.conflictos, { origen: 'secretaria', resolver: function (res) { return resolverConflictos(u, res); } }); return false; }
+      return null;
+    }
+    // sin choques reales: se reintenta con la fusión y la versión del servidor recién leída. La base local (base/baseVista) NO avanza hasta que el servidor confirme.
+    const ok = await ejecutarGuardar(clonar(m.config), { updatedAt: rem.meta.updatedAt, hash: rem.meta.hash, uid: u }, u, intento + 1);
+    if (ok === true) { adoptarEnData(cfg, m.config); limpiarResguardo('conflicto', u); if (estado === 'conflicto') { estado = 'ok'; ocultarAviso(); } const ui = window.cardiolinkConfigR2B; if (ui && ui.descartarConflictos) ui.descartarConflictos(); }
+    return ok;
+  }
+  // El usuario eligió cómo resolver sólo los campos en conflicto: se RELEE el servidor y se vuelve a fusionar antes de confirmar.
+  function resolverConflictos(u, resoluciones) {
+    const t = cola.then(async function () {
+      if (!(await sesionVigente(cliente(), u))) return { ok: false };
+      const base0 = base;
+      const ok = await fusionarYReintentar(clonar(localEsc()), { updatedAt: base0.updatedAt, hash: base0.hash }, u, 0, resoluciones);
+      return { ok: ok === true };
+    });
+    cola = t.catch(function () { return false; });
+    return t;
+  }
+  // R2B: refresco con la vista ya cargada por cargar(): reconcilia por entidad y campo. 'aplicar' = sin cambios locales (el llamador aplica la vista);
+  // 'fusionado' = `data` ya quedó fusionada y hay que guardarla; 'conflicto' = se conserva lo local y se muestra el aviso.
+  function reconciliar(carga) {
+    const mo = motor();
+    if (!mo || !carga || !carga.vistaEsc) return 'aplicar';
+    if (carga.avanzo) return 'aplicar';
+    const local = localEsc(), neutro = neutroSec(baseVista);
+    if (mo.iguales(carga.vistaEsc, baseVista)) { base = { updatedAt: carga.meta.updatedAt, hash: carga.meta.hash, uid: carga.meta.uid }; return 'sin_novedad'; }
+    const m = mo.fusionar(baseVista, local, carga.vistaEsc, { neutro: neutro });
+    if (!m.ok) {
+      const u = uid(), ui = window.cardiolinkConfigR2B;
+      if (ui && ui.presentarConflictos) ui.presentarConflictos(m.conflictos, { origen: 'secretaria', resolver: function (res) { return resolverConflictos(u, res); } });
+      return 'conflicto';
+    }
+    base = { updatedAt: carga.meta.updatedAt, hash: carga.meta.hash, uid: carga.meta.uid }; baseVista = carga.vistaEsc;
+    const nuevo = Object.assign(clonar(carga.config || {}), m.config);
+    try { conSemilla(function () { data = normalizarConfigCritica(nuevo); }); localStorage.setItem(storageConfig, JSON.stringify(data)); } catch (e) { console.warn(e); }
+    const ui2 = window.cardiolinkConfigR2B; if (ui2 && ui2.descartarConflictos) ui2.descartarConflictos();
+    return 'fusionado';
+  }
+  function hayPendientePorGuardar() { const mo = motor(); try { return !!(mo && baseVista && mo.hayCambiosLocales(baseVista, localEsc(), { neutro: neutroSec(baseVista) })); } catch (e) { return false; } }
   function clonar(o) { try { return JSON.parse(JSON.stringify(o)); } catch (e) { return {}; } }
   // true = el servidor confirmó el guardado; false = NO se guardó (siempre con aviso visible y resguardo). Nunca null: no hay camino alternativo.
   // La instantánea y el usuario se fijan AHORA (al iniciar la operación), no cuando le toque el turno en la cola.
@@ -456,6 +553,8 @@
     guardar: guardar,
     cargaTerminada: cargaTerminada,
     reintentar: reintentar,
+    reconciliar: reconciliar,
+    hayPendientePorGuardar: hayPendientePorGuardar,
     descartarResguardo: descartarResguardo,
     descargarResguardo: descargarResguardo,
     estado: function () { return estado; },

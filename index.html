@@ -1107,9 +1107,12 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
 <script src="cardiolink-finanzas-v5.js?v=4b2-cobros"></script>
 <!-- Solicitudes de turno se carga antes de app.js: app.js conecta el cliente Supabase principal, igual que con Finanzas 5. -->
 <script src="cardiolink-solicitudes-turno.js?v=solicitudes-turno-2"></script>
-<script src="app.js?v=40109-persistencia-r2a"></script>
+<script src="app.js?v=40111-persistencia-r2b"></script>
 <!-- Seguridad clínica V1 / Bloque 4B: configuración administrativa de Secretaría por RPC. Debe cargar después de app.js y antes del primer login. -->
-<script src="cardiolink-config-secretaria-v1.js?v=1"></script>
+<script src="cardiolink-config-secretaria-v1.js?v=2-r2b"></script>
+<!-- Persistencia V1 / R2B: motor de fusión de tres vías + integración (Dueño/Admin: UPDATE condicionado por updated_at; avisos de conflicto). Después de app.js. -->
+<script src="cardiolink-config-merge-v1.js?v=r2b-2"></script>
+<script src="cardiolink-config-concurrencia-v1.js?v=r2b-3"></script>
 <script src="cardiolink-auth-guard.js?v=2"></script>
 <script src="cardiolink-clear-patient-fix.js?v=1"></script>
 <script src="cardiolink-pendientes-alertas.js?v=1"></script>
@@ -1124,7 +1127,7 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
 <!-- Seguridad clínica V1 / Bloque 3: asociaciones Secretaría–Médicos dentro de Usuarios y accesos (STAGING y Production; falla cerrado en cualquier otro backend; la autorización owner/admin la valida la RPC). Debe cargar después de app.js. -->
 <script src="cardiolink-asociaciones-ui-v1.js?v=2-prod"></script>
 <script src="cardiolink-dashboard-v1.js?v=1"></script>
-<script src="cardiolink-agenda-v1.js?v=1"></script>
+<script src="cardiolink-agenda-v1.js?v=2-r2b"></script>
 <script src="cardiolink-pedidos-rapidos-v1.js?v=1"></script>
 <script src="cardiolink-copias-facturacion-v1.js?v=2-pendientes"></script>
 <!-- Fase 6 / Bloque 6D: documentos y estudios en PDF reales en la ficha del paciente (Storage privado + metadata), módulo independiente. -->

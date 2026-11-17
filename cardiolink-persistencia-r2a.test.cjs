@@ -27,7 +27,7 @@ test('R2A: se conservan las protecciones de R1 (filas sin versión sin base, pro
   assert.match(app, /const contEnviado298=stableStringify298\(a\);/);
 });
 
-test('R2A: no se tocó applyNA383 ni el upsert de configuración (R2B)', () => {
+test('R2A: no se tocó applyNA383 (el upsert ciego de la config se eliminó en R2B)', () => {
   assert.match(app, /function applyNA383\(a\)\{\s+if\(!a\|\|typeof a!=='object'\|\|String\(a\.tipo\|\|''\)\.includes\('mensaje'\)\)return;/);
-  assert.match(app, /\.from\('cardiolink_atenciones'\)\.upsert\(\[\{id:CONFIG_ROW_ID,payload,updated_at:new Date\(\)\.toISOString\(\)\}\],\{onConflict:'id'\}\)/);
+  assert.doesNotMatch(app, /\.upsert\(\[\{id:CONFIG_ROW_ID,payload,updated_at:/, 'R2B: app.js ya no hace upsert ciego de la config');
 });

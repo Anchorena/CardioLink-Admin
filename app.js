@@ -6985,18 +6985,23 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       return false;
     }
     const uidInicio=usuarioSupabase.id;
+    // R2B: Dueño/Admin NUNCA escribe la fila completa con un upsert ciego. Guarda con UPDATE condicionado por updated_at, sólo si hay cambios reales, fusionando con lo que
+    // otra sesión haya escrito (cardiolink-config-concurrencia-v1.js). Si ese módulo no está cargado (página desactualizada, script bloqueado) NO se cae al comportamiento
+    // anterior: los cambios se conservan en este equipo (quedan pendientes) y se avisa. El rechazo 54000 de identidad, el permiso y los conflictos los resuelve el módulo.
+    const r2bGuardar298=window.cardiolinkConfigR2B;
+    if(r2bGuardar298&&r2bGuardar298.activo&&r2bGuardar298.activo()) return await r2bGuardar298.guardarDueno(uidInicio);
+    avisarR2BNoCargado298();
+    return false;
+  }
+  function avisarR2BNoCargado298(){
     try{
-      const payload={tipoRegistro:'config', version:VERSION_298, config:data, updatedAt:new Date().toISOString()};
-      // Cambio de sesión: si la sesión viva ya no es la del usuario que inició el guardado, no se envía con credenciales ajenas.
-      if(!(await sesionVivaCoincideV1(uidInicio))){ console.warn('Configuración: la sesión cambió o se cerró; no se guarda con otras credenciales.'); return false; }
-      const {error}=await supabaseClient.from('cardiolink_atenciones').upsert([{id:CONFIG_ROW_ID,payload,updated_at:new Date().toISOString()}],{onConflict:'id'});
-      if(error){
-        console.warn('No se pudo guardar config/pacientes en Supabase:',error.message);
-        // Protección de identidad profesional (54000): el servidor rechazó la config completa porque perdería una identidad documental. Aviso visible y claro.
-        if(esRechazoIdentidadArchivoLlenoV1(error)) mostrarAvisoConfigRechazadaV1(error);
-      }else quitarAvisoConfigRechazadaV1();
-      return !error;
-    }catch(e){console.warn('Error config Supabase:',e);return false;}
+      if(!document.body||document.getElementById('avisoR2BNoCargadoV1')) return;
+      const d=document.createElement('div');d.id='avisoR2BNoCargadoV1';d.setAttribute('role','alert');
+      d.style.cssText='position:fixed;left:12px;right:12px;bottom:12px;z-index:99997;background:#fee2e2;color:#7f1d1d;border:2px solid #dc2626;border-radius:12px;padding:12px 14px;font:600 14px/1.4 system-ui,Arial,sans-serif;display:flex;gap:12px;align-items:center;flex-wrap:wrap;box-shadow:0 6px 24px rgba(0,0,0,.25)';
+      d.innerHTML='<span><strong>La configuración NO se guardó.</strong> El módulo de control de cambios simultáneos no está cargado (la página está desactualizada o un script fue bloqueado). Tus cambios siguen en este equipo y no se pierden. Recargá la página (Ctrl/Cmd+Mayús+R) para poder guardarlos.</span><button type="button" class="primary">Entendido</button>';
+      d.querySelector('button').onclick=()=>d.remove();
+      document.body.appendChild(d);
+    }catch(e){}
   }
   // Bloque 4B v3: persistencia CONFIRMADA. true = el servidor confirmó; false = NO se confirmó (queda sólo en este equipo); null = no corresponde confirmar
   // (modo local sin sesión, o médico que nunca escribe esta fila). Cancela el guardado diferido de saveConfig para no duplicar la escritura.
@@ -7019,7 +7024,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     try{ ok=await guardarConfigBase298.apply(this,arguments); }
     finally{ guardandoConfig298--; }
     if(ok===true&&seq0===seqCambioConfig298){ configPendiente298=false; baselineClaves298=sig0; ciclosConfigDiferidos298=0; quitarAvisoConfigPendiente298(); }
-    else if(ok!==true&&configPendiente298&&!window.cardiolinkConfigSecretariaV1?.aplica?.()) mostrarAvisoConfigPendiente298();   // aviso inmediato: el cambio NO está en el servidor
+    else if(ok!==true&&configPendiente298&&!window.cardiolinkConfigSecretariaV1?.aplica?.()&&!(window.cardiolinkConfigR2B?.conflictos?.().length)) mostrarAvisoConfigPendiente298();   // con conflictos de fusión el aviso propio de R2B ya informa   // aviso inmediato: el cambio NO está en el servidor
     return ok;
   };
   window.guardarConfigEnSupabase298=guardarConfigEnSupabase298;
@@ -7048,15 +7053,37 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         cfgRow=null;
       }else if(backendEsAdminOwner!==true && !esMedicoBackendV1()){
         const mSec=window.cardiolinkConfigSecretariaV1, rSec=(mSec&&mSec.aplica&&mSec.aplica())?await mSec.cargar():null;
-        cfgRow=(rSec&&rSec.config)?{payload:{config:rSec.config}}:null;
+        cfgRow=(rSec&&rSec.config)?{payload:{config:rSec.config},cargaSec:rSec}:null;
       }
       if(cfgRow?.payload?.config){
+        // R2B (Dueño/Admin): el motor de fusión reconcilia lo local con lo remoto POR ENTIDAD Y CAMPO. La base se registra con la copia CRUDA, antes de normalizar.
+        const r2b298=window.cardiolinkConfigR2B, usaR2B298=!!(r2b298&&r2b298.activo&&r2b298.activo()&&cfgRow.updated_at);
+        let accionR2B298=null;
+        if(usaR2B298) accionR2B298=guardandoConfig298>0?'conservar':r2b298.reconciliar({config:cfgRow.payload.config,updated_at:cfgRow.updated_at});
+        // R2B (Secretaría): la vista de la RPC se reconcilia con el mismo motor, restringida a las claves autorizadas (el módulo de Secretaría guarda su propia base).
+        const secR2B298=(!usaR2B298&&cfgRow.cargaSec&&window.cardiolinkConfigSecretariaV1&&window.cardiolinkConfigSecretariaV1.reconciliar)?window.cardiolinkConfigSecretariaV1:null;
+        let accionSec298=null;
+        if(secR2B298) accionSec298=guardandoConfig298>0?'conservar':secR2B298.reconciliar(cfgRow.cargaSec);
         try{
+          if(secR2B298){
+            if(accionSec298==='aplicar'){ data=normalizarConfigCritica(cfgRow.payload.config); localStorage.setItem(storageConfig,JSON.stringify(data)); baselineClaves298=sigClaves298(data); }
+            else if(accionSec298!=='conservar'&&accionSec298!=='sin_novedad'&&secR2B298.hayPendientePorGuardar()&&guardandoConfig298===0){
+              marcarConfigPendiente298(); clearTimeout(window.__syncConfig298Timer);
+              guardarConfigEnSupabase298().catch(e=>console.warn('Guardado de config tras la fusión (Secretaría) falló:',e));
+            }
+          }else if(usaR2B298&&accionR2B298!=='primera'){
+            // 'aplicado' | 'sin_novedad': nada más; 'fusionado' | pendiente: se pide guardar lo local; 'conflicto': se conserva lo local y el aviso persistente lo gestiona.
+            if(accionR2B298!=='conservar'&&accionR2B298!=='aplicado'&&r2b298.hayPendientePorGuardar()&&guardandoConfig298===0){
+              marcarConfigPendiente298(); clearTimeout(window.__syncConfig298Timer);
+              guardarConfigEnSupabase298().catch(e=>console.warn('Guardado de config tras la fusión falló:',e));
+            }
+          }else{
           const cfgRemota298=normalizarConfigCritica(cfgRow.payload.config); respaldarIdentidadesLocalesPreviasV1(data,cfgRemota298);
           const decision298=decidirConfigRefresco298(sigClavesInicio298);   // R1: ver decidirConfigRefresco298
           if(decision298==='aplicar'){ data=cfgRemota298; localStorage.setItem(storageConfig,JSON.stringify(data)); baselineClaves298=sigClaves298(data); }
           else if(decision298==='mezclar') mezclarConfigRemota298(cfgRemota298);
           else console.warn('Refresco: se conserva la configuración local (guardado pendiente o en curso); no se reemplaza por la versión del servidor.');
+          }
         }catch(e){console.warn('Config remota inválida:',e);}
       }
       // v3.3: terminó la carga inicial de configuración de este usuario (con o sin éxito): libera a los guardados de Secretaría que esperaban la versión base.
