@@ -131,6 +131,35 @@ Con Secretaría asociada, Médico y Dueño/Administrador:
   no ve nada en el portal.
 Suite estática: `node tests/copias-facturacion-v1.js`.
 
+## 12. Persistencia y sincronización entre sesiones (si se toca guardado, refresco o carga)
+Antecedente confirmado (Persistencia V1, 2026-11): el refresco automático (cada 30 s) pide TODA la tabla y, al responder,
+reemplazaba `data` y `atenciones` por esa foto aunque fuera anterior a un cambio local hecho mientras la respuesta estaba en
+vuelo. Cambios perdidos sin aviso: fecha de nacimiento, pendientes resueltos, aranceles. Además, un guardado pedido mientras
+`cargandoDesdeNube` estaba activo se descartaba, y una fila nueva podía desaparecer. Con dos sesiones, la config de
+Dueño/Admin se escribe con upsert ciego (sin versión) y puede pisar cambios de otra sesión (R2, pendiente); las atenciones
+tienen guardado condicionado por versión y, ante conflicto, gana el remoto con un aviso breve.
+
+Causas identificadas (ver informe de diagnóstico):
+- R1 refresco que pisa cambios locales (corregido en la rama `fix/persistencia-datos-v1-r1`, pendiente de validar en STAGING);
+- R2 config de Dueño/Admin sin control de concurrencia (pendiente);
+- R3 «Editar ficha» desde HC (Médico) no persiste en servidor (pendiente);
+- R4 `normalizarConfigCritica` pisa reglas/valores/obras sociales editados y `regla` se lee de dos fuentes (pendiente).
+
+QA dirigido de R1 (editar → guardar → verificar remoto → recargar → verificar; segunda sesión cuando corresponda):
+1. fecha de nacimiento: guardar la ficha mientras un refresco está en vuelo → persiste en el servidor y tras recargar, sin aviso de error;
+2. pendiente: resolverlo (a) antes y (b) después de los 700 ms del guardado, con un refresco en vuelo → sigue resuelto tras recargar;
+3. arancel: editarlo/guardarlo durante un refresco → queda en remoto y local;
+4. refresco normal: un cambio hecho por otra sesión se refleja en la sesión inactiva;
+5. guardado pedido durante una carga: no se descarta (se reprograma al terminar); fila nueva creada durante un refresco no desaparece;
+6. guardado de configuración que falla: la config local NO se reemplaza por la remota (sin límite de tiempo), aparece de inmediato el aviso de cambios sin guardar y, al recuperarse el servidor, se guarda y el aviso desaparece;
+6b. cambio real en memoria todavía sin `saveConfig()` (p. ej. mientras se espera una respuesta antes de guardar) y un refresco con otra clave cambiada por otra sesión: se conservan las claves con cambios locales (y se guardan), el resto se toma del servidor; si no hay cambios locales el refresco se aplica entero. Sin cambios reales, `window.cardiolinkPersistenciaR1.estado().mezcladas` debe quedar vacío (las normalizaciones/inicializaciones no cuentan);
+7. fila con cambios locales + cambio remoto real de otra sesión: el guardado condicionado detecta el conflicto (gana el remoto, con aviso);
+8. Médico: resolver un pendiente (RPC) durante un refresco → sigue resuelto;
+9. editar una fila mientras su propio guardado está en vuelo (o resolver un pendiente justo después de editar la ficha del paciente): la segunda edición se sube en el ciclo siguiente (la base de contenido es lo ENVIADO, no lo que haya tras el await).
+Nota de método: esperar a que termine el guardado de arranque antes de cada caso (`!syncPendienteSinConfirmar && !syncAtencionesEnCurso`); dos refrescos seguidos sin pausa no son un caso real (el segundo se omite mientras hay un guardado sin confirmar).
+Hallazgos fuera de R1 (sin corregir; candidatos a R2): (a) con filas corruptas en el servidor, la primera carga de cada sesión llama a `sincronizarAtencionesSupabase(false)` ANTES de fijar la base de contenido y reescribe TODAS las atenciones (en STAGING ≈ 70 PATCH por inicio de sesión, subiendo `updated_at` de todas): otra sesión con edición en curso choca con el guardado condicionado y pierde su cambio; (b) la config de Dueño/Admin y las RPC de Secretaría pueden pisarse entre sí (última escritura gana por clave).
+Arnés local reproducible (app real + Supabase simulado en memoria, sin credenciales): resultados R1 en el informe de la tarea.
+
 ## Antes de commit
 Informar:
 - qué se cambió;

@@ -27,6 +27,12 @@ let syncTimer = null;
 // local recién hecho (ej. resolver un pendiente) con datos viejos todavía
 // no sincronizados.
 let syncPendienteSinConfirmar = false;
+// Persistencia V1 / R1: un guardado pedido mientras cargandoDesdeNube está activo (carga inicial o refresco en curso) NO se descarta: queda
+// registrado (programarSyncSupabase envuelta en el bloque 298) y se vuelve a programar apenas termina la carga (liberarSyncDiferidoPorCargaV1).
+let syncDiferidoPorCarga = false;
+function liberarSyncDiferidoPorCargaV1() {
+  if (syncDiferidoPorCarga && !cargandoDesdeNube) { syncDiferidoPorCarga = false; programarSyncSupabase(); }
+}
 const TAMANIO_PAGINA_LISTADO = 50;
 let paginaListado = 1;
 let modoPendientesGlobal = false;
@@ -6452,8 +6458,13 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   }
   function snapshotBaselineAtenciones298(lista){
     const m=new Map();
-    (Array.isArray(lista)?lista:[]).forEach(a=>{ if(a && a.id!=null) m.set(String(a.id), stableStringify298(a)); });
+    // R1: sólo las filas con versión remota conocida reciben base de contenido. Una fila NUEVA (agregada mientras la carga esperaba una respuesta,
+    // p. ej. durante la limpieza de corruptos) no tiene versión: sin base de contenido sigue figurando como modificada y se sube.
+    (Array.isArray(lista)?lista:[]).forEach(a=>{ if(a && a.id!=null && baselineVersionAtenciones298.has(String(a.id))) m.set(String(a.id), stableStringify298(a)); });
+    // R1: las filas protegidas conservan su base de contenido para seguir figurando como modificadas (sin base = fila nueva, se sube).
+    if(protegidasR1){ protegidasR1.forEach((p,id)=>{ if(p.contPrev===undefined) m.delete(id); else m.set(id,p.contPrev); }); }
     baselineAtenciones298=m;
+    protegidasR1=null;
   }
   function atencionModificada298(a){
     if(!a || a.id==null) return true;
@@ -6471,10 +6482,121 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
      abierta). Sin baselineVersion para un id -> se trata como atención nueva
      (nunca hubo una fila remota que proteger). Ver uso en
      sincronizarAtencionesSupabase más abajo. */
+  /* PERSISTENCIA V1 / R1 - un refresco (cada 30 s) pide TODA la tabla y, al responder, reemplazaba `data` y `atenciones` por esa foto, aunque la
+     foto fuera anterior a un cambio hecho mientras la respuesta estaba en vuelo (o a uno todavía sin guardar). Resultado: cambios locales perdidos
+     sin aviso (fecha de nacimiento, pendientes resueltos, aranceles). Ahora, al aplicar la respuesta:
+       * atenciones: se MEZCLA fila por fila. Se conserva la fila local si (a) tiene cambios locales sin confirmar, (b) la respuesta es anterior a la
+         versión que esta sesión ya confirmó, (c) es una fila nueva que el servidor todavía no conoce, o (d) hay una operación de Pendientes en curso.
+         Las filas protegidas conservan su versión base para que el guardado condicionado siga detectando un cambio remoto real (nunca pisa a ciegas).
+       * configuración: no se reemplaza `data` si hay un guardado pendiente/en curso, si cambió mientras la respuesta estaba en vuelo o si tiene
+         modificaciones sin guardar; el guardado pendiente se reintenta en cada ciclo y, si no se confirma, se avisa (nunca se descarta en silencio). */
+  let primeraCargaAplicada298=false;
+  let protegidasR1=null;   // filas protegidas por la mezcla del ciclo en curso (las aplican los snapshots de baseline y se limpian al terminar)
+  let configPendiente298=false, seqCambioConfig298=0, guardandoConfig298=0, baselineClaves298=null;
+  let ciclosConfigDiferidos298=0, clavesMezcladas298=[];
+  const MAX_CICLOS_AVISO_CONFIG_298=3;      // con guardado pendiente la config local se conserva sin límite de tiempo; a partir de acá además se avisa
+  // Firma por clave de primer nivel de la config (base de comparación "último estado confirmado/cargado") y claves que este rol puede escribir.
+  // Un valor vacío (ausente, null, '', [] o {}) firma igual: una inicialización que crea un contenedor vacío NO es un cambio del usuario.
+  function sigValor298(v){
+    if(v===undefined||v===null||v===''||(Array.isArray(v)&&!v.length)||(typeof v==='object'&&!Array.isArray(v)&&!Object.keys(v).length)) return '∅';
+    return stableStringify298(v);
+  }
+  function sigClaves298(o){ const s={}; try{ Object.keys(o||{}).forEach(k=>{ s[k]=sigValor298(o[k]); }); }catch(e){} return s; }
+  // Claves cuyo valor local puede ser una semilla en memoria que NO debe persistirse sola (agenda-v1); sus cambios reales siempre piden guardar (saveConfig).
+  const CLAVES_SOLO_MEMORIA_298=['horariosProfesionales'];
+  function clavesEscribiblesConfig298(){
+    if(configCompletaPermitidaV1()) return null;                       // Dueño/Admin: toda la config
+    const l=window.cardiolinkConfigSecretariaV1?._listas?.escritura;   // Secretaría: sólo las claves administrativas
+    return Array.isArray(l)?l:[];
+  }
+  function rolEscribeConfig298(){
+    try{
+      if(!supabaseClient||!usuarioSupabase||esMedicoBackendV1()||backendRolCargado!==true) return false;
+      return configCompletaPermitidaV1() || !!window.cardiolinkConfigSecretariaV1?.aplica?.();
+    }catch(e){ return false; }
+  }
+  function marcarConfigPendiente298(){ if(rolEscribeConfig298()){ seqCambioConfig298++; configPendiente298=true; } }
+  function quitarAvisoConfigPendiente298(){ try{ document.getElementById('avisoConfigPendienteV1')?.remove(); }catch(e){} }
+  function mostrarAvisoConfigPendiente298(){
+    try{
+      if(!document.body||document.getElementById('avisoConfigPendienteV1')) return;
+      const d=document.createElement('div');d.id='avisoConfigPendienteV1';d.setAttribute('role','alert');
+      d.style.cssText='position:fixed;left:12px;right:12px;bottom:12px;z-index:99997;background:#fef3c7;color:#78350f;border:1px solid #f59e0b;border-radius:12px;padding:12px 14px;box-shadow:0 6px 24px rgba(0,0,0,.2);font:600 14px/1.4 system-ui,Arial,sans-serif;display:flex;gap:12px;align-items:center;flex-wrap:wrap';
+      d.innerHTML='<span><strong>Hay cambios de configuración que todavía NO se guardaron en el servidor.</strong> Siguen en este equipo y se reintenta guardarlos; no se reemplazan por la versión del servidor.</span><button type="button" class="primary">Reintentar ahora</button>';
+      d.querySelector('button').onclick=async()=>{ try{ await guardarConfigEnSupabase298(); }catch(e){ console.warn(e); } };
+      document.body.appendChild(d);
+    }catch(e){}
+  }
+  // Qué hacer con la config remota recién descargada (ya normalizada). Nunca se descarta un cambio local por paso del tiempo:
+  //  'aplicar'  -> sin cambios locales sin guardar (o rol que no puede escribir config): se reemplaza `data` por la remota, como siempre;
+  //  'conservar'-> hay un guardado pedido y no confirmado (o en curso): se conserva TODA la config local, se reintenta guardarla y se avisa si no se logra;
+  //  'mezclar'  -> sin guardado pedido pero hay claves con cambios locales (hechos antes o durante esta carga, p. ej. mientras se espera una respuesta
+  //                antes de llamar a saveConfig): esas claves se conservan, el resto se toma de la remota y se pide guardar lo conservado.
+  function decidirConfigRefresco298(sigInicio){
+    if(!primeraCargaAplicada298||baselineClaves298===null||!rolEscribeConfig298()) return 'aplicar';
+    if(configPendiente298||guardandoConfig298>0){
+      ciclosConfigDiferidos298++;
+      if(ciclosConfigDiferidos298>=MAX_CICLOS_AVISO_CONFIG_298&&!window.cardiolinkConfigSecretariaV1?.aplica?.()) mostrarAvisoConfigPendiente298();
+      if(configPendiente298&&guardandoConfig298===0){ clearTimeout(window.__syncConfig298Timer); guardarConfigEnSupabase298().catch(e=>console.warn('Reintento de config falló:',e)); }
+      return 'conservar';
+    }
+    const sigLocal=sigClaves298(data), esc=clavesEscribiblesConfig298(), cambiadas=[];
+    new Set([...Object.keys(sigLocal),...Object.keys(baselineClaves298)]).forEach(k=>{
+      if(esc&&!esc.includes(k)) return;
+      if(CLAVES_SOLO_MEMORIA_298.includes(k)) return;
+      if(sigLocal[k]!==baselineClaves298[k]||(sigInicio&&sigInicio[k]!==undefined&&sigLocal[k]!==sigInicio[k])) cambiadas.push(k);
+    });
+    clavesMezcladas298=cambiadas;
+    if(!cambiadas.length){ ciclosConfigDiferidos298=0; return 'aplicar'; }
+    return 'mezclar';
+  }
+  // 'mezclar': conserva las claves con cambios locales sobre la remota y pide guardarlas (con aviso inmediato si el servidor no lo confirma).
+  function mezclarConfigRemota298(cfgRemota){
+    const sigRemota=sigClaves298(cfgRemota), baseAnt=baselineClaves298, locales=data, claves=clavesMezcladas298.slice();
+    claves.forEach(k=>{ if(Object.prototype.hasOwnProperty.call(locales,k)) cfgRemota[k]=locales[k]; else delete cfgRemota[k]; });
+    data=cfgRemota; localStorage.setItem(storageConfig,JSON.stringify(data));
+    baselineClaves298=Object.assign({},sigRemota); claves.forEach(k=>{ if(baseAnt[k]!==undefined) baselineClaves298[k]=baseAnt[k]; else delete baselineClaves298[k]; });
+    console.warn('Refresco: se conservaron cambios locales de configuración sin guardar (claves: '+claves.join(', ')+'); se intenta guardarlos.');
+    marcarConfigPendiente298();
+    clearTimeout(window.__syncConfig298Timer); guardarConfigEnSupabase298().catch(e=>console.warn('Guardado de config conservada falló:',e));
+  }
+  window.cardiolinkPersistenciaR1={estado:()=>({configPendiente:configPendiente298,guardando:guardandoConfig298,diferidos:ciclosConfigDiferidos298,mezcladas:clavesMezcladas298.slice(),primeraCarga:primeraCargaAplicada298,syncDiferido:syncDiferidoPorCarga})};
+
   let baselineVersionAtenciones298=new Map();
+  // R1: mezcla del refresco con el estado local (ver comentario general). Devuelve {lista, protegidas:Map id->{local,verPrev,contPrev}}.
+  function mezclarRefrescoAtenciones298(filasRemotas,inicioCargaMs){
+    const locales=Array.isArray(atenciones)?atenciones:[];
+    const protegerTodo=pendientesOperacionEnCursoV1===true;
+    const remotasPorId=new Map();
+    filasRemotas.forEach(r=>{ if(r&&r.id!=null) remotasPorId.set(String(r.id),r); });
+    const protegidas=new Map();
+    locales.forEach(a=>{
+      if(!a||typeof a!=='object'||a.id==null||a.id===CONFIG_ROW_ID) return;
+      const id=String(a.id), fr=remotasPorId.get(id);
+      const verPrev=baselineVersionAtenciones298.get(id), contPrev=baselineAtenciones298.get(id);
+      let proteger=false;
+      // fila nueva que el servidor todavía no conoce: sin versión confirmada, o confirmada DESPUÉS de pedir esta carga (la respuesta es anterior a ese alta)
+      if(!fr){ proteger=(verPrev===undefined)||(Date.parse(verPrev)>=inicioCargaMs); }
+      else if(protegerTodo){ proteger=true; }                                     // operación de Pendientes en curso
+      else if(contPrev!==undefined&&contPrev!==stableStringify298(a)){ proteger=true; }   // cambios locales sin confirmar
+      else if(verPrev&&Date.parse(fr.updated_at)<Date.parse(verPrev)){ proteger=true; }   // respuesta anterior a lo ya confirmado por esta sesión
+      if(proteger) protegidas.set(id,{local:a,verPrev,contPrev});
+    });
+    const lista=[]; const usadas=new Set();
+    filasRemotas.forEach(r=>{
+      if(!r||r.id==null) return; const id=String(r.id);
+      const p=protegidas.get(id);
+      const fila=p?p.local:r.payload;
+      if(fila){ lista.push(fila); usadas.add(id); }
+    });
+    protegidas.forEach((p,id)=>{ if(!usadas.has(id)) lista.push(p.local); });
+    return {lista,protegidas};
+  }
   function snapshotBaselineVersionAtenciones298(filas){
     const m=new Map();
     (Array.isArray(filas)?filas:[]).forEach(r=>{ if(r && r.id!=null && r.updated_at) m.set(String(r.id), r.updated_at); });
+    // R1: las filas protegidas conservan la versión base con la que esta sesión armó su cambio (el guardado condicionado detecta un cambio remoto real).
+    if(protegidasR1) protegidasR1.forEach((p,id)=>{ if(p.verPrev!==undefined) m.set(id,p.verPrev); });
     baselineVersionAtenciones298=m;
   }
   // Aviso corto y no bloqueante cuando una atención se actualiza con la
@@ -6884,11 +7006,31 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     alert((que||'El cambio')+': el cambio quedó guardado SOLO en este equipo; NO se pudo confirmar con el servidor. No se pierde, pero nadie más lo verá hasta que se sincronice. Revisá la conexión y repetí el guardado (si aparece un aviso rojo, usá «Reintentar» ahí).');
   };
   window.guardarConfigEnSupabase298=guardarConfigEnSupabase298;
+  // R1: envoltorio que registra el guardado en curso y sólo da por saldado el pendiente cuando el servidor lo confirma (sin otro pedido en el medio).
+  const guardarConfigBase298=guardarConfigEnSupabase298;
+  guardarConfigEnSupabase298=async function(){
+    const seq0=seqCambioConfig298, sig0=sigClaves298(data);
+    guardandoConfig298++;
+    let ok=false;
+    try{ ok=await guardarConfigBase298.apply(this,arguments); }
+    finally{ guardandoConfig298--; }
+    if(ok===true&&seq0===seqCambioConfig298){ configPendiente298=false; baselineClaves298=sig0; ciclosConfigDiferidos298=0; quitarAvisoConfigPendiente298(); }
+    else if(ok!==true&&configPendiente298&&!window.cardiolinkConfigSecretariaV1?.aplica?.()) mostrarAvisoConfigPendiente298();   // aviso inmediato: el cambio NO está en el servidor
+    return ok;
+  };
+  window.guardarConfigEnSupabase298=guardarConfigEnSupabase298;
+  // R1: un guardado de atenciones pedido durante una carga se registra (no se descarta) y se programa al terminar la carga.
+  const programarSyncBase298=programarSyncSupabase;
+  window.programarSyncSupabase=programarSyncSupabase=function(){
+    if(cargandoDesdeNube&&supabaseClient&&usuarioSupabase){ syncDiferidoPorCarga=true; syncPendienteSinConfirmar=true; return; }
+    return programarSyncBase298.apply(this,arguments);
+  };
 
   if(typeof cargarAtencionesDesdeSupabase==='function'){
     const cargarOld298=cargarAtencionesDesdeSupabase;
     window.cargarAtencionesDesdeSupabase = cargarAtencionesDesdeSupabase = async function(){
       if(!supabaseClient || !usuarioSupabase) return cargarOld298.apply(this,arguments);
+      const sigClavesInicio298=sigClaves298(data), inicioCarga298=Date.now();   // R1: `data` y reloj local al pedir esta carga
       // v3: con el rol sin confirmar o sin permiso sobre la fila completa (Secretaría, owner/admin no confirmado) la fila de configuración ni siquiera se pide.
       const pideCfgCompleta298=configCompletaPermitidaV1() || (backendRolCargado===true && esMedicoBackendV1());
       let consulta298=supabaseClient.from('cardiolink_atenciones').select('id,payload,updated_at');
@@ -6905,7 +7047,13 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         cfgRow=(rSec&&rSec.config)?{payload:{config:rSec.config}}:null;
       }
       if(cfgRow?.payload?.config){
-        try{ const cfgRemota298=normalizarConfigCritica(cfgRow.payload.config); respaldarIdentidadesLocalesPreviasV1(data,cfgRemota298); data=cfgRemota298; localStorage.setItem(storageConfig,JSON.stringify(data)); }catch(e){console.warn('Config remota inválida:',e);}
+        try{
+          const cfgRemota298=normalizarConfigCritica(cfgRow.payload.config); respaldarIdentidadesLocalesPreviasV1(data,cfgRemota298);
+          const decision298=decidirConfigRefresco298(sigClavesInicio298);   // R1: ver decidirConfigRefresco298
+          if(decision298==='aplicar'){ data=cfgRemota298; localStorage.setItem(storageConfig,JSON.stringify(data)); baselineClaves298=sigClaves298(data); }
+          else if(decision298==='mezclar') mezclarConfigRemota298(cfgRemota298);
+          else console.warn('Refresco: se conserva la configuración local (guardado pendiente o en curso); no se reemplaza por la versión del servidor.');
+        }catch(e){console.warn('Config remota inválida:',e);}
       }
       // v3.3: terminó la carga inicial de configuración de este usuario (con o sin éxito): libera a los guardados de Secretaría que esperaban la versión base.
       try{ window.cardiolinkConfigSecretariaV1?.cargaTerminada?.(); }catch(e){}
@@ -6913,7 +7061,10 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       // antes ese updated_at se descartaba acá y ya no quedaba disponible en
       // ningún lado para proteger contra un upsert ciego posterior.
       const filasAtencion298=(rows||[]).filter(r=>r.id!==CONFIG_ROW_ID && r.payload?.tipoRegistro!=='config');
-      const remotas=filasAtencion298.map(r=>r.payload).filter(Boolean);
+      // R1: a partir de la segunda carga (refresco) se mezcla con el estado local en vez de reemplazarlo.
+      const mezcla298=primeraCargaAplicada298?mezclarRefrescoAtenciones298(filasAtencion298,inicioCarga298):null;
+      protegidasR1=(mezcla298&&mezcla298.protegidas.size)?mezcla298.protegidas:null;
+      const remotas=mezcla298?mezcla298.lista:filasAtencion298.map(r=>r.payload).filter(Boolean);
       // Se fija ACÁ, antes de cualquier sync posterior en este mismo ciclo de
       // carga (incluida la limpieza de corruptos más abajo), para que el
       // próximo compare-and-swap compare siempre contra lo realmente
@@ -6943,7 +7094,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         // completa. No es una operación cotidiana: solo ocurre una vez, la
         // primera vez que este dispositivo/usuario sincroniza con una base
         // remota vacía. En cualquier otro escenario NO se debe usar forzar=true.
-        cargandoDesdeNube=false; await sincronizarAtencionesSupabase(true); return;
+        primeraCargaAplicada298=true; cargandoDesdeNube=false; await sincronizarAtencionesSupabase(true); return;
       }else{
         atenciones=[]; localStorage.setItem(storageAtenciones,JSON.stringify(atenciones));
       }
@@ -6956,6 +7107,10 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       try{ await recuperarNuevasPendientesV1(); }catch(e){ console.warn('No se pudieron recuperar las filas nuevas pendientes:',e); }
       try{ apartarDocumentosNoPermitidosV1(); }catch(e){ console.warn('No se pudieron apartar los documentos no permitidos:',e); }
       try{ recuperarDocumentosPendientesV1(); }catch(e){ console.warn('No se pudieron recuperar los documentos clínicos resguardados:',e); }
+      // R1: guardados pedidos durante la carga y filas protegidas por la mezcla: se programan ahora (nada se descarta en silencio).
+      primeraCargaAplicada298=true;
+      if(mezcla298&&mezcla298.protegidas.size) syncDiferidoPorCarga=true;
+      liberarSyncDiferidoPorCargaV1();
     };
   }
   if(typeof sincronizarAtencionesSupabase==='function'){
@@ -7006,6 +7161,9 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
           // remota vacía, limpieza de corruptos, "Sincronizar ahora" tras
           // corrupción) - nunca compara contra baselineVersionAtenciones298.
           // No se introduce ningún uso nuevo de forzar=true (B1.5, punto 5).
+          // R1: el contenido que queda como base es el que SE ENVIÓ (foto tomada al armar la subida), no el de después del await: una edición hecha
+          // mientras la subida está en vuelo seguirá figurando como modificada y se sube en el ciclo siguiente.
+          const contForzado298=new Map(); aEnviar298.forEach(a=>{ if(a&&a.id!=null) contForzado298.set(String(a.id),stableStringify298(a)); });
           const rows=aEnviar298.map(a=>({id:String(a.id),payload:a,updated_at:now298}));
 
           const vistos=new Set();
@@ -7042,7 +7200,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
           // estas filas como si nunca hubieran tenido versión remota.
           aEnviar298.forEach(a=>{
             if(!a || a.id==null) return;
-            baselineAtenciones298.set(String(a.id), stableStringify298(a));
+            baselineAtenciones298.set(String(a.id), contForzado298.has(String(a.id))?contForzado298.get(String(a.id)):stableStringify298(a));
             baselineVersionAtenciones298.set(String(a.id), now298);
           });
 
@@ -7077,6 +7235,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         for(const a of existentes298){
           const idStr=String(a.id);
           const baselineVersion=baselineVersionAtenciones298.get(idStr);
+          const contEnviado298=stableStringify298(a);   // R1: foto del contenido que se envía (la base se fija con esto, no con lo que haya tras el await)
           const {data:actualizadas,error:updErr}=await supabaseClient
             .from('cardiolink_atenciones')
             .update({payload:a, updated_at:now298})
@@ -7096,7 +7255,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
             return false;
           }
           if(Array.isArray(actualizadas) && actualizadas.length>0){
-            baselineAtenciones298.set(idStr, stableStringify298(a));
+            baselineAtenciones298.set(idStr, contEnviado298);
             baselineVersionAtenciones298.set(idStr, actualizadas[0].updated_at || now298);
           }else{
             // 0 filas afectadas: la condición updated_at=baseline no
@@ -7123,24 +7282,27 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
             });
             return finalRows;
           };
-          const confirmar298=lote=>lote.forEach(a=>{
+          const confirmar298=(lote,cont)=>lote.forEach(a=>{
             if(!a || a.id==null) return;
-            baselineAtenciones298.set(String(a.id), stableStringify298(a));
+            baselineAtenciones298.set(String(a.id), (cont&&cont.has(String(a.id)))?cont.get(String(a.id)):stableStringify298(a));
             baselineVersionAtenciones298.set(String(a.id), now298);
           });
+          const fotoLote298=lote=>{ const m=new Map(); lote.forEach(a=>{ if(a&&a.id!=null) m.set(String(a.id),stableStringify298(a)); }); return m; };   // R1: contenido enviado
           const rechazadosPorPermisos298=[];
           for(const lote of lotes298){
             // Atención nueva -> no hay versión remota previa que proteger
             // (punto 4): se conserva el upsert normal.
+            const cont298=fotoLote298(lote);
             const {error:upErr}=await supabaseClient
               .from('cardiolink_atenciones')
               .upsert(filasDe298(lote),{onConflict:'id'});
-            if(!upErr){ confirmar298(lote); continue; }
+            if(!upErr){ confirmar298(lote,cont298); continue; }
             if(lote.every(esMsg298)&&esErrorPermisosRLS298(upErr)){
               // Se envía uno por uno: sólo se descartan los rechazados por permisos, no los válidos del mismo lote.
               for(const m of lote){
+                const contM298=fotoLote298([m]);
                 const {error:e1}=await supabaseClient.from('cardiolink_atenciones').upsert(filasDe298([m]),{onConflict:'id'});
-                if(!e1){ confirmar298([m]); continue; }
+                if(!e1){ confirmar298([m],contM298); continue; }
                 if(esErrorPermisosRLS298(e1)){ rechazadosPorPermisos298.push(m); continue; }
                 console.error(e1);
                 alert('No se pudo sincronizar con Supabase: '+e1.message);
@@ -7252,6 +7414,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   if(saveConfigOld298){
     window.saveConfig = saveConfig = function(){
       const r=saveConfigOld298.apply(this,arguments);
+      marcarConfigPendiente298();   // R1: hay un guardado de configuración pedido que todavía no se confirmó
       clearTimeout(window.__syncConfig298Timer);
       window.__syncConfig298Timer=setTimeout(()=>guardarConfigEnSupabase298(),900);
       return r;
