@@ -52,6 +52,20 @@
     });
     var cfg = null; try { cfg = puente.configPendiente(); } catch (e) { cfg = null; }
     if (cfg && cfg.ops && cfg.ops.length) { var kc = t + '|c', pc = st.ops[kc]; propias[kc] = { k: 'config', baseVer: cfg.baseVer, ops: cfg.ops, noProt: cfg.noProt || [], rol: puente.rol(), ts: (pc && pc.ts) || cuando, tab: t }; }
+    // R3: fichas demográficas del paciente editadas y todavía sin confirmar en cardiolink_pacientes (sólo diferencias {antes, después} y la versión de lo que se vio)
+    var fichas = []; try { fichas = puente.fichasPendientes ? puente.fichasPendientes() : []; } catch (e) { fichas = []; }
+    fichas.forEach(function (f) {
+      if (!f || !f.cambios || !Object.keys(f.cambios).length) return;
+      var kf = t + '|f:' + f.id, pf = st.ops[kf];
+      propias[kf] = { k: 'ficha', id: String(f.id), cambios: f.cambios, rol: puente.rol(), ts: (pf && pf.ts) || f.ts || cuando, tab: t };
+    });
+    // R3: divergencias de la ficha del paciente (sin base confiable: se conservan los DOS valores hasta que el usuario decida)
+    var divs = []; try { divs = puente.divergencias ? puente.divergencias() : []; } catch (e) { divs = []; }
+    divs.forEach(function (d) {
+      if (!d || !d.campos || !Object.keys(d.campos).length) return;
+      var kd = t + '|d:' + d.id, pd = st.ops[kd];
+      propias[kd] = { k: 'divergencia', id: String(d.id), campos: d.campos, rol: puente.rol(), ts: (pd && pd.ts) || d.ts || cuando, tab: t };
+    });
     especiales.forEach(function (op, key) { if (!propias[key]) { op.tab = t; propias[key] = op; } });
     return propias;
   }
@@ -104,6 +118,8 @@
           if (op.k === 'nueva') return recuperarNueva(op, remotas, res);
           if (op.k === 'mod') return recuperarMod(op, remotas, res);
           if (op.k === 'config') return recuperarConfig(op, ctx.cfgRemota, res);
+          if (op.k === 'divergencia') { puente.recuperarDivergencia && puente.recuperarDivergencia(op); res.recuperadas++; return; }
+          if (op.k === 'ficha') { puente.recuperarFicha && puente.recuperarFicha(op); res.recuperadas++; return; }   // R3: se reaplica y se reintenta por el camino seguro (3 vías)
         } catch (e) { console.warn('R2D: no se pudo recuperar una operación (se conserva):', e); especiales.set(t + '|x:' + k, Object.assign({}, op, { tab: t, k: 'no_autorizada', motivo: 'No se pudo recuperar automáticamente: ' + (e && e.message || e) })); res.retenidas++; }
       });
       registrar({ eliminar: reclamar, forzar: true });        // en UNA escritura: las reclamadas salen y las derivadas entran (si la escritura falla, las originales quedan)
@@ -163,11 +179,13 @@
   }
   function descartar(key) {
     var op = especiales.get(key) || (estadoCola && estadoCola.ops[key]); if (!op) return;
-    if (!window.confirm('¿Descartar este cambio pendiente?\n\n' + (op.desc || 'Cambios de configuración') + '\n\nSe pierde para siempre: no se podrá recuperar.')) return;
+    if (!window.confirm('¿Descartar este cambio pendiente?\n\n' + (((op.k === 'ficha' || op.k === 'divergencia') && puente.fichaDesc ? puente.fichaDesc(op.id) : op.desc) || 'Cambios de configuración') + '\n\nSe pierde para siempre: no se podrá recuperar.')) return;
     try {
       if (op.k === 'mod') { puente.revertirFila(op.id); try { window.cardiolinkAtencionesR2C && window.cardiolinkAtencionesR2C.liberar(op.id); } catch (e) { /* */ } }
       else if (op.k === 'nueva') { puente.quitarLocal(op.id); enviados.delete(String(op.id)); try { window.cardiolinkAtencionesR2C && window.cardiolinkAtencionesR2C.liberar(op.id); } catch (e) { /* */ } }
       else if (op.k === 'config') { puente.descartarConfig(op.ops); }
+      else if (op.k === 'ficha') { puente.descartarFicha(op.id); }
+      else if (op.k === 'divergencia') { Object.keys(op.campos).forEach(function (c) { puente.resolverDivergencia(op.id, c, 'servidor'); }); }   // descartar = quedarse con el valor del servidor (decisión explícita)
       especiales.delete(key);
     } catch (e) { console.warn('R2D: no se pudo descartar:', e); }
     registrar({ eliminar: [key] }); try { if (window.cardiolinkAtencionesR2C) window.cardiolinkAtencionesR2C.mostrar(); } catch (e) { /* */ }
@@ -206,13 +224,15 @@
       if (op.k === 'mod') { det = 'Campos: ' + Object.keys(op.cambios).slice(0, 6).join(', '); var rt = r2c[op.id]; if (rt) tipo = /^rechazo/.test(rt) ? 'rechazada' : 'conflicto'; }
       else if (op.k === 'nueva') { det = 'Atención nueva sin confirmar'; var rt2 = r2c[op.id]; if (rt2) tipo = /^rechazo/.test(rt2) ? 'rechazada' : 'conflicto'; }
       else if (op.k === 'config') { det = 'Configuración: ' + op.ops.length + ' cambio' + (op.ops.length === 1 ? '' : 's') + (op.noProt && op.noProt.length ? ' (no protegidos: ' + op.noProt.slice(0, 3).join(', ') + ')' : ''); if (cfgConf) tipo = 'conflicto'; }
+      else if (op.k === 'divergencia') { tipo = 'revision'; det = 'Diferencias sin base confiable (se conservan las dos versiones): ' + Object.keys(op.campos).map(function (c) { return c + ' — tuyo «' + (op.campos[c].local == null ? 'vacío' : op.campos[c].local) + '» / servidor «' + (op.campos[c].remoto == null ? 'vacío' : op.campos[c].remoto) + '»'; }).join('; '); }
+      else if (op.k === 'ficha') { det = 'Datos del paciente: ' + Object.keys(op.cambios).join(', ') + ' (sin confirmar en el servidor)'; }
       else if (op.k === 'incompleta') { tipo = 'incompleta'; det = 'Faltan cobertura, prestación o profesional. No entra en Caja ni facturación.'; }
       else if (op.k === 'revision') { tipo = 'revision'; det = op.motivo; }
       else if (op.k === 'ambigua') { tipo = 'revision'; det = op.motivo; }
       else if (op.k === 'eliminada_remota') { tipo = 'conflicto'; det = op.motivo + ' Campos: ' + Object.keys(op.cambios || {}).slice(0, 5).join(', '); }
       else if (op.k === 'no_autorizada') { tipo = 'rechazada'; det = op.motivo || 'No autorizada.'; }
       var viva = op.id != null ? (puente.atenciones() || []).find(function (a) { return a && String(a.id) === String(op.id); }) : null;
-      items.push({ key: key, op: op, tipo: tipo, det: det, desc: op.desc || (viva ? nombreAtencion(viva) : (op.row ? nombreAtencion(op.row) : (op.k === 'config' ? 'Configuración' : String(op.id || '')))), dias: P.antiguedadDias(op, n) });
+      items.push({ key: key, op: op, tipo: tipo, det: det, desc: op.desc || ((op.k === 'ficha' || op.k === 'divergencia') && puente.fichaDesc ? puente.fichaDesc(op.id) : viva ? nombreAtencion(viva) : (op.row ? nombreAtencion(op.row) : (op.k === 'config' ? 'Configuración' : String(op.id || '')))), dias: P.antiguedadDias(op, n) });
     });
     Object.keys(r2c).forEach(function (id) {   // conflictos de R2C sin operación propia (p. ej. atención eliminada en otra sesión): se muestran igual
       if (!/^eliminada/.test(r2c[id])) return;
@@ -252,13 +272,14 @@
         f.appendChild(cab); if (it.det) f.appendChild(crear('div', 'color:#4b5563;font-size:12px', it.det));
         var acc = crear('div', 'display:flex;gap:6px;flex-wrap:wrap;margin-top:4px');
         function b(txt, fn, peligro) { var x = crear('button', 'padding:4px 10px;border-radius:7px;border:1px solid ' + (peligro ? '#b91c1c' : '#9ca3af') + ';background:#fff;color:' + (peligro ? '#b91c1c' : '#111') + ';font-weight:700;cursor:pointer', txt); x.type = 'button'; x.addEventListener('click', fn); acc.appendChild(x); }
-        if (it.tipo === 'pendiente') b('Reintentar', function () { puente.sincronizarYa(); if (it.op.k === 'config') puente.guardarConfigYa(); });
+        if (it.tipo === 'pendiente') b('Reintentar', function () { puente.sincronizarYa(); if (it.op.k === 'config') puente.guardarConfigYa(); if (it.op.k === 'ficha') puente.reintentarFichas(); });
         if (it.tipo === 'conflicto') b('Resolver conflicto', function () { try { if (it.op.k === 'config') window.cardiolinkConfigR2B.abrirPanel(); else window.cardiolinkAtencionesR2C.abrirPanel(); } catch (e) { console.warn(e); } });
         if (it.tipo === 'rechazada' && it.op.k !== 'config' && it.op.k !== 'no_autorizada') b('Reintentar', function () { try { window.cardiolinkAtencionesR2C.liberar(it.op.id); puente.sincronizarYa(); } catch (e) { console.warn(e); } });
         if (it.tipo === 'rechazada' && it.op.k === 'no_autorizada') b('Reintentar', function () { aviso('Se vuelve a validar al iniciar sesión.'); });
+        if (it.op.k === 'divergencia') Object.keys(it.op.campos).forEach(function (c) { b('Usar el del servidor (' + c + ')', function () { puente.resolverDivergencia(it.op.id, c, 'servidor'); }); b('Usar el mío (' + c + ')', function () { puente.resolverDivergencia(it.op.id, c, 'mio'); }); });
         if (it.op.k === 'incompleta') b('Completar', function () { mostrarCompletar(it, f); });
         if (it.op.k === 'revision' || it.op.k === 'ambigua') b('Revisar y reenviar', function () { reenviar(it.key); });
-        if (it.op.k !== 'eliminada_r2c') b('Descartar', function () { descartar(it.key); }, true);
+        if (it.op.k !== 'eliminada_r2c' && it.op.k !== 'divergencia') b('Descartar', function () { descartar(it.key); }, true);
         f.appendChild(acc); panel.appendChild(f);
       });
       var pie = crear('div', 'margin-top:6px;font-size:11px;color:#6b7280', 'Se guardan sólo diferencias y filas nuevas, en este equipo y para este usuario. No es un respaldo cifrado: en un equipo compartido cerrá sesión y descartá lo que no quieras dejar.');

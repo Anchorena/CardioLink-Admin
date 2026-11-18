@@ -797,8 +797,9 @@ prueba('C11 PACIENTES: el modal de alta/edición y la ficha global anuncian éxi
 prueba('C12 PACIENTES (panel) y CALIDAD de datos, CONVENIOS nuevos y ARANCELES: sin confirmación avisan; el panel confirma ANTES de mostrar la ficha como guardada', async () => {
   const panel = async (res) => {
     const { d, eventos } = dobles(res);
-    await correrTramo("try{ if(await confirmarConfigAdministrativaV1()===false) avisarConfigNoConfirmadaV1('La ficha del paciente'); }catch(e){ console.warn(e); }", "console.warn(e); }",
-      { confirmarConfigAdministrativaV1: d.confirmarConfigAdministrativaV1, avisarConfigNoConfirmadaV1: d.avisarConfigNoConfirmadaV1, console: d.console });
+    // R3: el aviso distingue «guardada en el servidor (tabla relacional confirmada)» de «sólo en este equipo»; aquí la relacional no se confirmó (okRel = null)
+    await correrTramo("try{ const okCfgPanel=await confirmarConfigAdministrativaV1(); if(okCfgPanel===false) avisarConfigNoConfirmadaV1('La ficha del paciente',okRel===true); else if(okRel===false) avisarConfigNoConfirmadaV1('La ficha del paciente (tabla de pacientes)'); }catch(e){ console.warn(e); }", "console.warn(e); }",
+      { confirmarConfigAdministrativaV1: d.confirmarConfigAdministrativaV1, avisarConfigNoConfirmadaV1: d.avisarConfigNoConfirmadaV1, console: d.console, okRel: null });
     return eventos;
   };
   assert.deepEqual(await panel(false), ['confirmar', 'AVISO:La ficha del paciente']);

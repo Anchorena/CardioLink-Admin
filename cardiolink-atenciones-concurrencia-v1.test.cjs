@@ -20,7 +20,7 @@ function entorno(opciones) {
   const tabla = new Map();            // id → { payload, updated_at }
   let reloj = 1000; const tic = () => new Date(Date.UTC(2026, 10, 17, 12, 0, 0, reloj++)).toISOString();
   const almacen = {}; const rastro = { updates: 0, lecturas: 0, upserts: 0 };
-  const hooks = { antesDeUpdate: null, errorUpdate: null, errorLectura: null };
+  const hooks = { antesDeUpdate: null, errorUpdate: null, errorLectura: null, sinFilas: false };
   const sb = {
     from(t) {
       assert.equal(t, 'cardiolink_atenciones');
@@ -41,6 +41,7 @@ function entorno(opciones) {
           rastro.updates++;
           if (hooks.antesDeUpdate) { const h = hooks.antesDeUpdate; hooks.antesDeUpdate = null; h(); }
           if (hooks.errorUpdate) return { data: null, error: hooks.errorUpdate };
+          if (hooks.sinFilas) return { data: [], error: null };            // RLS: el UPDATE no alcanza ninguna fila y la versión no cambia
           const f = tabla.get(q.filtros.id);
           if (!f || f.updated_at !== q.filtros.updated_at) return { data: [], error: null };
           f.payload = clon(q.valores.payload); f.updated_at = q.valores.updated_at;
@@ -226,4 +227,11 @@ test('R2D: corrección económica pendiente (grupo indivisible) recuperada sobre
   const E = entorno(); recuperado(E, { montoConsulta: 5000, montoTotal: 5000 }, { estadoCobro: 'cobrado', cobroConfirmadoPorRol: 'admin', cobroConfirmadoPor: 'c@x', cobroConfirmadoEn: '2026-11-18T10:00:00Z', cobroMedioPago: 'Efectivo' });
   const r = await E.M.reconciliarFila('a1'); assert.equal(r.estado, 'confirmada');
   const f = E.tabla.get('a1').payload; assert.equal(f.montoConsulta, 1000); assert.equal(f.estadoCobro, 'cobrado'); assert.ok(r.rechazos.some((x) => x.grupo === 'financiero'));
+});
+
+test('R3: UPDATE con 0 filas y la versión SIN cambios = el servidor no permite modificarla: se retiene sin reintentos infinitos', async () => {
+  const E = entorno(); E.cargar(atencion()); E.editarLocal('a1', { observaciones: 'x' }); E.remoto('a1', { cobertura: 'Swiss' }); E.hooks.sinFilas = true;
+  const r = await E.M.reconciliarFila('a1');
+  assert.equal(r.estado, 'rechazada'); assert.equal(E.rastro.updates, 1, 'un solo intento, sin reintentos'); assert.equal(E.M.retenida('a1', estable(E.locales.get('a1'))), true);
+  assert.ok(E.M._recuperacion().rechazos.length >= 1);
 });

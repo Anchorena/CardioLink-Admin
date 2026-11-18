@@ -110,7 +110,12 @@
           if (esErrorPermiso(u.error)) return rechazoDelServidor(id, local, u.error);
           return { estado: 'error_transitorio', error: u.error };
         }
-        if (!Array.isArray(u.data) || !u.data.length) continue;           // otra sesión cambió la fila entre la lectura y la escritura: se relee y se vuelve a fusionar
+        if (!Array.isArray(u.data) || !u.data.length) {
+          // 0 filas: ¿concurrencia o permisos? Si la versión de la fila NO cambió, nadie escribió en medio: el servidor (RLS) no permite modificarla. Se retiene SIN reintentos infinitos.
+          var chk = await leerRemoto(id);
+          if (chk.fila && chk.fila.updated_at === rem.fila.updated_at) return rechazoDelServidor(id, local, { message: 'El servidor no permite modificar esta atención con tu usuario (sin permiso).' });
+          continue;                                                          // otra sesión cambió la fila entre la lectura y la escritura: se relee y se vuelve a fusionar
+        }
         version = u.data[0].updated_at || nuevaVersion;
       }
       liberar(id);

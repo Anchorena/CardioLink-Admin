@@ -124,7 +124,7 @@ test('clave por proyecto y uid; huérfanas por latido o cierre', () => {
 function app(opts) {
   opts = opts || {};
   const almac = opts.almacen || almacen(), sesion = new Map();
-  const S = { atenciones: [], bases: new Map(), versiones: new Map(), cfgInstalada: null, enviadas: [], mensajes: [], sincs: 0, rol: opts.rol || 'admin', uid: opts.uid || 'u1', cfgPend: null, listo: true, cfgPermitida: true, quitadas: [], revertidas: [], cfgDescartada: null };
+  const S = { atenciones: [], bases: new Map(), versiones: new Map(), cfgInstalada: null, enviadas: [], mensajes: [], sincs: 0, rol: opts.rol || 'admin', uid: opts.uid || 'u1', cfgPend: null, listo: true, cfgPermitida: true, quitadas: [], revertidas: [], cfgDescartada: null, fichas: [], divs: [], divRec: [], divRes: [], fichasRec: [], fichasDesc: [], fichasReint: 0 };
   const ventana = { cardiolinkOutboxPuroV1: P };
   const doc = { hidden: false, body: null, addEventListener() {}, getElementById() { return null; }, createElement() { return { style: {}, addEventListener() {}, appendChild() {}, setAttribute() {}, remove() {} }; } };
   const ctx = { window: ventana, localStorage: almac, sessionStorage: { getItem: (k) => (sesion.has(k) ? sesion.get(k) : null), setItem: (k, v) => sesion.set(k, v) }, document: doc, console, JSON, Date, Math, Map, Set, Array, Object, String, Error, Promise, setInterval: () => 0, alert() {} };
@@ -142,7 +142,8 @@ function app(opts) {
     revertirFila: (id) => { const i = idx(id); S.atenciones[i] = JSON.parse(S.bases.get(String(id))); S.revertidas.push(id); },
     sincronizarYa: () => { S.sincs++; }, guardarConfigYa: () => {}, configPermitida: () => S.cfgPermitida, profesionales: () => [{ id: 'matias', nombre: 'Dr M' }],
     consultarServidor: async (id) => (opts.servidor ? opts.servidor(id) : { existe: false }), configPendiente: () => S.cfgPend,
-    instalarConfig: (b, v, l) => { S.cfgInstalada = { base: b, ver: v, local: l }; }, descartarConfig: (ops) => { S.cfgDescartada = ops; }
+    instalarConfig: (b, v, l) => { S.cfgInstalada = { base: b, ver: v, local: l }; }, descartarConfig: (ops) => { S.cfgDescartada = ops; },
+    divergencias: () => S.divs, recuperarDivergencia: (op) => { S.divRec.push(op); }, resolverDivergencia: (id, c, u) => { S.divRes.push([id, c, u]); }, fichasPendientes: () => S.fichas, fichaDesc: (id) => 'Ficha de ' + id, recuperarFicha: (op) => { S.fichasRec.push(op); }, descartarFicha: (id) => { S.fichasDesc.push(id); }, reintentarFichas: () => { S.fichasReint++; }
   });
   // el usuario «carga» una atención confirmada
   S.cargar = (a, ver) => { S.atenciones.push(clon(a)); S.bases.set(String(a.id), est(a)); S.versiones.set(String(a.id), ver || '2026-11-18T10:00:00.000Z'); };
@@ -345,4 +346,51 @@ test('cambios SIN protección se identifican antes de cerrar: sinProteccion() y 
   const glue = fs.readFileSync(path.join(__dirname, 'cardiolink-outbox-glue-v1.js'), 'utf8'), appjs = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
   assert.match(glue, /addEventListener\('beforeunload'[\s\S]{0,120}!proteccion\.ok/);
   assert.match(appjs, /NO están protegidos en este equipo/);
+});
+
+test('R3: fichas del paciente pendientes viajan como diferencias {antes, después} (sin datos de más), se recuperan y se descartan sólo con confirmación', () => {
+  const S = app(); S.fichas = [{ id: 'pac_1', cambios: { fechaNacimiento: { a: '1970-01-01', d: '1975-05-05' } }, ts: '2026-11-18T10:00:00.000Z' }];
+  S.O.registrar({ cerrada: true });
+  const ops = Object.values(S.cola().ops); assert.equal(ops.length, 1); assert.equal(ops[0].k, 'ficha');
+  const txt = JSON.stringify(ops[0].cambios); assert.ok(txt.includes('1975-05-05')); assert.deepStrictEqual(Object.keys(ops[0].cambios), ['fechaNacimiento'], 'sólo el campo cambiado'); assert.ok(!('desc' in ops[0]) && !('row' in ops[0]), 'sin nombre ni fila');
+  assert.equal(S.O.resumen()[0].k, 'ficha');
+  const U = app({ almacen: S.almac }); const r = U.O.recuperar({ remotas: new Map() });
+  assert.equal(r.recuperadas, 1); assert.equal(U.fichasRec.length, 1); assert.deepStrictEqual(U.fichasRec[0].cambios.fechaNacimiento, { a: '1970-01-01', d: '1975-05-05' });
+  U.fichas = [{ id: 'pac_1', cambios: { fechaNacimiento: { a: '1970-01-01', d: '1975-05-05' } }, ts: '2026-11-18T10:00:00.000Z' }]; U.O.registrar();
+  const key = Object.keys(U.cola().ops)[0];
+  U.ventana.confirm = () => false; U.O.descartar(key); assert.equal(U.fichasDesc.length, 0);
+  U.ventana.confirm = () => true; U.fichas = []; U.O.descartar(key); assert.deepStrictEqual(U.fichasDesc, ['pac_1']);
+});
+
+test('R3: savePatientEditHC guarda por el módulo seguro, no reescribe snapshots de atenciones y la lectura relacional es la base de la edición', () => {
+  const appjs = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
+  const a = appjs.indexOf('async function savePatientEditHC('), b = appjs.indexOf('function copyActionsHtmlHC409(');
+  const save = appjs.slice(a, b); assert.ok(a > 0 && b > a);
+  assert.match(save, /FICHA\.guardarEdicion\(/); assert.match(save, /dni_duplicado/); assert.match(save, /servidor no confirm/i); assert.equal((save.match(/saveAtenciones/g) || []).length, 1); assert.match(save, /if\(reenlazadas\)\{saveAtenciones/);
+  const m1 = appjs.indexOf('function movePatientLinkedDataHC('), m2 = appjs.indexOf('function patientEditCoverageOptionsHC(');
+  const mover = appjs.slice(m1, m2); assert.doesNotMatch(mover, /a\.paciente=newName|a\.dni=newDni/, 'no se reescribe paciente/dni de las atenciones');
+  const open = appjs.slice(appjs.indexOf('async function openPatientEditHC('), appjs.indexOf('function refreshEvolutionPatientBannerHC('));
+  assert.match(open, /leerFila\(supabaseClient/); assert.match(open, /dataset\.base409/);
+  assert.doesNotMatch(save + open, /\.from\('cardiolink_atenciones'\)/);
+});
+
+test('R3: divergencias de ficha sin base confiable se persisten con AMBOS valores, se recuperan y «descartar» equivale a quedarse con el servidor sólo con confirmación', () => {
+  const S = app(); S.divs = [{ id: 'pac_1', campos: { email: { local: 'mio@x.com', remoto: 'servidor@x.com' } }, ts: '2026-11-18T10:00:00.000Z' }];
+  S.O.registrar({ cerrada: true });
+  const op = Object.values(S.cola().ops)[0]; assert.equal(op.k, 'divergencia'); assert.deepStrictEqual(op.campos.email, { local: 'mio@x.com', remoto: 'servidor@x.com' });
+  assert.equal(S.O.resumen()[0].tipo, 'revision');
+  const U = app({ almacen: S.almac }); assert.equal(U.O.recuperar({ remotas: new Map() }).recuperadas, 1); assert.equal(U.divRec.length, 1);
+  U.divs = [{ id: 'pac_1', campos: op.campos, ts: op.ts }]; U.O.registrar(); const key = Object.keys(U.cola().ops)[0];
+  U.ventana.confirm = () => false; U.O.descartar(key); assert.equal(U.divRes.length, 0, 'sin confirmación no se resuelve nada');
+  U.ventana.confirm = () => true; U.O.descartar(key); assert.deepStrictEqual(U.divRes, [['pac_1', 'email', 'servidor']]);
+});
+
+test('R3: guardarPacientePanel no reescribe snapshots, espera la confirmación relacional y el aviso distingue «guardada» de «sólo en este equipo»', () => {
+  const appjs = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
+  const a = appjs.indexOf('async function guardarPacientePanel('), b = appjs.indexOf('function nuevaAtencionDesdePaciente(');
+  const f = appjs.slice(a, b); assert.ok(a > 0 && b > a);
+  assert.doesNotMatch(f, /a\.paciente=|a\.dni=|a\.telefono=|a\.email=|a\.fechaNacimiento=/, 'no se reescribe ningún snapshot');
+  assert.match(f, /okRel=await window\.cardiolinkClinica410\?\.sincronizarFichaBasica/); assert.match(f, /avisarConfigNoConfirmadaV1\('La ficha del paciente',okRel===true\)/);
+  assert.match(appjs, /fichaRelacionalConfirmada===true[\s\S]{0,200}guardada en el servidor \(tabla de pacientes\)/);
+  assert.match(appjs, /function pacienteActivoPanel\(p\)\{return p && p\.estado!=='fusionado' && !\(window\.cardiolinkFichaV1/);
 });
