@@ -680,8 +680,14 @@ prueba('C4 sin fallback en el código; y cada acceso a la fila de configuración
   assert.match(APP, /if\(!pideCfgCompleta298\) consulta298=consulta298\.neq\('id',CONFIG_ROW_ID\);/);
   // CENSO: 13 accesos a la tabla; sólo 2 pueden tocar la fila de configuración por id y están protegidos (lectura de documentos, consulta general); la escritura vive en el módulo de concurrencia (UPDATE condicionado, owner/admin confirmado)
   const accesos = (APP.match(/\.from\((['"])cardiolink_atenciones\1\)/g) || []).length;
-  assert.equal(accesos, 12, 'cambió la cantidad de accesos a cardiolink_atenciones: revisar que ninguno nuevo pueda tocar la fila de configuración sin rol confirmado');
+  assert.equal(accesos, 11, 'R2C: la relectura de conflictos y la fusión viven ahora en cardiolink-atenciones-concurrencia-v1.js (-1 acceso en app.js); cambió la cantidad de accesos a cardiolink_atenciones: revisar que ninguno nuevo pueda tocar la fila de configuración sin rol confirmado');
   assert.equal((APP.match(/CONFIG_ROW_ID_DOCS_V1\)/g) || []).length, 1);
+  // R2C: el módulo de concurrencia de atenciones tiene 2 accesos (leer y UPDATE condicionado por id), rechaza la fila de configuración y nunca hace upsert/insert/delete
+  const CONC2 = leer('cardiolink-atenciones-concurrencia-v1.js').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert.equal((CONC2.match(/\.from\('cardiolink_atenciones'\)/g) || []).length, 2);
+  assert.ok(!/\.from\('cardiolink_atenciones'\)[^;]*\.(upsert|insert|delete)\(/.test(CONC2) && !/\.upsert\(|\.insert\(/.test(CONC2), 'el módulo de atenciones no hace upsert/insert/delete sobre la tabla');
+  assert.match(CONC2, /id === '__cardiolink_config_v1'\) return/);
+  assert.match(CONC2, /\.update\(\{ payload: destino, updated_at: nuevaVersion \}\)\.eq\('id', id\)\.eq\('updated_at', rem\.fila\.updated_at\)/);
   MODULOS.forEach(f => assert.ok(!/cardiolink_atenciones/.test(leer(f).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')), f + ' accede a cardiolink_atenciones'));
 });
 

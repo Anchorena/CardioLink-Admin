@@ -6580,7 +6580,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       const verPrev=baselineVersionAtenciones298.get(id), contPrev=baselineAtenciones298.get(id);
       let proteger=false;
       // fila nueva que el servidor todavía no conoce: sin versión confirmada, o confirmada DESPUÉS de pedir esta carga (la respuesta es anterior a ese alta)
-      if(!fr){ proteger=(verPrev===undefined)||(Date.parse(verPrev)>=inicioCargaMs); }
+      if(!fr){ proteger=(verPrev===undefined)||(Date.parse(verPrev)>=inicioCargaMs)||(contPrev!==undefined&&contPrev!==stableStringify298(a)); }   // R2C: una fila con cambios locales que otra sesión eliminó NO se descarta (el sync la trata como eliminación vs modificación)
       else if(protegerTodo){ proteger=true; }                                     // operación de Pendientes en curso
       else if(contPrev!==undefined&&contPrev!==stableStringify298(a)){ proteger=true; }   // cambios locales sin confirmar
       else if(verPrev&&Date.parse(fr.updated_at)<Date.parse(verPrev)){ proteger=true; }   // respuesta anterior a lo ya confirmado por esta sesión
@@ -6650,8 +6650,43 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     try{ return (atenciones||[]).filter(a=>a&&a.id!=null&&a.id!==CONFIG_ROW_ID&&!baselineVersionAtenciones298.has(String(a.id))).map(a=>JSON.parse(JSON.stringify(a))); }catch(e){ return []; }
   };
   window.hayPendientesSync298=function(){
-    try{ return !!(syncAtencionesPendiente||syncPendienteSinConfirmar||(atenciones||[]).some(atencionModificada298)); }catch(e){ return true; }
+    try{ return !!(syncAtencionesPendiente||syncPendienteSinConfirmar||(atenciones||[]).some(atencionModificada298)||window.cardiolinkAtencionesR2C?.hayRetenidas?.()); }catch(e){ return true; }
   };
+
+  /* PERSISTENCIA V1 / R2C - concurrencia de atenciones individuales. El módulo cardiolink-atenciones-concurrencia-v1.js fusiona (base/local/remoto), guarda con UPDATE
+     condicionado (máx. 3 reintentos) y presenta los conflictos. Las bases viven en esta clausura: se le entregan por este puente.
+     Si el módulo no cargó, el sync NUNCA vuelve a adoptar la remota descartando cambios locales: retiene la fila, la conserva y avisa (ver retenerSinModuloR2C). La retención dura hasta recargar la aplicación. */
+  const retenidasSinModuloR2C=new Set();
+  let puenteR2Cconectado=false;
+  function rolR2C(){ try{ if(esMedicoBackendV1()) return 'medico'; if(configCompletaPermitidaV1()) return 'admin'; }catch(e){} return 'secretaria'; }
+  function guardarLocalR2C(){ try{ localStorage.setItem(storageAtenciones,JSON.stringify(atenciones)); }catch(e){} try{ renderTabla?.(); renderStats?.(); renderAgenda?.(); }catch(e){} }
+  function moduloR2C(){
+    const m=window.cardiolinkAtencionesR2C;
+    if(!m||typeof m.conectar!=='function') return null;
+    if(!puenteR2Cconectado){
+      m.conectar({
+        supabase:()=>supabaseClient, rol:rolR2C, estable:stableStringify298,
+        usuario:()=>{ try{ const u=perfilUsuarioActual()||{}; return u.nombre||u.usuario||''; }catch(e){ return ''; } },
+        actual:id=>(atenciones||[]).find(x=>x&&String(x.id)===String(id)),
+        base:id=>baselineAtenciones298.get(String(id)),
+        fijarBase:(id,payload,ver)=>{ baselineAtenciones298.set(String(id),stableStringify298(payload)); if(ver) baselineVersionAtenciones298.set(String(id),ver); },
+        fijarVersion:(id,ver)=>{ if(ver) baselineVersionAtenciones298.set(String(id),ver); },
+        reemplazar:(id,payload)=>{ const i=atenciones.findIndex(x=>x&&String(x.id)===String(id)); if(i>=0) atenciones[i]=payload; else atenciones.push(payload); guardarLocalR2C(); },
+        quitarLocal:id=>{ const i=atenciones.findIndex(x=>x&&String(x.id)===String(id)); if(i>=0) atenciones.splice(i,1); baselineAtenciones298.delete(String(id)); baselineVersionAtenciones298.delete(String(id)); guardarLocalR2C(); },
+        restaurar:(id,payload)=>{ baselineAtenciones298.delete(String(id)); baselineVersionAtenciones298.delete(String(id)); const i=atenciones.findIndex(x=>x&&String(x.id)===String(id)); if(i>=0) atenciones[i]=payload; else atenciones.push(payload); guardarLocalR2C(); },
+        guardar:()=>{ try{ saveAtenciones(); }catch(e){ console.warn(e); } },
+        puedeRecrear:()=>rolR2C()!=='medico'
+      });
+      puenteR2Cconectado=true;
+    }
+    return m;
+  }
+  // Sin el módulo de R2C: la fila en conflicto se RETIENE (no se envía, no se descarta, no se pisa la remota) y se avisa.
+  function retenerSinModuloR2C(ids){
+    ids.forEach(id=>retenidasSinModuloR2C.add(String(id)));
+    avisoConcurrencia298('Este turno fue modificado desde otra sesión. Tus cambios se conservaron en este equipo y NO se guardaron (falta el módulo de resolución de conflictos). No cierres sesión y avisá a soporte.');
+  }
+  window.cardiolinkAtencionesR2Cpuente={estado:()=>({sinModulo:Array.from(retenidasSinModuloR2C),conectado:puenteR2Cconectado})};
 
   // Un mensaje rechazado por PERMISOS (RLS/42501) no es un fallo transitorio: reintentarlo indefinidamente bloquearía la cola.
   function esErrorPermisosRLS298(e){ return !!e&&(e.code==='42501'||/row-level security|permission denied/i.test(String(e.message||''))); }
@@ -7171,7 +7206,10 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         // atenciones nuevas o modificadas respecto del baseline confirmado.
         // forzar=true conserva su semantica: envia TODAS (migracion inicial,
         // limpieza de corruptos, "Sincronizar ahora", borrados, etc.).
-        const aEnviar298 = forzar ? atenciones.slice() : atenciones.filter(atencionModificada298);
+        // R2C: las filas retenidas (conflicto sin resolver, eliminación remota por decidir, rechazo del servidor con el mismo contenido) NO se envían ni se pisan.
+        const modR2C298=moduloR2C();
+        const retenidaR2C298=a=>!!a&&a.id!=null&&(retenidasSinModuloR2C.has(String(a.id))||(modR2C298?modR2C298.retenida(String(a.id),stableStringify298(a)):false));
+        const aEnviar298 = (forzar ? atenciones.slice() : atenciones.filter(atencionModificada298)).filter(a=>!retenidaR2C298(a));
 
         // HOTFIX stale-overwrite (B1): la fila CONFIG_ROW_ID ya NO viaja en el
         // sync de atenciones. La config tiene su propio camino
@@ -7266,37 +7304,40 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         });
 
         const conflictos298=[];
+        // R2C: un error en UNA atención no bloquea el guardado de las demás. Los rechazos por permisos/guard quedan retenidos (sin reintento infinito);
+        // los errores transitorios dejan la fila pendiente y se reintenta en el próximo ciclo.
+        let huboErrorTransitorio298=null, huboEdicionEnVuelo298=false, fusionadas298=0;
+        const errorTransitorio298=e=>{ console.error(e); if(!huboErrorTransitorio298) huboErrorTransitorio298=e; };
 
         for(const a of existentes298){
           const idStr=String(a.id);
           const baselineVersion=baselineVersionAtenciones298.get(idStr);
           const contEnviado298=stableStringify298(a);   // R1: foto del contenido que se envía (la base se fija con esto, no con lo que haya tras el await)
-          const {data:actualizadas,error:updErr}=await supabaseClient
-            .from('cardiolink_atenciones')
-            .update({payload:a, updated_at:now298})
-            .eq('id',idStr)
-            .eq('updated_at',baselineVersion)
-            .select('id, updated_at');
+          let resp298;
+          try{
+            resp298=await supabaseClient
+              .from('cardiolink_atenciones')
+              .update({payload:a, updated_at:now298})
+              .eq('id',idStr)
+              .eq('updated_at',baselineVersion)
+              .select('id, updated_at');
+          }catch(e){ resp298={data:null,error:e}; }
+          const {data:actualizadas,error:updErr}=resp298;
           if(updErr){
-            console.error(updErr);
-            alert('No se pudo sincronizar con Supabase: '+updErr.message);
-            // No quedó confirmado (ni esta fila ni ninguna atención nueva que
-            // todavía no se haya enviado): se reencola, igual que el resto
-            // del mecanismo. El baseline de las filas YA confirmadas en este
-            // mismo ciclo (antes de este error) queda intacto: sí se
-            // escribieron de verdad.
-            syncAtencionesPendiente=true;
-            syncReintentosFallidos++;
-            return false;
+            const clase298=modR2C298?modR2C298.manejarErrorFila(idStr,a,updErr):(esErrorPermisosRLS298(updErr)?'rechazada':'transitoria');
+            if(clase298==='rechazada'){
+              if(!modR2C298){ retenidasSinModuloR2C.add(idStr); avisoConcurrencia298('El servidor rechazó guardar un turno (permisos). Tu cambio quedó en este equipo y no se reintenta hasta que lo edites de nuevo.'); }
+              continue;
+            }
+            errorTransitorio298(updErr);
+            continue;
           }
           if(Array.isArray(actualizadas) && actualizadas.length>0){
             baselineAtenciones298.set(idStr, contEnviado298);
             baselineVersionAtenciones298.set(idStr, actualizadas[0].updated_at || now298);
           }else{
-            // 0 filas afectadas: la condición updated_at=baseline no
-            // matcheó - hubo un cambio remoto después de que esta sesión
-            // cargó la fila. NO se reintenta un segundo UPDATE a ciegas
-            // sobre esta versión: se relee más abajo y gana el remoto.
+            // 0 filas afectadas: la condición updated_at=baseline no matcheó - otra sesión cambió la fila (o la eliminó) después de que esta sesión la cargó.
+            // Se relee y se FUSIONA (R2C); nunca se reintenta un UPDATE a ciegas ni se descartan los cambios locales.
             conflictos298.push(idStr);
           }
         }
@@ -7328,80 +7369,53 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
             // Atención nueva -> no hay versión remota previa que proteger
             // (punto 4): se conserva el upsert normal.
             const cont298=fotoLote298(lote);
-            const {error:upErr}=await supabaseClient
-              .from('cardiolink_atenciones')
-              .upsert(filasDe298(lote),{onConflict:'id'});
+            let upErr;
+            try{ ({error:upErr}=await supabaseClient.from('cardiolink_atenciones').upsert(filasDe298(lote),{onConflict:'id'})); }catch(e){ upErr=e; }
             if(!upErr){ confirmar298(lote,cont298); continue; }
-            if(lote.every(esMsg298)&&esErrorPermisosRLS298(upErr)){
-              // Se envía uno por uno: sólo se descartan los rechazados por permisos, no los válidos del mismo lote.
-              for(const m of lote){
-                const contM298=fotoLote298([m]);
-                const {error:e1}=await supabaseClient.from('cardiolink_atenciones').upsert(filasDe298([m]),{onConflict:'id'});
-                if(!e1){ confirmar298([m],contM298); continue; }
-                if(esErrorPermisosRLS298(e1)){ rechazadosPorPermisos298.push(m); continue; }
-                console.error(e1);
-                alert('No se pudo sincronizar con Supabase: '+e1.message);
-                syncAtencionesPendiente=true;
-                syncReintentosFallidos++;
-                return false;
+            // R2C: el lote falló -> se envía una por una; sólo se retienen/descartan las rechazadas, las válidas del mismo lote se guardan.
+            for(const m of lote){
+              const contM298=fotoLote298([m]);
+              let e1;
+              try{ ({error:e1}=await supabaseClient.from('cardiolink_atenciones').upsert(filasDe298([m]),{onConflict:'id'})); }catch(e){ e1=e; }
+              if(!e1){ confirmar298([m],contM298); continue; }
+              if(esErrorPermisosRLS298(e1)){
+                if(esMsg298(m)){ rechazadosPorPermisos298.push(m); continue; }
+                if(modR2C298) modR2C298.manejarErrorFila(String(m.id),m,e1);
+                else{ retenidasSinModuloR2C.add(String(m.id)); avisoConcurrencia298('El servidor rechazó guardar un turno (permisos). Tu cambio quedó en este equipo.'); }
+                continue;
               }
-              continue;
+              errorTransitorio298(e1);
             }
-            console.error(upErr);
-            alert('No se pudo sincronizar con Supabase: '+upErr.message);
-            syncAtencionesPendiente=true;
-            syncReintentosFallidos++;
-            return false;
           }
           descartarMensajesRechazados298(rechazadosPorPermisos298);
         }
 
         if(conflictos298.length){
-          const {data:filasConflicto,error:errConflicto}=await supabaseClient
-            .from('cardiolink_atenciones')
-            .select('id,payload,updated_at')
-            .in('id',conflictos298);
-          if(errConflicto){
-            // No se pudo releer: la(s) fila(s) en conflicto quedan tal como
-            // estaban (sin tocar su baseline) y se reintentan en el próximo
-            // ciclo natural - nunca se pisa remoto a ciegas ni se inventa un
-            // resultado.
-            console.warn('No se pudo releer atencion(es) en conflicto:',errConflicto.message);
+          if(!modR2C298){
+            retenerSinModuloR2C(conflictos298);
           }else{
-            const encontradas298=new Set();
-            (filasConflicto||[]).forEach(fila=>{
-              if(!fila || fila.id==null || !fila.payload) return;
-              const idStr=String(fila.id);
-              encontradas298.add(idStr);
-              const idx=atenciones.findIndex(x=>x && String(x.id)===idStr);
-              // Prioridad: se preserva SIEMPRE el dato remoto más nuevo, sin
-              // excepción - incluye especialmente estadoTurno==='cancelado' +
-              // canceladoPor==='Paciente (email)': esta rama nunca vuelve a
-              // subir el snapshot local viejo por encima de esa cancelación.
-              if(idx>=0) atenciones[idx]=fila.payload; else atenciones.push(fila.payload);
-              baselineAtenciones298.set(idStr, stableStringify298(fila.payload));
-              baselineVersionAtenciones298.set(idStr, fila.updated_at);
-            });
-            // Fila EXISTENTE (tenía baselineVersion) en conflicto que, al
-            // releer, YA NO EXISTE remotamente: se interpreta como eliminada
-            // por otra sesión mientras esta tenía un snapshot viejo - NUNCA
-            // se recrea. Se quita del array local y de localStorage, y se
-            // borran AMBOS baselines (payload y versión), para que el
-            // próximo ciclo no vuelva a intentar subirla ni como UPDATE
-            // condicionado (ya no podría matchear nada) ni como upsert de
-            // "atención nueva" (eso la resucitaría, que es justo lo que no
-            // debe pasar).
-            conflictos298.forEach(idStr=>{
-              if(encontradas298.has(idStr)) return;
-              const idx=atenciones.findIndex(x=>x && String(x.id)===idStr);
-              if(idx>=0) atenciones.splice(idx,1);
-              baselineAtenciones298.delete(idStr);
-              baselineVersionAtenciones298.delete(idStr);
-            });
-            try{ localStorage.setItem(storageAtenciones,JSON.stringify(atenciones)); }catch(e){}
-            try{ renderTabla?.(); renderStats?.(); }catch(e){}
-            avisoConcurrencia298('Este turno fue modificado desde otra sesión y se actualizó con la versión más reciente.');
+            for(const idStr of conflictos298){
+              let r298;
+              try{ r298=await modR2C298.reconciliarFila(idStr); }catch(e){ r298={estado:'error_transitorio',error:e}; }
+              if(r298.estado==='confirmada'){
+                if(r298.editadaEnVuelo) huboEdicionEnVuelo298=true;
+                if(r298.fusionada){ fusionadas298++; }
+              }else if(r298.estado==='error_transitorio'||r298.estado==='reintentos_agotados'){
+                errorTransitorio298(r298.error||new Error('No se pudo fusionar la atención '+idStr+' ('+r298.estado+')'));
+              }
+              // 'conflicto' | 'rechazada' | 'eliminada_remota': la fila queda retenida y el módulo la presenta en su aviso persistente.
+            }
+            if(fusionadas298) avisoConcurrencia298('Un turno fue modificado desde otra sesión: se fusionaron los cambios de ambas.');
+            try{ renderTabla?.(); renderStats?.(); renderAgenda?.(); }catch(e){}
           }
+        }
+
+        if(huboEdicionEnVuelo298) syncAtencionesPendiente=true;   // lo editado mientras se guardaba se sube en el ciclo siguiente
+        if(huboErrorTransitorio298){
+          alert('No se pudo sincronizar con Supabase: '+(huboErrorTransitorio298.message||huboErrorTransitorio298));
+          syncAtencionesPendiente=true;
+          syncReintentosFallidos++;
+          return false;
         }
 
         const limpieza=await limpiarIdsRemotosObsoletosSeguro(
@@ -7415,7 +7429,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         console.log(
           'Supabase sincronizado de forma segura:',
           (existentes298.length-conflictos298.length)+nuevas298.length,'atencion(es) confirmada(s)',
-          conflictos298.length?`· ${conflictos298.length} en conflicto (se adoptó la versión remota)`:'',
+          conflictos298.length?`· ${conflictos298.length} con cambios de otra sesión (fusionadas o retenidas para resolver)`:'',
           limpieza?.eliminados?`· ${limpieza.eliminados} obsoletos eliminados`:''
         );
         syncConfirmadoOk298=true;

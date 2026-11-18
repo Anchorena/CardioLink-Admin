@@ -243,10 +243,81 @@
     } catch (e) { console.warn('R2B: no se pudo mostrar el aviso de conflictos:', e); }
   }
 
+  // ---------- panel genérico de conflictos (R2C lo reutiliza para atenciones) ----------
+  // cfg: { id, idInsignia, titulo, intro, avisos:[{texto, boton?, alBoton?}], items:[{clave, titulo, detalle, tipoTexto, localTexto, remotoTexto, opciones:{local,remoto}, etiquetaLocal, etiquetaRemoto}],
+  //        onResolver(res) -> Promise<{ok, pendientes}>, textoInsignia }.  res = { clave: 'local'|'remoto' }.
+  var panelesGenericos = {};
+  function quitarPanelGenerico(cfg) { try { var a = document.getElementById(cfg.id), b = document.getElementById(cfg.idInsignia); if (a) a.remove(); if (b) b.remove(); } catch (e) { /* sin UI */ } }
+  function insigniaGenerica(cfg, items, avisos) {
+    try {
+      if (!document.body || document.getElementById(cfg.idInsignia)) return;
+      var n = items.length + avisos.length;
+      var b = crear('button', 'position:fixed;right:12px;bottom:' + (document.getElementById(ID_INSIGNIA) ? '60px' : '12px') + ';z-index:99996;background:#b45309;color:#fff;border:0;border-radius:999px;padding:10px 16px;font:700 14px system-ui,Arial,sans-serif;cursor:pointer;box-shadow:0 6px 24px rgba(0,0,0,.3)', cfg.textoInsignia(items.length, avisos.length));
+      b.id = cfg.idInsignia; b.type = 'button'; b.addEventListener('click', function () { var x = document.getElementById(cfg.idInsignia); if (x) x.remove(); mostrarPanelGenerico(cfg); }); document.body.appendChild(b);
+    } catch (e) { /* sin UI */ }
+  }
+  function mostrarPanelGenerico(cfg, soloInsignia) {
+    try {
+      if (!document.body) return;
+      var items = (cfg.items || []).slice(), avisos = (cfg.avisos || []).slice();
+      quitarPanelGenerico(cfg);
+      if (!items.length && !avisos.length) return;
+      panelesGenericos[cfg.id] = cfg;
+      if (soloInsignia || document.getElementById(ID_PANEL)) { insigniaGenerica(cfg, items, avisos); return; }   // si el panel de configuración está abierto no se superponen
+      var elegidas = {};
+      var p = crear('div', 'position:fixed;left:12px;right:12px;bottom:12px;max-height:70vh;overflow:auto;z-index:99996;background:#fff7ed;color:#7c2d12;border:2px solid #ea580c;border-radius:12px;padding:14px 16px;font:14px/1.45 system-ui,Arial,sans-serif;box-shadow:0 10px 32px rgba(0,0,0,.35)');
+      p.id = cfg.id; p.setAttribute('role', 'alertdialog');
+      p.appendChild(crear('div', 'font-weight:800;font-size:15px;margin-bottom:4px', cfg.titulo(items.length, avisos.length)));
+      if (cfg.intro && items.length) p.appendChild(crear('div', 'margin-bottom:10px', cfg.intro));
+      avisos.forEach(function (a) {
+        var f = crear('div', 'border:1px solid #fbbf24;background:#fffbeb;border-radius:8px;padding:8px 10px;margin:6px 0;display:flex;gap:10px;align-items:center;flex-wrap:wrap');
+        f.appendChild(crear('span', 'flex:1 1 260px', a.texto));
+        if (a.boton) { var bb = crear('button', 'padding:6px 12px;border-radius:8px;border:1px solid #92400e;background:#fff;color:#92400e;font-weight:700;cursor:pointer', a.boton); bb.type = 'button'; bb.addEventListener('click', function () { try { a.alBoton && a.alBoton(); } catch (e) { console.warn(e); } mostrarPanelGenerico(cfg); }); f.appendChild(bb); }
+        p.appendChild(f);
+      });
+      var estado = crear('div', 'margin:8px 0;font-weight:700');
+      items.forEach(function (c) {
+        var fila = crear('div', 'border:1px solid #fdba74;border-radius:8px;padding:8px 10px;margin:6px 0;background:#fff');
+        fila.appendChild(crear('div', 'font-weight:700', c.titulo));
+        if (c.detalle) fila.appendChild(crear('div', 'font-size:12px;color:#6b7280', c.detalle));
+        fila.appendChild(crear('div', 'font-size:12px;color:#9a3412;margin-bottom:4px', c.tipoTexto || 'Conflicto.'));
+        var op = crear('div', 'display:flex;gap:14px;flex-wrap:wrap');
+        [['local', c.etiquetaLocal || 'Mi valor', c.localTexto, c.opciones && c.opciones.local], ['remoto', c.etiquetaRemoto || 'Valor del servidor', c.remotoTexto, c.opciones && c.opciones.remoto]].forEach(function (o) {
+          if (!o[3]) return;
+          var l = crear('label', 'display:flex;gap:6px;align-items:center;cursor:pointer'); var r = document.createElement('input'); r.type = 'radio'; r.name = cfg.id + '_' + c.clave; r.value = o[0];
+          r.addEventListener('change', function () { elegidas[c.clave] = o[0]; }); l.appendChild(r); l.appendChild(crear('span', '', o[1] + ': ' + o[2])); op.appendChild(l);
+        });
+        if (c.nota) fila.appendChild(crear('div', 'font-size:12px;color:#7c2d12;font-style:italic', c.nota));
+        fila.appendChild(op); p.appendChild(fila);
+      });
+      p.appendChild(estado);
+      var barra = crear('div', 'display:flex;gap:8px;flex-wrap:wrap;margin-top:8px');
+      function btn(texto, fn, principal) { var b = crear('button', 'padding:8px 14px;border-radius:8px;border:1px solid #c2410c;font-weight:700;cursor:pointer;' + (principal ? 'background:#c2410c;color:#fff' : 'background:#fff;color:#9a3412'), texto); b.type = 'button'; b.addEventListener('click', fn); barra.appendChild(b); return b; }
+      async function aplicar(res) {
+        if (!Object.keys(res).length) { estado.textContent = 'Elegí un valor para al menos un conflicto.'; return; }
+        estado.textContent = 'Releyendo la versión del servidor y guardando…';
+        var r = null; try { r = await cfg.onResolver(res); } catch (e) { console.warn(e); }
+        var c2 = cfg.actual ? cfg.actual() : null;
+        if (c2) { cfg.items = c2.items; cfg.avisos = c2.avisos; }
+        if (r && r.ok && !(cfg.items || []).length) { quitarPanelGenerico(cfg); mostrarPanelGenerico(cfg); if (cfg.avisoFinal) avisoTransitorio(cfg.avisoFinal); return; }
+        if ((cfg.items || []).length || (cfg.avisos || []).length) { mostrarPanelGenerico(cfg); } else { estado.textContent = 'No se pudo confirmar el guardado en el servidor. Tus cambios siguen en este equipo.'; }
+      }
+      function elegirTodo(lado) { var r = {}; items.forEach(function (c) { var o = c.opciones || {}; if (lado === 'local' ? o.local : o.remoto) r[c.clave] = lado; else if (lado === 'local' && o.remoto) r[c.clave] = 'remoto'; }); return r; }
+      if (items.length) {
+        btn('Conservar lo elegido', function () { aplicar(Object.assign({}, elegidas)); }, true);
+        btn('Conservar mis valores', function () { aplicar(elegirTodo('local')); });
+        btn('Conservar los del servidor', function () { aplicar(elegirTodo('remoto')); });
+      }
+      btn(items.length ? 'Cancelar (resolver más tarde)' : 'Cerrar', function () { quitarPanelGenerico(cfg); if (items.length || avisos.length) insigniaGenerica(cfg, items, avisos); });
+      p.appendChild(barra); document.body.appendChild(p);
+    } catch (e) { console.warn('R2C: no se pudo mostrar el aviso de conflictos:', e); }
+  }
+
   window.cardiolinkConfigR2B = {
     activo: activo, registrarBase: registrarBase, reconciliar: reconciliar, guardarDueno: guardarDueno, hayPendientePorGuardar: hayPendientePorGuardar,
     localSinSemilla: localParaMotor, semilla: semilla, reponerSemilla: reponerSemilla,
     presentarConflictos: presentarConflictos, descartarConflictos: descartarConflictos, adoptar: adoptar, limpiar: limpiar,
+    panelGenerico: mostrarPanelGenerico, quitarPanelGenerico: quitarPanelGenerico, avisoTransitorio: avisoTransitorio,
     conflictos: function () { return conflictos.slice(); },
     estado: function () { return { base: !!base, version: ver, conflictos: conflictos.length, contadores: Object.assign({}, contadores) }; },
     VERSION: 'r2b-integracion-1'
