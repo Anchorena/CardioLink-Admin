@@ -1725,32 +1725,29 @@ function normalizarConfigCritica(cfg){
   cfg.usuarios = Array.isArray(cfg.usuarios) ? cfg.usuarios : usuariosDefault();
   cfg.colocadores = Array.isArray(cfg.colocadores) ? cfg.colocadores : ['Geraldine','Secretaría','Otro'];
 
-  // No pisar configuraciones reales: solo completar lo que falta o quedó en cero por error.
+  // R4 - NORMALIZACIÓN NO DESTRUCTIVA. Sólo se COMPLETA lo que falta; jamás se pisa una decisión del usuario:
+  //  · los valores 0, '' y null de `valores` (aranceles/copagos del perfil) son decisiones explícitas y se conservan (sólo se repara lo ausente o inválido: NaN/negativo/texto no numérico);
+  //  · una prestación destildada de un profesional NO se vuelve a agregar; un profesional o una cobertura eliminados NO se reactivan (los de fábrica sólo se siembran en una instalación vacía);
+  //  · las reglas comerciales (reglasOS) editadas se conservan: sólo se completan las ausentes o vacías.
+  const sembrarProfesionales=cfg.profesionales.length===0;
   defaults.profesionales.forEach(def=>{
     let p = cfg.profesionales.find(x=>x.id===def.id);
-    if(!p){ cfg.profesionales.push(structuredClone(def)); return; }
+    if(!p){ if(sembrarProfesionales) cfg.profesionales.push(structuredClone(def)); return; }
     if(!p.nombre) p.nombre=def.nombre;
     if(!p.area) p.area=def.area;
-    if(!Array.isArray(p.prestaciones)) p.prestaciones=[];
-    def.prestaciones.forEach(pr=>{ if(!p.prestaciones.includes(pr)) p.prestaciones.push(pr); });
+    if(!Array.isArray(p.prestaciones)) p.prestaciones=[...(def.prestaciones||[])];
     p.valores = p.valores && typeof p.valores==='object' ? p.valores : {};
     Object.entries(def.valores||{}).forEach(([k,v])=>{
-      if((p.id==='matias' || p.id==='rogelio') && (!Number(p.valores[k]) || Number(p.valores[k])<0)) p.valores[k]=v;
-      else if(p.valores[k]===undefined || p.valores[k]===null || p.valores[k]==='') p.valores[k]=v;
+      const cur=p.valores[k];
+      if(cur===undefined){ p.valores[k]=v; return; }                                   // ausente: se completa
+      if(typeof cur==='number' ? (!Number.isFinite(cur)||cur<0) : (typeof cur==='string' && cur.trim()!=='' && !Number.isFinite(Number(String(cur).replace(',','.')))) ) p.valores[k]=v;   // inválido: se repara; 0, '' y null NO
     });
   });
-  defaults.obrasSociales.forEach(os=>{ if(!cfg.obrasSociales.includes(os)) cfg.obrasSociales.push(os); });
-  cfg.reglasOS = Object.assign({}, defaults.reglasOS, cfg.reglasOS);
-  // Reparación de variantes comunes.
+  if(cfg.obrasSociales.length===0) defaults.obrasSociales.forEach(os=>{ if(!cfg.obrasSociales.includes(os)) cfg.obrasSociales.push(os); });
+  Object.entries(defaults.reglasOS||{}).forEach(([os,regla])=>{ const cur=cfg.reglasOS[os]; if(typeof cur!=='string'||!cur.trim()) cfg.reglasOS[os]=regla; });
+  // Reparación de variantes comunes (sólo agrega la variante con tilde si existe la que no la tiene; no quita nada).
   if(cfg.obrasSociales.includes('Prevencion Salud') && !cfg.obrasSociales.includes('Prevención Salud')) cfg.obrasSociales.push('Prevención Salud');
   if(cfg.reglasOS['Prevencion Salud'] && !cfg.reglasOS['Prevención Salud']) cfg.reglasOS['Prevención Salud']=cfg.reglasOS['Prevencion Salud'];
-  cfg.reglasOS['IOMA']='IOMA_OSPRERA';
-  cfg.reglasOS['OSPRERA']='IOMA_OSPRERA';
-  cfg.reglasOS['OSDE']='OSDE';
-  cfg.reglasOS['Sancor']='SANCOR_PREVENCION';
-  cfg.reglasOS['Prevención Salud']='SANCOR_PREVENCION';
-  cfg.reglasOS['Integral']='INTEGRAL';
-  cfg.reglasOS['PAMI']='COBERTURA_COBRA_PARTICULAR';
   return cfg;
 }
 function loadConfig(){
@@ -1875,7 +1872,16 @@ function valoresColocacion(){try{return Object.assign({holter:10000,mapa:10000,e
 function guardarValoresColocacion(){if(!puedeVerLiquidacionColocaciones())return valoresColocacion();const v={holter:Number($('valorColocacionHolter')?.value||$('liqValorHolter')?.value||10000),mapa:Number($('valorColocacionMapa')?.value||$('liqValorMapa')?.value||10000),ecg:Number($('valorColocacionEcg')?.value||$('liqValorEcg')?.value||0)};localStorage.setItem(storageValoresColocacion,JSON.stringify(v));return v}
 function mostrarResumenFiltros(){resumenFiltrosVisible=true;if($('resumenCaja'))$('resumenCaja').classList.remove('hidden');if($('liquidacionBox'))$('liquidacionBox').classList.remove('hidden')}
 function ocultarResumenFiltros(){resumenFiltrosVisible=false;if($('resumenCaja'))$('resumenCaja').classList.add('hidden');if($('liquidacionBox'))$('liquidacionBox').classList.add('hidden');if($('liquidacionResultado'))$('liquidacionResultado').textContent=''}
-function getRegla(os){ if(os==='PAMI') return 'COBERTURA_COBRA_PARTICULAR'; return (data.reglasOS||{})[os] || (defaults.reglasOS||{})[os] || 'GENERAL_CONSULTA_EXTRA'}
+// R4 - lectura ÚNICA de la regla comercial: (1) la del convenio del PROFESIONAL para esa cobertura, si tiene una explícita (distinta de SIN_REGLA); (2) la regla global de la cobertura (reglasOS);
+// (3) la de fábrica; (4) la general. Ya no hay reglas fijas escritas en el código (PAMI se completa por defecto como cualquier otra y es editable). Los históricos usan su snapshot a.reglaOS.
+function reglaConvenioProfesional(os,profId){
+  try{
+    const arr=profId?((data.conveniosPorProfesional||{})[profId]):null; if(!Array.isArray(arr))return '';
+    const n=String(os??'').trim().toLowerCase(); const c=arr.find(x=>x&&String(x.obraSocial??'').trim().toLowerCase()===n);
+    const r=c&&typeof c.regla==='string'?c.regla.trim():''; return (r&&r!=='SIN_REGLA')?r:'';
+  }catch(e){return '';}
+}
+function getRegla(os,profId){ return reglaConvenioProfesional(os,profId) || (data.reglasOS||{})[os] || (defaults.reglasOS||{})[os] || 'GENERAL_CONSULTA_EXTRA'}
 function setRegla(os,regla){if(!puedeGestionarConfigComercial())return false;if(!data.reglasOS)data.reglasOS={};data.reglasOS[os]=regla;saveConfig();return true}
 function escapeHtml(s){return String(s??'').replaceAll('&','&amp;').replaceAll('"','&quot;').replaceAll('<','&lt;').replaceAll('>','&gt;')}
 function esMensajeInterno(a){return a && a.tipoRegistro==='mensaje';}
@@ -2223,7 +2229,7 @@ function aplicarReglaProfesionalSimple(){
   $('bonoEstudio').checked=false;
   $('copiaImpresa').checked=false;
 
-  if(getRegla(os)==='COBERTURA_COBRA_PARTICULAR'){
+  if(getRegla(os,profId)==='COBERTURA_COBRA_PARTICULAR'){
     $('tipoCobro').value='Particular';
     $('formaPago').value='Efectivo';
     setSelectValue('facturador','Particular');
@@ -2250,7 +2256,7 @@ function aplicarReglaProfesionalSimple(){
   calcularCajaCarga();
 }
 function aplicarRegla(){
- const os=$('obraSocial').value, prof=$('profesional').value, prest=$('prestacion').value, t=tipoPrest(prest), regla=getRegla(os);
+ const os=$('obraSocial').value, prof=$('profesional').value, prest=$('prestacion').value, t=tipoPrest(prest), regla=getRegla(os,prof);
 
  // Regla general: solo Matías usa circuito especial con Rogelio/Fold2.
  // El resto de los profesionales facturan y contabilizan para sí mismos.
@@ -2404,7 +2410,7 @@ function calcularMontosParaRegistro(prestacion,{adicional=false,noCobrar=false}=
  const tipo=$('tipoCobro').value;
  const os=$('obraSocial').value;
  const profId=$('profesional').value;
- const regla=getRegla(os);
+ const regla=getRegla(os,profId);
  const t=tipoPrest(prestacion);
  let montoConsulta=0,montoEstudio=0,montoCopago=0,montoTotal=0;
  let tipoCobro=tipo;
@@ -2479,7 +2485,7 @@ function crearAtencionDesdeFormulario(prestacion, opciones={}){
   formaPago:montos.formaPago,
   noCobrar:!!montos.noCobrar,
   cajaPerfil:profId,
-  reglaOS:getRegla(osValor),
+  reglaOS:getRegla(osValor,profId),
   montoConsulta:montos.montoConsulta,
   montoEstudio:montos.montoEstudio,
   montoCopago:montos.montoCopago,
@@ -3490,7 +3496,7 @@ function guardarEdicionModal(id){
   a.estudioImpresoFacturacion=$('m_estudioImpresoFacturacion')?.checked||false;
   a.estudioEnviadoMail=$('m_estudioEnviadoMail')?.checked||false;
   a.estudioEnviadoWS=$('m_estudioEnviadoWS')?.checked||false;
-  a.reglaOS=getRegla(a.obraSocial);
+  a.reglaOS=getRegla(a.obraSocial,a.profesionalId);
   try{ if(typeof window.aplicarArancelSnapshot3102Final==='function') window.aplicarArancelSnapshot3102Final(a,true); }catch(e){ console.warn('No se pudo actualizar arancel estimado',e); }
   selloAuditoriaEdicion(a);
   saveAtenciones();
@@ -5459,7 +5465,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const tipo=$id('m_tipoCobro')?.value || base.tipoCobro || 'Sin cobro en caja';
     const os=$id('m_os')?.value || base.obraSocial || 'Particular';
     const formaBase=$id('m_formaPago')?.value || base.formaPago || 'No aplica';
-    const regla=getRegla(os);
+    const regla=getRegla(os,profId);
     const noCobrarParticular=!!noCobrar&&esCoberturaParticularNoCobrar(os);
     let tipoCobro=tipo, formaPago=formaBase, montoConsulta=0, montoEstudio=0, montoCopago=0, montoTotal=0;
     if(noCobrarParticular){
@@ -5493,7 +5499,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       consultaA:$id('m_consultaA')?.value || base.consultaA || 'Matías',
       prestacionA:$id('m_prestacionA')?.value || base.prestacionA || 'Matías',
       cajaPerfil:profId,
-      reglaOS:getRegla(os),
+      reglaOS:getRegla(os,profId),
       tipoCobro,formaPago,noCobrar:noCobrarParticular,montoConsulta,montoEstudio,montoCopago,montoTotal,
       cuentaConsulta:false,
       bonoConsulta:false,
@@ -5690,7 +5696,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
 
   // Reglas correctas para prestaciones adicionales del mismo turno, especialmente IOMA/OSDE/Rogelio.
   function destinoPrestacionExtra294(profId, os, prestacion){
-    const regla=typeof getRegla==='function'?getRegla(os):'';
+    const regla=typeof getRegla==='function'?getRegla(os,profId):'';
     const t=typeof tipoPrest==='function'?tipoPrest(prestacion):'ESTUDIO';
     if(profId==='matias' && t!=='CONSULTA'){
       if(['IOMA_OSPRERA','OSDE','SANCOR_PREVENCION'].includes(regla)) return {consultaA:'Matías', prestacionA:'Rogelio', facturador: regla==='IOMA_OSPRERA'?'Fold2 / FEMEBA':'Rogelio'};
@@ -5701,7 +5707,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     return {consultaA: t==='CONSULTA'?nom:'No aplica', prestacionA: t==='CONSULTA'?'No aplica':nom, facturador:nom};
   }
   function montosExtra294(profId, os, prestacion, tipoBase, formaBase, noCobrar){
-    const regla=typeof getRegla==='function'?getRegla(os):'';
+    const regla=typeof getRegla==='function'?getRegla(os,profId):'';
     const tipoPrestacion=typeof tipoPrest==='function'?tipoPrest(prestacion):'ESTUDIO';
     let tipoCobro=tipoBase||'Sin cobro en caja', formaPago=formaBase||'No aplica', montoConsulta=0, montoEstudio=0, montoCopago=0, montoTotal=0;
     if(noCobrar && esCoberturaParticularNoCobrar(os)){
@@ -5767,7 +5773,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       prestacion:prest,
       ...destinos,
       cajaPerfil:profId,
-      reglaOS:typeof getRegla==='function'?getRegla(os):'',
+      reglaOS:typeof getRegla==='function'?getRegla(os,profId):'',
       ...montos,
       cuentaConsulta:false,
       bonoConsulta:false,

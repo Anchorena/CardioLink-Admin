@@ -112,11 +112,13 @@ test('un mensaje rechazado por permisos (RLS) no se reencola y no bloquea el lot
   assert.match(d,/Texto del mensaje \(copialo si lo necesitás\)/);
   const s=sinComentarios(between('if(nuevas298.length){','if(conflictos298.length){'));
   assert.match(s,/nuevas298\.filter\(a=>!esMsg298\(a\)\),nuevas298\.filter\(esMsg298\)/);       // lotes separados
-  assert.match(s,/lote\.every\(esMsg298\)&&esErrorPermisosRLS298\(upErr\)/);                       // sólo mensajes + sólo permisos
+  // R2C: si el lote falla se envía una por una (sólo se descartan los mensajes rechazados por permisos; las demás filas se retienen o reintentan por separado)
+  assert.match(s,/esErrorPermisosRLS298\(e1\)[\s\S]{0,200}esMsg298\(m\)[\s\S]{0,120}rechazadosPorPermisos298\.push\(m\)/);   // sólo mensajes + sólo permisos
   assert.match(s,/for\(const m of lote\)/);                                                         // uno por uno: sólo se descartan los rechazados
   assert.match(s,/descartarMensajesRechazados298\(rechazadosPorPermisos298\)/);
   // los errores que NO son de permisos siguen reencolando
-  assert.match(s,/syncAtencionesPendiente=true;\s*syncReintentosFallidos\+\+;\s*return false;/);
+  assert.match(s,/errorTransitorio298\(e1\)/);                                                        // R2C: el error transitorio de una fila no corta el lote
+  assert.match(src,/if\(huboErrorTransitorio298\)\{[\s\S]{0,260}syncAtencionesPendiente=true;\s*syncReintentosFallidos\+\+;\s*return false;/);   // y al final se reencola
 });
 
 test('Secretaría y owner conservan la lógica de remitente anterior',()=>{
@@ -155,7 +157,9 @@ test('filas nuevas sin sincronizar: se respaldan al cerrar sesión con pendiente
   const s=between('window.filasNuevasPendientes298=function(){','window.hayPendientesSync298=function(){');
   assert.match(s,/!baselineVersionAtenciones298\.has\(String\(a\.id\)\)/);            // sólo filas sin versión remota (nunca confirmadas)
   // la recuperación corre DESPUÉS del snapshot de baselines y de soltar cargandoDesdeNube
-  assert.match(src,/snapshotBaselineAtenciones298\(atenciones\);\s*cargandoDesdeNube=false;\s*try\{ await recuperarNuevasPendientesV1\(\);/);
+  // (R2D: la cola de recuperación nueva corre en el mismo punto, antes de la heredada, que ya no repite lo que aquella gestiona)
+  const iSnap=src.indexOf('snapshotBaselineAtenciones298(atenciones);\n      cargandoDesdeNube=false;'), iR2D=src.indexOf('ob298.recuperar(',iSnap), iLeg=src.indexOf('try{ await recuperarNuevasPendientesV1();',iSnap);
+  assert.ok(iSnap>0&&iR2D>iSnap&&iLeg>iR2D);
 });
 
 test('evoluciones: guardado confiable (por id, refresco pausado, confirmación del servidor, sin duplicados)',()=>{
