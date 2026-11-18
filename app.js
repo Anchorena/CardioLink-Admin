@@ -339,6 +339,7 @@ async function recuperarNuevasPendientesV1(){
     avisarMensajesNoReenviadosV1(incompatibles.length);
   }
   const ids=new Set((atenciones||[]).map(a=>String(a&&a.id)));
+  try{ const g=window.cardiolinkOutboxR2D&&window.cardiolinkOutboxR2D.idsGestionados&&window.cardiolinkOutboxR2D.idsGestionados(); if(g) g.forEach(x=>ids.add(x)); }catch(e){}   // R2D: lo que la cola nueva ya gestiona (incompletas, en revisión) no se recrea desde la heredada
   const nuevas=rows.filter(r=>r&&r.id!=null&&!ids.has(String(r.id)));
   nuevas.forEach(r=>atenciones.push(r));
   if(nuevas.length){ try{ localStorage.setItem(storageAtenciones,JSON.stringify(atenciones)); }catch(e){} }
@@ -542,7 +543,9 @@ async function liberarCacheLocalAlCerrarSesionV1(){
       // respaldo, esas filas se perderían.
       try{
         const nuevas=typeof window.filasNuevasPendientes298==='function'?window.filasNuevasPendientes298():[];
-        if(nuevas.length&&usuarioSupabase?.id) localStorage.setItem(OUTBOX_NUEVAS_KEY_V1+usuarioSupabase.id,JSON.stringify({rows:nuevas,fecha:new Date().toISOString()}));
+        const obR2D=window.cardiolinkOutboxR2D; try{ if(obR2D) obR2D.registrar(); }catch(e){}
+        const protegidasR2D=!!(obR2D&&obR2D.protegido&&obR2D.protegido());   // R2D: ya quedaron en la cola nueva (por proyecto y uid): no se duplican en la heredada
+        if(nuevas.length&&usuarioSupabase?.id&&!protegidasR2D) localStorage.setItem(OUTBOX_NUEVAS_KEY_V1+usuarioSupabase.id,JSON.stringify({rows:nuevas,fecha:new Date().toISOString()}));
       }catch(e){ console.warn('No se pudo respaldar las filas nuevas pendientes:',e); }
       return false;
     }
@@ -1236,6 +1239,15 @@ async function cerrarPorInactividad() {
 
 async function cerrarSesionSupabase() {
   if (!supabaseClient) return;
+  // R2D: con cambios sin sincronizar se avisa antes de cerrar (equipo compartido): quedan en este equipo para este usuario hasta que vuelva a entrar.
+  try{
+    const ob=window.cardiolinkOutboxR2D;
+    if(ob&&typeof ob.resumen==='function'){
+      try{ await Promise.race([sincronizarAtencionesSupabase(false),new Promise(r=>setTimeout(r,6000))]); }catch(e){}
+      ob.registrar(); const n=ob.resumen().length, sinP=ob.sinProteccion?ob.sinProteccion():0;
+      if(n>0&&!window.confirm((sinP>0?'ATENCIÓN: '+sinP+' de esos cambios NO están protegidos en este equipo (almacenamiento lleno o no disponible) y SE PERDERÁN si cerrás sesión.\n\n':'')+'Hay '+n+' cambio'+(n===1?'':'s')+' sin sincronizar.\n\nSi cerrás sesión quedan guardados en ESTE equipo, sólo para tu usuario, y se recuperan cuando vuelvas a entrar (no se cifran: en un equipo compartido, descartalos antes desde el aviso de cambios pendientes).\n\n¿Cerrar sesión igual?')) return;
+    }
+  }catch(e){ console.warn('R2D:',e); }
 
   await liberarCacheLocalAlCerrarSesionV1();
   await supabaseClient.auth.signOut();
@@ -1364,7 +1376,11 @@ function registrosSincronizablesSupabase(lista = atenciones) {
   const out = [];
   (lista || []).forEach((a, idx) => {
     if (!a || typeof a !== 'object') return;
-    if (!esMensajeInterno(a) && esAtencionCorrupta(a)) return;
+    if (!esMensajeInterno(a) && esAtencionCorrupta(a)) {
+      // R2D: una fila nueva con paciente/DNI pero sin cobertura, prestación o profesional NO se descarta: queda como INCOMPLETA fuera de `atenciones` (Caja y facturación no la ven).
+      try{ if(window.cardiolinkOutboxR2D&&window.cardiolinkOutboxR2D.cuarentena(a)) return; }catch(e){}
+      return;
+    }
     let id = String(a.id || '').trim();
     if (!id || id === 'undefined' || id === 'null') {
       id = (esMensajeInterno(a) ? 'msg_' : 'att_') + Date.now() + '_' + idx + '_' + Math.random().toString(36).slice(2, 7);
@@ -6519,7 +6535,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       return configCompletaPermitidaV1() || !!window.cardiolinkConfigSecretariaV1?.aplica?.();
     }catch(e){ return false; }
   }
-  function marcarConfigPendiente298(){ if(rolEscribeConfig298()){ seqCambioConfig298++; configPendiente298=true; } }
+  function marcarConfigPendiente298(){ if(rolEscribeConfig298()){ seqCambioConfig298++; configPendiente298=true; try{ const o=window.cardiolinkOutboxR2D; if(o) o.registrar(); }catch(e){} } }
   function quitarAvisoConfigPendiente298(){ try{ document.getElementById('avisoConfigPendienteV1')?.remove(); }catch(e){} }
   function mostrarAvisoConfigPendiente298(){
     try{
@@ -6687,6 +6703,49 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     avisoConcurrencia298('Este turno fue modificado desde otra sesión. Tus cambios se conservaron en este equipo y NO se guardaron (falta el módulo de resolución de conflictos). No cierres sesión y avisá a soporte.');
   }
   window.cardiolinkAtencionesR2Cpuente={estado:()=>({sinModulo:Array.from(retenidasSinModuloR2C),conectado:puenteR2Cconectado})};
+
+  /* PERSISTENCIA V1 / R2D - cola local de recuperación (cardiolink-outbox-v1.js + cardiolink-outbox-glue-v1.js). Las bases viven en esta clausura: se le entregan por este puente. */
+  let puenteOutboxConectado=false, ultimaCfgRemotaR2D=null;
+  function moduloOutbox298(){
+    const m=window.cardiolinkOutboxR2D, P=window.cardiolinkOutboxPuroV1;
+    if(!m||!P||typeof m.conectar!=='function') return null;
+    if(!puenteOutboxConectado){
+      m.conectar({
+        uid:()=>usuarioSupabase?.id, rol:rolR2C, esCorrupta:a=>esAtencionCorrupta(a),
+        proyecto:()=>{ try{ return new URL(SUPABASE_URL).hostname.split('.')[0]; }catch(e){ return 'proyecto'; } },
+        listo:()=>primeraCargaAplicada298===true&&!cargandoDesdeNube&&!!usuarioSupabase&&backendRolCargado===true,
+        atenciones:()=>atenciones, esConfirmada:id=>baselineVersionAtenciones298.has(String(id)),
+        base:id=>baselineAtenciones298.get(String(id)), version:id=>baselineVersionAtenciones298.get(String(id)),
+        mensajeCompatible:m2=>mensajePendienteCompatibleV1(m2), resguardarMensaje:m2=>{ resguardarMensajesNoReenviadosV1([m2]); },
+        instalarFila:(id,local,baseStr,ver)=>{ const i=atenciones.findIndex(x=>x&&String(x.id)===String(id)); if(i>=0) atenciones[i]=local; else atenciones.push(local); baselineAtenciones298.set(String(id),baseStr); baselineVersionAtenciones298.set(String(id),ver); guardarLocalR2C(); },
+        agregarNueva:row=>{ if(!atenciones.some(x=>x&&String(x.id)===String(row.id))) atenciones.push(row); guardarLocalR2C(); try{ programarSyncSupabase(); }catch(e){} },
+        quitarLocal:id=>{ const i=atenciones.findIndex(x=>x&&String(x.id)===String(id)); if(i>=0) atenciones.splice(i,1); baselineAtenciones298.delete(String(id)); baselineVersionAtenciones298.delete(String(id)); guardarLocalR2C(); },
+        revertirFila:id=>{ const s2=baselineAtenciones298.get(String(id)); if(s2===undefined) return; const i=atenciones.findIndex(x=>x&&String(x.id)===String(id)); const v=JSON.parse(s2); if(i>=0) atenciones[i]=v; else atenciones.push(v); guardarLocalR2C(); },
+        sincronizarYa:()=>{ try{ return sincronizarAtencionesSupabase(false).catch(()=>{}); }catch(e){} },
+        guardarConfigYa:()=>{ try{ return guardarConfigEnSupabase298().catch(()=>{}); }catch(e){} },
+        configPermitida:()=>configCompletaPermitidaV1(),
+        profesionales:()=>(data&&data.profesionales||[]).map(p=>({id:p.id,nombre:p.nombre})),
+        consultarServidor:async id=>{ try{ if(String(id)===CONFIG_ROW_ID) return {error:'la fila de configuración no se consulta como atención'}; const r=await supabaseClient.from('cardiolink_atenciones').select('id,payload').eq('id',String(id)).limit(1); if(r.error) return {error:String(r.error.message||r.error)}; const f=Array.isArray(r.data)?r.data[0]:r.data; return f&&f.payload?{existe:true,payload:f.payload}:{existe:false}; }catch(e){ return {error:String(e&&e.message||e)}; } },
+        configPendiente:()=>{
+          const r=window.cardiolinkConfigR2B; if(!r||!r.activo||!r.activo()||!r.hayPendientePorGuardar()) return null;
+          const base=r.baseActual(); if(!base) return null; const local=r.localSinSemilla(base), neutro=r.neutroActual();
+          const d=P.diffConfig(base,local), dn=P.diffConfig(base,neutro||base), firmasNeutras=new Set(dn.ops.map(o=>JSON.stringify(o)));
+          return {ops:d.ops.filter(o=>!firmasNeutras.has(JSON.stringify(o))), noProt:d.noProtegido, baseVer:r.versionBase()};
+        },
+        instalarConfig:(baseRaw,ver,localCfg)=>{ const r=window.cardiolinkConfigR2B; if(!r||!r.instalarRecuperacion(baseRaw,ver,localCfg)) return; marcarConfigPendiente298(); setTimeout(()=>{ guardarConfigEnSupabase298().catch(e=>console.warn('Guardado de configuración recuperada falló:',e)); },1500); },
+        descartarConfig:ops=>{ data=normalizarConfigCritica(P.aplicarConfig(data,ops,'a')); try{ localStorage.setItem(storageConfig,JSON.stringify(data)); }catch(e){} configPendiente298=false; try{ window.cardiolinkConfigR2B&&window.cardiolinkConfigR2B.descartarConflictos(); }catch(e){} }
+      });
+      puenteOutboxConectado=true;
+    }
+    return m;
+  }
+  window.cardiolinkOutboxPuente={estado:()=>({conectado:puenteOutboxConectado})};
+  // Programar un sync SIEMPRE persiste antes la operación pendiente (no se espera al temporizador de 700 ms ni a eventos de cierre de página).
+  if(typeof programarSyncSupabase==='function'&&!programarSyncSupabase.__r2d){
+    const origProgramar=programarSyncSupabase;
+    const envoltorio=function(){ try{ const o=moduloOutbox298(); if(o) o.registrar(); }catch(e){ console.warn('R2D:',e); } return origProgramar.apply(this,arguments); };
+    envoltorio.__r2d=true; programarSyncSupabase=envoltorio;
+  }
 
   // Un mensaje rechazado por PERMISOS (RLS/42501) no es un fallo transitorio: reintentarlo indefinidamente bloquearía la cola.
   function esErrorPermisosRLS298(e){ return !!e&&(e.code==='42501'||/row-level security|permission denied/i.test(String(e.message||''))); }
@@ -7093,6 +7152,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       if(cfgRow?.payload?.config){
         // R2B (Dueño/Admin): el motor de fusión reconcilia lo local con lo remoto POR ENTIDAD Y CAMPO. La base se registra con la copia CRUDA, antes de normalizar.
         const r2b298=window.cardiolinkConfigR2B, usaR2B298=!!(r2b298&&r2b298.activo&&r2b298.activo()&&cfgRow.updated_at);
+        if(usaR2B298&&!primeraCargaAplicada298){ try{ ultimaCfgRemotaR2D={config:JSON.parse(JSON.stringify(cfgRow.payload.config)),updated_at:cfgRow.updated_at}; }catch(e){ ultimaCfgRemotaR2D=null; } }   // R2D: base de la recuperación de la cola
         let accionR2B298=null;
         if(usaR2B298) accionR2B298=guardandoConfig298>0?'conservar':r2b298.reconciliar({config:cfgRow.payload.config,updated_at:cfgRow.updated_at});
         // R2B (Secretaría): la vista de la RPC se reconcilia con el mismo motor, restringida a las claves autorizadas (el módulo de Secretaría guarda su propia base).
@@ -7174,6 +7234,16 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       // baseline al confirmar el UPSERT.
       snapshotBaselineAtenciones298(atenciones);
       cargandoDesdeNube=false;
+      // R2D: cola de recuperación (atenciones nuevas/modificadas, configuración, incompletas). Va ANTES de la cola heredada de filas nuevas, que ya no repite lo gestionado acá.
+      try{
+        const ob298=moduloOutbox298();
+        if(ob298&&!primeraCargaAplicada298){
+          const mapaRem298=new Map(); filasAtencion298.forEach(r=>{ if(r&&r.id!=null&&r.payload) mapaRem298.set(String(r.id),{payload:r.payload,updated_at:r.updated_at}); });
+          const rr298=ob298.recuperar({remotas:mapaRem298,cfgRemota:ultimaCfgRemotaR2D});
+          if(rr298&&(rr298.recuperadas||rr298.retenidas)) console.warn('R2D: cola de recuperación aplicada',JSON.stringify(rr298));
+          if(rr298&&rr298.recuperadas) syncDiferidoPorCarga=true;
+        }
+      }catch(e){ console.warn('R2D: no se pudo recuperar la cola de operaciones pendientes:',e); }
       try{ await recuperarNuevasPendientesV1(); }catch(e){ console.warn('No se pudieron recuperar las filas nuevas pendientes:',e); }
       try{ apartarDocumentosNoPermitidosV1(); }catch(e){ console.warn('No se pudieron apartar los documentos no permitidos:',e); }
       try{ recuperarDocumentosPendientesV1(); }catch(e){ console.warn('No se pudieron recuperar los documentos clínicos resguardados:',e); }
@@ -7208,6 +7278,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         // limpieza de corruptos, "Sincronizar ahora", borrados, etc.).
         // R2C: las filas retenidas (conflicto sin resolver, eliminación remota por decidir, rechazo del servidor con el mismo contenido) NO se envían ni se pisan.
         const modR2C298=moduloR2C();
+        try{ moduloOutbox298(); }catch(e){}   // R2D: conecta la cola de recuperación (idempotente)
         const retenidaR2C298=a=>!!a&&a.id!=null&&(retenidasSinModuloR2C.has(String(a.id))||(modR2C298?modR2C298.retenida(String(a.id),stableStringify298(a)):false));
         const aEnviar298 = (forzar ? atenciones.slice() : atenciones.filter(atencionModificada298)).filter(a=>!retenidaR2C298(a));
 
@@ -7369,9 +7440,11 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
             // Atención nueva -> no hay versión remota previa que proteger
             // (punto 4): se conserva el upsert normal.
             const cont298=fotoLote298(lote);
+            try{ const o298=moduloOutbox298(); if(o298&&!forzar) o298.marcarEnvio(lote.filter(a=>a&&a.id!=null).map(a=>[String(a.id),cont298.get(String(a.id))])); }catch(e){}   // R2D: queda anotado ANTES de enviar
             let upErr;
             try{ ({error:upErr}=await supabaseClient.from('cardiolink_atenciones').upsert(filasDe298(lote),{onConflict:'id'})); }catch(e){ upErr=e; }
             if(!upErr){ confirmar298(lote,cont298); continue; }
+            try{ if(upErr&&(upErr.code||upErr.status||/failed to fetch|networkerror|load failed|network request failed/i.test(String(upErr.message||upErr)))&&moduloOutbox298()) moduloOutbox298().limpiarEnvio(lote.map(a=>a&&a.id)); }catch(e){}   // rechazo DEFINITIVO del servidor o fallo de red limpio (la solicitud no llegó): no quedó creada. Sin respuesta tras enviar (timeout, cierre de página) la marca se conserva
             // R2C: el lote falló -> se envía una por una; sólo se retienen/descartan las rechazadas, las válidas del mismo lote se guardan.
             for(const m of lote){
               const contM298=fotoLote298([m]);
@@ -7445,6 +7518,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         throw e;
       }finally{
         syncAtencionesEnCurso=false;
+        try{ const oF=window.cardiolinkOutboxR2D; if(oF) oF.registrar(); }catch(e){}   // R2D: lo confirmado sale de la cola; lo pendiente se conserva
         if(syncAtencionesPendiente){
           syncAtencionesPendiente=false;
           // Backoff: mismo criterio que el resto del mecanismo - evita

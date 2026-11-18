@@ -201,3 +201,29 @@ test('una sola operación por atención a la vez (cola por id)', async () => {
   const [a, b] = await Promise.all([E.M.reconciliarFila('a1'), E.M.reconciliarFila('a1')]);
   assert.equal(a.estado, 'confirmada'); assert.equal(b.estado, 'confirmada'); assert.equal(E.rastro.updates, 1, 'la segunda no tenía nada que escribir');
 });
+
+// ---- R2D: lo que instala la recuperación (base reconstruida + versión base original) se resuelve por la fusión de R2C, nunca por el parche ----
+const O = require('./cardiolink-outbox-v1.js');
+function recuperado(E, localCambios, remotoCambios) {
+  const original = atencion(); E.cargar(original);
+  const diff = O.diffAtencion(original, Object.assign({}, original, localCambios)).cambios;
+  const verOriginal = E.versiones.get('a1');
+  E.remoto('a1', remotoCambios);                                                    // el servidor cambió mientras la app estaba cerrada
+  const rem = E.tabla.get('a1').payload;
+  // lo que hace cardiolink-outbox-glue-v1.js: base' = remoto + «antes», local' = remoto + «después», versión BASE original
+  E.locales.set('a1', O.aplicarAtencion(rem, diff, 'd')); E.bases.set('a1', O.estable(O.aplicarAtencion(rem, diff, 'a'))); E.versiones.set('a1', verOriginal);
+}
+test('R2D: recuperación con el servidor cambiado en OTRO campo → se fusiona y ambos cambios quedan en el servidor', async () => {
+  const E = entorno(); recuperado(E, { observaciones: 'pendiente local' }, { cobertura: 'Swiss' });
+  const r = await E.M.reconciliarFila('a1'); assert.equal(r.estado, 'confirmada');
+  const f = E.tabla.get('a1').payload; assert.equal(f.observaciones, 'pendiente local'); assert.equal(f.cobertura, 'Swiss');
+});
+test('R2D: recuperación con el servidor cambiado en el MISMO campo → CONFLICTO visible; no se escribe nada (el parche no pisa al remoto)', async () => {
+  const E = entorno(); recuperado(E, { observaciones: 'LOCAL' }, { observaciones: 'REMOTA' });
+  const r = await E.M.reconciliarFila('a1'); assert.equal(r.estado, 'conflicto'); assert.equal(E.tabla.get('a1').payload.observaciones, 'REMOTA'); assert.equal(E.rastro.updates, 0);
+});
+test('R2D: corrección económica pendiente (grupo indivisible) recuperada sobre un cobro confirmado por otra sesión → congelada e informada', async () => {
+  const E = entorno(); recuperado(E, { montoConsulta: 5000, montoTotal: 5000 }, { estadoCobro: 'cobrado', cobroConfirmadoPorRol: 'admin', cobroConfirmadoPor: 'c@x', cobroConfirmadoEn: '2026-11-18T10:00:00Z', cobroMedioPago: 'Efectivo' });
+  const r = await E.M.reconciliarFila('a1'); assert.equal(r.estado, 'confirmada');
+  const f = E.tabla.get('a1').payload; assert.equal(f.montoConsulta, 1000); assert.equal(f.estadoCobro, 'cobrado'); assert.ok(r.rechazos.some((x) => x.grupo === 'financiero'));
+});

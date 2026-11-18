@@ -228,7 +228,7 @@
 
   window.cardiolinkAtencionesR2C = {
     conectar: conectar, activo: function () { return !!puente && !!F; }, reconciliarFila: reconciliarFila, manejarErrorFila: manejarErrorFila, retenida: retenida, hayRetenidas: hayRetenidas,
-    liberar: liberar, mostrar: mostrar, resolver: resolver, retenidasIds: function () { return Array.from(retenidas.keys()); },
+    liberar: liberar, mostrar: mostrar, resolver: resolver, abrirPanel: function () { try { ultimaFirma = ''; mostrar(); var R = window.cardiolinkConfigR2B; if (R && R.panelGenerico) { var d = datosPanel(); cfgPanel.items = d.items; cfgPanel.avisos = d.avisos; R.panelGenerico(cfgPanel); } } catch (e) { /* */ } }, retenidasIds: function () { return Array.from(retenidas.keys()); },
     estado: function () { var o = {}; retenidas.forEach(function (v, id) { o[id] = v.tipo + (v.conflictos ? ':' + v.conflictos.length : ''); }); return { retenidas: o, contadores: Object.assign({}, contadores), rechazosNoVistos: rechazosNoVistos().length }; },
     _recuperacion: function () { return { rechazos: leerJSON(K_RECHAZOS), eliminadas: leerJSON(K_ELIMINADAS) }; },
     MAX_REINTENTOS: MAX_REINTENTOS, VERSION: 'r2c-1'

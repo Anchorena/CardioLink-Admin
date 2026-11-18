@@ -680,7 +680,7 @@ prueba('C4 sin fallback en el código; y cada acceso a la fila de configuración
   assert.match(APP, /if\(!pideCfgCompleta298\) consulta298=consulta298\.neq\('id',CONFIG_ROW_ID\);/);
   // CENSO: 13 accesos a la tabla; sólo 2 pueden tocar la fila de configuración por id y están protegidos (lectura de documentos, consulta general); la escritura vive en el módulo de concurrencia (UPDATE condicionado, owner/admin confirmado)
   const accesos = (APP.match(/\.from\((['"])cardiolink_atenciones\1\)/g) || []).length;
-  assert.equal(accesos, 11, 'R2C: la relectura de conflictos y la fusión viven ahora en cardiolink-atenciones-concurrencia-v1.js (-1 acceso en app.js); cambió la cantidad de accesos a cardiolink_atenciones: revisar que ninguno nuevo pueda tocar la fila de configuración sin rol confirmado');
+  assert.equal(accesos, 12, 'R2D: +1 lectura por id de la cola de recuperación (consultarServidor; rechaza la fila de configuración); R2C: la relectura de conflictos y la fusión viven ahora en cardiolink-atenciones-concurrencia-v1.js (-1 acceso en app.js); cambió la cantidad de accesos a cardiolink_atenciones: revisar que ninguno nuevo pueda tocar la fila de configuración sin rol confirmado');
   assert.equal((APP.match(/CONFIG_ROW_ID_DOCS_V1\)/g) || []).length, 1);
   // R2C: el módulo de concurrencia de atenciones tiene 2 accesos (leer y UPDATE condicionado por id), rechaza la fila de configuración y nunca hace upsert/insert/delete
   const CONC2 = leer('cardiolink-atenciones-concurrencia-v1.js').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
@@ -693,7 +693,7 @@ prueba('C4 sin fallback en el código; y cada acceso a la fila de configuración
 
 prueba('C5 auditoría de llamadores: referencias a guardarConfigEnSupabase298 y a la confirmación (un llamador nuevo obliga a revisar su aviso de éxito)', () => {
   const cuenta = (f, re) => (leer(f).match(re) || []).length;
-  assert.equal(cuenta('app.js', /guardarConfigEnSupabase298/g), 29, '20 llamadores/definiciones previos + 7 referencias internas del bloque R1 (envoltorio de persistencia y reintentos del refresco) + 2 del refresco R2B (guardado tras fusionar, Dueño y Secretaría); ningún llamador de flujo de usuario nuevo'); assert.equal(cuenta('cardiolink-agenda-v1.js', /guardarConfigEnSupabase298/g), 4);
+  assert.equal(cuenta('app.js', /guardarConfigEnSupabase298/g), 31, '20 llamadores/definiciones previos + 7 referencias internas del bloque R1 (envoltorio de persistencia y reintentos del refresco) + 2 del refresco R2B (guardado tras fusionar, Dueño y Secretaría); ningún llamador de flujo de usuario nuevo'); assert.equal(cuenta('cardiolink-agenda-v1.js', /guardarConfigEnSupabase298/g), 4);
   assert.equal(cuenta('cardiolink-pedidos-rapidos-v1.js', /guardarConfigEnSupabase298/g), 3);
   MODULOS.filter(f => !['cardiolink-agenda-v1.js', 'cardiolink-pedidos-rapidos-v1.js'].includes(f)).forEach(f => assert.equal(cuenta(f, /guardarConfigEnSupabase298/g), 0, f + ' tiene un llamador nuevo'));
   assert.match(leer('cardiolink-agenda-v1.js'), /sincronizado = await window\.guardarConfigEnSupabase298\?\.\(\);/);
