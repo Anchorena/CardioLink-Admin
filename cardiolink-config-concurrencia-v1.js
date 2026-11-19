@@ -49,6 +49,22 @@
     base = clonar(config); ver = updatedAt || null; neutro = normalizar(base); uidBase = (typeof usuarioSupabase !== 'undefined' && usuarioSupabase) ? String(usuarioSupabase.id) : null;
     return true;
   }
+
+  // Las fichas que la app alineó con la tabla de pacientes (fuente de verdad) NO son ediciones de la configuración: se toman como base para que no aparezcan como cambios pendientes ni se escriban en la fila compartida.
+  var CAMPOS_FICHA_BASE = ['nombreCompleto', 'dni', 'fechaNacimiento', 'sexo', 'localidad', 'provincia', 'direccion', 'coberturaHabitual', 'numeroAfiliadoHabitual', 'telefono', 'email',
+    'contactoResponsableNombre', 'contactoResponsableRelacion', 'contactoResponsableTelefono', 'contactoResponsableEmail', 'actualizadoEn'];
+  function aceptarFichasEnBase(baseObj, ids) {
+    if (!baseObj || !Array.isArray(baseObj.pacientes) || !ids || !ids.length) return 0;
+    var set = {}; ids.forEach(function (i) { set[String(i)] = 1; }), n = 0;
+    (Array.isArray(data.pacientes) ? data.pacientes : []).forEach(function (p) {
+      if (!p || !set[String(p.id)]) return;
+      var b = baseObj.pacientes.find(function (x) { return x && String(x.id) === String(p.id); });
+      if (!b) { baseObj.pacientes.push(JSON.parse(JSON.stringify(p))); n++; return; }
+      CAMPOS_FICHA_BASE.forEach(function (k) { if (p[k] === undefined) { if (k in b) { delete b[k]; n++; } } else if (JSON.stringify(b[k]) !== JSON.stringify(p[k])) { b[k] = p[k]; n++; } });
+    });
+    return n;
+  }
+  function aceptarFichas(ids) { if (!baseVigente()) return 0; var n = aceptarFichasEnBase(base, ids); if (n) neutro = normalizar(base); return n; }
   function baseVigente() { var u = (typeof usuarioSupabase !== 'undefined' && usuarioSupabase) ? String(usuarioSupabase.id) : null; return !!base && !!ver && uidBase === u; }
   function reemplazarData(nuevo) {
     try { if (typeof respaldarIdentidadesLocalesPreviasV1 === 'function') respaldarIdentidadesLocalesPreviasV1(data, nuevo); } catch (e) { console.warn(e); }
@@ -314,7 +330,7 @@
   }
 
   window.cardiolinkConfigR2B = {
-    activo: activo, registrarBase: registrarBase, reconciliar: reconciliar, guardarDueno: guardarDueno, hayPendientePorGuardar: hayPendientePorGuardar,
+    aceptarFichas: aceptarFichas, activo: activo, registrarBase: registrarBase, reconciliar: reconciliar, guardarDueno: guardarDueno, hayPendientePorGuardar: hayPendientePorGuardar,
     localSinSemilla: localParaMotor, semilla: semilla, reponerSemilla: reponerSemilla,
     presentarConflictos: presentarConflictos, descartarConflictos: descartarConflictos, adoptar: adoptar, limpiar: limpiar,
     baseActual: function () { return base ? clonar(base) : null; }, neutroActual: function () { return neutro ? clonar(neutro) : null; }, versionBase: function () { return ver; },

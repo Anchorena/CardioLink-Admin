@@ -66,6 +66,22 @@
 
   // R2B: proyección de ESCRITURA (sólo claves autorizadas) de la última vista confirmada/cargada: es la «base» de la fusión de tres vías (motor cardiolink-config-merge-v1.js).
   let baseVista = null, ultimaCarga = null;
+  // Las fichas que la app alineó con la tabla de pacientes (fuente de verdad) NO son ediciones de la configuración: se toman como base para que no aparezcan como cambios pendientes ni se escriban en la fila compartida.
+  var CAMPOS_FICHA_BASE = ['nombreCompleto', 'dni', 'fechaNacimiento', 'sexo', 'localidad', 'provincia', 'direccion', 'coberturaHabitual', 'numeroAfiliadoHabitual', 'telefono', 'email',
+    'contactoResponsableNombre', 'contactoResponsableRelacion', 'contactoResponsableTelefono', 'contactoResponsableEmail', 'actualizadoEn'];
+  function aceptarFichasEnBase(baseObj, ids) {
+    if (!baseObj || !Array.isArray(baseObj.pacientes) || !ids || !ids.length) return 0;
+    var set = {}, n = 0; ids.forEach(function (i) { set[String(i)] = 1; });
+    (Array.isArray(data.pacientes) ? data.pacientes : []).forEach(function (p) {
+      if (!p || !set[String(p.id)]) return;
+      var b = baseObj.pacientes.find(function (x) { return x && String(x.id) === String(p.id); });
+      if (!b) { baseObj.pacientes.push(JSON.parse(JSON.stringify(p))); n++; return; }
+      CAMPOS_FICHA_BASE.forEach(function (k) { if (p[k] === undefined) { if (k in b) { delete b[k]; n++; } } else if (JSON.stringify(b[k]) !== JSON.stringify(p[k])) { b[k] = p[k]; n++; } });
+    });
+    return n;
+  }
+  function aceptarFichas(ids) { return baseVista ? aceptarFichasEnBase(baseVista, ids) : 0; }
+
   function motor() { return (typeof window !== 'undefined' && window.cardiolinkConfigMergeV1) ? window.cardiolinkConfigMergeV1 : null; }
   function neutroSec(b) {
     try { return sanear(normalizarConfigCritica(JSON.parse(JSON.stringify(b))), CLAVES_ESCRITURA, true); } catch (e) { return undefined; }
@@ -553,6 +569,7 @@
   }
 
   window.cardiolinkConfigSecretariaV1 = {
+    aceptarFichas: aceptarFichas,
     aplica: aplica,
     cargar: cargar,
     guardar: guardar,
