@@ -280,3 +280,21 @@ auditoría; copia sin vincular → amarillo; médico, Secretaría asociada y no 
 un usuario guarde un cambio (p. ej. cerrar un pendiente), la sincronización detecta el conflicto, adopta la versión remota y el cambio local se
 pierde sin aviso. Ocurre igual con el botón existente de cada pendiente. En Copias el chip «Copia impresa · cerrar pendiente» permite reintentar.
 Mejora futura: avisar el conflicto y reaplicar el cambio sobre la versión remota.
+
+## Convenios y Aranceles V2 — Paso 1 (grilla editable)
+Tests: `node tests/aranceles-v2.js` (24 pruebas: núcleo puro, snapshots en sandbox, cableado). Sin SQL; módulos `cardiolink-aranceles-v2-core.js` y `cardiolink-aranceles-v2.js`.
+
+**Modelo (reutiliza `arancelesPorProfesional[profId]`, sin migración):** fila = `{id, profesionalId, obraSocial, prestacion, valor, copago, vigenteDesde, activo}`.
+Agrega campos opcionales: `valor:null` = sin informar (0 = cero explícito), `archivado:true` = lápida desde esa vigencia, `historial[]` = correcciones de la misma fila.
+Identidad = profesional + convenio + prestación + vigencia (sin duplicados; reimportar el mismo archivo no cambia nada). Un vacío nunca sobrescribe un valor.
+Archivar = lápida desde una fecha: no borra, no cambia fechas anteriores y no reactiva valores previos (para volver a usarlo se carga un valor nuevo). No se puede archivar un día que ya tiene valor.
+**El copago de la grilla es informativo:** Caja sigue usando `copagoDePrestacion` (Valores del profesional). Reglas, destinos y facturantes del convenio no se tocan.
+**Snapshots de atenciones:** una edición común NO recalcula `arancelId`, `arancelVigencia`, `valorArancelEstimado` ni el destino estimado; sólo se recalculan si en esa edición cambió cobertura, prestación o profesional, y nunca con cobro confirmado.
+
+QA en STAGING (datos sintéticos, Dueño y Secretaría reales): (1) elegir profesional + vigencia 01/08/2026, cargar celdas, ver contador, «Guardar cambios» → un único guardado y mensaje; recargar y comprobar persistencia.
+(2) Celda vacía no cambia nada; «0» queda como 0; texto inválido marca la celda y no guarda. (3) Misma vigencia con otro importe → corrección con historial; otra vigencia → fila nueva y la anterior intacta (cambiar el selector de vigencia).
+(4) Importar matriz pegada desde Excel y CSV (formato «$ 35.000,50»): vista previa, errores por fila, convenio inexistente sólo con la casilla marcada; reimportar el mismo archivo → «Nada para importar».
+(5) Modo «Copago informativo»: aviso visible; no cambia el copago que cobra Caja al cargar una atención. (6) Archivar/Restaurar convenio y archivar una prestación desde una fecha: los valores anteriores y las atenciones ya registradas no cambian.
+(7) Editar una atención existente (observaciones/fecha/forma de pago) y comprobar que su arancel no cambia; cambiarle la prestación → se recalcula. (8) Médico: la tarjeta no aparece. (9) Secretaría: puede editar (persiste por la RPC de config).
+Observación: un valor con vigencia pasada (p. ej. 01/08/2026) vale en la consulta de aranceles para atenciones sin snapshot de esas fechas; las que ya tienen snapshot no cambian.
+**QA de importación masiva en STAGING (2026-11-19, Secretaría y Médico reales):** matriz de 36 convenios × 5 prestaciones (vigencia 01/08/2026): vista previa 121 valores nuevos / 59 vacías preservadas / 0 errores / 20 convenios nuevos; 121/121 valores verificados contra el servidor, sin duplicados ni filas para vacíos; persistencia verificada tras recarga; reimportar → 121 iguales, «Nada para importar»; convenios por profesional, reglas, facturantes, copagos del profesional, `copagoDePrestacion` y el resumen de Caja idénticos antes/después; Médico no ve la tarjeta. STAGING restaurado. Pendiente de decisión antes de Production: alias de 5 convenios y nombre de la prestación ECG (ver propuesta de asignación).

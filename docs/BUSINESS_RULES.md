@@ -191,6 +191,14 @@ Debe contemplarse:
 - copago si corresponde;
 - vigencia por fecha.
 
+Reglas de Convenios y Aranceles V2 (Paso 1):
+- **Sin informar ≠ cero:** un valor desconocido queda sin informar (no se inventa); 0 es un valor cero explícito. Un vacío (celda o importación) nunca sobrescribe un valor existente.
+- **Vigencia histórica:** cada valor rige desde su fecha; un valor nuevo agrega una fila y no modifica las anteriores. Misma combinación profesional + convenio + prestación + vigencia = una sola fila.
+- **Archivar no es eliminar:** archiva desde una fecha, conserva el historial y no reactiva valores anteriores.
+- **Arancel de convenio ≠ copago:** el arancel es lo que paga la cobertura (base de la producción a facturar). El copago de la tabla de aranceles es informativo; el copago que cobra Caja sigue saliendo de los valores del profesional.
+- **Atenciones ya registradas:** conservan su arancel (snapshot); una edición común no lo recalcula, sólo un cambio explícito de cobertura, prestación o profesional, y nunca con un cobro confirmado.
+- El profesional que realiza la prestación no siempre es quien factura: los destinos y facturantes del convenio no se modifican desde la grilla, y los aranceles se cargan por profesional (sin copiarlos a otros).
+
 Para particulares puede existir valor específico por prestación.
 
 ## Médico solicitante / derivador
