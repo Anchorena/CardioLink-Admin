@@ -314,6 +314,7 @@
   }
   window.cardiolinkOutboxR2D = {
     conectar: conectar, registrar: registrar, recuperar: recuperar, marcarEnvio: marcarEnvio, limpiarEnvio: limpiarEnvio, cuarentena: cuarentena, hayPendientes: hayPendientes, idsGestionados: idsGestionados,
+    noProtegidos: function () { try { var c = puente.configPendiente(); return c && c.noProt ? c.noProt.slice() : []; } catch (e) { return []; } },   // cambios de configuración (claves clínicas, imágenes) que NO viajan en la cola, aunque no haya operaciones
     protegido: function () { return proteccion.ok; }, sinProteccion: function () { return proteccion.ok ? 0 : resumen().length; }, resumen: function () { return resumen().map(function (i) { return { key: i.key, k: i.op.k, tipo: i.tipo, id: i.op.id || null, dias: i.dias }; }); },
     completar: completar, descartar: descartar, reenviar: reenviar, estado: function () { return { proteccion: Object.assign({}, proteccion), tab: tabId, especiales: Array.from(especiales.keys()), clave: clave, items: resumen().length }; },
     abrir: function () { estadoUI.abierto = true; ultimaFirma = ''; pintar(); }, SENTINELA: SENTINELA, VERSION: P.VERSION

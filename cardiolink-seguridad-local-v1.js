@@ -221,13 +221,13 @@
       return o;
     }
     // Sella todo lo sensible del usuario. El texto plano se borra SÓLO tras verificar que el paquete se descifra y coincide.
-    function sellarUsuario(uid, mat, extra) {
+    function sellarUsuario(uid, mat, extra, meta) {
       if (!webcryptoDisponible()) return Promise.resolve({ ok: false, error: 'sin_webcrypto' });
       if (!mat) return Promise.resolve({ ok: false, error: 'sin_clave' });
       var ks = clavesSensibles(uid, extra), mapa = {}, n = 0;
       ks.forEach(function (k) { var v = get(k); if (v !== null) { mapa[k] = v; n++; } });
       if (!n) return Promise.resolve({ ok: true, n: 0 });
-      var texto = JSON.stringify({ v: 1, ts: new Date(ahora()).toISOString(), claves: mapa }), id = prefijoSello(uid) + new Date(ahora()).toISOString();
+      var texto = JSON.stringify({ v: 1, ts: new Date(ahora()).toISOString(), claves: mapa, meta: { noProt: (meta && meta.noProt || []).slice(0, 50) } }), id = prefijoSello(uid) + new Date(ahora()).toISOString();
       return cifrar(mat, texto, uid).then(function (sobre) {
         return env.sellos.put(id, JSON.stringify(sobre)).then(function (ok) {
           if (!ok) return { ok: false, error: 'almacenamiento' };
@@ -269,28 +269,54 @@
     }
     // Diagnóstico para el diálogo de cierre: cambios de configuración que sólo existen en la caché (no en la cola).
     function noProtegidosEnCola(uid) { var v = get(PREF_COLA + proyecto() + ':' + uid), m = {}; if (v !== null) m[PREF_COLA + proyecto() + ':' + uid] = v; return colaConCambiosNoProtegidos(m); }
+    // RECUPERACIÓN CLÍNICA. Restaurar la caché completa NO recupera nada: al cargar, la app vuelve a poner lo del servidor en las claves clínicas (no se diferencian como cambios locales). Por eso la parte
+    // clínica de la caché sellada se compara con lo cargado del servidor y se OFRECE al usuario (aplicar / descartar / después). Nada se aplica ni se pierde solo: el paquete se conserva hasta que decida.
+    var CLINICAS = ['resumenesClinicos', 'documentosClinicos', 'evolucionesClinicas'];
+    function tiempo(v) { var t = Date.parse(v || ''); return isNaN(t) ? 0 : t; }
+    // Puro: qué de lo sellado (config) no está en lo vivo. Resúmenes por paciente: agregar si falta, actualizar sólo si lo sellado es MÁS reciente. Documentos y evoluciones por id: sólo los que faltan.
+    function planRecuperacionClinica(sellada, viva) {
+      var ops = [], omitidos = 0; sellada = sellada || {}; viva = viva || {};
+      var rs = sellada.resumenesClinicos, rv = viva.resumenesClinicos || {};
+      if (rs && typeof rs === 'object') Object.keys(rs).forEach(function (k) {
+        var a = rs[k], b = rv[k]; if (!a || estable(a) === estable(b)) return;
+        if (!b) ops.push({ tipo: 'resumen', accion: 'agregar', clave: k, valor: a });
+        else if (tiempo(a.actualizadoEn) > tiempo(b.actualizadoEn)) ops.push({ tipo: 'resumen', accion: 'actualizar', clave: k, valor: a });
+        else omitidos++;                                                                                          // el servidor tiene algo igual o más reciente: no se pisa
+      });
+      [['documentosClinicos', 'documento'], ['evolucionesClinicas', 'evolucion']].forEach(function (par) {
+        var ls = sellada[par[0]], lv = viva[par[0]]; if (!Array.isArray(ls)) return; var ids = {}; (Array.isArray(lv) ? lv : []).forEach(function (x) { if (x && x.id != null) ids[String(x.id)] = 1; });
+        ls.forEach(function (x) { if (x && x.id != null && !ids[String(x.id)]) ops.push({ tipo: par[1], accion: 'agregar', clave: String(x.id), valor: x }); });
+      });
+      return { ops: ops, omitidos: omitidos };
+    }
+    function aplicarRecuperacionClinica(viva, ops) {
+      ops.forEach(function (o) {
+        if (o.tipo === 'resumen') { if (!viva.resumenesClinicos || typeof viva.resumenesClinicos !== 'object') viva.resumenesClinicos = {}; viva.resumenesClinicos[o.clave] = o.valor; }
+        else { var k = o.tipo === 'documento' ? 'documentosClinicos' : 'evolucionesClinicas'; if (!Array.isArray(viva[k])) viva[k] = []; if (!viva[k].some(function (x) { return x && String(x.id) === o.clave; })) viva[k].push(o.valor); }
+      });
+      return viva;
+    }
+    function liberarPaquete(id) { return env.sellos ? env.sellos.del(id) : Promise.resolve(false); }
     // Abre los paquetes sellados del usuario con la clave de ESTA sesión. Restaura las claves de pendientes ausentes (o sin contenido) y, SÓLO si la cola declara cambios no protegidos, también las cachés:
     // sin dueño de caché vigente → directo (y el usuario pasa a ser dueño); con otro dueño → como caché apartada de este uid (la app la restaura al aislar); con caché viva del mismo uid → no se pisa
     // y el paquete se CONSERVA. Un paquete que no se abre (otra contraseña) queda intacto.
     function abrirSellados(uid, mat) {
-      var res = { restauradas: 0, paquetes: 0, noAbiertos: 0, conflictos: 0, omitidas: 0, cachesRestauradas: 0 };
+      var res = { restauradas: 0, paquetes: 0, noAbiertos: 0, conflictos: 0, omitidas: 0, cachesRestauradas: 0, recuperaciones: [] };
       if (!webcryptoDisponible() || !mat) return Promise.resolve(res);
       return env.sellos.keys(prefijoSello(uid)).then(function (ids) {
         ids = ids.slice().sort().reverse();
         return ids.reduce(function (p, id) {
           return p.then(function () {
             return env.sellos.get(id).then(function (raw) { return descifrar(mat, JSON.parse(raw), uid); }).then(function (texto) {
-              var obj = JSON.parse(texto), ok = true, dueno = get(K_DUENO), conCache = colaConCambiosNoProtegidos(obj.claves).length > 0;
+              var obj = JSON.parse(texto), ok = true, recuperacion = null, conCache = (obj.meta && obj.meta.noProt && obj.meta.noProt.length > 0) || colaConCambiosNoProtegidos(obj.claves).length > 0;
               Object.keys(obj.claves || {}).forEach(function (k) {
                 if (!esClavePendiente(k)) {
-                  if (!conCache) { res.omitidas++; return; }                                                  // la cola cubre todo: la caché se recarga del servidor
-                  if (k === K_DUENO) { if (dueno === null) set(K_DUENO, String(uid)); return; }
-                  if (dueno === null) { if (set(k, obj.claves[k])) { res.restauradas++; res.cachesRestauradas++; } else ok = false; }
-                  else if (dueno !== String(uid)) { if (set(PREF_APARTADO + uid + '__' + k, obj.claves[k])) { res.restauradas++; res.cachesRestauradas++; } else ok = false; }
-                  else if (get(k) !== obj.claves[k]) { res.conflictos++; ok = false; }                        // caché viva del mismo usuario: no se pisa; el paquete se conserva
+                  if (conCache && env.claveConfig && k === env.claveConfig() && !recuperacion) recuperacion = obj.claves[k];   // sólo su parte clínica, y de forma explícita
+                  else res.omitidas++;                                                                         // las demás cachés se recargan del servidor
                   return;
                 }
                 var actual = get(k); if (actual === null || (actual !== obj.claves[k] && sinContenido(actual))) { if (set(k, obj.claves[k])) res.restauradas++; else ok = false; } else if (actual !== obj.claves[k]) { res.conflictos++; ok = false; } });
+              if (recuperacion) { res.recuperaciones.push({ id: id, config: recuperacion, noProt: (obj.meta && obj.meta.noProt) || [] }); return; }   // el paquete se conserva hasta que el usuario decida
               if (ok) { res.paquetes++; return env.sellos.del(id); }
             }, function () { res.noAbiertos++; });
           });
@@ -328,6 +354,50 @@
         });
       }).catch(function (e) { return { ok: false, error: String(e && (e.message || e.name) || e) }; });
     }
+    // Datos heredados que pertenecen a OTROS usuarios (clave heredada `<base>_<uid>`, elementos con `uid` ajeno de las listas globales, copias apartadas de otro uid o de dueño desconocido). No se
+    // pueden cifrar con la contraseña de su dueño: un owner/admin puede ponerlos en CUSTODIA cifrada con la SUYA para que no queden legibles. No se descartan (alcance de descarte = el propio usuario): el
+    // custodio los puede ver o DEVOLVER (vuelven a su clave heredada, en claro, y su dueño los migra al ingresar).
+    function recolectarAjenos(uidActual) {
+      var o = { claves: {}, listas: {}, n: 0 }, me = String(uidActual || '');
+      todasLasClaves().forEach(function (k) {
+        CATEGORIAS.forEach(function (c) { if (c.forma !== 'objeto_uid' || k.indexOf(c.base + '_') !== 0) return; var uid = k.slice(c.base.length + 1); if (uid && uid !== me && k.indexOf(':') < 0) { var v = get(k); if (v !== null) { o.claves[k] = v; o.n++; } } });
+        if (k.indexOf(PREF_APARTADO) === 0) { var resto = k.slice(PREF_APARTADO.length), i = resto.indexOf('__'); if (i > 0 && resto.slice(0, i) !== me) { var v2 = get(k); if (v2 !== null) { o.claves[k] = v2; o.n++; } } }
+      });
+      ['cardiolink_atenciones_rechazos_v1', 'cardiolink_atenciones_eliminadas_remotas_v1'].forEach(function (b) {
+        var l = parsear(get(b)); if (!Array.isArray(l)) return; var aj = l.filter(function (it) { return it && it.uid != null && it.uid !== '' && String(it.uid) !== me; }); if (aj.length) { o.listas[b] = aj; o.n += aj.length; }
+      });
+      return o;
+    }
+    function sellarAjenos(uidActual, mat) {
+      if (!webcryptoDisponible()) return Promise.resolve({ ok: false, error: 'sin_webcrypto' }); if (!mat) return Promise.resolve({ ok: false, error: 'sin_clave' });
+      var c = recolectarAjenos(uidActual); if (!c.n) return Promise.resolve({ ok: true, n: 0 });
+      var texto = JSON.stringify({ v: 1, tipo: 'legado_ajeno', ts: new Date(ahora()).toISOString(), claves: c.claves, listas: c.listas }), id = PREF_LEGADO + 'ajeno:' + new Date(ahora()).toISOString();
+      return cifrar(mat, texto, 'legado').then(function (sobre) {
+        return env.sellos.put(id, JSON.stringify(sobre)).then(function (ok) {
+          if (!ok) return { ok: false, error: 'almacenamiento' };
+          return env.sellos.get(id).then(function (raw) { return descifrar(mat, JSON.parse(raw), 'legado'); }).then(function (vuelta) {
+            if (vuelta !== texto) return env.sellos.del(id).then(function () { return { ok: false, error: 'verificacion' }; });
+            Object.keys(c.claves).forEach(del);
+            Object.keys(c.listas).forEach(function (b) { var l = parsear(get(b)); if (!Array.isArray(l)) return; var resto = l.filter(function (it) { return !(it && it.uid != null && it.uid !== '' && String(it.uid) !== String(uidActual || '')); }); if (resto.length) set(b, JSON.stringify(resto)); else del(b); });
+            return { ok: true, n: c.n, id: id };
+          });
+        });
+      }).catch(function (e) { return { ok: false, error: String(e && (e.message || e.name) || e) }; });
+    }
+    // Devuelve lo custodiado a su lugar heredado (en claro) sólo donde no hay nada distinto; el paquete se retira recién tras devolverlo todo.
+    function devolverAjenos(mat) {
+      return leerCustodia(mat).then(function (pk) {
+        var res = { devueltas: 0, conflictos: 0 };
+        return pk.filter(function (x) { return x.datos && x.datos.tipo === 'legado_ajeno'; }).reduce(function (p, x) {
+          return p.then(function () {
+            var ok = true;
+            Object.keys(x.datos.claves || {}).forEach(function (k) { var a = get(k); if (a === null || a === x.datos.claves[k]) { if (a === null && !set(k, x.datos.claves[k])) ok = false; else res.devueltas++; } else { res.conflictos++; ok = false; } });
+            Object.keys(x.datos.listas || {}).forEach(function (b) { var l = parsear(get(b)); l = Array.isArray(l) ? l : []; var vistos = {}; l.forEach(function (it) { vistos[estable(it)] = 1; }); var sal = l.slice(); x.datos.listas[b].forEach(function (it) { if (!vistos[estable(it)]) sal.push(it); }); if (!set(b, JSON.stringify(sal))) ok = false; else res.devueltas += x.datos.listas[b].length; });
+            if (ok) return env.sellos.del(x.id);
+          });
+        }, Promise.resolve()).then(function () { return res; });
+      });
+    }
     // Paquetes en custodia que ESTA clave puede abrir (los de otra contraseña se ignoran: son opacos).
     function leerCustodia(mat) {
       if (!webcryptoDisponible() || !mat) return Promise.resolve([]);
@@ -335,15 +405,16 @@
         return ids.reduce(function (p, id) { return p.then(function (acc) { return env.sellos.get(id).then(function (raw) { return descifrar(mat, JSON.parse(raw), 'legado'); }).then(function (t) { acc.push({ id: id, datos: JSON.parse(t) }); return acc; }, function () { return acc; }); }); }, Promise.resolve([]));
       }, function () { return []; });
     }
-    function descartarCustodia(mat) { return leerCustodia(mat).then(function (l) { return Promise.all(l.map(function (x) { return env.sellos.del(x.id); })).then(function () { return l.length; }); }); }
+    function descartarCustodia(mat) { return leerCustodia(mat).then(function (l) { var sd = l.filter(function (x) { return !(x.datos && x.datos.tipo === 'legado_ajeno'); }); return Promise.all(sd.map(function (x) { return env.sellos.del(x.id); })).then(function () { return sd.length; }); }); }   // lo de otros usuarios NO se descarta: se devuelve
     function contarCustodia() { return env.sellos ? env.sellos.keys(PREF_LEGADO).then(function (k) { return k.length; }, function () { return 0; }) : Promise.resolve(0); }
     function contarSellados(uid) { return env.sellos ? env.sellos.keys(prefijoSello(uid)).then(function (k) { return k.length; }, function () { return 0; }) : Promise.resolve(0); }
     function descartarSellados(uid) { if (!env.sellos) return Promise.resolve(0); return env.sellos.keys(prefijoSello(uid)).then(function (ks) { return Promise.all(ks.map(function (k) { return env.sellos.del(k); })).then(function () { return ks.length; }); }, function () { return 0; }); }
 
     return {
-      recolectarSinDueno: recolectarSinDueno, sellarSinDueno: sellarSinDueno, leerCustodia: leerCustodia, descartarCustodia: descartarCustodia, contarCustodia: contarCustodia,
+      CLINICAS: CLINICAS, planRecuperacionClinica: planRecuperacionClinica, aplicarRecuperacionClinica: aplicarRecuperacionClinica, liberarPaquete: liberarPaquete,
+      recolectarAjenos: recolectarAjenos, sellarAjenos: sellarAjenos, devolverAjenos: devolverAjenos, recolectarSinDueno: recolectarSinDueno, sellarSinDueno: sellarSinDueno, leerCustodia: leerCustodia, descartarCustodia: descartarCustodia, contarCustodia: contarCustodia,
       noProtegidosEnCola: noProtegidosEnCola, purgarClaves: purgarClaves, sellarUsuario: sellarUsuario, abrirSellados: abrirSellados, contarSellados: contarSellados, descartarSellados: descartarSellados, recordarPassword: recordarPassword, hayMaterial: hayMaterial, olvidarMaterial: olvidarMaterial, _materialSesion: function () { return material; },
-      webcryptoDisponible: webcryptoDisponible, materialDe: function (pw) { return importarMaterial(pw); }, clavesSensibles: clavesSensibles, prefijoSello: prefijoSello,
+      esAdminSesion: function () { try { return !!(env.esAdmin && env.esAdmin()); } catch (e) { return false; } }, webcryptoDisponible: webcryptoDisponible, materialDe: function (pw) { return importarMaterial(pw); }, clavesSensibles: clavesSensibles, prefijoSello: prefijoSello,
       VERSION: VERSION, DIAS_AVISO: DIAS_AVISO, CATEGORIAS: CATEGORIAS, clave: clave, viejaClave: viejaClave, proyecto: proyecto, equipoCompartido: equipoCompartido, fijarEquipoCompartido: fijarEquipoCompartido,
       migrarUsuario: migrarUsuario, contarSinDueno: contarSinDueno, inventario: inventario, avisos: avisos, descartar: descartar, descartarSinDueno: descartarSinDueno,
       registrarCierre: registrarCierre, leerCierre: leerCierre, limpiarCierre: limpiarCierre, cierresConPendientes: cierresConPendientes, purgarApartadosSinPendientes: purgarApartadosSinPendientes,
@@ -376,6 +447,8 @@
   // ================= navegador: entorno real + interfaz mínima =================
   function conectarNavegador(w) {
     var S = crear({
+      esAdmin: function () { try { return typeof backendEsAdminOwner !== 'undefined' && backendEsAdminOwner === true; } catch (e) { return false; } },
+      claveConfig: function () { try { return typeof storageConfig !== 'undefined' ? storageConfig : 'cardiolink_config_v25'; } catch (e) { return 'cardiolink_config_v25'; } },
       alValidar: function () { try { w.sessionStorage.setItem('cardiolink_sesion_validada', '1'); } catch (e) { /* */ } },
       crypto: w.crypto, TextEncoder: w.TextEncoder, TextDecoder: w.TextDecoder, btoa: w.btoa && w.btoa.bind(w), atob: w.atob && w.atob.bind(w), sellos: almacenSellos(w),
       almacen: w.localStorage,
@@ -393,13 +466,13 @@
     // los datos clínicos sin sincronizar no pueden quedar legibles para otra persona. Nunca descarta por sí solo.
     function elegirCierre(info) {
       return new Promise(function (resolve) {
-        var n = info.n || 0, sin = info.sinProteger || 0, puede = S.webcryptoDisponible();
-        var m = modal('<h3 style="margin:0 0 8px">Hay ' + n + ' cambio' + (n === 1 ? '' : 's') + ' sin sincronizar</h3>'
+        var n = info.n || 0, sin = info.sinProteger || 0, puede = S.webcryptoDisponible() && !info.sinClave;
+        var m = modal('<h3 style="margin:0 0 8px">' + (n ? 'Hay ' + n + ' cambio' + (n === 1 ? '' : 's') + ' sin sincronizar' : 'Hay cambios sin sincronizar') + '</h3>'
           + (sin ? '<p style="color:#b91c1c;font-weight:700">' + sin + ' de esos cambios NO están guardados en este equipo (almacenamiento lleno o no disponible): sólo existen en esta pantalla y SE PERDERÁN si cerrás ahora.</p>' : '')
           + (info.noProt ? '<p style="background:#fef3c7;border-radius:8px;padding:8px;font-size:13px"><b>Incluye ' + info.noProt + ' cambio' + (info.noProt === 1 ? '' : 's') + ' de configuración (claves clínicas o imágenes) que no viajan en la cola.</b> Si sellás, se conservan cifrados y se restauran al volver a entrar con la misma contraseña; si no los sincronizás ahora, dependen de esa restauración.</p>' : '')
           + '<p>Este equipo está marcado como <b>compartido</b>: los datos clínicos sin sincronizar <b>no pueden quedar legibles</b> para otra persona. Opciones:</p>'
           + '<ul style="margin:6px 0 10px 18px;padding:0"><li><b>Sellar con tu contraseña</b>: se <b>cifran</b> en este equipo y sólo se abren cuando vos volvés a entrar con la misma contraseña.</li><li><b>Descartarlos</b>: se pierden para siempre.</li></ul>'
-          + (puede ? '' : '<p style="color:#b91c1c;font-weight:700">Este navegador no permite sellar con contraseña (requiere HTTPS). No se puede cerrar dejando los datos legibles: sincronizá o descartá.</p>')
+          + (puede ? '' : '<p style="color:#b91c1c;font-weight:700">' + (info.sinClave ? 'Estos cambios son de la sesión anterior y no se conoce su contraseña: no se pueden cifrar.' : 'Este navegador no permite sellar con contraseña (requiere HTTPS).') + ' No se cierra dejando los datos legibles: reintentá sincronizar o descartalos (se pierden).</p>')
           + '<button data-r="reintentar" style="' + BTN + 'background:#2563eb;color:#fff">Reintentar sincronizar</button>'
           + (puede ? '<button data-r="proteger" style="' + BTN + 'background:#0f766e;color:#fff">Sellar con mi contraseña y cerrar</button>' : '')
           + '<button data-r="descartar" style="' + BTN + 'background:#b91c1c;color:#fff">Descartar y cerrar</button>'
@@ -438,10 +511,10 @@
     // Cierre manual. Si el ingreso fue con contraseña, la clave de la sesión ya está verificada y se usa directamente (funciona sin conexión). Si la sesión se reanudó sin contraseña, se pide y se
     // VERIFICA reautenticando (3 intentos); sin conexión no se puede verificar y se exige escribirla dos veces iguales (una contraseña mal escrita dejaría el paquete inaccesible).
     // {ok:true} sólo si el paquete quedó verificado y el texto plano se retiró.
-    function sellarConPassword(extra) {
+    function sellarConPassword(extra, meta) {
       var uid = uidActual();
-      if (S.hayMaterial()) return S.sellarUsuario(uid, S._materialSesion(), extra);
-      function sellar(pw) { return S.materialDe(pw).then(function (mat) { return S.recordarPassword(pw).then(function () { return S.sellarUsuario(uid, mat, extra); }); }); }
+      if (S.hayMaterial()) return S.sellarUsuario(uid, S._materialSesion(), extra, meta);
+      function sellar(pw) { return S.materialDe(pw).then(function (mat) { return S.recordarPassword(pw).then(function () { return S.sellarUsuario(uid, mat, extra, meta); }); }); }
       function intento(k, error) {
         if (k >= 3) return Promise.resolve({ ok: false, error: 'contraseña' });
         return pedirPassword('Ingresá tu contraseña para sellar los cambios sin sincronizar de este equipo. La contraseña no se guarda.', error).then(function (pw) {
@@ -460,7 +533,7 @@
       return intento(0, '');
     }
     // Cierre automático: sella con la clave de esta sesión (si el ingreso fue con contraseña). Sin clave devuelve {ok:false,error:'sin_clave'}.
-    function sellarConSesion(extra) { return S.hayMaterial() ? S.sellarUsuario(uidActual(), S._materialSesion(), extra) : Promise.resolve({ ok: false, error: 'sin_clave' }); }
+    function sellarConSesion(extra, meta) { return S.hayMaterial() ? S.sellarUsuario(uidActual(), S._materialSesion(), extra, meta) : Promise.resolve({ ok: false, error: 'sin_clave' }); }
     // Sesión bloqueada (autologout sin clave y con pendientes que no se pudieron sincronizar): la pantalla pide la contraseña; mientras tanto la app reintenta sincronizar.
     var bloqueo = null;
     function emailDelToken() { try { for (var i = 0; i < w.localStorage.length; i++) { var k = w.localStorage.key(i); if (/^sb-.*-auth-token$/.test(k)) { var t = JSON.parse(w.localStorage.getItem(k)); var e = t && (t.user && t.user.email || t.currentSession && t.currentSession.user && t.currentSession.user.email); if (e) return e; } } } catch (e) { /* */ } return ''; }
@@ -481,10 +554,10 @@
       m.addEventListener('click', function (ev) {
         var t = ev.target; if (!t || !t.hasAttribute) return;
         if (t.hasAttribute('data-ok')) intentar();
-        else if (t.hasAttribute('data-cerrar') && w.confirm('Se cierra la sesión anterior de este equipo. Sus datos locales NO se pueden cifrar (no tenés su contraseña) y quedan en este navegador hasta que ese usuario vuelva a entrar. ¿Cerrar igual?')) {
-          try { if (typeof supabaseClient !== 'undefined' && supabaseClient) supabaseClient.auth.signOut({ scope: 'local' }); } catch (e) { /* */ }
-          try { Object.keys(w.localStorage).filter(function (k) { return /^sb-.*-auth-token$/.test(k); }).forEach(function (k) { w.localStorage.removeItem(k); }); w.sessionStorage.removeItem('cardiolink_bloqueo_v1'); } catch (e) { /* */ }
-          w.location.reload();
+        else if (t.hasAttribute('data-cerrar')) {
+          // Se cierra por el camino SEGURO de la app: sincroniza con esa sesión y purga; si quedan cambios sin sincronizar NO se cierra dejándolos legibles: reintentar o descartar (explícito).
+          if (typeof w.cerrarSesionAjenaV1 === 'function') { m.style.display = 'none'; Promise.resolve(w.cerrarSesionAjenaV1()).then(function (r) { if (r !== 'cerrada') m.style.display = ''; }, function () { m.style.display = ''; }); }
+          else er.textContent = 'No se pudo iniciar el cierre seguro: recargá la página.';
         }
       });
       inp.addEventListener('keydown', function (ev) { if (ev.key === 'Enter') intentar(); });
@@ -510,7 +583,8 @@
         + '<p style="background:#fef3c7;border-radius:8px;padding:8px;margin:8px 0;font-size:13px"><b>Qué protege y qué no:</b> el cifrado con tu contraseña protege lo que queda <b>tras cerrar sesión</b>. Mientras la sesión está abierta los datos están en claro, y con «Equipo compartido» desactivado todo queda <b>sin cifrar</b> al cerrar. Separar por usuario no es protección.</p>'
         + '<table style="width:100%;border-collapse:collapse;font-size:13px"><thead><tr style="text-align:left;color:#64748b"><th>Dato</th><th>Cantidad</th><th>Antigüedad</th><th></th></tr></thead><tbody>' + filas + '</tbody></table>'
         + (sd.sinDueno || sd.deOtrosUsuarios || cierres.length ? '<p style="font-size:13px;margin:10px 0 4px"><b>Datos de otras sesiones:</b> ' + (sd.sinDueno ? sd.sinDueno + ' registro' + (sd.sinDueno === 1 ? '' : 's') + ' heredado' + (sd.sinDueno === 1 ? '' : 's') + ' sin dueño verificable (no se atribuyen a tu usuario). ' : '') + (sd.deOtrosUsuarios ? sd.deOtrosUsuarios + ' de otros usuarios de este equipo (no se pueden descartar desde tu sesión). ' : '') + (cierres.length ? cierres.length + ' usuario' + (cierres.length === 1 ? '' : 's') + ' dejó cambios sin sincronizar.' : '') + '</p>' + (sd.sinDueno ? '<button data-sc="1" style="' + BTN + 'background:#0f766e;color:#fff;padding:4px 8px;margin:0 6px 0 0">Sellar en mi custodia</button><button data-sd="1" style="' + BTN + 'background:#fee2e2;color:#991b1b;padding:4px 8px;margin:0">Descartar los heredados sin dueño</button><p style="font-size:12px;color:#475569;margin:4px 0 0">Sin decisión quedan en claro en este navegador. «Sellar» los cifra con tu contraseña (custodia: no se te atribuye el contenido).</p>' : '') : '')
-        + (custodia.length ? '<p style="font-size:13px;margin:10px 0 4px"><b>Tenés ' + custodia.length + ' paquete' + (custodia.length === 1 ? '' : 's') + ' heredado' + (custodia.length === 1 ? '' : 's') + ' en custodia cifrada.</b></p><button data-cv="1" style="' + BTN + 'background:#e2e8f0;padding:4px 8px;margin:0 6px 0 0">Ver</button><button data-cd="1" style="' + BTN + 'background:#fee2e2;color:#991b1b;padding:4px 8px;margin:0">Descartar mi custodia</button>' : '')
+        + (S.esAdminSesion() && S.recolectarAjenos(uid).n ? '<p style="font-size:13px;margin:10px 0 4px"><b>Heredados de OTROS usuarios en claro: ' + S.recolectarAjenos(uid).n + '.</b> Sólo ellos pueden cifrarlos con su contraseña (al ingresar). Como owner/admin podés ponerlos en tu custodia cifrada para que no queden legibles: NO se descartan; los podés ver o devolver.</p><button data-sa="1" style="' + BTN + 'background:#0f766e;color:#fff;padding:4px 8px;margin:0">Sellar heredados de otros en mi custodia</button>' : '')
+        + (custodia.length ? '<p style="font-size:13px;margin:10px 0 4px"><b>Tenés ' + custodia.length + ' paquete' + (custodia.length === 1 ? '' : 's') + ' heredado' + (custodia.length === 1 ? '' : 's') + ' en custodia cifrada.</b></p><button data-cv="1" style="' + BTN + 'background:#e2e8f0;padding:4px 8px;margin:0 6px 0 0">Ver</button><button data-cr="1" style="' + BTN + 'background:#e2e8f0;padding:4px 8px;margin:0 6px 0 0">Devolver los de otros usuarios</button><button data-cd="1" style="' + BTN + 'background:#fee2e2;color:#991b1b;padding:4px 8px;margin:0">Descartar los sin dueño</button>' : '')
         + '<div style="margin-top:14px"><button data-c="1" style="' + BTN + 'background:#e2e8f0">Cerrar</button></div>');
       m.addEventListener('click', function (ev) {
         var t = ev.target; if (!t || !t.closest) return;
@@ -518,8 +592,10 @@
         var b = t.closest('button[data-d]');
         if (b) { var id = b.getAttribute('data-d'), it = inv.filter(function (x) { return x.id === id; })[0]; if (!w.confirm('¿Descartar «' + (it ? it.etiqueta : id) + '» (' + (it ? it.n : '?') + ')? Sólo afecta a TU usuario en este equipo y no se puede deshacer.')) return; (id === 'sellados' ? S.descartarSellados(uid) : Promise.resolve(S.descartar(uid, [id]))).then(function () { m.remove(); panel(); }); return; }
         if (t.closest('button[data-sc]')) { if (!S.hayMaterial()) { w.alert('Para sellar necesitás haber ingresado con tu contraseña en esta pestaña.'); return; } if (!w.confirm('Se cifran con TU contraseña ' + sd.sinDueno + ' registro(s) heredados sin dueño verificable. No se te atribuye su contenido: quedan en custodia, ilegibles para otros usuarios, y podés verlos o descartarlos desde este panel. ¿Sellar?')) return; S.sellarSinDueno(S._materialSesion()).then(function (r) { if (!r.ok) w.alert('No se pudo sellar (' + r.error + '). Los datos NO se tocaron.'); m.remove(); panel(); }); return; }
-        if (t.closest('button[data-cv]')) { var tx = custodia.map(function (c) { return (c.datos.mensajes || []).map(function (x) { return 'Mensaje: ' + (x.texto || ''); }).concat((c.datos.rechazos || []).map(function (x) { return 'Rechazo: ' + JSON.stringify(x); }), (c.datos.eliminadas || []).map(function (x) { return 'Eliminada: ' + JSON.stringify(x).slice(0, 300); })).join('\n'); }).join('\n---\n'); modal('<h3 style="margin:0 0 8px">Datos heredados en custodia</h3><pre style="white-space:pre-wrap;font-size:12px;max-height:50vh;overflow:auto">' + esc(tx) + '</pre><button data-c="1" style="' + BTN + 'background:#e2e8f0">Cerrar</button>').addEventListener('click', function (e2) { if (e2.target && e2.target.hasAttribute && e2.target.hasAttribute('data-c')) e2.currentTarget.remove(); }); return; }
-        if (t.closest('button[data-cd]')) { if (!w.confirm('Se descartan PARA SIEMPRE ' + custodia.length + ' paquete(s) en tu custodia. No se puede deshacer. ¿Confirmás?')) return; S.descartarCustodia(S._materialSesion()).then(function () { m.remove(); panel(); }); return; }
+        if (t.closest('button[data-sa]')) { if (!S.hayMaterial()) { w.alert('Para sellar necesitás haber ingresado con tu contraseña en esta pestaña.'); return; } if (!w.confirm('Se cifran con TU contraseña ' + S.recolectarAjenos(uid).n + ' dato(s) heredado(s) de OTROS usuarios. Esos usuarios dejarán de recuperarlos solos al ingresar hasta que los devuelvas. No se descartan. ¿Sellar?')) return; S.sellarAjenos(uid, S._materialSesion()).then(function (r) { if (!r.ok) w.alert('No se pudo sellar (' + r.error + '). Nada se tocó.'); m.remove(); panel(); }); return; }
+        if (t.closest('button[data-cr]')) { S.devolverAjenos(S._materialSesion()).then(function (r) { w.alert('Devueltos: ' + r.devueltas + (r.conflictos ? '. Con conflicto (se conservaron en custodia): ' + r.conflictos : '') + '. Quedan en claro hasta que su dueño ingrese.'); m.remove(); panel(); }); return; }
+        if (t.closest('button[data-cv]')) { var tx = custodia.map(function (c) { return (c.datos.tipo === 'legado_ajeno' ? ['De otros usuarios: ' + Object.keys(c.datos.claves || {}).map(function (k) { return k.replace(/^(.{0,60}).*$/, '$1'); }).join(', ')] : []).concat((c.datos.mensajes || []).map(function (x) { return 'Mensaje: ' + (x.texto || ''); })).concat((c.datos.rechazos || []).map(function (x) { return 'Rechazo: ' + JSON.stringify(x); }), (c.datos.eliminadas || []).map(function (x) { return 'Eliminada: ' + JSON.stringify(x).slice(0, 300); })).join('\n'); }).join('\n---\n'); modal('<h3 style="margin:0 0 8px">Datos heredados en custodia</h3><pre style="white-space:pre-wrap;font-size:12px;max-height:50vh;overflow:auto">' + esc(tx) + '</pre><button data-c="1" style="' + BTN + 'background:#e2e8f0">Cerrar</button>').addEventListener('click', function (e2) { if (e2.target && e2.target.hasAttribute && e2.target.hasAttribute('data-c')) e2.currentTarget.remove(); }); return; }
+        if (t.closest('button[data-cd]')) { if (!w.confirm('Se descartan PARA SIEMPRE los paquetes en tu custodia que NO tienen dueño. Los de otros usuarios no se tocan (se devuelven). No se puede deshacer. ¿Confirmás?')) return; S.descartarCustodia(S._materialSesion()).then(function () { m.remove(); panel(); }); return; }
         if (t.closest('button[data-sd]')) { if (!w.confirm('Se descartan los datos heredados SIN dueño verificable (' + sd.sinDueno + '). Pueden pertenecer a cualquier usuario de este equipo. Los datos con dueño de otro usuario no se tocan. ¿Confirmás?')) return; S.descartarSinDueno(); m.remove(); panel(); return; }
       });
       m.addEventListener('change', function (ev) {
@@ -557,16 +633,49 @@
         l.onclick = panel; b.insertAdjacentElement('afterend', l); return true;
       } catch (e) { return false; }
     }
+    // Recuperación clínica explícita: espera a que la app termine la PRIMERA carga del servidor (si no, la carga pisaría lo aplicado), compara y ofrece. Nada se aplica ni se descarta solo.
+    function ofrecerRecuperacion(recs) {
+      var intentos = 0;
+      (function esperar() {
+        var cargado = false; try { cargado = !!(w.cardiolinkPersistenciaR1 && w.cardiolinkPersistenciaR1.estado().primeraCarga); } catch (e) { /* */ }
+        if (!cargado && ++intentos < 90) { w.setTimeout(esperar, 1000); return; }
+        recs.forEach(function (r) {
+          var sellada = null; try { sellada = JSON.parse(r.config); } catch (e) { /* ilegible: el paquete se conserva */ }
+          if (!sellada) return;
+          var viva = typeof data !== 'undefined' ? data : null; if (!viva) return;
+          var plan = S.planRecuperacionClinica(sellada, viva), imagenes = (r.noProt || []).filter(function (x) { return S.CLINICAS.indexOf(String(x)) < 0; });
+          if (!plan.ops.length && !imagenes.length) { S.liberarPaquete(r.id); return; }                      // el servidor ya tiene todo lo clínico
+          var det = plan.ops.slice(0, 8).map(function (o) { return esc(o.tipo + ' ' + o.accion + ': ' + o.clave); }).join('<br>') + (plan.ops.length > 8 ? '<br>… y ' + (plan.ops.length - 8) + ' más' : '');
+          var mm = modal('<h3 style="margin:0 0 8px">Cambios clínicos recuperados sin sincronizar</h3><p>Se recuperaron del paquete cifrado cambios que el servidor <b>no tiene</b>:</p><div style="font-size:12px;background:#f1f5f9;border-radius:8px;padding:8px;max-height:28vh;overflow:auto">' + (det || 'Ninguno aplicable automáticamente.') + '</div>'
+            + (plan.omitidos ? '<p style="font-size:12px">' + plan.omitidos + ' resumen(es) con una versión igual o más reciente en el servidor: no se pisan.</p>' : '')
+            + (imagenes.length ? '<p style="font-size:12px;color:#b91c1c">' + imagenes.length + ' cambio(s) de imágenes u otros datos no se pueden aplicar automáticamente: el paquete cifrado se conserva hasta que lo descartes desde «Datos de este equipo».</p>' : '')
+            + (plan.ops.length ? '<button data-ap style="' + BTN + 'background:#0f766e;color:#fff">Aplicar y guardar</button>' : '') + '<button data-de style="' + BTN + 'background:#fee2e2;color:#991b1b">Descartar (se pierden)</button><button data-dp style="' + BTN + 'background:#e2e8f0">Decidir después</button>');
+          mm.addEventListener('click', function (ev) {
+            var t = ev.target; if (!t || !t.hasAttribute) return;
+            if (t.hasAttribute('data-dp')) { mm.remove(); return; }
+            if (t.hasAttribute('data-de')) { if (!w.confirm('Se descartan PARA SIEMPRE los cambios clínicos recuperados. ¿Confirmás?')) return; S.liberarPaquete(r.id); mm.remove(); return; }
+            if (t.hasAttribute('data-ap')) {
+              S.aplicarRecuperacionClinica(viva, plan.ops);
+              try { if (typeof saveConfig === 'function') saveConfig(); } catch (e) { /* */ }
+              Promise.resolve(typeof w.guardarConfigEnSupabase298 === 'function' ? w.guardarConfigEnSupabase298() : false).then(function (ok) {
+                if (ok === false) { w.alert('Se aplicaron en este equipo pero NO se pudieron confirmar en el servidor. El paquete cifrado se conserva: reintentá más tarde.'); return; }
+                if (!imagenes.length) S.liberarPaquete(r.id); mm.remove();
+              }, function () { w.alert('No se pudo guardar en el servidor. El paquete cifrado se conserva.'); });
+            }
+          });
+        });
+      })();
+    }
     // Al iniciar sesión con uid validado: abre los paquetes sellados con la clave de ESTA sesión (si la contraseña es la misma), migra lo verificable, retira apartados sin pendientes y avisa por antigüedad.
     function alIniciarSesion(uid) {
       if (!uid) return Promise.resolve(null);
-      var inf = { sellados: { restauradas: 0, paquetes: 0, noAbiertos: 0, conflictos: 0, omitidas: 0, cachesRestauradas: 0 } };
+      var inf = { sellados: { restauradas: 0, paquetes: 0, noAbiertos: 0, conflictos: 0, omitidas: 0, cachesRestauradas: 0, recuperaciones: [] } };
       var abrir = S.hayMaterial() ? S.abrirSellados(uid, S._materialSesion()) : Promise.resolve(inf.sellados);
       return abrir.then(function (r) {
-        inf.sellados = r;
+        inf.sellados = r; if (r.recuperaciones && r.recuperaciones.length) ofrecerRecuperacion(r.recuperaciones);
         try { Object.assign(inf, S.migrarUsuario(uid)); S.purgarApartadosSinPendientes(uid); if (!r.noAbiertos && !r.conflictos) S.limpiarCierre(uid); } catch (e) { if (w.console) w.console.warn('Seguridad local: migración no disponible:', e); }
         try { avisoAntiguedad(uid); } catch (e) { /* */ }
-        try { if (S.equipoCompartido() && S.hayMaterial() && S.recolectarSinDueno().n && w.sessionStorage.getItem('sl_sd_visto') !== '1') { w.sessionStorage.setItem('sl_sd_visto', '1'); w.setTimeout(function () { w.alert('Este equipo tiene ' + S.recolectarSinDueno().n + ' dato(s) heredado(s) SIN dueño verificable guardados SIN cifrar (de versiones anteriores). Podés sellarlos en tu custodia o descartarlos desde «Datos de este equipo». Mientras no decidas siguen legibles en este navegador.'); }, 6000); } } catch (e) { /* */ }
+        try { if (S.equipoCompartido() && S.hayMaterial() && w.sessionStorage.getItem('sl_sd_visto') !== '1') { var nSD = S.recolectarSinDueno().n, nAJ = S.esAdminSesion() ? S.recolectarAjenos(uid).n : 0; if (nSD || nAJ) { w.sessionStorage.setItem('sl_sd_visto', '1'); w.setTimeout(function () { var mm = modal('<h3 style="margin:0 0 8px">Datos heredados sin cifrar en este equipo</h3><p>Hay ' + (nSD ? nSD + ' dato(s) <b>sin dueño verificable</b>' : '') + (nSD && nAJ ? ' y ' : '') + (nAJ ? nAJ + ' de <b>otros usuarios</b>' : '') + ' (de versiones anteriores) guardados <b>en claro</b>: otra persona con acceso a este navegador podría leerlos. Se pueden poner en tu custodia cifrada con tu contraseña desde «Datos de este equipo» (no se descartan solos ni se te atribuye su contenido).</p><button data-ab style="' + BTN + 'background:#0f766e;color:#fff">Abrir «Datos de este equipo»</button><button data-lt style="' + BTN + 'background:#e2e8f0">Más tarde</button>'); mm.addEventListener('click', function (ev) { var t = ev.target; if (t && t.hasAttribute) { if (t.hasAttribute('data-ab')) { mm.remove(); panel(); } else if (t.hasAttribute('data-lt')) mm.remove(); } }); }, 5000); } } } catch (e) { /* */ }
         if (r.noAbiertos) { try { w.alert('Hay ' + r.noAbiertos + ' paquete' + (r.noAbiertos === 1 ? '' : 's') + ' de cambios sin sincronizar cifrado' + (r.noAbiertos === 1 ? '' : 's') + ' con otra contraseña (¿la cambiaste?). No se pueden abrir con la actual. Podés descartarlos desde «Datos de este equipo».'); } catch (e) { /* */ } }
         return inf;
       }, function () { return inf; });
@@ -574,7 +683,7 @@
     if (doc) {
       var intentos = 0, t = w.setInterval(function () { if (agregarEnlace() || ++intentos > 120) w.clearInterval(t); }, 1000);
       doc.addEventListener('DOMContentLoaded', avisoIngreso); if (doc.readyState !== 'loading') w.setTimeout(avisoIngreso, 300);
-      try { if (S.equipoCompartido() && hayTokenLocal() && w.sessionStorage.getItem('cardiolink_sesion_validada') !== '1') w.setTimeout(function () { bloquearSesion(function () { try { if (typeof reiniciarTemporizadorInactividad === 'function') reiniciarTemporizadorInactividad(); } catch (e) { /* */ } }, { titulo: 'Hay una sesión abierta en este equipo', texto: 'Este equipo es compartido y la sesión anterior sigue abierta. Para continuar como ese usuario ingresá su contraseña; si no sos esa persona, cerrá esa sesión.', cerrar: true }); }, 300); else if (w.sessionStorage.getItem('cardiolink_bloqueo_v1') === '1') w.setTimeout(function () { bloquearSesion(function () { try { if (typeof reiniciarTemporizadorInactividad === 'function') reiniciarTemporizadorInactividad(); } catch (e) { /* */ } }); }, 400); } catch (e) { /* */ }
+      try { if (S.equipoCompartido() && hayTokenLocal()) w.setTimeout(function () { bloquearSesion(function () { try { if (typeof reiniciarTemporizadorInactividad === 'function') reiniciarTemporizadorInactividad(); } catch (e) { /* */ } }, { titulo: 'Hay una sesión abierta en este equipo', texto: 'Este equipo es compartido y la sesión anterior sigue abierta. Para continuar como ese usuario ingresá su contraseña (se pide tras cada recarga porque la clave de cifrado nunca se guarda); si no sos esa persona, cerrá esa sesión.', cerrar: true }); }, 300); else if (w.sessionStorage.getItem('cardiolink_bloqueo_v1') === '1') w.setTimeout(function () { bloquearSesion(function () { try { if (typeof reiniciarTemporizadorInactividad === 'function') reiniciarTemporizadorInactividad(); } catch (e) { /* */ } }); }, 400); } catch (e) { /* */ }
     }
     return Object.assign({}, S, { elegirCierre: elegirCierre, abrirPanel: panel, alIniciarSesion: alIniciarSesion, avisoIngreso: avisoIngreso, sellarConPassword: sellarConPassword, sellarConSesion: sellarConSesion, bloquearSesion: bloquearSesion, desbloquear: desbloquear, bloqueada: bloqueada, pedirPassword: pedirPassword });
   }

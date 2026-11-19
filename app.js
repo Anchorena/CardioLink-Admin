@@ -533,6 +533,12 @@ function aislarCacheLocalPorUsuarioV1(uid,privilegiado){
   }catch(e){ console.warn('Aislamiento de caché local no disponible:',e); }
 }
 // Se llama con la sesión todavía válida (antes de signOut). Devuelve true si la caché se eliminó (nada pendiente).
+function otrosPendientesCierreV1(){
+  try{
+    const ob=window.cardiolinkOutboxR2D, r1=window.cardiolinkPersistenciaR1&&window.cardiolinkPersistenciaR1.estado?window.cardiolinkPersistenciaR1.estado():null;
+    return !!((ob&&ob.resumen&&ob.resumen().length>0)||(ob&&ob.noProtegidos&&ob.noProtegidos().length>0)||(r1&&(r1.configPendiente||r1.guardando>0)));
+  }catch(e){ return true; }    // ante la duda se conserva (nunca se purga una caché que podría ser la única copia)
+}
 async function liberarCacheLocalAlCerrarSesionV1(auto){
   try{
     const uidCierre=usuarioSupabase?.id, SLc=window.cardiolinkSeguridadLocalV1;
@@ -540,7 +546,10 @@ async function liberarCacheLocalAlCerrarSesionV1(auto){
       await Promise.race([sincronizarAtencionesSupabase(false),new Promise(r=>setTimeout(r,8000))]);
     }
     const docsSeguros=await protegerDocumentosSinRespaldoV1();
-    const pendiente=typeof window.hayPendientesSync298==='function'?window.hayPendientesSync298():true;
+    // Seguridad local V1: «pendiente» NO es sólo lo de atenciones. Cuenta también los cambios de configuración sin guardar (incluidos los que no viajan en la cola R2D: claves clínicas e imágenes), las
+    // operaciones de la cola y lo que ella no protege. Sin esto, un cambio clínico sólo presente en la caché se PERDÍA en silencio al cerrar (la caché se purgaba como «todo confirmado»).
+    try{ const r1=window.cardiolinkPersistenciaR1&&window.cardiolinkPersistenciaR1.estado&&window.cardiolinkPersistenciaR1.estado(); const gcfg=window.guardarConfigEnSupabase298; if(r1&&r1.configPendiente&&typeof gcfg==='function') await Promise.race([gcfg().catch(()=>{}),new Promise(r=>setTimeout(r,8000))]); }catch(e){}
+    const pendiente=(typeof window.hayPendientesSync298==='function'?window.hayPendientesSync298():true)||otrosPendientesCierreV1();
     if(pendiente){
       // Se conserva la caché (sigue asociada a su dueño; la app no se la muestra a otro usuario). Además se respaldan por separado las filas NUEVAS
       // que nunca llegaron al servidor: al volver a iniciar sesión la carga reemplaza las atenciones locales por las del servidor y, sin este
@@ -1248,6 +1257,27 @@ async function signOutLocalGarantizadoV1() {
   try { await supabaseClient.auth.signOut({ scope: 'local' }); } catch (e) { /* sin sesión */ }
   try { Object.keys(localStorage).filter(k => /^sb-.*-auth-token/.test(k)).forEach(k => localStorage.removeItem(k)); } catch (e) { /* sin almacenamiento */ }
 }
+// Seguridad local V1: cierra la sesión ABIERTA de otra persona (pantalla de bloqueo al reabrir la app) sin conocer su contraseña. Sincroniza con esa sesión y purga; si quedan cambios sin sincronizar NO los deja
+// legibles: reintentar o descartar (explícito, con confirmación). No se pueden cifrar (no hay clave): se dice en el diálogo.
+window.cerrarSesionAjenaV1 = async function () {
+  const SL = window.cardiolinkSeguridadLocalV1, ob = window.cardiolinkOutboxR2D; if (!SL || !supabaseClient) return 'cancelada';
+  for (let i = 0; i < 40 && !usuarioSupabase; i++) await new Promise(r => setTimeout(r, 250));     // la sesión guardada se reanuda en segundo plano
+  const uid = usuarioSupabase?.id; let descarto = false;
+  for (;;) {
+    try { await Promise.race([sincronizarAtencionesSupabase(false), new Promise(r => setTimeout(r, 6000))]); } catch (e) { /* sin red */ }
+    try { ob && ob.registrar && ob.registrar(); } catch (e) { /* */ }
+    if (await liberarCacheLocalAlCerrarSesionV1()) break;
+    const r = await SL.elegirCierre({ n: ob && ob.resumen ? ob.resumen().length : 0, sinProteger: ob && ob.sinProteccion ? ob.sinProteccion() : 0, noProt: (ob && ob.noProtegidos ? ob.noProtegidos() : []).length, sinClave: true });
+    if (r === 'reintentar') continue;
+    if (r === 'cancelar') return 'cancelada';
+    if (r === 'descartar') { window.__cardiolinkDescarteCierre = true; SL.descartarTodoUsuario(uid, [...clavesCacheLocalV1(), CACHE_OWNER_KEY_V1]); descarto = true; break; }
+  }
+  try { await supabaseClient.auth.signOut(); } catch (e) { /* */ }
+  await signOutLocalGarantizadoV1();
+  if (descarto) { try { SL.purgarClaves(uid, [...clavesCacheLocalV1(), CACHE_OWNER_KEY_V1]); } catch (e) { /* */ } }
+  try { SL.olvidarMaterial(); sessionStorage.removeItem('cardiolink_paciente_actual_411b'); sessionStorage.removeItem('cardiolink_bloqueo_v1'); } catch (e) { /* */ }
+  location.reload(); return 'cerrada';
+};
 async function cerrarPorInactividad() {
   try {
     if (window.cardioLinkRefreshInterval) clearInterval(window.cardioLinkRefreshInterval);
@@ -1256,7 +1286,7 @@ async function cerrarPorInactividad() {
     let selladoAuto = false;
     if (!limpia && SL && SL.equipoCompartido()) {
       // Equipo compartido: con cambios sin sincronizar NUNCA se cierra dejando datos clínicos legibles. Se sellan con la clave de la sesión; sin ella (sesión reanudada sin contraseña) o si falla, se BLOQUEA la sesión.
-      const sel = await SL.sellarConSesion(extraAuto);
+      const sel = await SL.sellarConSesion(extraAuto, { noProt: window.cardiolinkOutboxR2D?.noProtegidos?.() || [] });
       if (!sel.ok) { bloquearPorInactividadV1(); return; }
       window.__cardiolinkDescarteCierre = true; selladoAuto = true;
       try { SL.registrarCierre(uidAuto, { pendientes: Math.max((window.cardiolinkOutboxR2D?.resumen?.().length) || 0, 1), protegido: true, sellado: true, auto: true }); } catch (e) { /* */ }
@@ -1282,39 +1312,38 @@ async function cerrarSesionSupabase() {
   if (!supabaseClient) return;
   // R2D + Seguridad local V1: con cambios sin sincronizar el usuario DECIDE (nada se descarta solo ni se pierde en silencio). En «Equipo compartido» (por defecto) hay tres salidas explícitas:
   // reintentar sincronizar, cerrar conservando (sin cifrar, y se dice), o descartar con confirmación (sólo este usuario). Lo conservado NO está protegido por el UID: localStorage no se cifra.
-  let descartoTodo=false, selladoOk=false;
+  let descartoTodo=false, selladoOk=false, yaLiberada=false;
   try{
     const ob=window.cardiolinkOutboxR2D, SL=window.cardiolinkSeguridadLocalV1;
-    if(ob&&typeof ob.resumen==='function'){
-      for(;;){
-        try{ await Promise.race([sincronizarAtencionesSupabase(false),new Promise(r=>setTimeout(r,6000))]); }catch(e){}
-        ob.registrar(); const n=ob.resumen().length, sinP=ob.sinProteccion?ob.sinProteccion():0;
-        if(n===0) break;
-        if(SL&&SL.equipoCompartido()){
-          const r=await SL.elegirCierre({n,sinProteger:sinP,noProt:(SL.noProtegidosEnCola(usuarioSupabase?.id)||[]).length});
-          if(r==='reintentar') continue;
-          if(r==='cancelar') return;
-          if(r==='descartar'){
-            window.__cardiolinkDescarteCierre=true;     // la cola y la caché de este usuario se descartan: el cierre de página no las vuelve a escribir
-            SL.descartarTodoUsuario(usuarioSupabase?.id,[...clavesCacheLocalV1(),CACHE_OWNER_KEY_V1]); descartoTodo=true;
-          }
-          if(r==='proteger'){
-            // PROTECCIÓN REAL: se cifra todo lo sensible del usuario con su contraseña (no guardada) y el texto plano se retira sólo tras verificar el paquete.
-            await liberarCacheLocalAlCerrarSesionV1();      // respalda documentos/filas nuevas y registra la cola; conserva la caché porque hay pendientes
-            const sel=await SL.sellarConPassword([...clavesCacheLocalV1(),CACHE_OWNER_KEY_V1]);
-            if(!sel.ok){ if(sel.error!=='cancelado') alert('No se pudo sellar los cambios con tu contraseña ('+sel.error+'). NO se cierra la sesión para no dejar datos clínicos legibles en este equipo: reintentá, sincronizá o descartá.'); continue; }
-            window.__cardiolinkDescarteCierre=true; selladoOk=true;
-            try{ SL.registrarCierre(usuarioSupabase?.id,{pendientes:n,protegido:true,sellado:true}); }catch(e){}
-          }
-          break;
+    const compartido=!!(SL&&SL.equipoCompartido()&&ob&&typeof ob.resumen==='function');
+    for(;;){
+      try{ await Promise.race([sincronizarAtencionesSupabase(false),new Promise(r=>setTimeout(r,6000))]); }catch(e){}
+      try{ ob&&ob.registrar&&ob.registrar(); }catch(e){}
+      const n=ob&&ob.resumen?ob.resumen().length:0, sinP=ob&&ob.sinProteccion?ob.sinProteccion():0, np=(ob&&ob.noProtegidos?ob.noProtegidos():[]).length;
+      if(compartido){
+        // «Pendiente» = lo que decide liberarCacheLocalAlCerrarSesionV1 (cola R2D, filas nuevas, documentos sin respaldo y cambios de configuración que NO viajan en la cola), no sólo la cola.
+        const limpia=await liberarCacheLocalAlCerrarSesionV1(); yaLiberada=true;
+        if(limpia) break;
+        const r=await SL.elegirCierre({n,sinProteger:sinP,noProt:np});
+        if(r==='reintentar') continue;
+        if(r==='cancelar') return;
+        if(r==='descartar'){
+          window.__cardiolinkDescarteCierre=true;     // la cola y la caché de este usuario se descartan: el cierre de página no las vuelve a escribir
+          SL.descartarTodoUsuario(usuarioSupabase?.id,[...clavesCacheLocalV1(),CACHE_OWNER_KEY_V1]); descartoTodo=true; break;
         }
-        if(!window.confirm((sinP>0?'ATENCIÓN: '+sinP+' de esos cambios NO están protegidos en este equipo (almacenamiento lleno o no disponible) y SE PERDERÁN si cerrás sesión.\n\n':'')+'Hay '+n+' cambio'+(n===1?'':'s')+' sin sincronizar.\n\nSi cerrás sesión quedan guardados en ESTE equipo SIN CIFRAR: otra persona con acceso a este navegador podría leerlos (separarlos por usuario no los protege). Se recuperan cuando vuelvas a entrar.\n\n¿Cerrar sesión igual?')) return;
+        // PROTECCIÓN REAL: se cifra todo lo sensible del usuario con su contraseña (no guardada) y el texto plano se retira sólo tras verificar el paquete.
+        const sel=await SL.sellarConPassword([...clavesCacheLocalV1(),CACHE_OWNER_KEY_V1],{noProt:ob.noProtegidos?ob.noProtegidos():[]});
+        if(!sel.ok){ if(sel.error!=='cancelado') alert('No se pudo sellar los cambios con tu contraseña ('+sel.error+'). NO se cierra la sesión para no dejar datos clínicos legibles en este equipo: reintentá, sincronizá o descartá.'); continue; }
+        window.__cardiolinkDescarteCierre=true; selladoOk=true;
+        try{ SL.registrarCierre(usuarioSupabase?.id,{pendientes:Math.max(n,1),protegido:true,sellado:true}); }catch(e){}
         break;
       }
+      if(n>0&&!window.confirm((sinP>0?'ATENCIÓN: '+sinP+' de esos cambios NO están protegidos en este equipo (almacenamiento lleno o no disponible) y SE PERDERÁN si cerrás sesión.\n\n':'')+'Hay '+n+' cambio'+(n===1?'':'s')+' sin sincronizar.\n\nSi cerrás sesión quedan guardados en ESTE equipo SIN CIFRAR: otra persona con acceso a este navegador podría leerlos (separarlos por usuario no los protege). Se recuperan cuando vuelvas a entrar.\n\n¿Cerrar sesión igual?')) return;
+      break;
     }
   }catch(e){ console.warn('R2D:',e); }
 
-  if(!descartoTodo&&!selladoOk) await liberarCacheLocalAlCerrarSesionV1();
+  if(!descartoTodo&&!selladoOk&&!yaLiberada) await liberarCacheLocalAlCerrarSesionV1();
   const uidSalida=usuarioSupabase?.id;
   await supabaseClient.auth.signOut();
   await signOutLocalGarantizadoV1();

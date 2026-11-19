@@ -693,7 +693,7 @@ prueba('C4 sin fallback en el código; y cada acceso a la fila de configuración
 
 prueba('C5 auditoría de llamadores: referencias a guardarConfigEnSupabase298 y a la confirmación (un llamador nuevo obliga a revisar su aviso de éxito)', () => {
   const cuenta = (f, re) => (leer(f).match(re) || []).length;
-  assert.equal(cuenta('app.js', /guardarConfigEnSupabase298/g), 31, '20 llamadores/definiciones previos + 7 referencias internas del bloque R1 (envoltorio de persistencia y reintentos del refresco) + 2 del refresco R2B (guardado tras fusionar, Dueño y Secretaría); ningún llamador de flujo de usuario nuevo'); assert.equal(cuenta('cardiolink-agenda-v1.js', /guardarConfigEnSupabase298/g), 4);
+  assert.equal(cuenta('app.js', /guardarConfigEnSupabase298/g), 32, '20 llamadores/definiciones previos + 7 referencias internas del bloque R1 (envoltorio de persistencia y reintentos del refresco) + 2 del refresco R2B (guardado tras fusionar, Dueño y Secretaría) + 1 del cierre de sesión (intenta guardar la configuración pendiente ANTES de decidir qué se conserva; si falla, queda como pendiente y se sella o se pide decisión: no informa éxito); ningún llamador de flujo de usuario nuevo'); assert.equal(cuenta('cardiolink-agenda-v1.js', /guardarConfigEnSupabase298/g), 4);
   assert.equal(cuenta('cardiolink-pedidos-rapidos-v1.js', /guardarConfigEnSupabase298/g), 3);
   MODULOS.filter(f => !['cardiolink-agenda-v1.js', 'cardiolink-pedidos-rapidos-v1.js'].includes(f)).forEach(f => assert.equal(cuenta(f, /guardarConfigEnSupabase298/g), 0, f + ' tiene un llamador nuevo'));
   assert.match(leer('cardiolink-agenda-v1.js'), /sincronizado = await window\.guardarConfigEnSupabase298\?\.\(\);/);

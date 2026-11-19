@@ -141,7 +141,7 @@ test('caché local por usuario: se aparta sin borrar, se limpia al cerrar sólo 
   assert.match(l,/sincronizarAtencionesSupabase\(false\)/);
   assert.ok(l.indexOf('if(pendiente){')!==-1&&l.indexOf('if(pendiente){')<l.indexOf('removeItem(k)'));
   assert.match(src,/const limpia = await liberarCacheLocalAlCerrarSesionV1\(true\);[\s\S]{0,1400}if \(supabaseClient\) await supabaseClient\.auth\.signOut\(\);/);   // inactividad
-  assert.match(src,/if\(!descartoTodo&&!selladoOk\) await liberarCacheLocalAlCerrarSesionV1\(\);\s*const uidSalida=usuarioSupabase\?\.id;\s*await supabaseClient\.auth\.signOut\(\);/);        // cierre manual
+  assert.match(src,/if\(!descartoTodo&&!selladoOk&&!yaLiberada\) await liberarCacheLocalAlCerrarSesionV1\(\);\s*const uidSalida=usuarioSupabase\?\.id;\s*await supabaseClient\.auth\.signOut\(\);/);        // cierre manual
   assert.match(src,/window\.hayPendientesSync298=function\(\)\{/);
 });
 
