@@ -95,10 +95,11 @@ test('reintentos agotados: se informa como error transitorio, no se escribe a ci
   assert.equal(r.estado, 'error'); assert.equal(r.transitorio, true); assert.equal(E.tabla.get('p1').fecha_nacimiento, '1970-01-01'); assert.equal(F.listarPendientes().length, 1);
 });
 
-test('DNI duplicado: verificación previa y árbitro de la base (carrera); el id no cambia y no queda pendiente', async () => {
+test('DNI duplicado: verificación previa y árbitro de la base (carrera); el id no cambia y la edición queda rechazada (no se reintenta ni se descarta)', async () => {
   const E = entorno([fila(), fila({ id: 'p2', nombre_completo: 'Juan', dni: '30333444' })]); const base = app(E.tabla.get('p1')); F.limpiarEstado();
   let r = await F.guardarEdicion({ sb: E.sb, id: 'p1', base, nuevo: Object.assign({}, base, { dni: '30.333.444' }), ahora: E.ahora });
-  assert.equal(r.estado, 'dni_duplicado'); assert.equal(E.tabla.get('p1').dni, '30111222'); assert.equal(E.rastro.updates, 0); assert.equal(F.listarPendientes().length, 0);
+  assert.equal(r.estado, 'dni_duplicado'); assert.equal(E.tabla.get('p1').dni, '30111222'); assert.equal(E.rastro.updates, 0);
+  assert.equal(F.listarPendientes().length, 1, 'la edición NO se descarta: queda rechazada con su motivo'); assert.equal(F.listarPendientes()[0].rechazo.tipo, 'dni_duplicado');
   // carrera: nadie tenía ese DNI al verificar, pero otra sesión lo toma antes del UPDATE
   const E2 = entorno([fila(), fila({ id: 'p2', nombre_completo: 'Juan', dni: '30333444' })]); F.limpiarEstado();
   E2.tabla.get('p2').dni = '40000000';
@@ -111,12 +112,12 @@ test('DNI duplicado: verificación previa y árbitro de la base (carrera); el id
   assert.equal(r.estado, 'confirmada'); assert.equal(E3.tabla.get('p1').id, 'p1'); assert.equal(E3.tabla.get('p1').dni, '30999888'); assert.equal(E3.tabla.size, 1);
 });
 
-test('errores: sin conexión → transitorio y queda pendiente; permisos (42501) → rechazo definitivo sin pendiente; confirmación inconsistente no es éxito', async () => {
+test('errores: sin conexión → transitorio y queda pendiente; permisos (42501) → rechazo permanente conservado; confirmación inconsistente no es éxito', async () => {
   const E = entorno([fila()]); F.limpiarEstado(); const base = app(E.tabla.get('p1')); const nuevo = Object.assign({}, base, { telefono: '1' });
   E.hooks.errorUpdate = new Error('Failed to fetch'); let r = await F.guardarEdicion({ sb: E.sb, id: 'p1', base, nuevo, ahora: E.ahora });
   assert.equal(r.estado, 'error'); assert.equal(r.transitorio, true); assert.equal(F.listarPendientes().length, 1);
   E.hooks.errorUpdate = { code: '42501', message: 'new row violates row-level security policy' }; r = await F.guardarEdicion({ sb: E.sb, id: 'p1', base, nuevo, ahora: E.ahora });
-  assert.equal(r.estado, 'error'); assert.equal(r.permiso, true); assert.equal(F.listarPendientes().length, 0);
+  assert.equal(r.estado, 'error'); assert.equal(r.permiso, true); assert.equal(F.listarPendientes().length, 1); assert.equal(F.listarPendientes()[0].rechazo.tipo, 'permiso', 'rechazo permanente: se conserva con su motivo y no se reintenta');
   const E2 = entorno([fila()]); F.limpiarEstado(); E2.hooks.errorLectura = new Error('Failed to fetch');
   r = await F.guardarEdicion({ sb: E2.sb, id: 'p1', base, nuevo, ahora: E2.ahora }); assert.equal(r.estado, 'error'); assert.equal(E2.rastro.updates, 0);
 });
@@ -136,35 +137,21 @@ test('sin cambios reales: no hay lecturas ni escrituras y no se informa nada', a
   assert.equal(r.sinCambios, true); assert.equal(E.rastro.lecturas, 0); assert.equal(E.rastro.updates, 0);
 });
 
-test('reconciliarCarga con BASE VERIFICABLE: local sin cambios → se adopta lo relacional; relacional sin cambios y local editado → se empuja con antes = relacional; edición pendiente se conserva', () => {
-  F.limpiarEstado(); const row = fila({ actualizado_en: '2026-11-18T10:00:00.000Z', fecha_nacimiento: '1970-01-01', email: 'a@x.com' });
+test('reconciliarCarga: la tabla relacional MANDA; la carga nunca empuja ni abre divergencias; una edición real pendiente se conserva; un dato vaciado a propósito no resucita', () => {
+  F.limpiarEstado(); const row = fila({ actualizado_en: '2026-11-18T10:00:00.000Z', fecha_nacimiento: '1970-01-01', email: null, telefono: null });
   const loc = (extra) => Object.assign({}, F.desdeFila(row), extra);
-  F.marcarSync('p1', row, loc({}));                                                    // última sincronización: local == relacional
-  const rowNueva = Object.assign({}, row, { actualizado_en: '2026-11-18T11:00:00.000Z', email: 'cambio-otra-sesion@x.com' });
-  let r = F.reconciliarCarga(loc({}), rowNueva, null);                                 // local intacto; el servidor cambió
-  assert.deepStrictEqual(r.adoptar, { email: 'cambio-otra-sesion@x.com' }); assert.deepStrictEqual(r.empujar, {}); assert.deepStrictEqual(r.divergencias, {});
-  r = F.reconciliarCarga(loc({ fechaNacimiento: '1975-05-05' }), row, null);           // local editado; el servidor NO cambió desde la marca
-  assert.deepStrictEqual(r.empujar, { fechaNacimiento: { a: '1970-01-01', d: '1975-05-05' } }); assert.deepStrictEqual(r.adoptar, {});
-  r = F.reconciliarCarga(loc({ fechaNacimiento: '1980-08-08' }), row, { cambios: { fechaNacimiento: { a: '1970-01-01', d: '1980-08-08' } } });
+  // copia local vieja (teléfono y email que la persona ya había borrado en la tabla): se adopta lo vacío; NO se rellena ni se empuja
+  let r = F.reconciliarCarga(loc({ email: 'viejo@x.com', telefono: '1155' }), row, null);
+  assert.deepStrictEqual(r.adoptar, { email: null, telefono: null }); assert.deepStrictEqual(r.empujar, {}); assert.deepStrictEqual(r.divergencias, {});
+  // con marca de sincronización y la tabla sin cambios, una copia distinta TAMPOCO es una edición
+  F.marcarSync('p1', row, loc({})); r = F.reconciliarCarga(loc({ fechaNacimiento: '1999-09-09' }), row, null);
+  assert.deepStrictEqual(r.adoptar, { fechaNacimiento: '1970-01-01' }); assert.deepStrictEqual(r.empujar, {});
+  // edición REAL de la persona sin guardar: se conserva
+  r = F.reconciliarCarga(loc({ fechaNacimiento: '1980-08-08' }), row, { origen: 'usuario', cambios: { fechaNacimiento: { a: '1970-01-01', d: '1980-08-08' } } });
   assert.deepStrictEqual(r, { adoptar: {}, empujar: {}, divergencias: {} });
-});
-
-test('reconciliarCarga SIN base confiable: nunca se sobrescribe; los dos valores se conservan como DIVERGENCIA; vacíos se completan; la marca de tiempo NO autoriza nada', () => {
-  F.limpiarEstado(); const row = fila({ actualizado_en: '2026-11-18T10:00:00.000Z', email: 'servidor@x.com' });
-  const loc = (extra) => Object.assign({}, F.desdeFila(row), extra);
-  // sin marca: ambos no vacíos y distintos → divergencia (aunque lo local parezca MÁS nuevo)
-  let r = F.reconciliarCarga(Object.assign(loc({ email: 'local@x.com' }), { actualizadoEn: '2030-01-01T00:00:00Z' }), row, null);
-  assert.deepStrictEqual(r.divergencias, { email: { local: 'local@x.com', remoto: 'servidor@x.com' } }); assert.deepStrictEqual(r.empujar, {}); assert.deepStrictEqual(r.adoptar, {});
-  // local sin el dato → se completa con el relacional; relacional sin el dato (y sin marca) → se escribe en el vacío
-  r = F.reconciliarCarga(loc({ email: null }), row, null); assert.deepStrictEqual(r.adoptar, { email: 'servidor@x.com' });
-  r = F.reconciliarCarga(Object.assign(loc({ email: 'local@x.com' }), { actualizadoEn: '2026-11-18T09:00:00.000Z' }), fila({ actualizado_en: '2026-11-18T10:00:00.000Z', email: null }), null);   // fila relacional tocada DESPUÉS de lo local: veto → divergencia
-  assert.deepStrictEqual(r.empujar, {}); assert.deepStrictEqual(r.divergencias, { email: { local: 'local@x.com', remoto: null } });
-  r = F.reconciliarCarga(Object.assign(loc({ email: 'local@x.com' }), { actualizadoEn: '2026-11-18T11:00:00.000Z' }), fila({ actualizado_en: '2026-11-18T10:00:00.000Z', email: null }), null);   // vacío y nadie la tocó después: se completa
-  assert.deepStrictEqual(r.empujar, { email: { a: null, d: 'local@x.com' } });
-  // con marca pero cambiaron los DOS lados → divergencia
-  F.marcarSync('p1', row, loc({}));
-  r = F.reconciliarCarga(loc({ email: 'local@x.com' }), Object.assign({}, row, { actualizado_en: '2026-11-18T12:00:00.000Z', email: 'otro@x.com' }), null);
-  assert.deepStrictEqual(r.divergencias, { email: { local: 'local@x.com', remoto: 'otro@x.com' } });
+  // un pendiente HEREDADO (de versiones anteriores) no se conserva sobre la tabla: se muestra lo de la tabla
+  r = F.reconciliarCarga(loc({ fechaNacimiento: '1980-08-08' }), row, { origen: 'heredado', cambios: { fechaNacimiento: { a: '1970-01-01', d: '1980-08-08' } } });
+  assert.deepStrictEqual(r.adoptar, { fechaNacimiento: '1970-01-01' });
 });
 
 test('divergencias: se conservan para revisión; «servidor» adopta, «mío» escribe por 3 vías con antes = valor del servidor; nada se pierde', async () => {
@@ -204,16 +191,17 @@ test('INCIDENCIA PRODUCTION (Geraldine): editar un paciente EXISTENTE no cambia 
   assert.match(f, /if\(dni&&esNuevoLocal\)\{[\s\S]{0,200}asegurarPacienteSinConflictoDni/, 'la reconciliación por DNI (adopta el id relacional y quita entradas) sólo corre en altas nuevas');
   assert.ok(!/p\.id=real\.id|data\.pacientes=data\.pacientes\.filter\(x=>x!==p\)[\s\S]{0,40}$/.test(f.slice(0, 0)), 'sin efecto');
   assert.match(src, /async function idRelacional410\(p\)/); assert.match(src, /alias410\.set\(String\(p\.id\),String\(row\.id\)\)/);
-  assert.match(src, /const idF=await idRelacional410\(p\),baseF=FICHA\.vistaDe\(idF\)/); assert.match(src, /prow\.id=await idRelacional410\(p\)/);
+  assert.match(src, /const idF=await idRelacional410\(p\),visto=FICHA\.vistaEdicionDe\(idF\)\|\|FICHA\.vistaEdicionDe\(p\.id\);/);
   const s1 = src.indexOf('async function savePatientEditHC('), s2 = src.indexOf('function copyActionsHtmlHC409(');
   const save = src.slice(s1, s2); assert.match(save, /idRelacional\?\.\(target\)/); assert.match(save, /FICHA\.guardarEdicion\(\{sb:supabaseClient,id:idRel,/);
   assert.doesNotMatch(save, /\bp\.id=|target\.id=/, 'el id del paciente nunca se reasigna al guardar');
 });
 
-test('INCIDENCIA PRODUCTION: con dos fichas locales del mismo DNI (id huérfano + id relacional) la copia con el id relacional NO empuja, no marca ni registra divergencias (revertía la edición guardada)', () => {
+test('FICHAS ESTABLES: leer o refrescar no escribe (sin empujes ni divergencias) y no existe escritura ciega de la ficha completa desde la sincronización básica', () => {
   const src = require('fs').readFileSync(require('path').join(__dirname, 'app.js'), 'utf8');
   const a = src.indexOf('function mergePaciente410('), b = src.indexOf('function mergeResumen410(');
   const f = src.slice(a, b);
-  assert.match(f, /const dupDuplicado=!!digits410\(row\.dni\)&&String\(p\.id\)===relId&&data\.pacientes\.some\(/);
-  assert.match(f, /!dupDuplicado&&Object\.keys\(rec\.divergencias\)/); assert.match(f, /mismoId&&!dupDuplicado\)empujes410\.push/); assert.match(f, /mismoId&&!dupDuplicado&&!pend&&[\s\S]{0,80}FICHA\.marcarSync/);
+  assert.doesNotMatch(f, /empujes410|registrarDivergencias/); assert.match(f, /adoptados410\.push\(String\(p\.id\)\)/);
+  const c = src.slice(src.indexOf('async function sincronizarFichaPacienteBasica410('), src.indexOf('async function reconciliarDniDuplicado410('));
+  assert.doesNotMatch(c, /\.upsert\(/, 'la sincronización de la ficha ya no hace upsert de la fila completa'); assert.match(c, /FICHA\.guardarEdicion\(\{sb:supabaseClient,id:idF,base,nuevo:\{\.\.\.p,id:idF\}/);
 });

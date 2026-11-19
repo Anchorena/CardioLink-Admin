@@ -1107,21 +1107,21 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
 <script src="cardiolink-finanzas-v5.js?v=4b2-cobros"></script>
 <!-- Solicitudes de turno se carga antes de app.js: app.js conecta el cliente Supabase principal, igual que con Finanzas 5. -->
 <script src="cardiolink-solicitudes-turno.js?v=solicitudes-turno-2"></script>
-<script src="cardiolink-seguridad-local-v1.js?v=sl-8"></script>
-<script src="app.js?v=40128-seguridad-local"></script>
+<script src="cardiolink-seguridad-local-v1.js?v=fe-1"></script>
+<script src="app.js?v=40129-fichas-estables"></script>
 <!-- Seguridad clínica V1 / Bloque 4B: configuración administrativa de Secretaría por RPC. Debe cargar después de app.js y antes del primer login. -->
-<script src="cardiolink-config-secretaria-v1.js?v=sl-1"></script>
+<script src="cardiolink-config-secretaria-v1.js?v=fe-1"></script>
 <!-- Persistencia V1 / R2B: motor de fusión de tres vías + integración (Dueño/Admin: UPDATE condicionado por updated_at; avisos de conflicto). Después de app.js. -->
 <script src="cardiolink-config-merge-v1.js?v=r2b-2"></script>
-<script src="cardiolink-config-concurrencia-v1.js?v=r2d-1"></script>
+<script src="cardiolink-config-concurrencia-v1.js?v=fe-1"></script>
 <!-- Persistencia V1 / R2C: fusión y concurrencia de atenciones individuales (base/local/remoto, UPDATE condicionado, conflictos con aviso persistente). Después de R2B. -->
 <script src="cardiolink-atenciones-merge-v1.js?v=r2c-2"></script>
 <script src="cardiolink-atenciones-concurrencia-v1.js?v=sl-1"></script>
 <!-- Persistencia V1 / R2D: cola local de recuperación de operaciones no confirmadas (diferencias, filas nuevas, configuración, incompletas). Después de R2B/R2C. -->
 <script src="cardiolink-outbox-v1.js?v=r2d-1"></script>
-<script src="cardiolink-outbox-glue-v1.js?v=sl-2"></script>
+<script src="cardiolink-outbox-glue-v1.js?v=fe-1"></script>
 <!-- Persistencia V1 / R3: escritura segura de la ficha demográfica del paciente en cardiolink_pacientes (diferencias, 3 vías, UPDATE condicionado, DNI). -->
-<script src="cardiolink-pacientes-ficha-v1.js?v=r3-3"></script>
+<script src="cardiolink-pacientes-ficha-v1.js?v=fe-1"></script>
 <script src="cardiolink-auth-guard.js?v=2"></script>
 <script src="cardiolink-clear-patient-fix.js?v=1"></script>
 <script src="cardiolink-pendientes-alertas.js?v=1"></script>

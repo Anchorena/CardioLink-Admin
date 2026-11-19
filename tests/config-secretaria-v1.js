@@ -693,7 +693,7 @@ prueba('C4 sin fallback en el código; y cada acceso a la fila de configuración
 
 prueba('C5 auditoría de llamadores: referencias a guardarConfigEnSupabase298 y a la confirmación (un llamador nuevo obliga a revisar su aviso de éxito)', () => {
   const cuenta = (f, re) => (leer(f).match(re) || []).length;
-  assert.equal(cuenta('app.js', /guardarConfigEnSupabase298/g), 32, '20 llamadores/definiciones previos + 7 referencias internas del bloque R1 (envoltorio de persistencia y reintentos del refresco) + 2 del refresco R2B (guardado tras fusionar, Dueño y Secretaría) + 1 del cierre de sesión (intenta guardar la configuración pendiente ANTES de decidir qué se conserva; si falla, queda como pendiente y se sella o se pide decisión: no informa éxito); ningún llamador de flujo de usuario nuevo'); assert.equal(cuenta('cardiolink-agenda-v1.js', /guardarConfigEnSupabase298/g), 4);
+  assert.equal(cuenta('app.js', /guardarConfigEnSupabase298/g), 33, '20 llamadores/definiciones previos + 7 referencias internas del bloque R1 (envoltorio de persistencia y reintentos del refresco) + 2 del refresco R2B (guardado tras fusionar, Dueño y Secretaría) + 1 del cierre de sesión (intenta guardar la configuración pendiente ANTES de decidir qué se conserva; si falla, queda como pendiente y se sella o se pide decisión: no informa éxito); + 1 de «Guardar ahora» (acción explícita de la persona: muestra «Guardando…» y confirma el resultado real); ningún llamador de flujo de usuario nuevo'); assert.equal(cuenta('cardiolink-agenda-v1.js', /guardarConfigEnSupabase298/g), 4);
   assert.equal(cuenta('cardiolink-pedidos-rapidos-v1.js', /guardarConfigEnSupabase298/g), 3);
   MODULOS.filter(f => !['cardiolink-agenda-v1.js', 'cardiolink-pedidos-rapidos-v1.js'].includes(f)).forEach(f => assert.equal(cuenta(f, /guardarConfigEnSupabase298/g), 0, f + ' tiene un llamador nuevo'));
   assert.match(leer('cardiolink-agenda-v1.js'), /sincronizado = await window\.guardarConfigEnSupabase298\?\.\(\);/);
@@ -744,7 +744,7 @@ prueba('C10 confirmarConfigAdministrativaV1: true sólo si el servidor confirmó
   c = armarGuardar({ rolCargado: true, admin: false, modulo: { aplica: true, res: false } }); assert.strictEqual(await c.confirmar(), false);
   c = armarGuardar({ rolCargado: true, admin: false, medico: true }); assert.strictEqual(await c.confirmar(), null);
   c = armarGuardar({ rolCargado: true, admin: true, sinUsuario: true }); assert.strictEqual(await c.confirmar(), null);
-  c = armarGuardar({ rolCargado: true, admin: true }); c.aviso('El cambio'); assert.match(c.alertas[0], /SOLO en este equipo/);
+  c = armarGuardar({ rolCargado: true, admin: true }); c.aviso('El cambio'); assert.match(c.alertas[0], /se guardó en este equipo y todavía no se pudo enviar/);
 });
 
 // Ejecuta un tramo REAL de app.js (entre dos marcas) como cuerpo de una función async con dobles; devuelve lo que pasó.
@@ -798,7 +798,7 @@ prueba('C12 PACIENTES (panel) y CALIDAD de datos, CONVENIOS nuevos y ARANCELES: 
   const panel = async (res) => {
     const { d, eventos } = dobles(res);
     // R3: el aviso distingue «guardada en el servidor (tabla relacional confirmada)» de «sólo en este equipo»; aquí la relacional no se confirmó (okRel = null)
-    await correrTramo("try{ const okCfgPanel=await confirmarConfigAdministrativaV1(); if(okCfgPanel===false) avisarConfigNoConfirmadaV1('La ficha del paciente',okRel===true); else if(okRel===false) avisarConfigNoConfirmadaV1('La ficha del paciente (tabla de pacientes)'); }catch(e){ console.warn(e); }", "console.warn(e); }",
+    await correrTramo("try{ const okCfgPanel=await confirmarConfigAdministrativaV1(); if(okCfgPanel===false) avisarConfigNoConfirmadaV1('La ficha del paciente',okRel===true); else if(okRel===false) avisarConfigNoConfirmadaV1('La ficha del paciente'); }catch(e){ console.warn(e); }", "console.warn(e); }",
       { confirmarConfigAdministrativaV1: d.confirmarConfigAdministrativaV1, avisarConfigNoConfirmadaV1: d.avisarConfigNoConfirmadaV1, console: d.console, okRel: null });
     return eventos;
   };

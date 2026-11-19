@@ -280,3 +280,16 @@ auditoría; copia sin vincular → amarillo; médico, Secretaría asociada y no 
 un usuario guarde un cambio (p. ej. cerrar un pendiente), la sincronización detecta el conflicto, adopta la versión remota y el cambio local se
 pierde sin aviso. Ocurre igual con el botón existente de cada pendiente. En Copias el chip «Copia impresa · cerrar pendiente» permite reintentar.
 Mejora futura: avisar el conflicto y reaplicar el cambio sobre la versión remota.
+
+## Fichas estables y cierre de sesión simple (rama `fix/fichas-sincronizacion-estable`, sin publicar)
+Tests: `node --test cardiolink-fichas-estables.test.cjs` (+ `cardiolink-pacientes-ficha-v1`, `cardiolink-outbox-v1`, `cardiolink-seguridad-local-v1`, `tests/config-secretaria-v1.js`).
+STAGING con cuentas y pacientes sintéticos (Owner/Secretaría/Médico QA, login real, creadas y borradas fuera del repo): refrescos sin escrituras
+(la tabla `cardiolink_pacientes` es la fuente; la copia de Configuración no la pisa ni resucita campos borrados); edición real escribe sólo los campos
+cambiados; registrar una atención sin tocar la ficha no escribe datos del paciente; caída de red → la edición se conserva, se reintenta sola y el cartel
+aparece recién tras 2 min; cierre sin pendientes = sin diálogos, con pendientes = un único mensaje y sellado automático; reingreso recupera y guarda;
+cambio de contraseña → aviso operativo y nada se aplica (con la contraseña original se recupera); otro usuario en el mismo equipo no ve ni lee nada
+de la sesión anterior (paquete cifrado). Pendientes heredados: se conservan protegidos, no se aplican solos y sólo Owner/Admin los ve.
+
+**Deuda de seguridad registrada:** si el navegador se cierra de golpe (sin «Cerrar sesión»), las ediciones sin guardar quedan sin cifrar hasta el siguiente
+ingreso. La marca de sincronización `cardiolink_ficha_sync_v1` (ids y huellas, sin valores) sigue en claro mientras la sesión está abierta.
+Hallazgo operativo: el Owner escribe UNA vez la copia de Configuración al ingresar si otros usuarios cambiaron fichas (convergencia; no se repite).
