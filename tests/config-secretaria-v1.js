@@ -573,6 +573,10 @@ function armarGuardar(o) {
     from: () => ({ upsert: async rows => { upserts.push(rows); return { error: o.upsertError || null }; } })
   };
   const win = { cardiolinkConfigSecretariaV1: o.modulo === undefined ? undefined : { aplica: () => o.modulo.aplica, guardar: async d => { delModulo.push(d); return o.modulo.res; } } };
+  // R2B: el guardado de Dueño/Admin lo hace el módulo de concurrencia (UPDATE condicionado). El doble de prueba verifica la sesión viva como lo hace el módulo y registra la escritura.
+  if (!o.sinR2B) win.cardiolinkConfigR2B = { activo: () => true, guardarDueno: async uid => {
+    try { if (!supabaseClient.auth) return false; const r = await supabaseClient.auth.getSession(); const u = r && r.data && r.data.session && r.data.session.user; if (!u || String(u.id) !== String(uid)) return false; } catch (e) { return false; }
+    if (o.upsertError) return false; upserts.push([uid]); return true; } };
   const f = new Function('supabaseClient', 'usuarioSupabase', 'backendRolCargado', 'backendEsAdminOwner', 'esMedicoBackendV1', 'data', 'VERSION_298', 'CONFIG_ROW_ID',
     'esRechazoIdentidadArchivoLlenoV1', 'mostrarAvisoConfigRechazadaV1', 'quitarAvisoConfigRechazadaV1', 'window', 'console', 'clearTimeout', 'alert',
     helpersRol + '\n' + cuerpoGuardar + '\nreturn {guardar: guardarConfigEnSupabase298, confirmar: confirmarConfigAdministrativaV1, aviso: window.avisarConfigNoConfirmadaV1};');
@@ -586,6 +590,9 @@ prueba('C2 guardarConfigEnSupabase298: la fila completa sólo la escribe un owne
   // owner/admin confirmado: sin cambios en su flujo legítimo
   let c = armarGuardar({ rolCargado: true, admin: true, modulo: { aplica: false } });
   assert.equal(await c.guardar(), true); assert.equal(c.upserts.length, 1); assert.equal(c.delModulo.length, 0);
+  // R2B: sin el módulo de concurrencia NO hay escritura (ni upsert ciego): false, sin escrituras, los cambios quedan pendientes
+  c = armarGuardar({ rolCargado: true, admin: true, sinR2B: true });
+  assert.strictEqual(await c.guardar(), false); assert.equal(c.upserts.length, 0); assert.equal(c.delModulo.length, 0);
   // owner/admin confirmado pero la sesión viva cambió / se cerró / no se puede confirmar: NO se escribe con credenciales ajenas
   for (const o of [{ viva: 'otro' }, { viva: null }, { sinAuth: true }, { getSessionLanza: true }]) {
     c = armarGuardar(Object.assign({ rolCargado: true, admin: true }, o));
@@ -657,23 +664,36 @@ prueba('C4 sin fallback en el código; y cada acceso a la fila de configuración
   assert.ok(!/return null;\s*\/\/ RPC/.test(MOD));
   // lectura de documentos en la fila heredada: sólo con owner/admin confirmado
   assert.match(APP, /if\(configCompletaPermitidaV1\(\)\)\{[^\n]*\n\s*const \{data:filas,error\}=await supabaseClient\.from\('cardiolink_atenciones'\)\.select\('d:payload->config->documentosClinicos'\)\.eq\('id',CONFIG_ROW_ID_DOCS_V1\)/);
-  // escritura de la fila completa: una sola, después de exigir owner/admin confirmado y de verificar la sesión viva
-  assert.equal((APP.match(/\.upsert\(\[\{id:CONFIG_ROW_ID,/g) || []).length, 1);
+  // R2B: app.js YA NO escribe la fila completa con upsert (ni como respaldo). Delega en el módulo de concurrencia, después de exigir owner/admin confirmado; sin módulo no escribe y avisa.
+  assert.equal((APP.match(/\.upsert\(\[\{id:CONFIG_ROW_ID,/g) || []).length, 0);
   const g = APP.slice(APP.indexOf('async function guardarConfigEnSupabase298(){'), APP.indexOf('window.guardarConfigEnSupabase298='));
-  assert.ok(g.indexOf('if(!configCompletaPermitidaV1())') > 0 && g.indexOf('if(!configCompletaPermitidaV1())') < g.indexOf('.upsert([{id:CONFIG_ROW_ID,'));
-  assert.ok(g.indexOf('sesionVivaCoincideV1(uidInicio)') > 0 && g.indexOf('sesionVivaCoincideV1(uidInicio)') < g.indexOf('.upsert([{id:CONFIG_ROW_ID,'));
+  assert.ok(g.indexOf('if(!configCompletaPermitidaV1())') > 0 && g.indexOf('if(!configCompletaPermitidaV1())') < g.indexOf('guardarDueno('));
+  assert.ok(g.indexOf('guardarDueno(') > 0 && g.indexOf('avisarR2BNoCargado298();') > g.indexOf('guardarDueno(') && /avisarR2BNoCargado298\(\);\s*return false;/.test(g), 'sin el módulo: aviso y return false, sin escritura');
+  assert.ok(!/\.upsert\(|\.update\(/.test(g.replace(/\/\/[^\n]*/g, '')), 'guardarConfigEnSupabase298 no escribe directamente');
+  // el módulo de concurrencia: sólo 2 accesos a cardiolink_atenciones (leer y actualizar la fila de config por id), la escritura es UPDATE condicionado y exige owner/admin confirmado y sesión viva
+  const CONC = leer('cardiolink-config-concurrencia-v1.js').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert.equal((CONC.match(/\.from\('cardiolink_atenciones'\)/g) || []).length, 2);
+  assert.ok(!/\.upsert\(|\.insert\(|\.delete\(/.test(CONC), 'el módulo no hace upsert/insert/delete');
+  assert.match(CONC, /\.update\(\{ payload: payload, updated_at: ahora \}\)\.eq\('id', ID_FILA\)\.eq\('updated_at', fila\.updated_at\)/);
+  assert.ok(CONC.indexOf('if (!activo()) return false;') > 0 && CONC.indexOf('if (!activo()) return false;') < CONC.indexOf('sesionVivaCoincideV1(uid)') && CONC.indexOf('sesionVivaCoincideV1(uid)') < CONC.indexOf('.update({ payload'));
   // la consulta general excluye la fila de configuración salvo owner/admin/médico confirmados
   assert.match(APP, /if\(!pideCfgCompleta298\) consulta298=consulta298\.neq\('id',CONFIG_ROW_ID\);/);
-  // CENSO: 13 accesos a la tabla; sólo 3 pueden tocar la fila de configuración por id y los 3 están protegidos (lectura de documentos, upsert, consulta general)
+  // CENSO: 13 accesos a la tabla; sólo 2 pueden tocar la fila de configuración por id y están protegidos (lectura de documentos, consulta general); la escritura vive en el módulo de concurrencia (UPDATE condicionado, owner/admin confirmado)
   const accesos = (APP.match(/\.from\((['"])cardiolink_atenciones\1\)/g) || []).length;
-  assert.equal(accesos, 13, 'cambió la cantidad de accesos a cardiolink_atenciones: revisar que ninguno nuevo pueda tocar la fila de configuración sin rol confirmado');
+  assert.equal(accesos, 12, 'R2D: +1 lectura por id de la cola de recuperación (consultarServidor; rechaza la fila de configuración); R2C: la relectura de conflictos y la fusión viven ahora en cardiolink-atenciones-concurrencia-v1.js (-1 acceso en app.js); cambió la cantidad de accesos a cardiolink_atenciones: revisar que ninguno nuevo pueda tocar la fila de configuración sin rol confirmado');
   assert.equal((APP.match(/CONFIG_ROW_ID_DOCS_V1\)/g) || []).length, 1);
+  // R2C: el módulo de concurrencia de atenciones tiene 2 accesos (leer y UPDATE condicionado por id), rechaza la fila de configuración y nunca hace upsert/insert/delete
+  const CONC2 = leer('cardiolink-atenciones-concurrencia-v1.js').replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+  assert.equal((CONC2.match(/\.from\('cardiolink_atenciones'\)/g) || []).length, 2);
+  assert.ok(!/\.from\('cardiolink_atenciones'\)[^;]*\.(upsert|insert|delete)\(/.test(CONC2) && !/\.upsert\(|\.insert\(/.test(CONC2), 'el módulo de atenciones no hace upsert/insert/delete sobre la tabla');
+  assert.match(CONC2, /id === '__cardiolink_config_v1'\) return/);
+  assert.match(CONC2, /\.update\(\{ payload: destino, updated_at: nuevaVersion \}\)\.eq\('id', id\)\.eq\('updated_at', rem\.fila\.updated_at\)/);
   MODULOS.forEach(f => assert.ok(!/cardiolink_atenciones/.test(leer(f).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/[^\n]*/g, '')), f + ' accede a cardiolink_atenciones'));
 });
 
 prueba('C5 auditoría de llamadores: referencias a guardarConfigEnSupabase298 y a la confirmación (un llamador nuevo obliga a revisar su aviso de éxito)', () => {
   const cuenta = (f, re) => (leer(f).match(re) || []).length;
-  assert.equal(cuenta('app.js', /guardarConfigEnSupabase298/g), 20); assert.equal(cuenta('cardiolink-agenda-v1.js', /guardarConfigEnSupabase298/g), 4);
+  assert.equal(cuenta('app.js', /guardarConfigEnSupabase298/g), 32, '20 llamadores/definiciones previos + 7 referencias internas del bloque R1 (envoltorio de persistencia y reintentos del refresco) + 2 del refresco R2B (guardado tras fusionar, Dueño y Secretaría) + 1 del cierre de sesión (intenta guardar la configuración pendiente ANTES de decidir qué se conserva; si falla, queda como pendiente y se sella o se pide decisión: no informa éxito); ningún llamador de flujo de usuario nuevo'); assert.equal(cuenta('cardiolink-agenda-v1.js', /guardarConfigEnSupabase298/g), 4);
   assert.equal(cuenta('cardiolink-pedidos-rapidos-v1.js', /guardarConfigEnSupabase298/g), 3);
   MODULOS.filter(f => !['cardiolink-agenda-v1.js', 'cardiolink-pedidos-rapidos-v1.js'].includes(f)).forEach(f => assert.equal(cuenta(f, /guardarConfigEnSupabase298/g), 0, f + ' tiene un llamador nuevo'));
   assert.match(leer('cardiolink-agenda-v1.js'), /sincronizado = await window\.guardarConfigEnSupabase298\?\.\(\);/);
@@ -777,8 +797,9 @@ prueba('C11 PACIENTES: el modal de alta/edición y la ficha global anuncian éxi
 prueba('C12 PACIENTES (panel) y CALIDAD de datos, CONVENIOS nuevos y ARANCELES: sin confirmación avisan; el panel confirma ANTES de mostrar la ficha como guardada', async () => {
   const panel = async (res) => {
     const { d, eventos } = dobles(res);
-    await correrTramo("try{ if(await confirmarConfigAdministrativaV1()===false) avisarConfigNoConfirmadaV1('La ficha del paciente'); }catch(e){ console.warn(e); }", "console.warn(e); }",
-      { confirmarConfigAdministrativaV1: d.confirmarConfigAdministrativaV1, avisarConfigNoConfirmadaV1: d.avisarConfigNoConfirmadaV1, console: d.console });
+    // R3: el aviso distingue «guardada en el servidor (tabla relacional confirmada)» de «sólo en este equipo»; aquí la relacional no se confirmó (okRel = null)
+    await correrTramo("try{ const okCfgPanel=await confirmarConfigAdministrativaV1(); if(okCfgPanel===false) avisarConfigNoConfirmadaV1('La ficha del paciente',okRel===true); else if(okRel===false) avisarConfigNoConfirmadaV1('La ficha del paciente (tabla de pacientes)'); }catch(e){ console.warn(e); }", "console.warn(e); }",
+      { confirmarConfigAdministrativaV1: d.confirmarConfigAdministrativaV1, avisarConfigNoConfirmadaV1: d.avisarConfigNoConfirmadaV1, console: d.console, okRel: null });
     return eventos;
   };
   assert.deepEqual(await panel(false), ['confirmar', 'AVISO:La ficha del paciente']);
@@ -877,7 +898,7 @@ function correrFuncion(codigo, nombre, params, args) {
 }
 
 prueba('C14 DOCUMENTOS HEREDADOS: Secretaría no los recibe en la sesión (ni en la memoria ni en la caché de configuración) y el resguardo se conserva intacto', async () => {
-  const codigo = ['documentoRestaurableV1', 'apartarDocumentosNoPermitidosV1', 'recuperarDocumentosPendientesV1', 'leerOutboxDocsV1', 'unirDocsPorIdV1'].map(n => funcionApp(n)).join('\n')
+  const codigo = ['claveSegV1', 'documentoRestaurableV1', 'apartarDocumentosNoPermitidosV1', 'recuperarDocumentosPendientesV1', 'leerOutboxDocsV1', 'unirDocsPorIdV1'].map(n => funcionApp(n)).join('\n')
     + '\n' + APP.match(/const TIPOS_DOC_SECRETARIA_V1=\[[^\]]*\];/)[0] + '\n' + APP.match(/const OUTBOX_DOCS_KEY_V1='[^']*';/)[0];
   const doc = (id, tipo) => ({ id, tipo, titulo: 't' + id, contenido: 'CLINICO-' + id, pacienteId: 'p1' });
   const LEGADOS = [doc('d1', 'receta'), doc('d2', 'ecg'), doc('d3', 'informe')], CONSTANCIA = doc('c1', 'constancia_atencion');   // Bloque 4C-1b: certificado, orden y reposo_laboral YA se restauran (ver más abajo)
@@ -924,7 +945,7 @@ prueba('C14 DOCUMENTOS HEREDADOS: Secretaría no los recibe en la sesión (ni en
   const cierre = APP.slice(APP.indexOf('try{ apartarDocumentosNoPermitidosV1(); }'), APP.indexOf('try{ recuperarDocumentosPendientesV1(); }') + 40);
   assert.ok(cierre.indexOf('apartarDocumentosNoPermitidosV1') < cierre.indexOf('recuperarDocumentosPendientesV1'));
   // el cierre de sesión sigue conservando el resguardo (la protección no se tocó)
-  assert.match(APP, /const k=OUTBOX_DOCS_KEY_V1\+uid, todos=unirDocsPorIdV1\(leerOutboxDocsV1\(uid\),locales\);/);
+  assert.match(APP, /const k=claveSegV1\('cardiolink_docs_pendientes_v1',uid\), todos=unirDocsPorIdV1\(leerOutboxDocsV1\(uid\),locales\);/);
 });
 
 prueba('C15 FLUJOS VISIBLES (Coberturas y valores): obra social, valores, regla, convenio, convenio nuevo y arancel afirman éxito sólo con la confirmación; sin ella avisan y no dicen "guardado"', async () => {

@@ -180,9 +180,10 @@ test('protección: un profesional que una config antigua ya no incluye NO pierde
 });
 
 test('rechazo 54000 de la config global: aviso visible y claro, nunca una confirmación de guardado, sin tocar el resto del flujo',()=>{
-  const g=sinComentarios(between('async function guardarConfigEnSupabase298(){','window.guardarConfigEnSupabase298='));
-  assert.match(g,/if\(esRechazoIdentidadArchivoLlenoV1\(error\)\) mostrarAvisoConfigRechazadaV1\(error\);/);
-  assert.match(g,/\}else quitarAvisoConfigRechazadaV1\(\);\s+return !error;/);                 // el resultado sigue siendo !error (false cuando el servidor rechaza)
+  // R2B: el UPDATE condicionado vive en el módulo de concurrencia; el rechazo 54000 sigue mostrando el aviso y devolviendo false
+  const g=sinComentarios(fs.readFileSync(path.join(__dirname,'cardiolink-config-concurrencia-v1.js'),'utf8').replace(/\/\*[\s\S]*?\*\//g,''));
+  assert.match(g,/if \(esRechazoIdentidadArchivoLlenoV1\(r\.error\)\) mostrarAvisoConfigRechazadaV1\(r\.error\);/);
+  assert.match(g,/if \(r\.error\) \{[\s\S]*?return false;\s*\}/);                           // con error del servidor nunca se devuelve éxito
   assert.doesNotMatch(g,/alert\(/);                                                      // el flujo global no emite ninguna confirmación
   const f=sinComentarios(between('function esRechazoIdentidadArchivoLlenoV1(','// Directorio mínimo de destinatarios'));
   assert.match(f,/String\(error\.code\|\|''\)==='54000'/);
@@ -197,5 +198,6 @@ test('rechazo 54000 de la config global: aviso visible y claro, nunca una confir
 test('sin cambios en la protección global: el médico sigue sin escribir la config compartida',()=>{
   const g=sinComentarios(between('async function guardarConfigEnSupabase298(){','window.guardarConfigEnSupabase298='));
   assert.match(g,/if\(esMedicoBackendV1\(\)\) return false;/);
-  assert.match(g,/upsert\(\[\{id:CONFIG_ROW_ID,payload,updated_at:/);
+  assert.doesNotMatch(g,/upsert\(\[\{id:CONFIG_ROW_ID/);                                  // R2B: sin upsert ciego de la config completa
+  assert.match(g,/return await r2bGuardar298\.guardarDueno\(uidInicio\);/);
 });

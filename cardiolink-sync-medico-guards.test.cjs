@@ -106,17 +106,19 @@ test('un mensaje rechazado por permisos (RLS) no se reencola y no bloquea el lot
   assert.match(d,/baselineAtenciones298\.delete\(/);
   assert.match(d,/baselineVersionAtenciones298\.delete\(/);
   // el texto no se pierde: respaldo local (últimos 20), cuadro de mensaje si está vacío y, si no, dentro del aviso
-  assert.match(d,/cardiolink_mensajes_no_enviados_v1/);
+  assert.match(d,/claveMensajesNoEnviadosV1\(\)/);                                // Seguridad local V1: clave por proyecto + uid (la global heredada sólo sin sesión)
   assert.match(d,/slice\(-20\)/);
   assert.match(d,/t\.value=textos\.join/);
   assert.match(d,/Texto del mensaje \(copialo si lo necesitás\)/);
   const s=sinComentarios(between('if(nuevas298.length){','if(conflictos298.length){'));
   assert.match(s,/nuevas298\.filter\(a=>!esMsg298\(a\)\),nuevas298\.filter\(esMsg298\)/);       // lotes separados
-  assert.match(s,/lote\.every\(esMsg298\)&&esErrorPermisosRLS298\(upErr\)/);                       // sólo mensajes + sólo permisos
+  // R2C: si el lote falla se envía una por una (sólo se descartan los mensajes rechazados por permisos; las demás filas se retienen o reintentan por separado)
+  assert.match(s,/esErrorPermisosRLS298\(e1\)[\s\S]{0,200}esMsg298\(m\)[\s\S]{0,120}rechazadosPorPermisos298\.push\(m\)/);   // sólo mensajes + sólo permisos
   assert.match(s,/for\(const m of lote\)/);                                                         // uno por uno: sólo se descartan los rechazados
   assert.match(s,/descartarMensajesRechazados298\(rechazadosPorPermisos298\)/);
   // los errores que NO son de permisos siguen reencolando
-  assert.match(s,/syncAtencionesPendiente=true;\s*syncReintentosFallidos\+\+;\s*return false;/);
+  assert.match(s,/errorTransitorio298\(e1\)/);                                                        // R2C: el error transitorio de una fila no corta el lote
+  assert.match(src,/if\(huboErrorTransitorio298\)\{[\s\S]{0,260}syncAtencionesPendiente=true;\s*syncReintentosFallidos\+\+;\s*return false;/);   // y al final se reencola
 });
 
 test('Secretaría y owner conservan la lógica de remitente anterior',()=>{
@@ -135,19 +137,19 @@ test('caché local por usuario: se aparta sin borrar, se limpia al cerrar sólo 
   const r=between('async function cargarPermisoBackendRolesIntentoV1(ultimoIntento){','function esMatiasDuenio(){');
   assert.match(r,/aislarCacheLocalPorUsuarioV1\(usuarioSupabase\?\.id, adminOwner\.data===true\|\|appointmentRequests\.data===true\);\s*await cargarMensajeriaYConfigMedicoV1\(\);/);
   assert.match(r,/aislarCacheLocalPorUsuarioV1\(usuarioSupabase\?\.id,false\);/);   // sin rol confirmado: nunca privilegiado
-  const l=between('async function liberarCacheLocalAlCerrarSesionV1(){','// Directorio mínimo');
+  const l=between('async function liberarCacheLocalAlCerrarSesionV1(auto){','// Directorio mínimo');
   assert.match(l,/sincronizarAtencionesSupabase\(false\)/);
   assert.ok(l.indexOf('if(pendiente){')!==-1&&l.indexOf('if(pendiente){')<l.indexOf('removeItem(k)'));
-  assert.match(src,/await liberarCacheLocalAlCerrarSesionV1\(\);\s*if \(supabaseClient\) await supabaseClient\.auth\.signOut\(\);/);   // inactividad
-  assert.match(src,/await liberarCacheLocalAlCerrarSesionV1\(\);\s*await supabaseClient\.auth\.signOut\(\);/);                           // cierre manual
+  assert.match(src,/const limpia = await liberarCacheLocalAlCerrarSesionV1\(true\);[\s\S]{0,1400}if \(supabaseClient\) await supabaseClient\.auth\.signOut\(\);/);   // inactividad
+  assert.match(src,/if\(!descartoTodo&&!selladoOk&&!yaLiberada\) await liberarCacheLocalAlCerrarSesionV1\(\);\s*const uidSalida=usuarioSupabase\?\.id;\s*await supabaseClient\.auth\.signOut\(\);/);        // cierre manual
   assert.match(src,/window\.hayPendientesSync298=function\(\)\{/);
 });
 
 test('filas nuevas sin sincronizar: se respaldan al cerrar sesión con pendientes y se recuperan sin pisar ni duplicar',()=>{
-  const l=sinComentarios(between('async function liberarCacheLocalAlCerrarSesionV1(){','// Directorio mínimo'));
+  const l=sinComentarios(between('async function liberarCacheLocalAlCerrarSesionV1(auto){','// Directorio mínimo'));
   assert.match(l,/window\.filasNuevasPendientes298\(\)/);
-  assert.match(l,/OUTBOX_NUEVAS_KEY_V1\+usuarioSupabase\.id/);                       // respaldo POR usuario
-  assert.ok(l.indexOf('OUTBOX_NUEVAS_KEY_V1')<l.indexOf('return false;'));
+  assert.match(l,/claveSegV1\('cardiolink_nuevas_pendientes_v1',usuarioSupabase\.id\)/);    // respaldo POR proyecto + usuario
+  assert.ok(l.indexOf('cardiolink_nuevas_pendientes_v1')<l.indexOf('return false;'));
   const r=sinComentarios(between('async function recuperarNuevasPendientesV1(){','function clavesCacheLocalV1()')||between('async function recuperarNuevasPendientesV1(){','function aislarCacheLocalPorUsuarioV1'));
   assert.match(r,/!ids\.has\(String\(r\.id\)\)/);                                    // lo que ya existe en el servidor NO se pisa ni se duplica
   assert.match(r,/idsRec\.has\(String\(a\.id\)\)/);                                 // confirmado = las filas recuperadas ya tienen versión remota
@@ -155,7 +157,9 @@ test('filas nuevas sin sincronizar: se respaldan al cerrar sesión con pendiente
   const s=between('window.filasNuevasPendientes298=function(){','window.hayPendientesSync298=function(){');
   assert.match(s,/!baselineVersionAtenciones298\.has\(String\(a\.id\)\)/);            // sólo filas sin versión remota (nunca confirmadas)
   // la recuperación corre DESPUÉS del snapshot de baselines y de soltar cargandoDesdeNube
-  assert.match(src,/snapshotBaselineAtenciones298\(atenciones\);\s*cargandoDesdeNube=false;\s*try\{ await recuperarNuevasPendientesV1\(\);/);
+  // (R2D: la cola de recuperación nueva corre en el mismo punto, antes de la heredada, que ya no repite lo que aquella gestiona)
+  const iSnap=src.indexOf('snapshotBaselineAtenciones298(atenciones);\n      cargandoDesdeNube=false;'), iR2D=src.indexOf('ob298.recuperar(',iSnap), iLeg=src.indexOf('try{ await recuperarNuevasPendientesV1();',iSnap);
+  assert.ok(iSnap>0&&iR2D>iSnap&&iLeg>iR2D);
 });
 
 test('evoluciones: guardado confiable (por id, refresco pausado, confirmación del servidor, sin duplicados)',()=>{
@@ -193,7 +197,7 @@ test('capa relacional: guardarEvolucionConfirmada arma filas antes de los await,
 });
 
 test('cierre de sesión: los documentos clínicos sin respaldo confirmado se resguardan por uid y nunca se pierden',()=>{
-  const lib=sinComentarios(between('async function liberarCacheLocalAlCerrarSesionV1(){','// Directorio mínimo de destinatarios'));
+  const lib=sinComentarios(between('async function liberarCacheLocalAlCerrarSesionV1(auto){','// Directorio mínimo de destinatarios'));
   // el respaldo se resuelve ANTES de decidir si se elimina la caché, y la caché no se elimina si no está garantizado
   assert.ok(lib.indexOf('protegerDocumentosSinRespaldoV1()')!==-1);
   assert.ok(lib.indexOf('protegerDocumentosSinRespaldoV1()')<lib.indexOf('hayPendientesSync298'));
@@ -218,7 +222,7 @@ test('cierre de sesión: los documentos clínicos sin respaldo confirmado se res
   assert.match(c,/window\.hashContenidoDocumento406/);
   // el resguardo está aislado por uid; sin uid o sin poder resguardar no se elimina nada
   const p=sinComentarios(between('async function protegerDocumentosSinRespaldoV1(){','// Tras iniciar sesión'));
-  assert.match(p,/OUTBOX_DOCS_KEY_V1\+uid/);
+  assert.match(p,/claveSegV1\('cardiolink_docs_pendientes_v1',uid\)/);
   assert.match(p,/if\(!uid\) return locales\.length===0;/);
   assert.match(p,/catch\(e\)\{[^}]*return false;\s*\}/);
   assert.match(p,/consultaOk=false/);
