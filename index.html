@@ -1108,7 +1108,7 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
 <!-- Solicitudes de turno se carga antes de app.js: app.js conecta el cliente Supabase principal, igual que con Finanzas 5. -->
 <script src="cardiolink-solicitudes-turno.js?v=solicitudes-turno-2"></script>
 <script src="cardiolink-seguridad-local-v1.js?v=sl-8"></script>
-<script src="app.js?v=40128-seguridad-local"></script>
+<script src="app.js?v=40129-convenios-v2"></script>
 <!-- Seguridad clínica V1 / Bloque 4B: configuración administrativa de Secretaría por RPC. Debe cargar después de app.js y antes del primer login. -->
 <script src="cardiolink-config-secretaria-v1.js?v=sl-1"></script>
 <!-- Persistencia V1 / R2B: motor de fusión de tres vías + integración (Dueño/Admin: UPDATE condicionado por updated_at; avisos de conflicto). Después de app.js. -->
@@ -1144,7 +1144,7 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
 <script src="cardiolink-documentos-pdf-v1.js?v=7-4c1"></script>
 <!-- Pendientes de cobro V1: cobro pendiente en la carga y panel de confirmación en Pendientes. Módulo independiente; envuelve cobroEfectivoAtencion (app.js) y debe cargar después de app.js y de cardiolink-finanzas-v5.js. -->
 <script src="cardiolink-cobros-v1.js?v=1b-casilla-regla"></script>
-<script src="cardiolink-aranceles-v2-core.js?v=1"></script>
-<script src="cardiolink-aranceles-v2.js?v=1"></script>
+<script src="cardiolink-aranceles-v2-core.js?v=3"></script>
+<script src="cardiolink-aranceles-v2.js?v=3"></script>
 </body>
 </html>

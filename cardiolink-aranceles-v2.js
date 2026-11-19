@@ -3,7 +3,8 @@
    Grilla editable de aranceles (filas = convenios, columnas = prestaciones) por profesional y vigencia,
    guardado conjunto, importación masiva con vista previa e historial de valores.
    · Reutiliza la configuración existente (config.arancelesPorProfesional / conveniosPorProfesional): sin SQL.
-   · El copago de la grilla es INFORMATIVO. Caja sigue usando copagoDePrestacion (Valores del profesional).
+   · El copago del arancel NO es sólo informativo: el formulario de nueva atención (código existente de Finanzas 411F) lo propone en lugar del copago de
+     «Valores del profesional» cuando es > 0. Esta pantalla no modifica copagoDePrestacion ni atenciones ya registradas.
    · No toca Caja ni Finanzas. No cambia reglas, destinos ni facturantes de los convenios.
    · Corrige el recálculo de snapshots al editar una atención (arancelId, arancelVigencia, valorArancelEstimado).
    Núcleo puro y probado: cardiolink-aranceles-v2-core.js
@@ -87,14 +88,14 @@
   }
   function catalogoPrestaciones() {
     var d = cfg(), m = {}, out = [];
-    function add(n) { n = String(n || '').trim(); if (n && !m[norm(n)]) { m[norm(n)] = 1; out.push(n); } }
+    function add(n) { n = String(n || '').trim(); if (n && !m[C.canonPrest(n)]) { m[C.canonPrest(n)] = 1; out.push(C.nombrePrest(n)); } }
     profesionales().forEach(function (p) { (p.prestaciones || []).forEach(add); });
     Object.keys((d && d.arancelesPorProfesional) || {}).forEach(function (k) { ((d.arancelesPorProfesional[k]) || []).forEach(function (f) { add(f && f.prestacion); }); });
     return out;
   }
   function columnas(pid) {
     var d = cfg(), p = profDe(pid), m = {}, out = [];
-    function add(n, hab) { n = String(n || '').trim(); if (!n) return; if (m[norm(n)]) return; m[norm(n)] = 1; out.push({ nombre: n, habilitada: hab }); }
+    function add(n, hab) { n = String(n || '').trim(); if (!n) return; var k = C.canonPrest(n); if (m[k]) { if (hab) m[k].habilitada = true; return; } m[k] = { nombre: C.nombrePrest(n), habilitada: hab }; out.push(m[k]); }
     ((p && p.prestaciones) || []).forEach(function (n) { add(n, true); });
     (((d && d.arancelesPorProfesional) || {})[pid] || []).forEach(function (f) { if (f && f.activo !== false) add(f.prestacion, false); });
     S.extra.forEach(function (n) { add(n, false); });
@@ -152,11 +153,11 @@
       '<p class="muted">Elegí profesional y vigencia, editá las celdas y guardá todo junto. Celda vacía = sin informar (no se borra ni se pisa un valor existente); <strong>0</strong> = valor cero explícito.</p>' +
       '<div class="ar2-conceptos">' +
       '<div class="ar2-conc" id="ar2ConcArancel"><strong>Arancel de convenio</strong><br>Lo que paga la cobertura por la prestación. Base de la producción a facturar.</div>' +
-      '<div class="ar2-conc cop" id="ar2ConcCopago"><strong>Copago informativo</strong><br>Referencia. <u>No cambia lo que cobra Caja</u>: ese copago se configura en «Valores del profesional».</div></div>' +
+      '<div class="ar2-conc cop" id="ar2ConcCopago"><strong>Copago del arancel</strong> (opcional)<br>Si se carga, el formulario de <u>nueva atención</u> lo propone en lugar del copago de «Valores del profesional» para esa cobertura y prestación. No cambia atenciones ya registradas. Vacío = Caja sigue como hoy.</div></div>' +
       '<div class="ar2-top">' +
       '<label>Profesional<select id="ar2Prof"></select></label>' +
       '<label>Vigencia (desde)<input type="date" id="ar2Vig"></label>' +
-      '<label>Editar<select id="ar2Modo"><option value="valor">Arancel de convenio</option><option value="copago">Copago informativo</option></select></label>' +
+      '<label>Editar<select id="ar2Modo"><option value="valor">Arancel de convenio</option><option value="copago">Copago del arancel (precarga en nueva atención)</option></select></label>' +
       '<label>Buscar convenio<input type="search" id="ar2Buscar" placeholder="Ej.: OSDE"></label>' +
       '<label>Mostrar<select id="ar2Filtro"><option value="activos">Activos (habilitados y sin configurar)</option><option value="archivados">Archivados</option><option value="todos">Todos</option></select></label>' +
       '<label>Agregar columna<select id="ar2Col"></select></label>' +
@@ -179,7 +180,7 @@
     $('ar2Prof').innerHTML = ps.map(function (p) { return '<option value="' + esc(p.id) + '"' + (p.id === S.pid ? ' selected' : '') + '>' + esc(p.nombre) + '</option>'; }).join('');
     $('ar2Modo').value = S.modo; $('ar2Filtro').value = S.filtro; $('ar2Vig').value = S.vig; $('ar2Buscar').value = S.buscar;
     $('ar2ConcArancel').classList.toggle('on', S.modo === 'valor'); $('ar2ConcCopago').classList.toggle('on', S.modo === 'copago');
-    $('ar2Aviso').innerHTML = S.modo === 'copago' ? '<div class="ar2-aviso"><strong>Estás editando el COPAGO INFORMATIVO.</strong> No modifica lo que cobra Caja ni el arancel del convenio.</div>' : '';
+    $('ar2Aviso').innerHTML = S.modo === 'copago' ? '<div class="ar2-aviso"><strong>Estás editando el COPAGO DEL ARANCEL.</strong> Al registrar una <u>nueva</u> atención con esa cobertura y prestación, el formulario propondrá este copago en lugar del de «Valores del profesional». Las atenciones ya registradas no cambian. Dejá vacío lo que no quieras activar.</div>' : '';
     var cols = columnas(S.pid);
     var enCols = {}; cols.forEach(function (c) { enCols[norm(c.nombre)] = 1; });
     $('ar2Col').innerHTML = '<option value="">+ Prestación del catálogo…</option>' + catalogoPrestaciones().filter(function (n) { return !enCols[norm(n)]; }).map(function (n) { return '<option value="' + esc(n) + '">' + esc(n) + '</option>'; }).join('');
@@ -209,8 +210,10 @@
         return '<td><input class="' + cls + '" inputmode="decimal" autocomplete="off" placeholder="—" data-os="' + esc(os) + '" data-prest="' + esc(c.nombre) + '" data-orig="' + esc(sucio ? '' : txt) + '" title="' + esc(tip) + '" value="' + esc(txt) + '"></td>';
       }).join('');
       var acc = '<button type="button" class="secondary" data-ar2="hist" data-os="' + esc(os) + '">Historial</button>' +
+        (e === 'sin' ? '<button type="button" class="secondary" data-ar2="igual" data-os="' + esc(os) + '" title="Copia regla, destinos y facturantes de otro convenio de este profesional">Configurar igual que…</button>' : '') +
         (e === 'archivado' ? '<button type="button" class="secondary" data-ar2="rest" data-os="' + esc(os) + '">Restaurar</button>' : '<button type="button" class="secondary" data-ar2="arch" data-os="' + esc(os) + '">Archivar</button>');
-      return '<tr data-os="' + esc(os) + '"><th class="ar2-sticky">' + esc(os) + badge + '</th>' + celdas + '<td class="ar2-acc">' + acc + '</td></tr>';
+      var nota = norm(os) === 'particular' ? '<span class="ar2-badge" title="Para Particular, el formulario de nueva atención propone este arancel como importe a cobrar (comportamiento existente de Caja).">precarga Caja</span>' : '';
+      return '<tr data-os="' + esc(os) + '"><th class="ar2-sticky">' + esc(os) + badge + nota + '</th>' + celdas + '<td class="ar2-acc">' + acc + '</td></tr>';
     }).join('') || '<tr><td colspan="' + (cols.length + 2) + '" class="muted" style="padding:14px">No hay convenios para mostrar con este filtro.</td></tr>';
     // texto original de cada celda (para detectar «volvió a su valor»)
     Array.prototype.forEach.call(document.querySelectorAll('#ar2Body .ar2-cel'), function (inp) {
@@ -241,10 +244,10 @@
     var plan = C.planificar(cfg(), S.pid, cambios, S.vig), r = plan.resumen;
     if (!(r.nuevo + r.actualiza)) { aviso('', 'No hay cambios para guardar: ' + (r.igual ? r.igual + ' celda(s) ya tenían ese valor. ' : '') + (r.vacio ? r.vacio + ' vacía(s) no modifican nada.' : '')); S.sucios = {}; render(); return; }
     var p = profDe(S.pid);
-    var txt = 'Guardar ' + (S.modo === 'copago' ? 'COPAGOS INFORMATIVOS' : 'ARANCELES') + ' de ' + (p ? p.nombre : S.pid) + ' con vigencia desde ' + fmtFecha(S.vig) + ':\n' +
+    var txt = 'Guardar ' + (S.modo === 'copago' ? 'COPAGOS DEL ARANCEL (precargan el formulario de nuevas atenciones)' : 'ARANCELES') + ' de ' + (p ? p.nombre : S.pid) + ' con vigencia desde ' + fmtFecha(S.vig) + ':\n' +
       '· ' + r.nuevo + ' valor(es) nuevo(s)\n· ' + r.actualiza + ' corrección(es) de una fila de la misma vigencia (queda historial)\n' +
       (r.igual ? '· ' + r.igual + ' sin cambios\n' : '') + (r.vacio ? '· ' + r.vacio + ' vacía(s): no se modifican\n' : '') +
-      '\nLas atenciones ya registradas conservan su arancel.';
+      '\nLas atenciones ya registradas conservan su arancel.' + (S.modo === 'copago' ? '\nATENCIÓN: en nuevas atenciones de esta cobertura y prestación el formulario propondrá este copago en lugar del de «Valores del profesional».' : '');
     if (!window.confirm(txt)) return;
     var res = C.aplicar(cfg(), S.pid, cambios, S.vig, { por: usuario() });
     var ok = null;
@@ -289,6 +292,29 @@
     S.buscar = n; render(); aviso(ok === false ? 'err' : 'ok', 'Convenio «' + n + '» agregado al catálogo. Falta habilitarlo y definir sus reglas en el editor de convenios, si corresponde.');
   }
 
+  /* ---- configurar un convenio igual que otro (p. ej. Sancor Salud igual que Sancor) ---- */
+  function configuradosDe(pid) { var d = cfg(), arr = ((d && d.conveniosPorProfesional) || {})[pid]; return Array.isArray(arr) ? arr.filter(function (c) { return c && c.activo !== false; }) : []; }
+  function abrirIgual(os) {
+    var p = profDe(S.pid), lista = configuradosDe(S.pid);
+    if (!lista.length) { window.alert('Este profesional no tiene convenios configurados para copiar.'); return; }
+    var opts = lista.map(function (c) { return '<option value="' + esc(c.obraSocial) + '">' + esc(c.obraSocial) + ' — ' + esc(c.regla || 'SIN_REGLA') + ' · consulta: ' + esc(c.facturadorConsulta || '—') + ' · estudios: ' + esc(c.facturadorEstudio || '—') + '</option>'; }).join('');
+    abrirModal('<h3>Configurar «' + esc(os) + '» igual que otro convenio</h3>' +
+      '<p class="muted">Profesional: <strong>' + esc(p ? p.nombre : S.pid) + '</strong>. Se copian la regla, los destinos y facturantes de consulta y estudio, bonos, firma, copia y «Factura Rogelio». Después todo sigue editable en «Convenios y aranceles por profesional» (por ejemplo, si cambia quién factura). No se tocan atenciones ni aranceles ya cargados.</p>' +
+      '<div class="ar2-row"><label>Copiar la configuración de<select id="ar2IgualOrigen">' + opts + '</select></label></div>' +
+      '<div class="ar2-row"><button class="primary" type="button" data-ar2="igualOk" data-os="' + esc(os) + '">Copiar configuración</button><button class="secondary" type="button" data-ar2="cerrar">Cancelar</button></div>');
+  }
+  async function aplicarIgual(os) {
+    if (typeof exigirConfigComercial === 'function' && !exigirConfigComercial('Tu perfil no puede modificar convenios.')) return;
+    var origen = $('ar2IgualOrigen') && $('ar2IgualOrigen').value, p = profDe(S.pid);
+    if (!origen) return;
+    if (!window.confirm('¿Configurar «' + os + '» para ' + (p ? p.nombre : S.pid) + ' igual que «' + origen + '»?\nNo se modifican atenciones ni aranceles; los históricos conservan sus datos.')) return;
+    var r = C.copiarConfiguracionConvenio(cfg(), S.pid, origen, os);
+    if (!r.ok) { window.alert(r.error); return; }
+    var ok = null; try { ok = await persistirConfigVisibleV1('La configuración del convenio'); } catch (e) { ok = false; }
+    try { if (typeof programarSyncSupabase === 'function') programarSyncSupabase(); } catch (e) { /* sin efecto */ }
+    cerrarModal(); render(); aviso(ok === false ? 'err' : 'ok', '«' + os + '» quedó configurado igual que «' + origen + '» (regla ' + r.regla + ')' + (ok === false ? '. Sólo en este equipo: el servidor no lo confirmó.' : '. Editable desde Configuración.'));
+  }
+
   /* ---- ventanas: historial e importación ---- */
   function cerrarModal() { var m = $('ar2Modal'); if (m) m.remove(); }
   function abrirModal(html) { cerrarModal(); var m = document.createElement('div'); m.id = 'ar2Modal'; m.innerHTML = '<div class="ar2-box">' + html + '</div>'; document.body.appendChild(m); m.addEventListener('click', function (e) { if (e.target === m) cerrarModal(); }); return m; }
@@ -299,12 +325,12 @@
     var series = {}; h.forEach(function (x) { series[x.prestacion] = 1; });
     var filas = h.map(function (x) {
       var est = x.archivado ? 'Archivado' : (x.activa ? (vigentes[x.id] ? 'Vigente a ' + fmtFecha(S.vig) : 'Anterior / posterior') : 'Desactivada (legado)');
-      return '<tr><td>' + esc(x.prestacion) + '</td><td>' + fmtFecha(x.vigenteDesde) + '</td><td>' + (x.valor === null ? '<span class="g">sin informar</span>' : '$ ' + fmtNum(x.valor)) + '</td><td>' + (x.copago === null || !Number.isFinite(x.copago) ? '<span class="g">—</span>' : '$ ' + fmtNum(x.copago)) + '</td><td>' + est + '</td><td>' + (x.correcciones ? x.correcciones + ' corrección(es)' : '') + '</td><td class="g">' + esc(x.origen) + '</td></tr>';
+      return '<tr><td>' + esc(x.prestacion) + '</td><td>' + fmtFecha(x.vigenteDesde) + '</td><td>' + (x.valor === null ? '<span class="g">sin informar</span>' : '$ ' + fmtNum(x.valor)) + '</td><td>' + (x.copago === null || !Number.isFinite(x.copago) ? '<span class="g">—</span>' : '$ ' + fmtNum(x.copago)) + '</td><td>' + est + '</td><td>' + (x.correcciones ? x.correcciones + ' corrección(es)' : '') + '</td><td class="g">' + esc(x.origen) + (x.referencia ? ' · ' + esc(x.referencia) : '') + '</td></tr>';
     }).join('') || '<tr><td colspan="7" class="g">Este convenio no tiene valores cargados para este profesional.</td></tr>';
     var arch = Object.keys(series).filter(function (n) { var v = C.vigente(d, S.pid, os, n, S.vig); return v.estado === 'valor' || v.estado === 'sin_informar'; })
       .map(function (n) { return '<button type="button" class="secondary" data-ar2="archSerie" data-os="' + esc(os) + '" data-prest="' + esc(n) + '">Archivar «' + esc(n) + '» desde ' + fmtFecha(S.vig) + '</button>'; }).join(' ');
     abrirModal('<h3>Historial de valores · ' + esc(os) + '</h3><p class="muted">' + esc(p ? p.nombre : S.pid) + '. Las filas no se borran. Archivar una prestación desde una fecha no altera lo anterior ni reactiva valores viejos.</p>' +
-      '<table><thead><tr><th>Prestación</th><th>Vigente desde</th><th>Arancel</th><th>Copago informativo</th><th>Estado</th><th>Historial</th><th>Origen</th></tr></thead><tbody>' + filas + '</tbody></table>' +
+      '<table><thead><tr><th>Prestación</th><th>Vigente desde</th><th>Arancel</th><th>Copago del arancel</th><th>Estado</th><th>Historial</th><th>Origen</th></tr></thead><tbody>' + filas + '</tbody></table>' +
       (arch ? '<div class="ar2-row">' + arch + '</div>' : '') + '<div class="ar2-row"><button type="button" class="primary" data-ar2="cerrar">Cerrar</button></div>');
   }
   async function archivarSerie(os, prest) {
@@ -325,7 +351,7 @@
       '<p class="muted">Profesional: <strong>' + esc(p ? p.nombre : S.pid) + '</strong>. Pegá la tabla desde Excel o cargá un CSV. Dos formatos: <strong>matriz</strong> (primera fila = prestaciones, primera columna = convenios) o <strong>lista</strong> (columnas: convenio, prestación, valor; opcionales: copago, vigencia, profesional). Admite importes como «$ 35.000,50».</p>' +
       '<div class="ar2-row"><label>Archivo CSV<input type="file" id="ar2Archivo" accept=".csv,.tsv,.txt,text/csv,text/plain"></label>' +
       '<label>Vigencia por defecto<input type="date" id="ar2ImpVig" value="' + esc(S.vig) + '"></label>' +
-      '<label>En formato matriz, importar como<select id="ar2ImpModo"><option value="valor">Arancel de convenio</option><option value="copago">Copago informativo</option></select></label>' +
+      '<label>En formato matriz, importar como<select id="ar2ImpModo"><option value="valor">Arancel de convenio</option><option value="copago">Copago del arancel (precarga en nueva atención)</option></select></label>' +
       '<label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="ar2ImpNuevos"> Crear convenios que no estén en el catálogo</label></div>' +
       '<textarea id="ar2ImpTxt" placeholder="Convenio&#9;Consulta&#9;Holter&#10;IOMA&#9;$ 35.000&#9;60.000"></textarea>' +
       '<div class="ar2-row"><button class="secondary" type="button" data-ar2="impPrev">Vista previa</button><button class="primary" type="button" id="ar2ImpOk" data-ar2="impOk" disabled>Confirmar importación</button><button class="secondary" type="button" data-ar2="cerrar">Cancelar</button></div>' +
@@ -411,6 +437,8 @@
     else if (a === 'arch') cambiarConvenio(b.dataset.os, false);
     else if (a === 'rest') cambiarConvenio(b.dataset.os, true);
     else if (a === 'archSerie') archivarSerie(b.dataset.os, b.dataset.prest);
+    else if (a === 'igual') abrirIgual(b.dataset.os);
+    else if (a === 'igualOk') aplicarIgual(b.dataset.os);
     else if (a === 'cerrar') cerrarModal();
     else if (a === 'impPrev') vistaPrevia();
     else if (a === 'impOk') confirmarImportacion();

@@ -9,7 +9,8 @@
      · historial: [...]     → correcciones de la misma fila (misma vigencia), con fecha y valores previos
    Identidad de una fila: profesional + convenio + prestación + vigencia (sin duplicados; reimportar
    el mismo archivo no crea nada). Los vacíos NUNCA sobrescriben un valor existente.
-   El copago de esta fila es INFORMATIVO: no alimenta a Caja (Caja usa copagoDePrestacion).
+   El copago de esta fila NO es informativo: el formulario de nueva atención (Finanzas 411F, applyConfiguredPatientChargef) lo propone en lugar del
+   copago de «Valores del profesional» cuando es > 0. Las atenciones ya registradas no cambian. La importación masiva sólo escribe el arancel.
    ===================================================================== */
 (function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory();
@@ -23,6 +24,11 @@
   function norm(s) {
     return String(s == null ? '' : s).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
   }
+  // Equivalencias de denominación: ECG = Electrocardiograma; ECO es sólo la abreviatura de la planilla de origen (Ecocardiograma Doppler).
+  var CANON = { 'ecg': 'electrocardiograma', 'eco': 'ecocardiograma doppler' };
+  var BONITO = { 'electrocardiograma': 'Electrocardiograma', 'ecocardiograma doppler': 'Ecocardiograma Doppler' };
+  function canonPrest(s) { var k = norm(s); return CANON[k] || k; }
+  function nombrePrest(s) { var c = canonPrest(s); return BONITO[c] || String(s == null ? '' : s).trim(); }   // nombre que se muestra y se guarda en filas nuevas
   function esFecha(s) {
     if (!/^\d{4}-\d{2}-\d{2}$/.test(String(s || ''))) return false;
     var d = new Date(s + 'T12:00:00Z');
@@ -87,7 +93,7 @@
     return m && Array.isArray(m[pid]) ? m[pid] : [];
   }
   function filaActiva(f) { return f && f.activo !== false; }
-  function mismaSerie(f, os, prest) { return norm(f.obraSocial) === norm(os) && norm(f.prestacion) === norm(prest); }
+  function mismaSerie(f, os, prest) { return norm(f.obraSocial) === norm(os) && canonPrest(f.prestacion) === canonPrest(prest); }
   function valorNum(f) { return f && f.valor !== null && f.valor !== undefined && f.valor !== '' && Number.isFinite(Number(f.valor)) ? Number(f.valor) : null; }
 
   // Fila vigente a una fecha. Desempate: gana la más reciente por vigencia y, a igual vigencia, la última de la lista.
@@ -144,6 +150,7 @@
       if (h.length > MAX_HISTORIAL) h.splice(0, h.length - MAX_HISTORIAL);
       if (op.campo === 'valor') f.valor = op.despues; else f.copago = op.despues;
       if (op.reactiva) delete f.archivado;
+      if (cambio && cambio.referencia && !f.referenciaOrigen) f.referenciaOrigen = cambio.referencia;
       f.actualizadoEn = ahora;
       return f;
     }
@@ -155,6 +162,7 @@
         copago: op.campo === 'copago' ? op.despues : (b && b.copago !== undefined && b.copago !== null && Number.isFinite(Number(b.copago)) ? Number(b.copago) : null),
         vigenteDesde: vig, activo: true, origen: meta.origen || 'grilla', creadoEn: ahora
       };
+      if (cambio && cambio.referencia) fila.referenciaOrigen = cambio.referencia;
       lista.push(fila);
       return fila;
     }
@@ -216,7 +224,7 @@
   function historial(config, pid, os) {
     return listaDe(config, pid).filter(function (f) { return norm(f.obraSocial) === norm(os); })
       .map(function (f) {
-        return { id: f.id, prestacion: f.prestacion, vigenteDesde: f.vigenteDesde || '', valor: valorNum(f), copago: f.copago === undefined || f.copago === null ? null : Number(f.copago), archivado: !!f.archivado, activa: filaActiva(f), correcciones: Array.isArray(f.historial) ? f.historial.length : 0, origen: f.origen || 'legado' };
+        return { id: f.id, prestacion: f.prestacion, vigenteDesde: f.vigenteDesde || '', valor: valorNum(f), copago: f.copago === undefined || f.copago === null ? null : Number(f.copago), archivado: !!f.archivado, activa: filaActiva(f), correcciones: Array.isArray(f.historial) ? f.historial.length : 0, origen: f.origen || 'legado', referencia: f.referenciaOrigen || '' };
       })
       .sort(function (a, b) { return norm(a.prestacion).localeCompare(norm(b.prestacion)) || String(b.vigenteDesde).localeCompare(String(a.vigenteDesde)); });
   }
@@ -228,7 +236,8 @@
     valor: ['valor', 'arancel', 'monto', 'importe', 'precio'],
     copago: ['copago'],
     vigencia: ['vigencia', 'vigente desde', 'desde', 'fecha'],
-    profesional: ['profesional', 'medico']
+    profesional: ['profesional', 'medico'],
+    referencia: ['referencia', 'fuente', 'nota']
   };
   function colDe(header, clave) {
     for (var i = 0; i < header.length; i++) if (ALIAS[clave].indexOf(norm(header[i])) >= 0) return i;
@@ -241,17 +250,17 @@
     var res = { ok: true, error: '', formato: '', filas: [], nuevasCoberturas: [], resumen: { nuevo: 0, actualiza: 0, igual: 0, vacio: 0, error: 0 } };
     if (tabla.length < 2) { res.ok = false; res.error = 'No hay datos para importar (se necesita encabezado y al menos una fila).'; return res; }
     var header = tabla[0];
-    var catPrest = {}; (op.prestaciones || []).forEach(function (p) { if (!catPrest[norm(p)]) catPrest[norm(p)] = p; });
+    var catPrest = {}; (op.prestaciones || []).forEach(function (p) { var k = canonPrest(p); if (!catPrest[k]) catPrest[k] = nombrePrest(p); });
     var catCob = {}; (op.coberturas || []).forEach(function (c) { if (!catCob[norm(c)]) catCob[norm(c)] = c; });
     var profs = op.profesionales || [];
     var celdas = [];   // {linea, pid, os, prest, campo, texto, vigTxt, error}
     var iConv = colDe(header, 'convenio'), iPrest = colDe(header, 'prestacion'), iVal = colDe(header, 'valor'), iCop = colDe(header, 'copago');
-    var iVig = colDe(header, 'vigencia'), iProf = colDe(header, 'profesional');
+    var iVig = colDe(header, 'vigencia'), iProf = colDe(header, 'profesional'), iRef = colDe(header, 'referencia');
     var largo = iConv >= 0 && iPrest >= 0 && (iVal >= 0 || iCop >= 0);
     if (largo) {
       res.formato = 'lista (convenio, prestación, valor…)';
       tabla.slice(1).forEach(function (f, k) {
-        var base = { linea: k + 2, os: f[iConv], prest: f[iPrest], vigTxt: iVig >= 0 ? f[iVig] : '', profTxt: iProf >= 0 ? f[iProf] : '' };
+        var base = { linea: k + 2, os: f[iConv], prest: f[iPrest], vigTxt: iVig >= 0 ? f[iVig] : '', profTxt: iProf >= 0 ? f[iProf] : '', refTxt: iRef >= 0 ? f[iRef] : '' };
         if (iVal >= 0) celdas.push(Object.assign({ campo: 'valor', texto: f[iVal] }, base));
         if (iCop >= 0) celdas.push(Object.assign({ campo: 'copago', texto: f[iCop], gemela: iVal >= 0 }, base));
       });
@@ -289,12 +298,12 @@
         if (!op.crearCoberturas) { falla(it, c, 'convenio inexistente en el catálogo'); return; }
         os = String(c.os).trim(); catCob[norm(os)] = os; res.nuevasCoberturas.push(os); it.nuevaCobertura = true;
       } else if (res.nuevasCoberturas.indexOf(os) >= 0) it.nuevaCobertura = true;
-      var prest = catPrest[norm(c.prest)];
+      var prest = catPrest[canonPrest(c.prest)];
       if (!prest) { falla(it, c, 'prestación inexistente en el catálogo («' + c.prest + '»)'); return; }
       it.os = os; it.prest = prest;
       var m = parsearMonto(c.texto);
       if (!m.ok) { it.accion = 'error'; it.motivo = m.error; res.filas.push(it); return; }
-      var clave = [pid, norm(os), norm(prest), c.campo, vig].join('|');
+      var clave = [pid, norm(os), canonPrest(prest), c.campo, vig].join('|');
       if (!m.vacio && Object.prototype.hasOwnProperty.call(vistos, clave)) {
         if (vistos[clave] === m.valor) { it.accion = 'igual'; it.motivo = 'repetida en el archivo'; it.despues = m.valor; res.filas.push(it); return; }
         it.accion = 'error'; it.motivo = 'conflicto: la misma combinación aparece con otro importe'; res.filas.push(it); return;
@@ -302,7 +311,7 @@
       if (!m.vacio) vistos[clave] = m.valor;
       var sim = simPorProf[pid];
       if (!sim) { sim = simPorProf[pid] = { arancelesPorProfesional: {} }; sim.arancelesPorProfesional[pid] = clonar(listaDe(config, pid)); }
-      var cambio = { os: os, prest: prest, campo: c.campo, valor: m.valor, vacio: m.vacio };
+      var cambio = { os: os, prest: prest, campo: c.campo, valor: m.valor, vacio: m.vacio, referencia: String(c.refTxt || '').trim() };
       var o = decidir(sim, pid, cambio, vig);
       it.accion = o.accion; it.antes = o.antes; it.despues = o.despues; it.motivo = o.motivo || (m.vacio ? 'vacío: no se modifica' : '');
       if (o.accion === 'actualiza' || o.accion === 'nuevo') ejecutar(sim, pid, o, cambio, vig, { origen: 'simulacion' });
@@ -337,7 +346,31 @@
     return r;
   }
 
+  /* ---------------- Configuración de convenio: «igual que…» ---------------- */
+  // Crea la configuración de convenio de un profesional para una cobertura copiando la de otra (regla, destinos, facturantes, bonos, firma, copia, Factura Rogelio).
+  // No hardcodea nada: el origen lo elige el usuario y después todo sigue editable desde Configuración. No toca atenciones ni aranceles.
+  function copiarConfiguracionConvenio(config, pid, origen, destino) {
+    var m = config.conveniosPorProfesional = config.conveniosPorProfesional && typeof config.conveniosPorProfesional === 'object' ? config.conveniosPorProfesional : {};
+    var arr = Array.isArray(m[pid]) ? m[pid] : (m[pid] = []);
+    function buscar(n) { return arr.filter(function (c) { return c && norm(c.obraSocial) === norm(n); })[0] || null; }
+    var src = buscar(origen);
+    if (!src) return { ok: false, error: 'El convenio de origen no tiene configuración para este profesional.' };
+    if (norm(origen) === norm(destino)) return { ok: false, error: 'El origen y el destino son el mismo convenio.' };
+    if (buscar(destino)) return { ok: false, error: 'El convenio de destino ya tiene configuración: se edita desde el editor de convenios (no se reemplaza).' };
+    var copia = clonar(src); copia.obraSocial = String(destino).trim(); copia.activo = true;
+    arr.push(copia);
+    var globalHeredada = false;
+    if (config.reglasOS && typeof config.reglasOS === 'object') {
+      var kOrig = Object.keys(config.reglasOS).filter(function (k) { return norm(k) === norm(origen); })[0];
+      var yaTiene = Object.keys(config.reglasOS).some(function (k) { return norm(k) === norm(destino); });
+      if (kOrig && !yaTiene && typeof config.reglasOS[kOrig] === 'string') { config.reglasOS[String(destino).trim()] = config.reglasOS[kOrig]; globalHeredada = true; }
+    }
+    if (pid === 'matias') config.conveniosFacturacion = clonar(arr);   // espejo de compatibilidad, como el editor de convenios
+    return { ok: true, regla: copia.regla, reglaGlobalHeredada: globalHeredada };
+  }
+
   return {
+    canonPrest: canonPrest, nombrePrest: nombrePrest, copiarConfiguracionConvenio: copiarConfiguracionConvenio,
     norm: norm, esFecha: esFecha, parsearFecha: parsearFecha, parsearMonto: parsearMonto, parsearTabla: parsearTabla,
     vigente: vigente, serie: serie, filaExacta: filaExacta, historial: historial, valorNum: valorNum,
     planificar: planificar, aplicar: aplicar, archivarSerie: archivarSerie,

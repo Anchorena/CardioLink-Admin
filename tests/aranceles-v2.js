@@ -206,6 +206,18 @@ prueba('I8 celdas vacías de una fila/columna inválida no cuentan como errores 
   assert.deepEqual(plan.resumen, { nuevo: 0, actualiza: 0, igual: 0, vacio: 2, error: 1 });
 });
 
+prueba('I9 referencia de origen: columna opcional que se guarda en la fila, no pisa una existente y reimportar no cambia nada', () => {
+  const c = cfg();
+  const txt = 'convenio;prestacion;valor;referencia\nOSDE;Consulta;10;Excel fila 3 «APS Mercedes Benz (William Hope)»\n';
+  const plan = C.planificarImportacion(c, txt, OPC());
+  assert.equal(plan.resumen.nuevo, 1); C.aplicarImportacion(c, plan);
+  assert.equal(filas(c, 'matias')[0].referenciaOrigen, 'Excel fila 3 «APS Mercedes Benz (William Hope)»');
+  assert.equal(C.planificarImportacion(c, txt, OPC()).resumen.igual, 1);
+  C.aplicarImportacion(c, C.planificarImportacion(c, 'convenio;prestacion;valor;referencia\nOSDE;Consulta;11;otra\n', OPC()));
+  assert.equal(filas(c, 'matias')[0].valor, 11); assert.equal(filas(c, 'matias')[0].referenciaOrigen, 'Excel fila 3 «APS Mercedes Benz (William Hope)»', 'no se pisa la referencia original');
+  assert.equal(C.historial(c, 'matias', 'OSDE')[0].referencia, 'Excel fila 3 «APS Mercedes Benz (William Hope)»');
+});
+
 prueba('I6 modo copago en matriz escribe sólo el copago informativo; encabezado irreconocible se informa', () => {
   const c = cfg();
   C.aplicar(c, 'matias', [cambio('IOMA', 'Consulta', 35000)], V0);
@@ -234,7 +246,8 @@ prueba('U1 el módulo se carga después de app.js y de Caja; núcleo antes que l
   const i = s => INDEX.indexOf(s);
   assert.ok(i('cardiolink-aranceles-v2-core.js') > i('cardiolink-cobros-v1.js') && i('cardiolink-aranceles-v2.js') > i('cardiolink-aranceles-v2-core.js'));
   assert.ok(i('cardiolink-aranceles-v2.js') > i('app.js?v='));
-  assert.ok(!/aranceles-v2|CardioLinkArancelesV2/.test(APP), 'app.js no menciona el módulo');
+  assert.equal((APP.match(/CardioLinkArancelesV2/g) || []).length, 3, 'app.js sólo consulta canonPrest en las 3 búsquedas de arancel');
+  assert.equal((APP.match(/typeof cv\.canonPrest==='function'/g) || []).length, 3, 'las 3 consultas están protegidas: sin el módulo, comportamiento anterior');
 });
 
 prueba('U2 snapshots: la edición NO recalcula arancelId/arancelVigencia/valorArancelEstimado salvo cambio explícito de cobertura/prestación/profesional, y nunca con cobro confirmado', () => {
@@ -243,10 +256,10 @@ prueba('U2 snapshots: la edición NO recalcula arancelId/arancelVigencia/valorAr
   assert.match(UI, /obraSocial[\s\S]{0,200}prestacion[\s\S]{0,200}profesionalId/, 'compara cobertura, prestación y profesional');
 });
 
-prueba('U3 Caja y copagos: la interfaz no llama ni redefine copagoDePrestacion, Caja ni Finanzas; el copago de la grilla se rotula informativo', () => {
+prueba('U3 Caja y copagos: la interfaz no llama ni redefine copagoDePrestacion, Caja ni Finanzas; el copago de la grilla se rotula con su efecto real (precarga el formulario de nueva atención)', () => {
   assert.ok(!/copagoDePrestacion\s*=|function\s+copagoDePrestacion|window\.copagoDePrestacion\s*=/.test(UI));
   assert.ok(!/CardioLinkFinanzasV5\s*=|cobroEfectivoAtencion\s*=/.test(UI));
-  assert.match(UI, /informativo/i); assert.match(UI, /Valores del profesional/);
+  assert.match(UI, /Copago del arancel/); assert.match(UI, /Valores del profesional/); assert.match(UI, /precarga|propone|propondrá/i); assert.ok(!/No cambia lo que cobra Caja/.test(UI), 'no debe afirmar que el copago es inocuo para Caja');
 });
 
 prueba('U4 guardado conjunto con permisos comerciales y persistencia verificada (sin SQL, sin fetch propio)', () => {
@@ -286,6 +299,53 @@ prueba('U5 snapshots (comportamiento real, en sandbox): edición común no recal
   const n2 = { id: 'n2', profesionalId: 'matias', __nuevoId: 'ok' }; sb.window.aplicarArancelSnapshot3102Final(n2, false); assert.equal(n2.valorArancelEstimado, 111);
   // 7. idempotente: cargar dos veces el módulo no apila envoltorios
   vm.runInContext(UI, sb); llamadas = 0; a = mk(); sb.atenciones = [a]; sb.__editar = x => { x.prestacion = 'Holter'; }; sb.window.guardarEdicionModal('a1'); assert.equal(llamadas, 1);
+});
+
+prueba('E1 equivalencias: ECG = Electrocardiograma; ECO es sólo abreviatura de Ecocardiograma Doppler; nunca se muestran como prestaciones propias', () => {
+  assert.equal(C.canonPrest('ECG'), C.canonPrest('Electrocardiograma')); assert.equal(C.canonPrest(' eCg '), C.canonPrest('ELECTROCARDIOGRAMA'));
+  assert.equal(C.canonPrest('ECO'), C.canonPrest('Ecocardiograma Doppler')); assert.notEqual(C.canonPrest('Holter'), C.canonPrest('MAPA'));
+  assert.equal(C.nombrePrest('ECG'), 'Electrocardiograma'); assert.equal(C.nombrePrest('ECO'), 'Ecocardiograma Doppler'); assert.equal(C.nombrePrest('Holter'), 'Holter');
+  const c = cfg();   // un arancel histórico cargado como «ECG» se encuentra buscando «Electrocardiograma» y al revés; no se duplica
+  c.arancelesPorProfesional.matias = [{ id: 'h1', profesionalId: 'matias', obraSocial: 'Integral', prestacion: 'ECG', valor: 100, copago: 0, vigenteDesde: '2026-01-01', activo: true }];
+  assert.equal(C.vigente(c, 'matias', 'Integral', 'Electrocardiograma', V0).fila.valor, 100);
+  assert.equal(C.aplicar(c, 'matias', [cambio('Integral', 'Electrocardiograma', 100)], V0).igual, 1, 'mismo valor vigente: nada que agregar');
+  C.aplicar(c, 'matias', [cambio('Integral', 'Electrocardiograma', 150)], '2026-08-01');
+  assert.equal(filas(c, 'matias').length, 2); assert.equal(C.vigente(c, 'matias', 'Integral', 'ECG', '2026-09-01').fila.valor, 150); assert.equal(C.vigente(c, 'matias', 'Integral', 'ECG', '2026-05-01').fila.valor, 100);
+});
+
+prueba('E2 importación: «ECO» y «ECG» del Excel se resuelven a Ecocardiograma Doppler y Electrocardiograma (sin crear prestaciones)', () => {
+  const c = cfg();
+  const plan = C.planificarImportacion(c, 'Convenio;ECO;ECG;Holter\nOSDE;10;5;7\n', OPC({ prestaciones: ['Consulta', 'ECG', 'Electrocardiograma', 'Ecocardiograma Doppler', 'Holter'] }));
+  assert.deepEqual(plan.resumen, { nuevo: 3, actualiza: 0, igual: 0, vacio: 0, error: 0 });
+  C.aplicarImportacion(c, plan);
+  assert.deepEqual(filas(c, 'matias').map(f => f.prestacion).sort(), ['Ecocardiograma Doppler', 'Electrocardiograma', 'Holter']);
+  assert.ok(!filas(c, 'matias').some(f => /^(eco|ecg)$/i.test(f.prestacion)));
+  const sinEco = C.planificarImportacion(cfg(), 'Convenio;ECO\nOSDE;10\n', OPC({ prestaciones: ['Consulta', 'Holter'] }));
+  assert.equal(sinEco.resumen.error, 1, 'si el catálogo no tiene Ecocardiograma Doppler no se inventa una prestación ECO');
+});
+
+prueba('G1 configurar un convenio «igual que» otro (Sancor Salud = Sancor): copia regla, destinos y facturantes; no reemplaza ni toca datos; sin nombres fijos', () => {
+  const c = cfg();
+  c.reglasOS = { Sancor: 'SANCOR_PREVENCION' };
+  c.conveniosPorProfesional = { matias: [{ obraSocial: 'Sancor', activo: true, regla: 'SANCOR_PREVENCION', destinoConsulta: 'Matías', destinoEstudio: 'Rogelio', facturadorConsulta: 'Matías', facturadorEstudio: 'Rogelio', bonoConsulta: true, bonoEstudio: true, firmaRequerida: true, copiaRequerida: true, incluirFacturaRogelio: true }] };
+  const antes = JSON.stringify(c.conveniosPorProfesional.matias[0]);
+  const r = C.copiarConfiguracionConvenio(c, 'matias', 'sancor', 'Sancor Salud');
+  assert.equal(r.ok, true); assert.equal(r.regla, 'SANCOR_PREVENCION'); assert.equal(r.reglaGlobalHeredada, true);
+  const n = c.conveniosPorProfesional.matias.find(x => x.obraSocial === 'Sancor Salud'), o = c.conveniosPorProfesional.matias[0];
+  assert.equal(JSON.stringify(o), antes, 'el origen no cambia');
+  assert.deepEqual(Object.assign({}, n, { obraSocial: 'Sancor' }), o); assert.equal(n.facturadorConsulta, 'Matías'); assert.equal(n.facturadorEstudio, 'Rogelio'); assert.equal(n.incluirFacturaRogelio, true);
+  assert.notEqual(n, o); n.facturadorConsulta = 'Rogelio'; assert.equal(o.facturadorConsulta, 'Matías', 'copia independiente: el facturante se puede cambiar después sin afectar al origen');
+  assert.equal(c.reglasOS['Sancor Salud'], 'SANCOR_PREVENCION'); assert.equal(c.conveniosFacturacion.length, 2, 'espejo de matias');
+  assert.equal(C.copiarConfiguracionConvenio(c, 'matias', 'Sancor', 'Sancor Salud').ok, false, 'no reemplaza una configuración existente');
+  assert.equal(C.copiarConfiguracionConvenio(c, 'matias', 'Inexistente', 'X').ok, false); assert.equal(C.copiarConfiguracionConvenio(c, 'matias', 'Sancor', 'sancor').ok, false);
+  assert.equal(c.arancelesPorProfesional.matias, undefined, 'no toca aranceles');
+  assert.ok(!/Sancor/.test(UI.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')), 'la interfaz no tiene nombres de cobertura fijos');
+});
+
+prueba('R1 reglaOS: la edición común conserva la regla registrada en la atención; sólo se recalcula si cambia cobertura o profesional', () => {
+  assert.match(APP, /const reglaOSPrevia=a\.reglaOS, osPrevia=a\.obraSocial, profPrevio=a\.profesionalId;/);
+  assert.match(APP, /a\.reglaOS=\(reglaOSPrevia&&String\(osPrevia\)===String\(a\.obraSocial\)&&String\(profPrevio\|\|''\)===String\(a\.profesionalId\|\|''\)\)\?reglaOSPrevia:getRegla\(a\.obraSocial,a\.profesionalId\);/);
+  assert.ok(!/\n\s*a\.reglaOS=getRegla\(a\.obraSocial,a\.profesionalId\);/.test(APP), 'ya no se recalcula incondicionalmente');
 });
 
 let falladas = 0;
