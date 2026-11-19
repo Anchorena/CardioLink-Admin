@@ -10,7 +10,7 @@
   if (typeof window === 'undefined' || window.cardiolinkAtencionesR2C) return;
   var F = window.cardiolinkAtencionesMergeV1;
   var MAX_REINTENTOS = 3, ID_PANEL = 'cardiolinkConflictosAtencionesV1', ID_INSIGNIA = 'cardiolinkConflictosAtencionesInsigniaV1';
-  var K_RECHAZOS = 'cardiolink_atenciones_rechazos_v1', K_ELIMINADAS = 'cardiolink_atenciones_eliminadas_remotas_v1';
+  var B_RECHAZOS = 'cardiolink_atenciones_rechazos_v1', B_ELIMINADAS = 'cardiolink_atenciones_eliminadas_remotas_v1';
   var puente = null;
   var retenidas = new Map();      // id → { tipo:'conflicto'|'rechazo'|'eliminada', contenido, conflictos[], remoto:{payload,updated_at}, local, mensaje }
   var colas = new Map();          // id → promesa en curso (una sola operación por atención a la vez)
@@ -20,6 +20,9 @@
   function estable(o) { return puente && puente.estable ? puente.estable(o) : JSON.stringify(o); }
   function ahora() { return new Date().toISOString(); }
   function uid() { try { return String(usuarioSupabase && usuarioSupabase.id || ''); } catch (e) { return ''; } }
+  function kSeg(base) { try { var S = window.cardiolinkSeguridadLocalV1, u = uid(); if (S && u) return S.clave(base, u); } catch (e) { /* clave heredada */ } return base; }
+  function kR() { return kSeg(B_RECHAZOS); }
+  function kE() { return kSeg(B_ELIMINADAS); }
   function leerJSON(k) { try { var v = JSON.parse(localStorage.getItem(k) || '[]'); return Array.isArray(v) ? v : []; } catch (e) { return []; } }
   function escribirJSON(k, v) { try { localStorage.setItem(k, JSON.stringify(v)); return true; } catch (e) { return false; } }
   function esErrorPermiso(e) { return !!e && (e.code === '42501' || /row-level security|permission denied|Rol no autorizado/i.test(String(e.message || ''))); }
@@ -29,19 +32,19 @@
   // ---------- recuperación local de lo rechazado (sólo los campos rechazados; nunca copias completas salvo eliminación remota) ----------
   function guardarRechazos(id, atencion, rechazos) {
     if (!rechazos || !rechazos.length) return;
-    var lista = leerJSON(K_RECHAZOS);
+    var lista = leerJSON(kR());
     rechazos.forEach(function (r) {
       lista.push({ id: String(id), uid: uid(), ts: ahora(), atencion: nombreAtencion(atencion), grupo: r.grupo, campos: r.campos, valores: r.valoresLocales, motivo: r.motivo, visto: false });
     });
-    escribirJSON(K_RECHAZOS, lista.slice(-100));
+    escribirJSON(kR(), lista.slice(-100));
     contadores.rechazos += rechazos.length;
   }
-  function rechazosNoVistos() { var u = uid(); return leerJSON(K_RECHAZOS).filter(function (r) { return r && r.uid === u && !r.visto; }); }
-  function marcarRechazosVistos() { var u = uid(); escribirJSON(K_RECHAZOS, leerJSON(K_RECHAZOS).map(function (r) { if (r && r.uid === u) r.visto = true; return r; })); }
+  function rechazosNoVistos() { var u = uid(); return leerJSON(kR()).filter(function (r) { return r && r.uid === u && !r.visto; }); }
+  function marcarRechazosVistos() { var u = uid(); escribirJSON(kR(), leerJSON(kR()).map(function (r) { if (r && r.uid === u) r.visto = true; return r; })); }
   function persistirEliminadas() {
-    var lista = leerJSON(K_ELIMINADAS).filter(function (x) { return x && x.uid !== uid(); });
+    var lista = leerJSON(kE()).filter(function (x) { return x && x.uid !== uid(); });
     retenidas.forEach(function (v, id) { if (v.tipo === 'eliminada') lista.push({ id: id, uid: uid(), ts: v.ts, local: v.local, base: v.baseCampos }); });
-    escribirJSON(K_ELIMINADAS, lista.slice(-50));
+    escribirJSON(kE(), lista.slice(-50));
   }
 
   // ---------- estado retenido ----------
@@ -224,7 +227,7 @@
   function conectar(p) {
     puente = p;
     var u = uid();
-    leerJSON(K_ELIMINADAS).forEach(function (x) {   // eliminaciones remotas pendientes de decidir que sobrevivieron a una recarga
+    leerJSON(kE()).forEach(function (x) {   // eliminaciones remotas pendientes de decidir que sobrevivieron a una recarga
       if (!x || x.uid !== u || retenidas.has(String(x.id))) return;
       retenidas.set(String(x.id), { tipo: 'eliminada', contenido: estable(x.local), local: x.local, ts: x.ts, conflictos: [{ clave: 'eliminada', tipo: 'eliminacion_vs_modificacion', grupo: 'Atención eliminada en otra sesión', atencionId: String(x.id), campos: ['(atención completa)'], opciones: { local: !!(p.puedeRecrear && p.puedeRecrear()), remoto: true }, localTexto: 'restaurar mi versión (se vuelve a crear)', remotoTexto: 'aceptar la eliminación (mis cambios quedan guardados como respaldo)' }] });
     });
@@ -235,7 +238,7 @@
     conectar: conectar, activo: function () { return !!puente && !!F; }, reconciliarFila: reconciliarFila, manejarErrorFila: manejarErrorFila, retenida: retenida, hayRetenidas: hayRetenidas,
     liberar: liberar, mostrar: mostrar, resolver: resolver, abrirPanel: function () { try { ultimaFirma = ''; mostrar(); var R = window.cardiolinkConfigR2B; if (R && R.panelGenerico) { var d = datosPanel(); cfgPanel.items = d.items; cfgPanel.avisos = d.avisos; R.panelGenerico(cfgPanel); } } catch (e) { /* */ } }, retenidasIds: function () { return Array.from(retenidas.keys()); },
     estado: function () { var o = {}; retenidas.forEach(function (v, id) { o[id] = v.tipo + (v.conflictos ? ':' + v.conflictos.length : ''); }); return { retenidas: o, contadores: Object.assign({}, contadores), rechazosNoVistos: rechazosNoVistos().length }; },
-    _recuperacion: function () { return { rechazos: leerJSON(K_RECHAZOS), eliminadas: leerJSON(K_ELIMINADAS) }; },
+    _recuperacion: function () { return { rechazos: leerJSON(kR()), eliminadas: leerJSON(kE()) }; },
     MAX_REINTENTOS: MAX_REINTENTOS, VERSION: 'r2c-1'
   };
 })();

@@ -298,10 +298,11 @@ function mensajePendienteCompatibleV1(m){
     &&usuarioLoginCorto(m.deUsuario)===login
     &&DESTINO_MENSAJE_VALIDO_V1.test(String(m.destino||'todos'));
 }
-const MENSAJES_NO_ENVIADOS_KEY_V1='cardiolink_mensajes_no_enviados_v1';
+const MENSAJES_NO_ENVIADOS_KEY_V1='cardiolink_mensajes_no_enviados_v1';   // clave GLOBAL heredada (sin dueño verificable): no se atribuye a nadie
+function claveMensajesNoEnviadosV1(){ const uid=usuarioSupabase&&usuarioSupabase.id; return uid?claveSegV1(MENSAJES_NO_ENVIADOS_KEY_V1,uid):MENSAJES_NO_ENVIADOS_KEY_V1; }
 function resguardarMensajesNoReenviadosV1(msgs){
   try{
-    const previos=JSON.parse(localStorage.getItem(MENSAJES_NO_ENVIADOS_KEY_V1)||'[]');
+    const kMsg=claveMensajesNoEnviadosV1(),previos=JSON.parse(localStorage.getItem(kMsg)||'[]');
     const lista=Array.isArray(previos)?previos:[];
     const ya=new Set(lista.map(x=>String(x&&x.id||'')).filter(Boolean));
     msgs.forEach(m=>{
@@ -309,7 +310,7 @@ function resguardarMensajesNoReenviadosV1(msgs){
       lista.push({id:m&&m.id!=null?String(m.id):'',texto:String(m&&m.texto||''),destino:String(m&&m.destino||''),fecha:String(m&&(m.creadoEn||m.fecha)||new Date().toISOString()),
         motivo:'pendiente antiguo con remitente o destino no verificable: no se reenvió'});
     });
-    localStorage.setItem(MENSAJES_NO_ENVIADOS_KEY_V1,JSON.stringify(lista.slice(-50)));
+    localStorage.setItem(kMsg,JSON.stringify(lista.slice(-50)));
     return true;
   }catch(e){ return false; }
 }
@@ -326,7 +327,7 @@ function avisarMensajesNoReenviadosV1(n){
 }
 async function recuperarNuevasPendientesV1(){
   const uid=usuarioSupabase?.id; if(!uid) return;
-  const k=OUTBOX_NUEVAS_KEY_V1+uid; let rows=[];
+  const k=claveSegV1('cardiolink_nuevas_pendientes_v1',uid); let rows=[];
   try{ rows=(JSON.parse(localStorage.getItem(k)||'{}').rows)||[]; }catch(e){ rows=[]; }
   if(!Array.isArray(rows)||!rows.length){ localStorage.removeItem(k); return; }
   // Pendientes incompatibles (ver mensajePendienteCompatibleV1): no se reenvían; se resguardan y salen de la cola de respaldo.
@@ -358,10 +359,12 @@ async function recuperarNuevasPendientesV1(){
 // que el SERVIDOR realmente tiene (PDF archivado con el mismo contenido o copia idéntica en la config remota; estar en memoria no cuenta). Los que
 // no tienen respaldo confirmado se resguardan aparte, bajo el uid de su dueño (nunca los lee otro usuario), hasta que un cierre posterior
 // los encuentre confirmados. Si no se puede consultar al servidor o resguardar, la caché NO se elimina.
-const OUTBOX_DOCS_KEY_V1='cardiolink_docs_pendientes_v1_'; // + uid
+const OUTBOX_DOCS_KEY_V1='cardiolink_docs_pendientes_v1_'; // heredada (+ uid); desde la Seguridad local V1 la clave es cardiolink_docs_pendientes_v1:<proyecto>:<uid>
+// Seguridad local V1: claves por PROYECTO + UID (sin el módulo se usa la clave heredada <base>_<uid>). Separar claves NO es confidencialidad (localStorage no está cifrado).
+function claveSegV1(base,uid){ try{ const S=window.cardiolinkSeguridadLocalV1; if(S&&uid) return S.clave(base,uid); }catch(e){} return base+'_'+uid; }
 const CONFIG_ROW_ID_DOCS_V1='__cardiolink_config_v1';
 function leerOutboxDocsV1(uid){
-  try{ const o=JSON.parse(localStorage.getItem(OUTBOX_DOCS_KEY_V1+uid)||'null'); return Array.isArray(o&&o.docs)?o.docs.filter(d=>d&&d.id!=null):[]; }catch(e){ return []; }
+  try{ const o=JSON.parse(localStorage.getItem(claveSegV1('cardiolink_docs_pendientes_v1',uid))||'null'); return Array.isArray(o&&o.docs)?o.docs.filter(d=>d&&d.id!=null):[]; }catch(e){ return []; }
 }
 function docsLocalesV1(){ return (Array.isArray(data&&data.documentosClinicos)?data.documentosClinicos:[]).filter(d=>d&&d.id!=null); }
 function unirDocsPorIdV1(base,prioritarios){ const m=new Map(); base.forEach(d=>m.set(String(d.id),d)); prioritarios.forEach(d=>m.set(String(d.id),d)); return [...m.values()]; }
@@ -453,7 +456,7 @@ async function documentosSinRespaldoConfirmadoV1(docs){
 async function protegerDocumentosSinRespaldoV1(){
   const uid=usuarioSupabase&&usuarioSupabase.id, locales=docsLocalesV1();
   if(!uid) return locales.length===0;                   // sin uid no hay a quién asociarlos: no se elimina nada
-  const k=OUTBOX_DOCS_KEY_V1+uid, todos=unirDocsPorIdV1(leerOutboxDocsV1(uid),locales);
+  const k=claveSegV1('cardiolink_docs_pendientes_v1',uid), todos=unirDocsPorIdV1(leerOutboxDocsV1(uid),locales);
   if(!todos.length){ try{ localStorage.removeItem(k); }catch(e){} return true; }
   let sin=todos, consultaOk=true;
   try{ sin=await Promise.race([documentosSinRespaldoConfirmadoV1(todos),new Promise((_,rej)=>setTimeout(()=>rej(new Error('tiempo de espera')),8000))]); }
@@ -484,7 +487,7 @@ function apartarDocumentosNoPermitidosV1(){
   if(!(backendRolCargado===true&&!backendEsAdminOwner&&!esMedicoBackendV1()&&backendTieneAccesoTurnos===true)) return 0;
   const fuera=data.documentosClinicos.filter(d=>d&&d.id!=null&&!documentoRestaurableV1(d));
   if(!fuera.length) return 0;
-  try{ localStorage.setItem(OUTBOX_DOCS_KEY_V1+uid,JSON.stringify({docs:unirDocsPorIdV1(leerOutboxDocsV1(uid),fuera),fecha:new Date().toISOString()})); }
+  try{ localStorage.setItem(claveSegV1('cardiolink_docs_pendientes_v1',uid),JSON.stringify({docs:unirDocsPorIdV1(leerOutboxDocsV1(uid),fuera),fecha:new Date().toISOString()})); }
   catch(e){ console.warn('No se pudo asegurar el respaldo de los documentos; no se apartan de la memoria:',e); return 0; }
   const ids=new Set(fuera.map(d=>String(d.id)));
   data.documentosClinicos=data.documentosClinicos.filter(d=>!(d&&d.id!=null&&ids.has(String(d.id))));
@@ -506,7 +509,7 @@ function recuperarDocumentosPendientesV1(){
 function salvarDocumentosDeCacheV1(uid,rawConfig){
   try{
     const docs=((JSON.parse(rawConfig)||{}).documentosClinicos||[]).filter(d=>d&&d.id!=null); if(!docs.length) return;
-    localStorage.setItem(OUTBOX_DOCS_KEY_V1+uid,JSON.stringify({docs:unirDocsPorIdV1(leerOutboxDocsV1(uid),docs),fecha:new Date().toISOString()}));
+    localStorage.setItem(claveSegV1('cardiolink_docs_pendientes_v1',uid),JSON.stringify({docs:unirDocsPorIdV1(leerOutboxDocsV1(uid),docs),fecha:new Date().toISOString()}));
   }catch(e){ console.warn('No se pudieron resguardar los documentos de la caché anterior:',e); }
 }
 function clavesCacheLocalV1(){ return [storageConfig,storageAtenciones,storageValoresColocacion,'cl_last_sync_382']; }
@@ -530,8 +533,9 @@ function aislarCacheLocalPorUsuarioV1(uid,privilegiado){
   }catch(e){ console.warn('Aislamiento de caché local no disponible:',e); }
 }
 // Se llama con la sesión todavía válida (antes de signOut). Devuelve true si la caché se eliminó (nada pendiente).
-async function liberarCacheLocalAlCerrarSesionV1(){
+async function liberarCacheLocalAlCerrarSesionV1(auto){
   try{
+    const uidCierre=usuarioSupabase?.id, SLc=window.cardiolinkSeguridadLocalV1;
     if(typeof sincronizarAtencionesSupabase==='function'){
       await Promise.race([sincronizarAtencionesSupabase(false),new Promise(r=>setTimeout(r,8000))]);
     }
@@ -545,14 +549,19 @@ async function liberarCacheLocalAlCerrarSesionV1(){
         const nuevas=typeof window.filasNuevasPendientes298==='function'?window.filasNuevasPendientes298():[];
         const obR2D=window.cardiolinkOutboxR2D; try{ if(obR2D) obR2D.registrar(); }catch(e){}
         const protegidasR2D=!!(obR2D&&obR2D.protegido&&obR2D.protegido());   // R2D: ya quedaron en la cola nueva (por proyecto y uid): no se duplican en la heredada
-        if(nuevas.length&&usuarioSupabase?.id&&!protegidasR2D) localStorage.setItem(OUTBOX_NUEVAS_KEY_V1+usuarioSupabase.id,JSON.stringify({rows:nuevas,fecha:new Date().toISOString()}));
+        if(nuevas.length&&usuarioSupabase?.id&&!protegidasR2D) localStorage.setItem(claveSegV1('cardiolink_nuevas_pendientes_v1',usuarioSupabase.id),JSON.stringify({rows:nuevas,fecha:new Date().toISOString()}));
       }catch(e){ console.warn('No se pudo respaldar las filas nuevas pendientes:',e); }
+      try{   // Seguridad local V1: se declara lo que queda en este equipo (la pantalla de ingreso lo muestra); el cierre automático conserva pero nunca descarta
+        const ob2=window.cardiolinkOutboxR2D, n2=ob2&&ob2.resumen?ob2.resumen().length:0;
+        if(SLc&&uidCierre) SLc.registrarCierre(uidCierre,{pendientes:Math.max(n2,1),protegido:!!(ob2&&ob2.protegido&&ob2.protegido()),auto:!!auto});
+      }catch(e){}
       return false;
     }
     // Hay documentos clínicos cuyo respaldo no se pudo confirmar (o resguardar): la caché se conserva, asociada a su dueño.
-    if(!docsSeguros) return false;
+    if(!docsSeguros){ try{ if(SLc&&uidCierre) SLc.registrarCierre(uidCierre,{pendientes:1,protegido:false,auto:!!auto}); }catch(e){} return false; }
     clavesCacheLocalV1().forEach(k=>localStorage.removeItem(k));
     localStorage.removeItem(CACHE_OWNER_KEY_V1);
+    try{ if(SLc&&uidCierre){ SLc.registrarCierre(uidCierre,{pendientes:0,protegido:true,auto:!!auto}); if(SLc.equipoCompartido()) SLc.purgarSincronizadas(uidCierre); } }catch(e){}   // todo confirmado: se purgan las copias ya sincronizadas
     return true;
   }catch(e){ console.warn('No se pudo liberar la caché local al cerrar sesión:',e); return false; }
 }
@@ -739,6 +748,7 @@ async function cargarPermisoBackendRolesIntentoV1(ultimoIntento){
     if(pendientesIdentidad.error&&!ultimoIntento&&esErrorTransitorioRolV1(pendientesIdentidad.error)) throw pendientesIdentidad.error;
     if(pendientesIdentidad.error) console.warn('No se pudo confirmar la identidad de Pendientes (cardiolink_identidad_pendientes_v1):',pendientesIdentidad.error);
     backendPendientesIdentidadV1=pendientesIdentidad.error?null:(pendientesIdentidad.data||null);
+    try{ const rSL=await window.cardiolinkSeguridadLocalV1?.alIniciarSesion(usuarioSupabase?.id); }catch(e){ console.warn('Seguridad local:',e); }   // abre lo sellado con ESTA contraseña y migra SÓLO lo verificable del uid
     aislarCacheLocalPorUsuarioV1(usuarioSupabase?.id, adminOwner.data===true||appointmentRequests.data===true);
     await cargarMensajeriaYConfigMedicoV1();
     backendEsAdminOwner=adminOwner.data===true;
@@ -755,6 +765,7 @@ async function cargarPermisoBackendRolesIntentoV1(ultimoIntento){
     // determinarlo (no rompe el modo local sin Supabase, que no entra acá).
     console.warn('No se pudo confirmar el rol backend (cardiolink_user_roles):',e);
     backendRolCargado=false;backendEsAdminOwner=false;backendTieneAccesoTurnos=false;backendPendientesIdentidadV1=null;backendMensajeriaV1=null;directorioMensajesV1=null;
+    try{ const rSL2=await window.cardiolinkSeguridadLocalV1?.alIniciarSesion(usuarioSupabase?.id); if(rSL2&&rSL2.sellados&&rSL2.sellados.restauradas>0){ data=loadConfig(); atenciones=loadAtenciones(); } }catch(e2){ console.warn('Seguridad local:',e2); }
     aislarCacheLocalPorUsuarioV1(usuarioSupabase?.id,false);
     return false;
   }
@@ -1188,6 +1199,7 @@ function mostrarPantallaLogin() {
       }
 
       usuarioSupabase = data.user;
+      try { await window.cardiolinkSeguridadLocalV1?.recordarPassword(password); } catch (e) { /* sin sellado en esta sesión */ }   // sólo la clave derivada, en memoria; la contraseña no se guarda
 
       overlay.remove();
       const loginStyle = document.getElementById("loginStyle");
@@ -1219,11 +1231,40 @@ function iniciarControlInactividad() {
   reiniciarTemporizadorInactividad();
 }
 
+// Seguridad local V1: sesión BLOQUEADA por inactividad (hay cambios sin sincronizar y no se pudieron sellar). Pide la contraseña; mientras tanto reintenta sincronizar y, al lograrlo, cierra solo.
+function bloquearPorInactividadV1() {
+  const SL = window.cardiolinkSeguridadLocalV1; if (!SL) return;
+  SL.bloquearSesion(() => { reiniciarTemporizadorInactividad(); });
+  const t = setInterval(async () => {
+    if (!SL.bloqueada()) { clearInterval(t); return; }
+    try { await sincronizarAtencionesSupabase(false); } catch (e) { /* sin red */ }
+    const ob = window.cardiolinkOutboxR2D; try { ob && ob.registrar(); } catch (e) { /* */ }
+    const pend = ob && ob.resumen ? ob.resumen().length : (typeof window.hayPendientesSync298 === 'function' && window.hayPendientesSync298() ? 1 : 0);
+    if (pend === 0) { clearInterval(t); SL.desbloquear(); cerrarPorInactividad(); }
+  }, 20000);
+}
+// Seguridad local V1: el cierre debe CERRAR de verdad aunque no haya conexión (signOut global falla sin red y dejaba el token: al recargar la sesión se reanudaba con los datos ya retirados).
+async function signOutLocalGarantizadoV1() {
+  try { await supabaseClient.auth.signOut({ scope: 'local' }); } catch (e) { /* sin sesión */ }
+  try { Object.keys(localStorage).filter(k => /^sb-.*-auth-token/.test(k)).forEach(k => localStorage.removeItem(k)); } catch (e) { /* sin almacenamiento */ }
+}
 async function cerrarPorInactividad() {
   try {
     if (window.cardioLinkRefreshInterval) clearInterval(window.cardioLinkRefreshInterval);
-    await liberarCacheLocalAlCerrarSesionV1();
+    const limpia = await liberarCacheLocalAlCerrarSesionV1(true);
+    const SL = window.cardiolinkSeguridadLocalV1, uidAuto = usuarioSupabase?.id, extraAuto = [...clavesCacheLocalV1(), CACHE_OWNER_KEY_V1];
+    let selladoAuto = false;
+    if (!limpia && SL && SL.equipoCompartido()) {
+      // Equipo compartido: con cambios sin sincronizar NUNCA se cierra dejando datos clínicos legibles. Se sellan con la clave de la sesión; sin ella (sesión reanudada sin contraseña) o si falla, se BLOQUEA la sesión.
+      const sel = await SL.sellarConSesion(extraAuto);
+      if (!sel.ok) { bloquearPorInactividadV1(); return; }
+      window.__cardiolinkDescarteCierre = true; selladoAuto = true;
+      try { SL.registrarCierre(uidAuto, { pendientes: Math.max((window.cardiolinkOutboxR2D?.resumen?.().length) || 0, 1), protegido: true, sellado: true, auto: true }); } catch (e) { /* */ }
+    }
     if (supabaseClient) await supabaseClient.auth.signOut();
+    if (supabaseClient) await signOutLocalGarantizadoV1();
+    if (selladoAuto) { try { SL.purgarClaves(uidAuto, extraAuto); } catch (e) { /* */ } }
+    try { SL?.olvidarMaterial(); } catch (e) { /* */ }
   } catch (error) {
     console.error('Error cerrando sesión por inactividad:', error);
   }
@@ -1239,18 +1280,46 @@ async function cerrarPorInactividad() {
 
 async function cerrarSesionSupabase() {
   if (!supabaseClient) return;
-  // R2D: con cambios sin sincronizar se avisa antes de cerrar (equipo compartido): quedan en este equipo para este usuario hasta que vuelva a entrar.
+  // R2D + Seguridad local V1: con cambios sin sincronizar el usuario DECIDE (nada se descarta solo ni se pierde en silencio). En «Equipo compartido» (por defecto) hay tres salidas explícitas:
+  // reintentar sincronizar, cerrar conservando (sin cifrar, y se dice), o descartar con confirmación (sólo este usuario). Lo conservado NO está protegido por el UID: localStorage no se cifra.
+  let descartoTodo=false, selladoOk=false;
   try{
-    const ob=window.cardiolinkOutboxR2D;
+    const ob=window.cardiolinkOutboxR2D, SL=window.cardiolinkSeguridadLocalV1;
     if(ob&&typeof ob.resumen==='function'){
-      try{ await Promise.race([sincronizarAtencionesSupabase(false),new Promise(r=>setTimeout(r,6000))]); }catch(e){}
-      ob.registrar(); const n=ob.resumen().length, sinP=ob.sinProteccion?ob.sinProteccion():0;
-      if(n>0&&!window.confirm((sinP>0?'ATENCIÓN: '+sinP+' de esos cambios NO están protegidos en este equipo (almacenamiento lleno o no disponible) y SE PERDERÁN si cerrás sesión.\n\n':'')+'Hay '+n+' cambio'+(n===1?'':'s')+' sin sincronizar.\n\nSi cerrás sesión quedan guardados en ESTE equipo, sólo para tu usuario, y se recuperan cuando vuelvas a entrar (no se cifran: en un equipo compartido, descartalos antes desde el aviso de cambios pendientes).\n\n¿Cerrar sesión igual?')) return;
+      for(;;){
+        try{ await Promise.race([sincronizarAtencionesSupabase(false),new Promise(r=>setTimeout(r,6000))]); }catch(e){}
+        ob.registrar(); const n=ob.resumen().length, sinP=ob.sinProteccion?ob.sinProteccion():0;
+        if(n===0) break;
+        if(SL&&SL.equipoCompartido()){
+          const r=await SL.elegirCierre({n,sinProteger:sinP});
+          if(r==='reintentar') continue;
+          if(r==='cancelar') return;
+          if(r==='descartar'){
+            window.__cardiolinkDescarteCierre=true;     // la cola y la caché de este usuario se descartan: el cierre de página no las vuelve a escribir
+            SL.descartarTodoUsuario(usuarioSupabase?.id,[...clavesCacheLocalV1(),CACHE_OWNER_KEY_V1]); descartoTodo=true;
+          }
+          if(r==='proteger'){
+            // PROTECCIÓN REAL: se cifra todo lo sensible del usuario con su contraseña (no guardada) y el texto plano se retira sólo tras verificar el paquete.
+            await liberarCacheLocalAlCerrarSesionV1();      // respalda documentos/filas nuevas y registra la cola; conserva la caché porque hay pendientes
+            const sel=await SL.sellarConPassword([...clavesCacheLocalV1(),CACHE_OWNER_KEY_V1]);
+            if(!sel.ok){ if(sel.error!=='cancelado') alert('No se pudo sellar los cambios con tu contraseña ('+sel.error+'). NO se cierra la sesión para no dejar datos clínicos legibles en este equipo: reintentá, sincronizá o descartá.'); continue; }
+            window.__cardiolinkDescarteCierre=true; selladoOk=true;
+            try{ SL.registrarCierre(usuarioSupabase?.id,{pendientes:n,protegido:true,sellado:true}); }catch(e){}
+          }
+          break;
+        }
+        if(!window.confirm((sinP>0?'ATENCIÓN: '+sinP+' de esos cambios NO están protegidos en este equipo (almacenamiento lleno o no disponible) y SE PERDERÁN si cerrás sesión.\n\n':'')+'Hay '+n+' cambio'+(n===1?'':'s')+' sin sincronizar.\n\nSi cerrás sesión quedan guardados en ESTE equipo SIN CIFRAR: otra persona con acceso a este navegador podría leerlos (separarlos por usuario no los protege). Se recuperan cuando vuelvas a entrar.\n\n¿Cerrar sesión igual?')) return;
+        break;
+      }
     }
   }catch(e){ console.warn('R2D:',e); }
 
-  await liberarCacheLocalAlCerrarSesionV1();
+  if(!descartoTodo&&!selladoOk) await liberarCacheLocalAlCerrarSesionV1();
+  const uidSalida=usuarioSupabase?.id;
   await supabaseClient.auth.signOut();
+  await signOutLocalGarantizadoV1();
+  if(descartoTodo||selladoOk){ try{ window.cardiolinkSeguridadLocalV1?.purgarClaves(uidSalida,[...clavesCacheLocalV1(),CACHE_OWNER_KEY_V1]); }catch(e){} }   // ninguna escritura tardía deja texto plano
+  try{ window.cardiolinkSeguridadLocalV1?.olvidarMaterial(); }catch(e){}
   localStorage.removeItem("sb-session");
   // UI Interna V1 (iteración 2) - mismo motivo que cerrarPorInactividad():
   // evitar que el próximo login en esta pestaña herede el paciente activo
@@ -6772,7 +6841,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     const textos=rechazados.map(a=>String(a.texto||'')).filter(Boolean);
     // Respaldo local del texto (últimos 20) para poder recuperarlo aunque el cuadro de mensaje ya tenga otro texto.
     try{
-      const k='cardiolink_mensajes_no_enviados_v1';
+      const k=claveMensajesNoEnviadosV1();
       const previos=JSON.parse(localStorage.getItem(k)||'[]');
       const nuevos=rechazados.map(a=>({texto:String(a.texto||''),destino:String(a.destino||''),fecha:new Date().toISOString()}));
       localStorage.setItem(k,JSON.stringify([...(Array.isArray(previos)?previos:[]),...nuevos].slice(-20)));

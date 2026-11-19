@@ -72,6 +72,7 @@
 
   // ---------- persistencia ----------
   function registrar(opciones) {
+    if (window.__cardiolinkDescarteCierre) return false;   // el usuario descartó explícitamente sus pendientes al cerrar sesión: no se vuelven a escribir
     opciones = opciones || {};
     if (!(opciones.forzar ? (!!puente && !!puente.uid()) : listo())) return false;
     try {

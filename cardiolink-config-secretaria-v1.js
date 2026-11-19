@@ -201,7 +201,12 @@
     try { const d = (typeof document !== 'undefined') ? document.getElementById(ID_AVISO) : null; if (d) d.style.display = 'none'; } catch (e) { /* sin UI */ }
   }
   // Los resguardos están atados al usuario que inició la operación (u), nunca al que esté activo cuando se resuelva: un cambio de sesión no los mezcla.
-  function claveDe(tipo, u) { return (tipo === 'pendiente' ? CLAVE_PENDIENTE : CLAVE_CONFLICTO) + (u == null ? uid() : String(u)); }
+  function claveDe(tipo, u) {
+    const base = tipo === 'pendiente' ? CLAVE_PENDIENTE : CLAVE_CONFLICTO, id = (u == null ? uid() : String(u));
+    // Seguridad local V1: clave por PROYECTO + UID (<base>:<proyecto>:<uid>). Sin el módulo (o sin uid) se usa la clave heredada <base>_<uid>. No es confidencialidad (localStorage no está cifrado).
+    try { const S = (typeof window !== 'undefined') ? window.cardiolinkSeguridadLocalV1 : null; if (S && id) return S.clave(base.replace(/_$/, ''), id); } catch (e) { /* clave heredada */ }
+    return base + id;
+  }
   function leerResguardo(tipo, u) {
     try { return JSON.parse(localStorage.getItem(claveDe(tipo, u)) || 'null'); } catch (e) { return null; }
   }

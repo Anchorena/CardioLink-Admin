@@ -898,7 +898,7 @@ function correrFuncion(codigo, nombre, params, args) {
 }
 
 prueba('C14 DOCUMENTOS HEREDADOS: Secretaría no los recibe en la sesión (ni en la memoria ni en la caché de configuración) y el resguardo se conserva intacto', async () => {
-  const codigo = ['documentoRestaurableV1', 'apartarDocumentosNoPermitidosV1', 'recuperarDocumentosPendientesV1', 'leerOutboxDocsV1', 'unirDocsPorIdV1'].map(n => funcionApp(n)).join('\n')
+  const codigo = ['claveSegV1', 'documentoRestaurableV1', 'apartarDocumentosNoPermitidosV1', 'recuperarDocumentosPendientesV1', 'leerOutboxDocsV1', 'unirDocsPorIdV1'].map(n => funcionApp(n)).join('\n')
     + '\n' + APP.match(/const TIPOS_DOC_SECRETARIA_V1=\[[^\]]*\];/)[0] + '\n' + APP.match(/const OUTBOX_DOCS_KEY_V1='[^']*';/)[0];
   const doc = (id, tipo) => ({ id, tipo, titulo: 't' + id, contenido: 'CLINICO-' + id, pacienteId: 'p1' });
   const LEGADOS = [doc('d1', 'receta'), doc('d2', 'ecg'), doc('d3', 'informe')], CONSTANCIA = doc('c1', 'constancia_atencion');   // Bloque 4C-1b: certificado, orden y reposo_laboral YA se restauran (ver más abajo)
@@ -945,7 +945,7 @@ prueba('C14 DOCUMENTOS HEREDADOS: Secretaría no los recibe en la sesión (ni en
   const cierre = APP.slice(APP.indexOf('try{ apartarDocumentosNoPermitidosV1(); }'), APP.indexOf('try{ recuperarDocumentosPendientesV1(); }') + 40);
   assert.ok(cierre.indexOf('apartarDocumentosNoPermitidosV1') < cierre.indexOf('recuperarDocumentosPendientesV1'));
   // el cierre de sesión sigue conservando el resguardo (la protección no se tocó)
-  assert.match(APP, /const k=OUTBOX_DOCS_KEY_V1\+uid, todos=unirDocsPorIdV1\(leerOutboxDocsV1\(uid\),locales\);/);
+  assert.match(APP, /const k=claveSegV1\('cardiolink_docs_pendientes_v1',uid\), todos=unirDocsPorIdV1\(leerOutboxDocsV1\(uid\),locales\);/);
 });
 
 prueba('C15 FLUJOS VISIBLES (Coberturas y valores): obra social, valores, regla, convenio, convenio nuevo y arancel afirman éxito sólo con la confirmación; sin ella avisan y no dicen "guardado"', async () => {
