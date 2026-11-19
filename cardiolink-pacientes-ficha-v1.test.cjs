@@ -196,3 +196,24 @@ test('R3: fechaISODesdeTexto devuelve intacta una fecha ISO (antes «1955-05-05�
   assert.equal(fn('1955-05-05'), '1955-05-05'); assert.equal(fn('1955-5-5'), '1955-05-05'); assert.equal(fn('1955-05-05T10:00:00Z'), '1955-05-05');
   assert.equal(fn('05/05/1975'), '1975-05-05'); assert.equal(fn('5-5-75'), '1975-05-05'); assert.equal(fn(''), ''); assert.equal(fn('sin fecha'), '');
 });
+
+test('INCIDENCIA PRODUCTION (Geraldine): editar un paciente EXISTENTE no cambia su id ni lo quita de la configuración (no hay «baja» ante el servidor); su fila relacional se resuelve por alias', () => {
+  const src = require('fs').readFileSync(require('path').join(__dirname, 'app.js'), 'utf8');
+  const a = src.indexOf('async function guardarPacientePanel('), b = src.indexOf('function nuevaAtencionDesdePaciente(');
+  const f = src.slice(a, b);
+  assert.match(f, /if\(dni&&esNuevoLocal\)\{[\s\S]{0,200}asegurarPacienteSinConflictoDni/, 'la reconciliación por DNI (adopta el id relacional y quita entradas) sólo corre en altas nuevas');
+  assert.ok(!/p\.id=real\.id|data\.pacientes=data\.pacientes\.filter\(x=>x!==p\)[\s\S]{0,40}$/.test(f.slice(0, 0)), 'sin efecto');
+  assert.match(src, /async function idRelacional410\(p\)/); assert.match(src, /alias410\.set\(String\(p\.id\),String\(row\.id\)\)/);
+  assert.match(src, /const idF=await idRelacional410\(p\),baseF=FICHA\.vistaDe\(idF\)/); assert.match(src, /prow\.id=await idRelacional410\(p\)/);
+  const s1 = src.indexOf('async function savePatientEditHC('), s2 = src.indexOf('function copyActionsHtmlHC409(');
+  const save = src.slice(s1, s2); assert.match(save, /idRelacional\?\.\(target\)/); assert.match(save, /FICHA\.guardarEdicion\(\{sb:supabaseClient,id:idRel,/);
+  assert.doesNotMatch(save, /\bp\.id=|target\.id=/, 'el id del paciente nunca se reasigna al guardar');
+});
+
+test('INCIDENCIA PRODUCTION: con dos fichas locales del mismo DNI (id huérfano + id relacional) la copia con el id relacional NO empuja, no marca ni registra divergencias (revertía la edición guardada)', () => {
+  const src = require('fs').readFileSync(require('path').join(__dirname, 'app.js'), 'utf8');
+  const a = src.indexOf('function mergePaciente410('), b = src.indexOf('function mergeResumen410(');
+  const f = src.slice(a, b);
+  assert.match(f, /const dupDuplicado=!!digits410\(row\.dni\)&&String\(p\.id\)===relId&&data\.pacientes\.some\(/);
+  assert.match(f, /!dupDuplicado&&Object\.keys\(rec\.divergencias\)/); assert.match(f, /mismoId&&!dupDuplicado\)empujes410\.push/); assert.match(f, /mismoId&&!dupDuplicado&&!pend&&[\s\S]{0,80}FICHA\.marcarSync/);
+});

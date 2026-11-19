@@ -4861,7 +4861,10 @@ async function guardarPacientePanel(id){
   // una carga anterior) - ahí esNuevoLocal da false y la validación se
   // saltearía igual. Con DNI presente, siempre se verifica/reconcilia
   // ANTES de propagar el id a las atenciones vinculadas.
-  if(dni){
+  // R3 (incidencia de Production): la reconciliación por DNI adopta el id de la fila relacional y, si ya había otro objeto local con ese id, QUITA la entrada original. Eso es correcto para un
+  // alta nueva con id huérfano, pero en un paciente EXISTENTE cambiaba su identidad (id) o lo quitaba de la configuración: Secretaría lo enviaba como baja y el servidor lo rechazaba
+  // (tenía historia clínica asociada), además de desvincular su historia. Un paciente existente conserva SIEMPRE su id; su fila relacional se resuelve por alias (idRelacional410).
+  if(dni&&esNuevoLocal){
     if(typeof window.cardiolinkClinica410?.asegurarPacienteSinConflictoDni!=='function'){
       alert('No se pudo verificar el DNI del paciente contra la base de datos (la app parece estar desactualizada en este navegador). Recargá la página (Ctrl/Cmd+Shift+R) y volvé a intentar.');
       data.pacientes=data.pacientes.filter(x=>x!==p);
@@ -10476,15 +10479,16 @@ function patientInfoTextHC(p,coverage){
     const FICHA=window.cardiolinkFichaV1; let base409=null;
     if(FICHA&&typeof supabaseClient!=='undefined'&&supabaseClient&&typeof usuarioSupabase!=='undefined'&&usuarioSupabase&&p.id&&!String(p.id).startsWith('legacy_')){
       try{
-        const lec=await Promise.race([FICHA.leerFila(supabaseClient,p.id),new Promise(r=>setTimeout(()=>r({timeout:true}),3000))]);
+        const idLec=(await window.cardiolinkClinica410?.idRelacional?.(p))||p.id;
+        const lec=await Promise.race([FICHA.leerFila(supabaseClient,idLec),new Promise(r=>setTimeout(()=>r({timeout:true}),3000))]);
         if(lec&&lec.fila){
-          FICHA.registrarVista(lec.fila);const fr=FICHA.desdeFila(lec.fila),pend=FICHA.listarPendientes().find(x=>x.id===String(p.id));
+          FICHA.registrarVista(lec.fila);const fr=FICHA.desdeFila(lec.fila),pend=FICHA.listarPendientes().find(x=>x.id===String(lec.fila.id));
           const vista={...p};Object.keys(fr).forEach(k=>{if(pend&&pend.cambios[k])return;vista[k]=fr[k]==null?'':fr[k];});
           p=vista;base409=fr;
         }
       }catch(e){console.warn('No se pudo leer la ficha del servidor; se edita la copia local:',e?.message||e);}
     }
-    if(!base409&&FICHA)base409=(p.id&&FICHA.vistaDe(p.id))||FICHA.normalizarApp(p);
+    if(!base409&&FICHA)base409=(p.id&&FICHA.vistaDe((await window.cardiolinkClinica410?.idRelacional?.(p))||p.id))||FICHA.normalizarApp(p);
     document.getElementById('hcPatientEditModal409')?.remove();
     const iso=birthISOHC(p),overlay=document.createElement('div');overlay.id='hcPatientEditModal409';overlay.className='hc-modal-overlay';overlay.dataset.context409=context;
     try{if(base409)overlay.dataset.base409=JSON.stringify(base409);}catch(e){}
@@ -10529,12 +10533,13 @@ function patientInfoTextHC(p,coverage){
     if(btn){btn.disabled=true;btn.textContent='Guardando…';}
     const largoAntes=(data.pacientes||[]).length,target=editablePatientHC(original),creadoAhora=(data.pacientes||[]).length>largoAntes;
     const id=String(target.id);          // el id del paciente NO cambia al modificar el DNI
+    const idRel=FICHA?((await window.cardiolinkClinica410?.idRelacional?.(target))||id):id;   // fila relacional (alias si el id de la ficha difiere)
     let resultado=null;
     if(FICHA&&typeof supabaseClient!=='undefined'&&supabaseClient&&typeof usuarioSupabase!=='undefined'&&usuarioSupabase){
       let base=null;try{base=JSON.parse($hc('hcPatientEditModal409')?.dataset.base409||'null');}catch(e){}
-      if(!base)base=FICHA.vistaDe(id)||FICHA.normalizarApp(original);
+      if(!base)base=FICHA.vistaDe(idRel)||FICHA.normalizarApp(original);
       try{
-        resultado=await FICHA.guardarEdicion({sb:supabaseClient,id,base,nuevo:{...target,...valores,id},creacionPermitida:!FICHA.existiaAntes(id),alMarcar:()=>{try{window.cardiolinkOutboxR2D?.registrar?.();}catch(e){}}});
+        resultado=await FICHA.guardarEdicion({sb:supabaseClient,id:idRel,base,nuevo:{...target,...valores,id:idRel},creacionPermitida:!FICHA.existiaAntes(idRel),alMarcar:()=>{try{window.cardiolinkOutboxR2D?.registrar?.();}catch(e){}}});
       }catch(e){resultado={estado:'error',error:{message:String(e?.message||e)},transitorio:true};}
       if(resultado.estado==='dni_duplicado'){
         if(creadoAhora)data.pacientes.pop();
@@ -10563,7 +10568,7 @@ function patientInfoTextHC(p,coverage){
     if(context==='evolution')refreshEvolutionPatientBannerHC(target,target.coberturaHabitual||'s/d');
     else renderDetailHC(newKey);
     try{renderPacientesPanel?.($hc('pacientesBuscar')?.value||'',false);}catch(e){}
-    if(resultado&&resultado.estado==='confirmada'&&resultado.fila){try{FICHA.marcarSync(id,resultado.fila,target);window.cardiolinkClinica410?.persistirSync?.();}catch(e){}}
+    if(resultado&&resultado.estado==='confirmada'&&resultado.fila){try{FICHA.marcarSync(idRel,resultado.fila,target);window.cardiolinkClinica410?.persistirSync?.();}catch(e){}}
     // Aviso honesto: sólo se habla de éxito con la confirmación del servidor.
     if(resultado&&resultado.estado==='error'){
       alert('La ficha se guardó SOLO en este equipo: el servidor no confirmó el cambio ('+(resultado.error?.message||'sin conexión')+'). Queda pendiente de sincronización y se reintenta; podés verlo en «cambios pendientes».');
@@ -13536,7 +13541,7 @@ function patientInfoTextHC(p,coverage){
       // R3: con una lectura relacional previa (base) sólo se escriben los campos que cambiaron, con fusión de 3 vías y UPDATE condicionado (no se pisa a otra sesión).
       const FICHA=window.cardiolinkFichaV1;
       if(FICHA){
-        const idF=key410(p),baseF=FICHA.vistaDe(idF);
+        const idF=await idRelacional410(p),baseF=FICHA.vistaDe(idF);
         if(baseF){
           const rF=await FICHA.guardarEdicion({sb:supabaseClient,id:idF,base:baseF,nuevo:{...p,id:idF},alMarcar:registrarCola410});
           aplicarResultadoFicha410(p,rF);
@@ -13544,7 +13549,7 @@ function patientInfoTextHC(p,coverage){
           return rF.estado==='confirmada';
         }
       }
-      const prow=pacienteRow410(p);
+      const prow=pacienteRow410(p);prow.id=await idRelacional410(p);   // ficha con alias: se escribe en SU fila relacional (nunca una fila nueva con el mismo DNI)
       const {error:pe}=await supabaseClient.from('cardiolink_pacientes').upsert([prow],{onConflict:'id'});
       if(pe)throw pe;
       return true;
@@ -13769,6 +13774,22 @@ function patientInfoTextHC(p,coverage){
 
   // R3 - empujes y reintentos de la ficha por el camino seguro (diferencias + 3 vías + UPDATE condicionado). Un campo en conflicto adopta el valor del servidor.
   const empujes410=[];
+  // Alias id de la ficha (configuración) → id de su fila en cardiolink_pacientes cuando difieren (p. ej. ids huérfanos o filas del backfill). La identidad del paciente (id de la
+  // configuración, vínculo con atenciones e historia clínica) NO cambia: sólo las operaciones sobre la tabla relacional usan el id relacional.
+  const alias410=new Map();
+  async function idRelacional410(p){
+    const cid=String(p&&p.id||'');if(!cid)return cid;
+    const al=alias410.get(cid);if(al)return al;
+    const F=window.cardiolinkFichaV1;if(F&&F.vistaDe(cid))return cid;
+    if(!listo410())return cid;
+    try{
+      const r=await supabaseClient.from('cardiolink_pacientes').select('id').eq('id',cid).limit(1);
+      if(!r.error&&r.data&&r.data.length)return cid;
+      const dni=digits410(p.dni);
+      if(dni){const q=await supabaseClient.from('cardiolink_pacientes').select('id').eq('dni_normalizado',dni).limit(1);if(!q.error&&q.data&&q.data.length){alias410.set(cid,String(q.data[0].id));return String(q.data[0].id);}}
+    }catch(e){console.warn('No se pudo resolver el id relacional:',e?.message||e);}
+    return cid;
+  }
   // Marcas de sincronización por paciente (sólo huellas, por proyecto y usuario): base verificable para saber si lo local cambió desde la última sincronización.
   let sync410Uid=null;
   function claveSync410(){try{return 'cardiolink_ficha_sync_v1:'+new URL(SUPABASE_URL).hostname.split('.')[0]+':'+usuarioSupabase.id;}catch(e){return null;}}
@@ -13805,7 +13826,7 @@ function patientInfoTextHC(p,coverage){
       const vistos=new Set();
       for(const f of lista){
         if(vistos.has(f.id))continue;vistos.add(f.id);
-        const p=(data.pacientes||[]).find(x=>String(x.id)===String(f.id));
+        const p=(data.pacientes||[]).find(x=>String(x.id)===String(f.id)||alias410.get(String(x.id))===String(f.id));
         const r=await FICHA.guardarCambiosPendientes({sb:supabaseClient,id:f.id,cambios:f.cambios,nuevo:p?{...p}:undefined,creacionPermitida:!FICHA.existiaAntes(f.id),alMarcar:registrarCola410});
         aplicarResultadoFicha410(p,r);
       }
@@ -13817,7 +13838,7 @@ function patientInfoTextHC(p,coverage){
   async function resolverDivergencia410(id,campo,uso){
     const F=window.cardiolinkFichaV1;if(!F)return false;
     const plan=F.planResolucion(id,campo,uso);if(!plan)return false;
-    const p=(data.pacientes||[]).find(x=>String(x.id)===String(id));
+    const p=(data.pacientes||[]).find(x=>String(x.id)===String(id)||alias410.get(String(x.id))===String(id));
     if(plan.cambios){
       const r=await F.guardarCambiosPendientes({sb:supabaseClient,id,cambios:plan.cambios,nuevo:p?{...p}:undefined,creacionPermitida:!F.existiaAntes(id),alMarcar:registrarCola410});
       aplicarResultadoFicha410(p,r);
@@ -13842,11 +13863,14 @@ function patientInfoTextHC(p,coverage){
       // R3: la tabla relacional es la fuente principal de los datos demográficos. Se adopta su valor salvo una edición local SIN confirmar (se conserva) o una divergencia
       // anterior a R3 en la que lo local es más reciente (se EMPUJA por el camino seguro, con fusión de 3 vías y UPDATE condicionado; nunca se pisa a ciegas).
       FICHA.registrarVista(row);
-      const pend=FICHA.listarPendientes().find(x=>x.id===String(p.id)),rec=FICHA.reconciliarCarga(p,row,pend),mismoId=String(p.id)===String(row.id);
+      if(String(p.id)!==String(row.id))alias410.set(String(p.id),String(row.id));   // la ficha local y la fila relacional se emparejaron por DNI con ids distintos
+      const relId=String(row.id),pend=FICHA.listarPendientes().find(x=>x.id===relId),rec=FICHA.reconciliarCarga(p,row,pend),mismoId=true;
       Object.keys(rec.adoptar).forEach(k=>{p[k]=rec.adoptar[k]==null?'':rec.adoptar[k];});
-      if(mismoId&&Object.keys(rec.divergencias).length)FICHA.registrarDivergencias(p.id,rec.divergencias);     // sin base confiable: se conservan las dos versiones para revisión
-      if(Object.keys(rec.empujar).length&&mismoId)empujes410.push({id:String(p.id),cambios:rec.empujar});       // con base verificable: por la fusión de 3 vías
-      if(mismoId&&!pend&&!Object.keys(rec.empujar).length&&!Object.keys(rec.divergencias).length){FICHA.marcarSync(row.id,row,p);if(row.actualizado_en)p.actualizadoEn=row.actualizado_en;}
+      const dupDuplicado=!!digits410(row.dni)&&String(p.id)===relId&&data.pacientes.some(x=>x!==p&&String(x.id)!==relId&&digits410(x.dni)===digits410(row.dni));
+      if(mismoId&&!dupDuplicado&&Object.keys(rec.divergencias).length)FICHA.registrarDivergencias(relId,rec.divergencias);     // sin base confiable: se conservan las dos versiones para revisión
+      // Con OTRA ficha local de mismo DNI y distinto id (duplicado por la incidencia de Production), la marca de sincronización pertenece a la ficha editada: este duplicado NO empuja, no marca ni registra divergencias (revertiría la edición).
+      if(Object.keys(rec.empujar).length&&mismoId&&!dupDuplicado)empujes410.push({id:relId,cambios:rec.empujar});       // con base verificable: por la fusión de 3 vías
+      if(mismoId&&!dupDuplicado&&!pend&&!Object.keys(rec.empujar).length&&!Object.keys(rec.divergencias).length){FICHA.marcarSync(row.id,row,p);if(row.actualizado_en)p.actualizadoEn=row.actualizado_en;}
     }else{
       // Sin el módulo de R3: comportamiento anterior (la ficha local vigente tiene prioridad; la relacional sólo completa vacíos).
       fill('nombreCompleto',row.nombre_completo);fill('dni',row.dni);fill('telefono',row.telefono);fill('email',row.email);
@@ -13900,7 +13924,7 @@ function patientInfoTextHC(p,coverage){
     finally{cargando410=false;}
   }
 
-  window.cardiolinkClinica410={version:VERSION_CLINICA_410,cargar:cargar410,leerEvolucion:leerEvolucion410,guardarEvolucionConfirmada:guardarEvolucionConfirmada410,sincronizarPacienteCompleto:sincronizarPacienteCompleto410,sincronizarFichaBasica:sincronizarFichaPacienteBasica410,asegurarPacienteSinConflictoDni:asegurarPacienteSinConflictoDni410,reconciliarDniDuplicado:reconciliarDniDuplicado410,reintentarFichas:reintentarFichas410,aplicarResultadoFicha:aplicarResultadoFicha410,persistirSync:persistirSync410,resolverDivergencia:resolverDivergencia410};
+  window.cardiolinkClinica410={version:VERSION_CLINICA_410,cargar:cargar410,leerEvolucion:leerEvolucion410,guardarEvolucionConfirmada:guardarEvolucionConfirmada410,sincronizarPacienteCompleto:sincronizarPacienteCompleto410,sincronizarFichaBasica:sincronizarFichaPacienteBasica410,asegurarPacienteSinConflictoDni:asegurarPacienteSinConflictoDni410,reconciliarDniDuplicado:reconciliarDniDuplicado410,reintentarFichas:reintentarFichas410,aplicarResultadoFicha:aplicarResultadoFicha410,idRelacional:idRelacional410,persistirSync:persistirSync410,resolverDivergencia:resolverDivergencia410};
 
   // Carga inicial: espera a que Supabase Auth haya terminado el login.
   let intentos=0;
