@@ -748,7 +748,7 @@ async function cargarPermisoBackendRolesIntentoV1(ultimoIntento){
     if(pendientesIdentidad.error&&!ultimoIntento&&esErrorTransitorioRolV1(pendientesIdentidad.error)) throw pendientesIdentidad.error;
     if(pendientesIdentidad.error) console.warn('No se pudo confirmar la identidad de Pendientes (cardiolink_identidad_pendientes_v1):',pendientesIdentidad.error);
     backendPendientesIdentidadV1=pendientesIdentidad.error?null:(pendientesIdentidad.data||null);
-    try{ const rSL=await window.cardiolinkSeguridadLocalV1?.alIniciarSesion(usuarioSupabase?.id); }catch(e){ console.warn('Seguridad local:',e); }   // abre lo sellado con ESTA contraseña y migra SÓLO lo verificable del uid
+    try{ const rSL=await window.cardiolinkSeguridadLocalV1?.alIniciarSesion(usuarioSupabase?.id); if(rSL&&rSL.sellados&&rSL.sellados.cachesRestauradas>0){ data=loadConfig(); atenciones=loadAtenciones(); } }catch(e){ console.warn('Seguridad local:',e); }   // abre lo sellado con ESTA contraseña y migra SÓLO lo verificable del uid
     aislarCacheLocalPorUsuarioV1(usuarioSupabase?.id, adminOwner.data===true||appointmentRequests.data===true);
     await cargarMensajeriaYConfigMedicoV1();
     backendEsAdminOwner=adminOwner.data===true;
@@ -765,7 +765,7 @@ async function cargarPermisoBackendRolesIntentoV1(ultimoIntento){
     // determinarlo (no rompe el modo local sin Supabase, que no entra acá).
     console.warn('No se pudo confirmar el rol backend (cardiolink_user_roles):',e);
     backendRolCargado=false;backendEsAdminOwner=false;backendTieneAccesoTurnos=false;backendPendientesIdentidadV1=null;backendMensajeriaV1=null;directorioMensajesV1=null;
-    try{ const rSL2=await window.cardiolinkSeguridadLocalV1?.alIniciarSesion(usuarioSupabase?.id); if(rSL2&&rSL2.sellados&&rSL2.sellados.restauradas>0){ data=loadConfig(); atenciones=loadAtenciones(); } }catch(e2){ console.warn('Seguridad local:',e2); }
+    try{ const rSL2=await window.cardiolinkSeguridadLocalV1?.alIniciarSesion(usuarioSupabase?.id); if(rSL2&&rSL2.sellados&&rSL2.sellados.cachesRestauradas>0){ data=loadConfig(); atenciones=loadAtenciones(); } }catch(e2){ console.warn('Seguridad local:',e2); }
     aislarCacheLocalPorUsuarioV1(usuarioSupabase?.id,false);
     return false;
   }
@@ -1291,7 +1291,7 @@ async function cerrarSesionSupabase() {
         ob.registrar(); const n=ob.resumen().length, sinP=ob.sinProteccion?ob.sinProteccion():0;
         if(n===0) break;
         if(SL&&SL.equipoCompartido()){
-          const r=await SL.elegirCierre({n,sinProteger:sinP});
+          const r=await SL.elegirCierre({n,sinProteger:sinP,noProt:(SL.noProtegidosEnCola(usuarioSupabase?.id)||[]).length});
           if(r==='reintentar') continue;
           if(r==='cancelar') return;
           if(r==='descartar'){

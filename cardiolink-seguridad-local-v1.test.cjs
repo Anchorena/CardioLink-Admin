@@ -171,7 +171,7 @@ test('integración estática: ingreso migra por uid antes de aislar la caché; c
   assert.ok(app.indexOf('alIniciarSesion(usuarioSupabase?.id)') < app.indexOf('aislarCacheLocalPorUsuarioV1(usuarioSupabase?.id, adminOwner'));
   assert.match(app, /recordarPassword\(password\)/);
   const c = app.slice(app.indexOf('async function cerrarSesionSupabase()'), app.indexOf('function agregarBotonCerrarSesion()'));
-  assert.match(c, /SL\.elegirCierre\(\{n,sinProteger:sinP\}\)/); assert.match(c, /r==='reintentar'\) continue/); assert.match(c, /r==='cancelar'\) return/);
+  assert.match(c, /SL\.elegirCierre\(\{n,sinProteger:sinP,noProt:/); assert.match(c, /r==='reintentar'\) continue/); assert.match(c, /r==='cancelar'\) return/);
   assert.match(c, /if\(r==='descartar'\)\{[\s\S]{0,300}descartarTodoUsuario/, 'el descarte sólo ocurre por elección explícita'); assert.doesNotMatch(c, /descartarTodoUsuario[\s\S]*descartarTodoUsuario/);
   assert.match(c, /if\(!descartoTodo&&!selladoOk\) await liberarCacheLocalAlCerrarSesionV1\(\)/);
   const l = app.slice(app.indexOf('async function liberarCacheLocalAlCerrarSesionV1(auto)'), app.indexOf('// ---- Identidad profesional'));
@@ -289,4 +289,59 @@ test('restauración sobre una cola/respaldo existente SIN contenido (esqueleto v
   const e2 = conDatos(); await e2.S.sellarUsuario('u1', await e2.S.materialDe('pw'), EXTRA);
   const conOps = JSON.stringify({ v: 1, tabs: {}, ops: { x: { ts: 'y' } } }); e2.A.setItem('cardiolink_outbox_r2d_v1:' + P + ':u1', conOps);
   ab = await e2.S.abrirSellados('u1', await e2.S.materialDe('pw')); assert.equal(ab.conflictos, 1); assert.equal(e2.A.getItem('cardiolink_outbox_r2d_v1:' + P + ':u1'), conOps, 'no se pisa una cola con operaciones');
+});
+
+// ---------------- verificación previa a la publicación: caché sin pérdida silenciosa, datos sin dueño, reanudación sin contraseña ----------------
+const COLA_NOPROT = JSON.stringify({ v: 1, tabs: {}, ops: { c: { k: 'config', ts: '2026-11-18T00:00:00Z', ops: [], noProt: ['documentosClinicos', 'logoDocumentoData'] } } });
+const CFG_CLINICA = JSON.stringify({ documentosClinicos: [{ id: 'd9', contenido: 'EVOLUCION-CLINICA-RESERVADA' }], logoDocumentoData: 'data:image/png;base64,AAAA' });
+async function conNoProt(duenoActual) {
+  const e = entorno({ cardiolink_config_v25: CFG_CLINICA, cardiolink_cache_owner_v1: 'u1', ['cardiolink_outbox_r2d_v1:' + P + ':u1']: COLA_NOPROT });
+  const mat = await e.S.materialDe('pw'); const r = await e.S.sellarUsuario('u1', mat, EXTRA); assert.equal(r.ok, true);
+  assert.equal(e.A.getItem('cardiolink_config_v25'), null);
+  if (duenoActual !== undefined) { if (duenoActual !== null) e.A.setItem('cardiolink_cache_owner_v1', duenoActual); e.A.setItem('cardiolink_config_v25', '{"porDefecto":1}'); }
+  return { e, mat };
+}
+
+test('cambios de configuración NO protegidos por la cola (claves clínicas, imágenes): la caché sellada se RESTAURA y el paquete sólo se retira tras hacerlo (sin pérdida silenciosa)', async () => {
+  const { e, mat } = await conNoProt(null);                                    // sin dueño de caché vigente (la app dejó su configuración por defecto)
+  assert.deepEqual(e.S.noProtegidosEnCola === undefined, false);
+  const ab = await e.S.abrirSellados('u1', mat);
+  assert.equal(ab.cachesRestauradas >= 1, true); assert.equal(e.A.getItem('cardiolink_config_v25'), CFG_CLINICA, 'la configuración con documentos clínicos e imagen vuelve intacta'); assert.equal(e.A.getItem('cardiolink_cache_owner_v1'), 'u1');
+  assert.equal(await e.S.contarSellados('u1'), 0);
+});
+
+test('caché de otro dueño vigente: el contenido sellado pasa a la caché apartada de este uid (la app la restaura al aislar); caché viva del mismo usuario: no se pisa y el paquete se conserva', async () => {
+  let { e, mat } = await conNoProt('otro-uid');
+  let ab = await e.S.abrirSellados('u1', mat);
+  assert.equal(e.A.getItem('cardiolink_apartado_u1__cardiolink_config_v25'), CFG_CLINICA); assert.equal(e.A.getItem('cardiolink_config_v25'), '{"porDefecto":1}', 'no se toca la caché del otro'); assert.equal(await e.S.contarSellados('u1'), 0);
+  ({ e, mat } = await conNoProt('u1'));
+  ab = await e.S.abrirSellados('u1', mat); assert.equal(ab.conflictos >= 1, true); assert.equal(await e.S.contarSellados('u1'), 1, 'el paquete se conserva: nada se pierde'); assert.equal(e.A.getItem('cardiolink_config_v25'), '{"porDefecto":1}');
+});
+
+test('sin cambios no protegidos la caché NO se restaura (se recarga del servidor) y sí se advierte al sellar cuando los hay', async () => {
+  const e = conDatos(); const mat = await e.S.materialDe('pw'); await e.S.sellarUsuario('u1', mat, EXTRA);
+  const ab = await e.S.abrirSellados('u1', mat); assert.equal(ab.cachesRestauradas, 0); assert.equal(e.A.getItem('cardiolink_config_v25'), null);
+  const e2 = entorno({ ['cardiolink_outbox_r2d_v1:' + P + ':u1']: COLA_NOPROT }); assert.deepEqual(e2.S.noProtegidosEnCola('u1'), ['documentosClinicos', 'logoDocumentoData']);
+  assert.deepEqual(conDatos().S.noProtegidosEnCola('u1'), []);
+});
+
+test('datos heredados SIN dueño: custodia cifrada con la contraseña de quien decide (no se atribuye el contenido), sólo sale del claro tras verificar; otro usuario no la abre; lo de otro uid no se toca', async () => {
+  const e = entorno({ cardiolink_mensajes_no_enviados_v1: J([{ id: 'm1', texto: 'MENSAJE-HEREDADO-RESERVADO' }]), cardiolink_atenciones_rechazos_v1: J([{ id: 'r1', valores: { dx: 'DX-SIN-DUENO' } }, { id: 'r2', uid: 'u9', valores: { x: 1 } }]) });
+  assert.equal(e.S.recolectarSinDueno().n, 2);
+  const mat = await e.S.materialDe('pw'); const r = await e.S.sellarSinDueno(mat); assert.equal(r.ok, true); assert.equal(r.n, 2);
+  assert.equal(e.A.getItem('cardiolink_mensajes_no_enviados_v1'), null); assert.deepEqual(JSON.parse(e.A.getItem('cardiolink_atenciones_rechazos_v1')), [{ id: 'r2', uid: 'u9', valores: { x: 1 } }], 'el elemento de otro uid queda');
+  const todo = JSON.stringify(Array.from(e.SE.m.values())) + JSON.stringify(Array.from(e.A.m.entries())); ['MENSAJE-HEREDADO-RESERVADO', 'DX-SIN-DUENO'].forEach((x) => assert.ok(!todo.includes(x)));
+  assert.equal((await e.S.leerCustodia(await e.S.materialDe('otra'))).length, 0, 'otro usuario no la abre'); assert.equal(await e.S.contarCustodia(), 1);
+  const mios = await e.S.leerCustodia(mat); assert.equal(mios.length, 1); assert.equal(mios[0].datos.mensajes[0].texto, 'MENSAJE-HEREDADO-RESERVADO');
+  assert.equal(await e.S.abrirSellados('u1', mat).then((x) => x.paquetes), 0, 'la custodia no se restaura sola al ingresar'); assert.equal(await e.S.descartarCustodia(mat), 1); assert.equal(await e.S.contarCustodia(), 0);
+  const f = entorno({ cardiolink_mensajes_no_enviados_v1: J([{ id: 'm' }]) }, { fallaPut: true }); assert.equal((await f.S.sellarSinDueno(await f.S.materialDe('pw'))).ok, false); assert.ok(f.A.getItem('cardiolink_mensajes_no_enviados_v1'), 'si falla, nada se toca');
+});
+
+test('integración estática: reanudar una sesión sin contraseña en equipo compartido bloquea la interfaz (declarado NO criptográfico); la decisión sobre datos sin dueño es explícita; el diálogo de cierre advierte los cambios no protegidos', () => {
+  const mod = leer('cardiolink-seguridad-local-v1.js'), app = leer('app.js');
+  assert.match(mod, /S\.equipoCompartido\(\) && hayTokenLocal\(\) && w\.sessionStorage\.getItem\('cardiolink_sesion_validada'\) !== '1'/); assert.match(mod, /Hay una sesión abierta en este equipo/);
+  assert.match(mod, /no cifra los datos guardados en este navegador/); assert.match(mod, /BLOQUEO DE INTERFAZ \(NO es protección criptográfica/);
+  assert.match(mod, /data-sc="1"[\s\S]{0,260}Sellar en mi custodia/); assert.match(mod, /Sin decisión quedan en claro/); assert.doesNotMatch(mod.replace(/\/\/.*$/gm, ''), /sellarSinDueno\([^)]*\);\s*\}\s*\}\s*catch/, 'nunca se sella solo');
+  assert.match(app, /SL\.elegirCierre\(\{n,sinProteger:sinP,noProt:\(SL\.noProtegidosEnCola\(usuarioSupabase\?\.id\)\|\|\[\]\)\.length\}\)/);
+  assert.equal((app.match(/cachesRestauradas>0\)\{ data=loadConfig\(\); atenciones=loadAtenciones\(\); \}/g) || []).length, 2);
 });

@@ -91,3 +91,16 @@ test('app.js: sin reglas ni valores forzados, y los puntos de alta usan el profe
   ['getRegla(os,prof)', 'getRegla(osValor,profId)', 'getRegla(a.obraSocial,a.profesionalId)'].forEach((t) => assert.ok(APP.includes(t), t));
   assert.ok(APP.includes('a.reglaOS||getRegla(a.obraSocial)'), 'el fallback de históricos sin snapshot no cambia');
 });
+
+test('facturación por profesional y cobertura: con las reglas de fábrica la regla efectiva es IGUAL a la anterior a R4 para toda cobertura y profesional; un convenio de un profesional sólo cambia ESE profesional y esa cobertura', () => {
+  const reglaAnterior = (data, os) => { if (os === 'PAMI') return 'COBERTURA_COBRA_PARTICULAR'; return (data.reglasOS || {})[os] || (defaults.reglasOS || {})[os] || 'GENERAL_CONSULTA_EXTRA'; };   // getRegla de main (antes de R4)
+  const profs = ['matias', 'rogelio', 'humberto_drago', 'lucas_drago', 'general', undefined];
+  const ctx = cargar({ reglasOS: { ...defaults.reglasOS } });             // configuración de fábrica (PAMI = cobertura cobra particular)
+  defaults.obrasSociales.concat(['Particular', 'Desconocida']).forEach((os) => profs.forEach((p) => assert.equal(ctx.getRegla(os, p), reglaAnterior({ reglasOS: defaults.reglasOS }, os), os + '/' + p)));
+  const c2 = cargar({ reglasOS: { ...defaults.reglasOS }, conveniosPorProfesional: { rogelio: [{ obraSocial: 'OSDE', regla: 'TODO_MATIAS' }] } });
+  assert.equal(c2.getRegla('OSDE', 'rogelio'), 'TODO_MATIAS'); ['matias', 'humberto_drago', 'lucas_drago', 'general', undefined].forEach((p) => assert.equal(c2.getRegla('OSDE', p), 'OSDE', 'otro profesional: sin cambios'));
+  assert.equal(c2.getRegla('IOMA', 'rogelio'), 'IOMA_OSPRERA', 'otra cobertura del mismo profesional: sin cambios');
+  // ÚNICA diferencia de comportamiento respecto de main: PAMI ya no se fuerza en el código; si la configuración guardada tiene OTRA regla para PAMI, ahora se respeta (es dato a verificar en Production antes de publicar)
+  const c3 = cargar({ reglasOS: { ...defaults.reglasOS, PAMI: 'GENERAL_CONSULTA_EXTRA' } });
+  assert.equal(c3.getRegla('PAMI', 'matias'), 'GENERAL_CONSULTA_EXTRA'); assert.notEqual(c3.getRegla('PAMI', 'matias'), reglaAnterior({ reglasOS: {} }, 'PAMI'));
+});
