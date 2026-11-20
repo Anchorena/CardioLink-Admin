@@ -54,3 +54,25 @@ Vista previa en la app: 120 s. `patient-document-open`: 5 min. Envío al pacient
 
 ## 8. Qué se probó
 Reutilizadas sin repetir: 4C-1 (25/25), 4B (62/62), asociaciones (21/21, Production habilitado) y documentos. Nuevo y aprobado: `tests/prerrequisitos-seguridad-clinica-v1.js` (8/8 + alcance sin p3) y el ensayo de integración reversible en STAGING (`ENSAYO_INTEGRACION_OK`: huella del catálogo de p1–p3 idéntica a STAGING; 4C-1 y 4C-1b aplican sobre un estado equivalente a Production). El ensayo reversible en Production (paso 0) queda para ejecutar con tu autorización.
+
+## Corrección P0 «padrón compartido» (p4 / p4b) — 2026-11-14
+- Producción tras publicar 4C-1: la política `cardiolink_patient_documents_insert_4c1` exigía `cardiolink_paciente_acceso_clinico_v1` al médico, lo que impedía emitir el primer documento a un paciente no atendido. Decisión del Dueño: el padrón de pacientes es compartido por los médicos activos.
+- **p4** (`…_p4_padron_compartido.sql`, rollback incluido): función `cardiolink_paciente_padron_v1` + `ALTER POLICY` del INSERT de documentos. Es lo único necesario en Production hoy. Ensayo reversible: `…_p4_ensayo_reversible.sql` (se regenera con `…_p4_generar_ensayo.sh`).
+- **p4b** (`…_p4b_hc_padron.sql`, rollback incluido): sólo donde p3 ya está aplicada (STAGING). **No publicar p3 en Production sin p4b inmediatamente después**, o los médicos no podrán crear su primera evolución de un paciente.
+
+## Cierre de RLS de Historia Clínica — p3c «HC compartida» (2026-11-20)
+- **Procedimiento exacto, checklist y recuperación: `pending_review_seguridad_clinica_v1_p3c_PUBLICACION.md`.**
+- **Decisión del Dueño (D1–D4):** HC compartida entre profesionales activos autorizados (opción B), sin vínculos por paciente; evoluciones: todos consultan, cada médico escribe/edita/elimina solo las suyas (sin suplantar `profesional_id`); resumen clínico compartido (DELETE solo owner/admin); Secretaría, cuentas sin rol, inactivas y anon: sin acceso; la cuenta `hum…` sigue SIN rol.
+- **Reemplaza a p3 + p4b en Production.** NO aplicar `p3_hc_rls.sql` solo (Rogelio vería 2 de 204 pacientes con HC). p4 ya está aplicada en Production; p4b queda obsoleto (p3c incluye su efecto).
+- **Archivos (prefijo `pending_review_seguridad_clinica_v1_`):**
+  | Pieza | SQL | Rollback |
+  |---|---|---|
+  | p3c (Production: de políticas abiertas a HC compartida) | `p3c_hc_compartida.sql` | `p3c_hc_compartida_rollback.sql` |
+  | Delta para bases con p3 (STAGING) | `p3c_delta_staging.sql` | `p3c_delta_staging_rollback.sql` (vuelve a p3 exacta) |
+  | Integridad de evoluciones (ajuste 1: `id`/`paciente_id` inmutables; `profesional_id` sólo owner/admin) | `p3c_integridad_evoluciones.sql` | `p3c_integridad_evoluciones_rollback.sql` |
+  | Privilegios de tabla (D5 APROBADA: anon nada; authenticated sin TRUNCATE/REFERENCES/TRIGGER) | `p3c_grants_hc.sql` | `p3c_grants_hc_rollback.sql` |
+  | Ensayo reversible (generado) | `p3c_ensayo_reversible.sql` ← `p3c_generar_ensayo.sh` + `p3c_ensayo_pruebas.sql` | (todo se revierte solo) |
+  | Checks de solo lectura | `p3c_checks.sql` | — |
+- **Orden en Production (cuando haya autorización):** 0) `p3c_checks.sql` (esperado `forma_hc='abierta'`, `precondicion_p3c_ok=true`, `trigger_integridad=false`, `grants_endurecidos=false`); 1) ensayo reversible (debe terminar en `ENSAYO_P3C_OK`); 2) ventana fuera de horario; 3) `p3c_hc_compartida.sql`; 4) `p3c_integridad_evoluciones.sql`; 5) `p3c_grants_hc.sql` (cada una es su propia transacción con precondiciones); 6) `p3c_checks.sql` (esperado `forma_hc='p3c_compartida'`, `hc_politicas_v1=8`, `hc_politicas_abiertas=0`, `trigger_integridad=true`, `grants_endurecidos=true`); 7) humo con sesión real de owner y de Rogelio (consultar una evolución de Matías; no se ofrece editarla; guardar una propia) y de Secretaría (HC bloqueada). Rollback en orden inverso: grants → integridad → p3c.
+- **Estado:** probado en STAGING (ensayo reversible 119/119 desde p3, p3c y desde «abiertas + p4»; sesiones reales 69/69 con trigger y privilegios aplicados). Production: solo lectura (simulación: Rogelio y Matías alcanzarían 273/273 evoluciones y 126/126 resúmenes; Secretaría y cuenta sin rol, 0). **Nada aplicado en Production.**
+- **Pendiente de decisión (ajuste 2, NO implementado):** límite de edición de 24 h también en el backend (ver informe).
