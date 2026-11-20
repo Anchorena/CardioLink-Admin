@@ -1108,7 +1108,7 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
 <!-- Solicitudes de turno se carga antes de app.js: app.js conecta el cliente Supabase principal, igual que con Finanzas 5. -->
 <script src="cardiolink-solicitudes-turno.js?v=solicitudes-turno-2"></script>
 <script src="cardiolink-seguridad-local-v1.js?v=fe-1"></script>
-<script src="app.js?v=40129-fichas-estables"></script>
+<script src="app.js?v=40130-hc-multidispositivo"></script>
 <!-- Seguridad clínica V1 / Bloque 4B: configuración administrativa de Secretaría por RPC. Debe cargar después de app.js y antes del primer login. -->
 <script src="cardiolink-config-secretaria-v1.js?v=fe-1"></script>
 <!-- Persistencia V1 / R2B: motor de fusión de tres vías + integración (Dueño/Admin: UPDATE condicionado por updated_at; avisos de conflicto). Después de app.js. -->
@@ -1122,6 +1122,8 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
 <script src="cardiolink-outbox-glue-v1.js?v=fe-1"></script>
 <!-- Persistencia V1 / R3: escritura segura de la ficha demográfica del paciente en cardiolink_pacientes (diferencias, 3 vías, UPDATE condicionado, DNI). -->
 <script src="cardiolink-pacientes-ficha-v1.js?v=fe-1"></script>
+<script src="cardiolink-hc-resumen-v1.js?v=hm-1"></script>
+<script src="cardiolink-hc-evolucion-v1.js?v=hm-1"></script>
 <script src="cardiolink-auth-guard.js?v=2"></script>
 <script src="cardiolink-clear-patient-fix.js?v=1"></script>
 <script src="cardiolink-pendientes-alertas.js?v=1"></script>

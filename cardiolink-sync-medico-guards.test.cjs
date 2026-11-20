@@ -170,10 +170,11 @@ test('evoluciones: guardado confiable (por id, refresco pausado, confirmación d
   assert.doesNotMatch(f,/Object\.assign\(existing,/);
   // evolución ausente del estado: se comprueba el servidor antes de recrear; si no existe en el servidor NO se recrea
   assert.match(f,/srv\.existe===false\)\{falloGuardado\(/);
-  // control de versión contra una edición posterior de otra sesión
-  assert.match(f,/vServ>vBase\+1000/);
+  // guardado clínico multidispositivo: el control contra una edición posterior de otro dispositivo es ahora POR CAMPO y atómico (UPDATE condicionado a editado_en), no un bloqueo global
+  assert.doesNotMatch(f,/vServ>vBase\+1000/);
+  assert.match(f,/evolucionCambios:ecamEvo/);
   // (3) los datos se arman antes de cualquier await; (4) se confirma antes de cerrar y (5) se revierte el estado local si falla
-  assert.match(f,/guardarEvolucionConfirmada\(p,evolutionIdFinal,\{resumen:summaryChanged\}\)/);
+  assert.match(f,/guardarEvolucionConfirmada\(p,evolutionIdFinal,\{resumen:summaryChanged,resumenCambios:\{base:summaryBefore,/);   // guardado clínico multidispositivo: el resumen sube sólo lo cambiado
   assert.ok(f.indexOf('if(!r.ok){')!==-1&&f.indexOf('revertirLocal();')<f.indexOf("$hc('hcEvolutionModal')?.remove()"));
   assert.ok(f.indexOf('guardarEvolucionConfirmada(')<f.indexOf("$hc('hcEvolutionModal')?.remove()"));   // el modal se cierra DESPUÉS de confirmar
   // (6) id estable por modal y bloqueo de reentrada
