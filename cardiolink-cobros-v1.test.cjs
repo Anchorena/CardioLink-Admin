@@ -829,8 +829,8 @@ test('12b app.js: cargandoDesdeNube arranca en true (sin sync ni upsert ciego an
 });
 test('12b versionado: index.html y sw.js apuntan a la nueva versión de app.js y la caché cambió',()=>{
   const idx=leer('index.html'),sw=leer('sw.js');
-  assert.match(idx,/<script src="app\.js\?v=40129-fichas-estables"><\/script>/);
-  assert.match(sw,/'\.\/app\.js\?v=40129-fichas-estables'/);
+  assert.match(idx,/<script src="app\.js\?v=40130-hc-multidispositivo"><\/script>/);
+  assert.match(sw,/'\.\/app\.js\?v=40130-hc-multidispositivo'/);
   const cache=sw.match(/const CACHE='([^']+)'/)[1];
   assert.equal(cache,'cardiolink-v4.1.0-persistencia-r4');
   assert.ok(!['cardiolink-v4.1.0-documentos-v1','cardiolink-v4.1.0-pendientes-cobro-v1','cardiolink-v4.1.0-pendientes-cobro-v1-int','cardiolink-v4.1.0-pendientes-cobro-v1-sync-arranque','cardiolink-v4.1.0-pendientes-cobro-v1-casilla'].includes(cache),'no reutiliza nombres de caché anteriores');
