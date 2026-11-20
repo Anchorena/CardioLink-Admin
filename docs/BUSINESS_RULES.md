@@ -25,6 +25,25 @@ Mantiene acceso a:
 Este acceso clínico no concede permisos administrativos o comerciales que no
 le correspondan.
 
+**Historia Clínica compartida (decisión del Dueño, 2026-11-20; p3c).** La HC es
+compartida entre los profesionales activos y autorizados del consultorio
+(Dueño/Administrador y médicos con rol activo y `professional_id` válido); no se
+requieren vínculos por paciente. Se aplica en el backend (RLS de
+`cardiolink_hc_evoluciones` y `cardiolink_hc_resumen`), no sólo en la interfaz:
+- Evoluciones: todo profesional autorizado **consulta** las de todos los
+  pacientes. Cada médico **crea, modifica y elimina solo las propias**
+  (`profesional_id` = el suyo; no puede suplantar ni transferir). Dueño/Administrador
+  conservan sus permisos actuales sobre cualquier evolución.
+- Resumen clínico (antecedentes, alergias, medicación habitual, alertas):
+  todo profesional autorizado lo consulta y actualiza; solo Dueño/Administrador
+  lo eliminan. El guardado multidispositivo (control de concurrencia) no cambia.
+- Integridad: una evolución existente no puede cambiar de paciente (`paciente_id`
+  ni `id` inmutables para cualquier usuario) y solo Dueño/Administrador pueden
+  reasignar su profesional.
+- Un profesional nuevo queda autorizado al crearse su fila activa en
+  `cardiolink_user_roles` (rol `medico` + `professional_id`); desactivarla corta
+  el acceso de inmediato. Cuentas sin rol o inactivas: sin acceso clínico.
+
 ### Secretaría
 Es un rol administrativo, operativo y comercial.
 
@@ -55,7 +74,8 @@ Puede:
 No puede:
 - acceder a Historia Clínica, resumen clínico, evoluciones, antecedentes,
   alergias, medicación habitual, signos vitales almacenados en HC ni notas
-  clínicas privadas;
+  clínicas privadas (el backend le deniega SELECT, INSERT, UPDATE y DELETE
+  directos sobre las tablas de HC; sus flujos administrativos no cambian);
 - acceder a RCTA, ni modificar el contenido clínico de documentos médicos
   firmados (la gestión administrativa no lo autoriza);
 - ver las imágenes clínicas adjuntas a evoluciones ni el «Mensaje a colega»

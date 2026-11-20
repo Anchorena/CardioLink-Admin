@@ -1,4 +1,5 @@
 -- CardioLink · Seguridad clínica V1 · PARTE 3 · RLS de Historia Clínica por acceso clínico (Bloque 4)
+-- NOTA 2026-11-20: para PRODUCTION este archivo queda REEMPLAZADO por pending_review_seguridad_clinica_v1_p3c_hc_compartida.sql (HC compartida entre profesionales activos). NO aplicar p3 solo: dejaría a Rogelio con 2 de 204 pacientes con HC. Se conserva como estado de STAGING y para el ensayo del delta.
 -- Recuperado de STAGING (catálogo: pg_get_functiondef / pg_get_constraintdef / pg_policies / aclexplode, 2026-11-13); QA de STAGING aprobado. Versionado para publicar en Production.
 -- NO EJECUTAR en Production sin autorización explícita. Una sola transacción, sin DML sobre datos. Falla (y revierte todo) si el estado no es el esperado.
 -- Orden de publicación y rollback: docs/propuestas/pending_review_seguridad_clinica_v1_PUBLICACION.md

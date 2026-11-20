@@ -43,6 +43,8 @@ Si el cambio toca HC:
 
 ### Médico
 - confirmar acceso a pacientes, HC, evoluciones, RCTA y documentos clínicos;
+- confirmar que consulta evoluciones de otros profesionales pero no puede
+  editarlas ni eliminarlas (HC compartida, p3c);
 - confirmar que no obtiene permisos administrativos o comerciales adicionales.
 
 ### Dueño / Administrador

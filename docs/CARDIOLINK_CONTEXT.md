@@ -31,6 +31,13 @@ e informes clínicos, y a la agenda según sus permisos actuales.
 
 El rol Médico no adquiere por ello permisos administrativos o comerciales.
 
+La HC es compartida entre los profesionales activos y autorizados del
+consultorio (decisión del Dueño, 2026-11-20): todo médico activo consulta las
+evoluciones y el resumen clínico de todos los pacientes; cada médico crea,
+modifica y elimina solo sus propias evoluciones; el resumen clínico lo
+actualizan todos. Se aplica con RLS en el backend (p3c). Secretaría y las
+cuentas sin rol o inactivas no tienen acceso directo a las tablas de HC.
+
 ### Secretaría
 Es un rol administrativo, operativo y comercial.
 
