@@ -13855,7 +13855,7 @@ function patientInfoTextHC(p,coverage){
         if(reconciliadoPreventivo)return reconciliadoPreventivo;
       }
       const prow=pacienteRow410(p);
-      const {error:pe}=await supabaseClient.from('cardiolink_pacientes').upsert([prow],{onConflict:'id'});
+      const {error:pe}=await supabaseClient.from('cardiolink_pacientes').upsert([sinVaciosIdentidad410(prow)],{onConflict:'id'});
       if(!pe)return true;
       if(pe.code!=='23505'){
         console.warn('No se pudo sincronizar la ficha del paciente a la capa relacional:',pe.message||pe);
@@ -13873,7 +13873,7 @@ function patientInfoTextHC(p,coverage){
     if(!listo410()||!p)return false;
     try{
       const prow=pacienteRow410(p);
-      const {error:pe}=await supabaseClient.from('cardiolink_pacientes').upsert([prow],{onConflict:'id'});
+      const {error:pe}=await supabaseClient.from('cardiolink_pacientes').upsert([sinVaciosIdentidad410(prow)],{onConflict:'id'});
       if(pe)throw pe;
 
       const s=resumenLocal410(p);
@@ -13946,7 +13946,7 @@ function patientInfoTextHC(p,coverage){
     try{
       let err=await intentar();
       if(err&&(err.code==='23503'||/foreign key/i.test(String(err.message||'')))){
-        const {error:pe}=await supabaseClient.from('cardiolink_pacientes').upsert([prow],{onConflict:'id'});
+        const {error:pe}=await supabaseClient.from('cardiolink_pacientes').upsert([sinVaciosIdentidad410(prow)],{onConflict:'id'});
         if(pe)return {ok:false,error:pe.message||String(pe)};
         err=await intentar();
       }
@@ -13994,7 +13994,7 @@ function patientInfoTextHC(p,coverage){
     try{
       let r=await ejecutar();
       if(r.estado==='error'&&(r.error?.code==='23503'||/foreign key/i.test(String(r.error?.message||'')))){
-        const {error:pe}=await supabaseClient.from('cardiolink_pacientes').upsert([pacienteRow410(p)],{onConflict:'id'});   // sólo si la ficha todavía no existe (FK), igual que el guardado de evoluciones
+        const {error:pe}=await supabaseClient.from('cardiolink_pacientes').upsert([sinVaciosIdentidad410(pacienteRow410(p))],{onConflict:'id'});   // sólo si la ficha todavía no existe (FK), igual que el guardado de evoluciones
         if(pe)return {ok:false,error:pe.message||String(pe)};
         r=await ejecutar();
       }
@@ -14070,7 +14070,12 @@ function patientInfoTextHC(p,coverage){
     try{
       // Sólo las ediciones REALES de la persona. Lo heredado de versiones anteriores NO se reenvía solo (puede traer datos viejos) y lo rechazado de forma permanente no se reintenta.
       const lista=FICHA.listarPendientes().filter(x=>x.origen==='usuario'&&!x.rechazo);
+      // Nunca se envía un lote de vaciados de nombre/DNI (ver UMBRAL_VACIADO410): una edición real vacía una ficha, no cientos.
+      const vacia=x=>!!x.cambios&&['nombreCompleto','dni'].some(k=>x.cambios[k]&&(x.cambios[k].d==null||x.cambios[k].d===''));
+      const bloquearVacias=lista.filter(vacia).length>=UMBRAL_VACIADO410;
+      if(bloquearVacias)console.warn('Protección de identidad: se retuvo un lote de cambios que vacían nombre o DNI de muchas fichas; no se enviaron.');
       for(const f of lista){
+        if(bloquearVacias&&vacia(f)){res.rechazadas++;res.mensaje='Se retuvo un cambio masivo que vaciaba nombres o DNI. Avisá al administrador.';continue;}
         const p=(data.pacientes||[]).find(x=>String(x.id)===String(f.id)||alias410.get(String(x.id))===String(f.id));
         const r=await FICHA.guardarCambiosPendientes({sb:supabaseClient,id:f.id,cambios:f.cambios,nuevo:p?{...p}:undefined,creacionPermitida:!FICHA.existiaAntes(f.id),alMarcar:registrarCola410});
         aplicarResultadoFicha410(p,r);
@@ -14101,6 +14106,18 @@ function patientInfoTextHC(p,coverage){
     if(!F.listarDivergencias().some(d=>d.id===String(id)))setTimeout(()=>{cargar410();},100);   // sin más divergencias: se vuelve a sincronizar la marca
     return true;
   }
+  // PROTECCIÓN CONTRA VACIADO DE IDENTIDAD (incidente del 19/11/2026: 1001 fichas quedaron sin nombre ni DNI y cada equipo que abría la app adoptaba esos vacíos).
+  // Una carga que traiga nombre/DNI vacíos para fichas locales que los tienen NO los adopta si son UMBRAL_VACIADO410 o más (vaciado masivo); las correcciones puntuales (menos que el umbral) sí.
+  const UMBRAL_VACIADO410=10;
+  const NOMBRE_SUSTITUTO410='Paciente sin nombre';   // lo que muestra la interfaz cuando una ficha no tiene nombre (nombrePacientePanel): NO es un nombre real y no debe guardarse
+  let vaciadoIdentidadPermitido410=true,avisoVaciado410=false;
+  function sinVaciosIdentidad410(row){const o={...row};if(o.nombre_completo==null||String(o.nombre_completo).trim()===''||o.nombre_completo===NOMBRE_SUSTITUTO410)delete o.nombre_completo;if(o.dni==null)delete o.dni;return o;}   // un upsert de fila completa nunca pisa un nombre/DNI ya guardado con NULL ni con el texto sustituto «Paciente sin nombre»
+  function contarVaciadosIdentidad410(pa){
+    const F=window.cardiolinkFichaV1;if(!F)return 0;
+    const porId=new Map((data.pacientes||[]).map(p=>[String(p.id||''),p]));let n=0;
+    for(const row of pa){const p=porId.get(String(row?.id||''));if(!p)continue;const rec=F.reconciliarCarga(p,row,undefined);if(rec.vaciadosIdentidad&&Object.keys(rec.vaciadosIdentidad).length)n++;}
+    return n;
+  }
   function mergePaciente410(row){
     if(!row?.id)return;
     if(!Array.isArray(data.pacientes))data.pacientes=[];
@@ -14116,6 +14133,7 @@ function patientInfoTextHC(p,coverage){
       if(String(p.id)!==String(row.id))alias410.set(String(p.id),String(row.id));   // la ficha local y la fila relacional se emparejaron por DNI con ids distintos
       const relId=String(row.id),pend=FICHA.listarPendientes().find(x=>x.id===relId),rec=FICHA.reconciliarCarga(p,row,pend);
       Object.keys(rec.adoptar).forEach(k=>{p[k]=rec.adoptar[k]==null?'':rec.adoptar[k];});
+      if(vaciadoIdentidadPermitido410&&rec.vaciadosIdentidad)Object.keys(rec.vaciadosIdentidad).forEach(k=>{p[k]='';});   // corrección puntual (por debajo del umbral): se adopta
       if(!(pend&&pend.origen==='usuario')){FICHA.marcarSync(row.id,row,p);if(row.actualizado_en)p.actualizadoEn=row.actualizado_en;adoptados410.push(String(p.id));}
     }else{
       // Sin el módulo de R3: comportamiento anterior (la ficha local vigente tiene prioridad; la relacional sólo completa vacíos).
@@ -14176,6 +14194,12 @@ function patientInfoTextHC(p,coverage){
   let cacheCarga410=null;
   function aplicarCarga410(pa,re,ev,conAusentes){
     cargarSync410();
+    const nVaciados=contarVaciadosIdentidad410(pa);
+    vaciadoIdentidadPermitido410=nVaciados<UMBRAL_VACIADO410;
+    if(!vaciadoIdentidadPermitido410){
+      console.warn('Protección de identidad: la tabla trae '+nVaciados+' fichas sin nombre o DNI donde este equipo los tiene; NO se adoptaron.');
+      if(!avisoVaciado410){avisoVaciado410=true;try{window.cardiolinkConfigR2B?.avisoTransitorio?.('Se detectaron muchas fichas de pacientes con nombre o DNI vacíos en el servidor. No se aplicaron en este equipo para no perder datos. Avisá al administrador.');}catch(e){}}
+    }
     pa.forEach(mergePaciente410);re.forEach(mergeResumen410);ev.forEach(mergeEvolucion410);
     // R3: una ficha que ya se había sincronizado y ya no viene de la tabla (eliminada o acceso revocado) deja de mostrarse como paciente activo. Sólo con una lectura DEMOSTRADA completa y reciente
     // (se omite al reaplicar una copia en memoria: un alta posterior a esa lectura no debe quedar como ausente).

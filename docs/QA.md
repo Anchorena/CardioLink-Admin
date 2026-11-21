@@ -310,3 +310,8 @@ Hallazgo operativo: el Owner escribe UNA vez la copia de Configuración al ingre
 - Pruebas con Node 22: `docs/propuestas/pruebas-node22.workflow.yml` → `.github/workflows/` (base vs. PR, falla sólo ante fallas nuevas).
 - Detalle y resultados: `docs/propuestas/padron-paginado-v1-QA-y-autoria-evoluciones.md`.
 
+
+## Protección de identidad de pacientes (versión `40132-identidad-protegida`, hotfix del incidente del 19/11/2026)
+- Una carga que traiga nombre o DNI VACÍOS para fichas locales que los tienen no los adopta si son 10 o más (vaciado masivo): se conservan los datos locales y se muestra un único aviso simple; las correcciones puntuales (menos de 10) sí se adoptan.
+- Ningún upsert de fila completa pisa un nombre/DNI ya guardado con NULL ni con «Paciente sin nombre»; el reintento de fichas no envía lotes de vaciados.
+- Leer sigue sin escribir (0 escrituras a `cardiolink_pacientes` al cargar). Detalle, evidencia y plan de recuperación: `docs/propuestas/incidente_pacientes_vacios_INFORME_Y_PLAN.md`.

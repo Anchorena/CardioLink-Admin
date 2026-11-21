@@ -222,14 +222,21 @@
   //   · local sin cambios desde la última sincronización → se adopta lo relacional;
   //   · local cambiado y relacional SIN cambios desde la última sincronización → la base (= la relacional actual) es verificable: se EMPUJA por la fusión de 3 vías;
   //   · sin marca, o cambiaron los dos lados → no hay base confiable: se rellenan vacíos sin perder nada y lo demás queda como DIVERGENCIA (ninguna de las dos versiones se pisa).
+  var IDENTIDAD = { nombreCompleto: true, dni: true };
   function reconciliarCarga(local, row, pend) {
-    var r = desdeFila(row), l = normalizarApp(local), adoptar = {};
+    var r = desdeFila(row), l = normalizarApp(local), adoptar = {}, vaciadosIdentidad = {};
     CAMPOS.forEach(function (c) {
       var k = c[0];
       if (pend && pend.origen === 'usuario' && pend.cambios && pend.cambios[k]) return;       // edición real de la persona todavía sin guardar: se conserva
-      if (r[k] !== l[k]) adoptar[k] = r[k];                                                      // la copia local sigue a la tabla (incluye datos vaciados a propósito)
+      if (r[k] === l[k]) return;
+      // PROTECCIÓN DE IDENTIDAD: que la tabla venga SIN nombre o SIN DNI cuando la copia local los tiene NO se adopta de inmediato (puede ser un vaciado accidental, como el del 19/11/2026):
+      // se informa aparte y quien llama decide (se aceptan correcciones puntuales; un vaciado masivo se bloquea). Cualquier otro cambio sigue a la tabla como siempre.
+      if (IDENTIDAD[k] && r[k] == null && l[k] != null) { vaciadosIdentidad[k] = l[k]; return; }
+      adoptar[k] = r[k];                                                                         // la copia local sigue a la tabla (incluye datos vaciados a propósito)
     });
-    return { adoptar: adoptar, empujar: {}, divergencias: {} };                                  // sin empujes ni divergencias: leer o refrescar nunca escribe
+    var res = { adoptar: adoptar, empujar: {}, divergencias: {} };                                // sin empujes ni divergencias: leer o refrescar nunca escribe
+    if (Object.keys(vaciadosIdentidad).length) res.vaciadosIdentidad = vaciadosIdentidad;           // sólo cuando hay un vaciado de nombre/DNI que NO se adoptó (la forma de siempre no cambia)
+    return res;
   }
 
   // ---------- divergencias para revisión ----------

@@ -192,7 +192,7 @@ test('app.js: el pedido de confirmación usa textos operativos (sin servidor / l
 });
 test('index.html carga el módulo y la versión publicada coincide con la del service worker', () => {
   assert.match(idx, /<script src="cardiolink-hc-resumen-v1\.js\?v=hm-1"><\/script>/);
-  assert.match(idx, /<script src="app\.js\?v=40131-padron-paginado"><\/script>/);
-  assert.match(fs.readFileSync(require('path').join(__dirname, 'sw.js'), 'utf8'), /app\.js\?v=40131-padron-paginado/);
+  assert.match(idx, /<script src="app\.js\?v=40132-identidad-protegida"><\/script>/);
+  assert.match(fs.readFileSync(require('path').join(__dirname, 'sw.js'), 'utf8'), /app\.js\?v=40132-identidad-protegida/);
   assert.ok(/guardarResumenConfirmado:guardarResumenConfirmado410/.test(app));
 });
