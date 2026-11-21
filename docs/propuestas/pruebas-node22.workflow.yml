@@ -1,0 +1,94 @@
+# CardioLink · pruebas estáticas con Node 22 (verificable en cada PR).
+# Corre TODAS las suites (`*.test.cjs` de la raíz y `tests/*.js`) sobre el PR y sobre `main` (la base), y compara: sólo falla ante una falla NUEVA.
+# Las fallas que ya existían en `main` se informan en el resumen, no se ocultan ni se modifican.
+# Sin secretos, sin red y sin Supabase: las suites leen archivos del repositorio. No despliega nada ni toca Production.
+name: Pruebas (Node 22)
+
+on:
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pruebas-node22-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  suites:
+    name: Suites estáticas · base vs. PR
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Descargar el PR (head)
+        uses: actions/checkout@v4
+        with:
+          path: head
+          persist-credentials: false
+
+      - name: Descargar la base (main) para comparar
+        if: github.event_name == 'pull_request'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+
+      - name: Node 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Versión de Node
+        run: node --version
+
+      - name: Suites de la base (main)
+        if: github.event_name == 'pull_request'
+        working-directory: base
+        env:
+          CI_LOGS_DIR: ${{ github.workspace }}/logs-base
+        run: sh ../head/tests/ci-suites.sh run "$GITHUB_WORKSPACE/base.tsv"
+
+      - name: Suites del PR (head)
+        working-directory: head
+        env:
+          CI_LOGS_DIR: ${{ github.workspace }}/logs-head
+        run: sh tests/ci-suites.sh run "$GITHUB_WORKSPACE/head.tsv"
+
+      - name: Comparar contra la base (falla sólo ante fallas nuevas)
+        if: github.event_name == 'pull_request'
+        run: |
+          set -o pipefail
+          sh head/tests/ci-suites.sh comparar base.tsv head.tsv | tee comparacion.txt
+          {
+            echo '### Pruebas con Node 22 · PR vs. main'
+            echo '```'
+            cat comparacion.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: "Resumen (ejecución manual, sólo informa)"
+        if: github.event_name == 'workflow_dispatch'
+        run: |
+          {
+            echo '### Pruebas con Node 22 · ejecución manual'
+            echo '```'
+            awk -F'\t' '{ printf "%-58s salida=%s OK=%s FALLAN=%s\n", $1, $2, $3, $4 }' head.tsv
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Guardar registros
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: registros-pruebas-node22
+          path: |
+            logs-base
+            logs-head
+            base.tsv
+            head.tsv
+            comparacion.txt
+          if-no-files-found: ignore
+          retention-days: 14
