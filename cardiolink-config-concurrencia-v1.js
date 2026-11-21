@@ -55,7 +55,7 @@
     'contactoResponsableNombre', 'contactoResponsableRelacion', 'contactoResponsableTelefono', 'contactoResponsableEmail', 'actualizadoEn'];
   function aceptarFichasEnBase(baseObj, ids) {
     if (!baseObj || !Array.isArray(baseObj.pacientes) || !ids || !ids.length) return 0;
-    var set = {}; ids.forEach(function (i) { set[String(i)] = 1; }), n = 0;
+    var set = {}, n = 0; ids.forEach(function (i) { set[String(i)] = 1; });
     (Array.isArray(data.pacientes) ? data.pacientes : []).forEach(function (p) {
       if (!p || !set[String(p.id)]) return;
       var b = baseObj.pacientes.find(function (x) { return x && String(x.id) === String(p.id); });
