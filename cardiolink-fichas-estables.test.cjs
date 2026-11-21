@@ -41,7 +41,7 @@ const fila = (extra) => Object.assign({ id: 'p1', nombre_completo: 'Ana Pérez',
 // ---------- entorno de la capa clínica extraída de app.js ----------
 function capa(extra) {
   const ctx = Object.assign({ console, String, Array, Object, Map, Set, JSON, Promise, Date, Math, setTimeout, clearTimeout, window: { addEventListener() {} }, data: { pacientes: [] }, localStorage: { setItem() {}, getItem() { return null; } },
-    storageConfig: 'cfg', alias410: new Map(), adoptados410: [], digits410: (v) => String(v || '').replace(/\D/g, ''), registrarCola410() {}, listo410: () => true }, extra || {});
+    storageConfig: 'cfg', alias410: new Map(), adoptados410: [], UMBRAL_VACIADO410: 10, vaciadoIdentidadPermitido410: true, digits410: (v) => String(v || '').replace(/\D/g, ''), registrarCola410() {}, listo410: () => true }, extra || {});
   ctx.window.cardiolinkFichaV1 = F; vm.createContext(ctx); return ctx;
 }
 function cargarMerge(ctx) { vm.runInContext(tramo(APP, '  function mergePaciente410(row){', '  function mergeResumen410(row){') + '\nthis.mergePaciente410=mergePaciente410;', ctx); return ctx.mergePaciente410; }

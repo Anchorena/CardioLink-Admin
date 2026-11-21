@@ -1110,7 +1110,7 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
 <script src="cardiolink-seguridad-local-v1.js?v=fe-1"></script>
 <!-- Padrón compartido / Carga paginada V1: lectura completa por páginas (Supabase corta en 1000 filas). Debe cargar antes de app.js. -->
 <script src="cardiolink-carga-paginada-v1.js?v=pag-1"></script>
-<script src="app.js?v=40131-padron-paginado"></script>
+<script src="app.js?v=40132-identidad-protegida"></script>
 <!-- Seguridad clínica V1 / Bloque 4B: configuración administrativa de Secretaría por RPC. Debe cargar después de app.js y antes del primer login. -->
 <script src="cardiolink-config-secretaria-v1.js?v=fe-1"></script>
 <!-- Persistencia V1 / R2B: motor de fusión de tres vías + integración (Dueño/Admin: UPDATE condicionado por updated_at; avisos de conflicto). Después de app.js. -->
@@ -1123,7 +1123,7 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
 <script src="cardiolink-outbox-v1.js?v=r2d-1"></script>
 <script src="cardiolink-outbox-glue-v1.js?v=fe-1"></script>
 <!-- Persistencia V1 / R3: escritura segura de la ficha demográfica del paciente en cardiolink_pacientes (diferencias, 3 vías, UPDATE condicionado, DNI). -->
-<script src="cardiolink-pacientes-ficha-v1.js?v=fe-1"></script>
+<script src="cardiolink-pacientes-ficha-v1.js?v=fe-2"></script>
 <script src="cardiolink-hc-resumen-v1.js?v=hm-1"></script>
 <script src="cardiolink-hc-evolucion-v1.js?v=hm-1"></script>
 <script src="cardiolink-auth-guard.js?v=2"></script>
