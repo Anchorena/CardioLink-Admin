@@ -516,6 +516,7 @@ function salvarDocumentosDeCacheV1(uid,rawConfig){
 function clavesCierreV1(){
   const k=[...clavesCacheLocalV1(),CACHE_OWNER_KEY_V1];
   try{ k.push('cardiolink_ficha_sync_v1:'+new URL(SUPABASE_URL).hostname.split('.')[0]+':'+usuarioSupabase.id); }catch(e){}
+  try{ k.push('cardiolink_padron_completo_v1:'+new URL(SUPABASE_URL).hostname.split('.')[0]+':'+usuarioSupabase.id); }catch(e){}   // marca «hay un padrón completo confirmado en este equipo»
   return k;
 }
 function clavesCacheLocalV1(){ return [storageConfig,storageAtenciones,storageValoresColocacion,'cl_last_sync_382']; }
@@ -7262,9 +7263,20 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       const sigClavesInicio298=sigClaves298(data), inicioCarga298=Date.now();   // R1: `data` y reloj local al pedir esta carga
       // v3: con el rol sin confirmar o sin permiso sobre la fila completa (Secretaría, owner/admin no confirmado) la fila de configuración ni siquiera se pide.
       const pideCfgCompleta298=configCompletaPermitidaV1() || (backendRolCargado===true && esMedicoBackendV1());
-      let consulta298=supabaseClient.from('cardiolink_atenciones').select('id,payload,updated_at');
-      if(!pideCfgCompleta298) consulta298=consulta298.neq('id',CONFIG_ROW_ID);
-      const { data: rows, error } = await consulta298.order('updated_at',{ascending:false});
+      // Lectura COMPLETA por páginas (el tope del servidor es 1000 filas por consulta): orden y cursor por id, sólo lectura; el orden final «más reciente primero» (updated_at) se conserva.
+      // Si el módulo no cargó se hace una consulta única con conteo exacto que sólo vale si trajo todo. Las restricciones por profesional las sigue aplicando la RLS del servidor sobre cada página.
+      const cp298=window.cardiolinkCargaPaginadaV1;
+      let rows, error;
+      if(cp298){
+        const lec298=await cp298.leerTodo({sb:supabaseClient,tabla:'cardiolink_atenciones',columnas:'id,payload,updated_at',clave:'id',filtro:pideCfgCompleta298?null:(q=>q.neq('id',CONFIG_ROW_ID)),ordenar:cp298.masRecientePrimero('updated_at','id'),dedup:'atenciones|'+(pideCfgCompleta298?'cfg':'sincfg')});
+        rows=lec298.data; error=lec298.error;
+      }else{
+        // Sin el módulo: consulta única con conteo exacto; sólo vale si trajo TODAS las filas (nunca una lista truncada por el tope del servidor presentada como completa).
+        let consulta298=supabaseClient.from('cardiolink_atenciones').select('id,payload,updated_at',{count:'exact'});
+        if(!pideCfgCompleta298) consulta298=consulta298.neq('id',CONFIG_ROW_ID);
+        let cnt298; ({ data: rows, error, count: cnt298 } = await consulta298.order('updated_at',{ascending:false}));
+        if(!error&&(typeof cnt298!=='number'||(rows||[]).length<cnt298)){ rows=null; error={code:'CARGA_INCOMPLETA',message:'no se pudo completar la carga'}; }
+      }
       if(error){ console.error(error); alert('No se pudieron cargar las atenciones desde Supabase: '+error.message); throw error; }
       let cfgRow=(rows||[]).find(r=>r.id===CONFIG_ROW_ID || r.payload?.tipoRegistro==='config');
       // Bloque 4B v3: rol SIN confirmar → nunca se toma la fila completa. Rol confirmado que no es owner/admin ni médico (Secretaría) → RPC administrativa; si falla,
@@ -7377,6 +7389,14 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       primeraCargaAplicada298=true;
       if(mezcla298&&mezcla298.protegidas.size) syncDiferidoPorCarga=true;
       liberarSyncDiferidoPorCargaV1();
+    };
+    // Padrón completo al arrancar: en la PRIMERA carga de la sesión la configuración descargada reemplaza `data`; si la capa relacional (pacientes, resúmenes, evoluciones) ya había terminado,
+    // sus filas quedaban fuera hasta el refresco siguiente (~30 s). Se reaplica la última lectura completa en memoria: sin consultas nuevas ni escrituras al servidor.
+    const cargarPadron298=cargarAtencionesDesdeSupabase;
+    window.cargarAtencionesDesdeSupabase = cargarAtencionesDesdeSupabase = async function(){
+      const eraPrimera298=!window.cardiolinkPersistenciaR1?.estado?.().primeraCarga;
+      try{ return await cargarPadron298.apply(this,arguments); }
+      finally{ if(eraPrimera298){ try{ window.cardiolinkClinica410?.reaplicarCarga?.(); }catch(e){ console.warn(e); } } }
     };
   }
   if(typeof sincronizarAtencionesSupabase==='function'){
@@ -9116,6 +9136,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     // 2) esperar confirmación; 3) traer lo remoto ya confirmado; 4) reconciliar
     // la capa clínica relacional (mismo cargar410() que reutiliza C).
     const btn=$('btnSyncNow382');if(btn){btn.disabled=true;btn.textContent='Sincronizando…';}
+    const ultimaSync382=(()=>{try{return localStorage.getItem('cl_last_sync_382');}catch(e){return null;}})();
     try{
       let ok=true;
       if(typeof sincronizarAtencionesSupabase==='function'){
@@ -9135,8 +9156,17 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       if(typeof cargarAtencionesDesdeSupabase==='function'){
         await cargarAtencionesDesdeSupabase();
       }
-      try{ await window.cardiolinkClinica410?.cargar?.(); }
-      catch(e){ console.warn('Sincronizar ahora: reconciliación clínica relacional falló (se continúa):', e); }
+      let okRel382=true;
+      try{ okRel382=await window.cardiolinkClinica410?.cargar?.(); }
+      catch(e){ okRel382=false; console.warn('Sincronizar ahora: reconciliación clínica relacional falló:', e); }
+      // Sin mensajes falsos: si no se pudo completar la carga de pacientes NO se marca «sincronizado».
+      if(okRel382===false){
+        try{ if(ultimaSync382===null)localStorage.removeItem('cl_last_sync_382'); else localStorage.setItem('cl_last_sync_382',ultimaSync382); }catch(e){}   // la «última sincronización» no avanza si la carga de pacientes no se completó
+        try{ renderTabla?.(); renderStats?.(); }catch(e){}
+        alert('No se pudo completar la carga de pacientes. Tus datos no se modificaron. Esperá unos segundos y volvé a tocar "Sincronizar ahora".');
+        renderHealth382();
+        return;
+      }
       try{ renderTabla?.(); renderStats?.(); }catch(e){}
       localStorage.setItem('cl_last_sync_382',String(Date.now()));
       renderHealth382();
@@ -14115,33 +14145,88 @@ function patientInfoTextHC(p,coverage){
     if(forzar||rt>=lt)data.evolucionesClinicas[i]={...local,...incoming};
   }
 
-  let cargando410=false;
-  async function cargar410(){
-    if(!listo410()||cargando410)return false;
-    cargando410=true;
+  // ---- Padrón compartido · lectura completa y aplicación ------------------------------------------------------------------------------------------------------------------
+  // Supabase devuelve como máximo 1000 filas por consulta y el padrón ya supera ese tope: se lee TODO por páginas (sólo lectura, orden y cursor por id) con cardiolink-carga-paginada-v1.js.
+  // Una lectura que no se pudo completar (página con error o módulo ausente con padrón truncado) NO se aplica ni se presenta como completa: queda lo último confirmado y, si no hay copia
+  // completa en este equipo, se avisa en términos simples con «Reintentar».
+  async function leerPadron410(){
+    const cp=window.cardiolinkCargaPaginadaV1;
+    if(cp)return cp.leerTodo({sb:supabaseClient,tabla:'cardiolink_pacientes',columnas:'*',clave:'id',dedup:'pacientes'});
+    // Sin el módulo: una sola consulta con conteo exacto; sólo vale si trajo TODAS las filas (nunca un padrón truncado por el tope del servidor).
+    const r=await supabaseClient.from('cardiolink_pacientes').select('*',{count:'exact'});
+    if(r.error)return {data:null,error:r.error,completo:false};
+    if(typeof r.count!=='number'||(r.data||[]).length<r.count)return {data:null,error:{code:'PADRON_INCOMPLETO',message:'El servidor devolvió sólo una parte del padrón.'},completo:false};
+    return {data:r.data||[],error:null,completo:true};
+  }
+  function clavePadron410(){try{return 'cardiolink_padron_completo_v1:'+new URL(SUPABASE_URL).hostname.split('.')[0]+':'+usuarioSupabase.id;}catch(e){return null;}}
+  function hayPadronConfirmado410(){try{const k=clavePadron410();return !!(k&&JSON.parse(localStorage.getItem(k)||'null')?.n>0);}catch(e){return false;}}
+  function marcarPadronConfirmado410(n){try{const k=clavePadron410();if(k)localStorage.setItem(k,JSON.stringify({n,t:Date.now()}));}catch(e){}}
+  function quitarAvisoPadron410(){try{document.getElementById('avisoPadronIncompletoV1')?.remove();}catch(e){}}
+  function mostrarAvisoPadron410(){
     try{
-      const [pa,re,ev]=await Promise.all([
-        supabaseClient.from('cardiolink_pacientes').select('*'),
-        supabaseClient.from('cardiolink_hc_resumen').select('*'),
-        supabaseClient.from('cardiolink_hc_evoluciones').select('*').order('fecha_hora',{ascending:false})
-      ]);
-      if(pa.error)throw pa.error;if(re.error)throw re.error;if(ev.error)throw ev.error;
-      cargarSync410();
-      (pa.data||[]).forEach(mergePaciente410);(re.data||[]).forEach(mergeResumen410);(ev.data||[]).forEach(mergeEvolucion410);
-      // R3: una ficha que ya se había sincronizado y ya no viene de la tabla (eliminada o acceso revocado) deja de mostrarse como paciente activo. Se omite si la lectura pudo quedar
-      // truncada por el límite de filas del servidor (1000).
-      try{const FA=window.cardiolinkFichaV1;if(FA&&(pa.data||[]).length<1000){const idsRel=new Set((pa.data||[]).map(r=>String(r.id)));FA.idsSincronizados().forEach(id=>{if(idsRel.has(id))FA.limpiarAusente(id);else FA.marcarAusente(id);});}}catch(e){console.warn(e)}
-      persistirSync410();
-      try{localStorage.setItem(storageConfig,JSON.stringify(data));}catch(e){}
-      try{const ids=adoptados410.splice(0);if(ids.length){window.cardiolinkConfigR2B?.aceptarFichas?.(ids);window.cardiolinkConfigSecretariaV1?.aceptarFichas?.(ids);}}catch(e){console.warn(e);}   // adoptar lo de la tabla no es una edición de la configuración
-      programarReintento410();   // sólo ediciones reales no guardadas, con espera creciente y tope
-      console.log(`Capa clínica relacional ${VERSION_CLINICA_410} cargada:`,(pa.data||[]).length,'pacientes,',(re.data||[]).length,'resúmenes,',(ev.data||[]).length,'evoluciones');
+      if(!document.body||document.getElementById('avisoPadronIncompletoV1'))return;
+      const d=document.createElement('div');d.id='avisoPadronIncompletoV1';d.setAttribute('role','alert');
+      d.style.cssText='position:fixed;left:12px;right:12px;bottom:12px;z-index:99996;background:#fef3c7;color:#78350f;border:1px solid #f59e0b;border-radius:12px;padding:12px 14px;box-shadow:0 6px 24px rgba(0,0,0,.2);font:600 14px/1.4 system-ui,Arial,sans-serif;display:flex;gap:12px;align-items:center;flex-wrap:wrap';
+      d.innerHTML='<span><strong>No se pudo completar la carga de pacientes.</strong> Puede que falten algunos en la lista. Se vuelve a intentar sola; también podés reintentar ahora.</span><button type="button" class="primary">Reintentar</button>';
+      d.querySelector('button').onclick=async()=>{const b=d.querySelector('button');b.disabled=true;b.textContent='Cargando…';try{await cargar410();}catch(e){console.warn(e);}finally{b.disabled=false;b.textContent='Reintentar';}};
+      document.body.appendChild(d);
+    }catch(e){}
+  }
+  // Última lectura COMPLETA aplicada (sólo en memoria). Si la configuración descargada reemplaza `data` después (carrera de arranque), se vuelve a aplicar SIN consultar de nuevo.
+  let cacheCarga410=null;
+  function aplicarCarga410(pa,re,ev,conAusentes){
+    cargarSync410();
+    pa.forEach(mergePaciente410);re.forEach(mergeResumen410);ev.forEach(mergeEvolucion410);
+    // R3: una ficha que ya se había sincronizado y ya no viene de la tabla (eliminada o acceso revocado) deja de mostrarse como paciente activo. Sólo con una lectura DEMOSTRADA completa y reciente
+    // (se omite al reaplicar una copia en memoria: un alta posterior a esa lectura no debe quedar como ausente).
+    if(conAusentes){try{const FA=window.cardiolinkFichaV1;if(FA){const idsRel=new Set(pa.map(r=>String(r.id)));FA.idsSincronizados().forEach(id=>{if(idsRel.has(id))FA.limpiarAusente(id);else FA.marcarAusente(id);});}}catch(e){console.warn(e)}}
+    persistirSync410();
+    try{localStorage.setItem(storageConfig,JSON.stringify(data));}catch(e){}
+    try{const ids=adoptados410.splice(0);if(ids.length){window.cardiolinkConfigR2B?.aceptarFichas?.(ids);window.cardiolinkConfigSecretariaV1?.aceptarFichas?.(ids);}}catch(e){console.warn(e);}   // adoptar lo de la tabla no es una edición de la configuración
+    programarReintento410();   // sólo ediciones reales no guardadas, con espera creciente y tope
+    cacheCarga410={uid:String(usuarioSupabase.id),pa,re,ev,dataRef:data,pacRef:data.pacientes,resRef:data.resumenesClinicos,evoRef:data.evolucionesClinicas};
+  }
+  // Carrera de arranque: si la configuración se descargó DESPUÉS de la capa relacional y reemplazó `data`, los pacientes, resúmenes y evoluciones de la tabla quedaban fuera hasta el refresco
+  // siguiente. Se reaplica la última lectura completa (cero consultas, cero escrituras al servidor). No hace nada si `data` no cambió.
+  function reaplicarCarga410(){
+    try{
+      const c=cacheCarga410;
+      if(!c||!listo410()||c.uid!==String(usuarioSupabase.id))return false;
+      if(c.dataRef===data&&c.pacRef===data.pacientes&&c.resRef===data.resumenesClinicos&&c.evoRef===data.evolucionesClinicas)return false;
+      aplicarCarga410(c.pa,c.re,c.ev,false);
+      console.log('Capa clínica relacional: se reaplicó la última lectura completa sobre la configuración recién descargada ('+c.pa.length+' pacientes).');
       return true;
-    }catch(e){console.warn('No se pudo cargar la capa clínica relacional:',e?.message||e);return false;}
-    finally{cargando410=false;}
+    }catch(e){console.warn('No se pudo reaplicar la capa clínica relacional:',e?.message||e);return false;}
   }
 
-  window.cardiolinkClinica410={version:VERSION_CLINICA_410,cargar:cargar410,leerEvolucion:leerEvolucion410,guardarEvolucionConfirmada:guardarEvolucionConfirmada410,guardarResumenConfirmado:guardarResumenConfirmado410,sincronizarPacienteCompleto:sincronizarPacienteCompleto410,sincronizarFichaBasica:sincronizarFichaPacienteBasica410,asegurarPacienteSinConflictoDni:asegurarPacienteSinConflictoDni410,reconciliarDniDuplicado:reconciliarDniDuplicado410,reintentarFichas:reintentarFichas410,aplicarResultadoFicha:aplicarResultadoFicha410,idRelacional:idRelacional410,persistirSync:persistirSync410,resolverDivergencia:resolverDivergencia410};
+  let carga410=null;
+  function cargar410(){
+    if(!listo410())return Promise.resolve(false);
+    if(carga410)return carga410;   // una sola lectura en curso: quien llega mientras tanto comparte el resultado (sin consultas duplicadas)
+    carga410=(async()=>{
+      try{
+        const [pa,re,ev]=await Promise.all([
+          leerPadron410(),
+          supabaseClient.from('cardiolink_hc_resumen').select('*'),
+          supabaseClient.from('cardiolink_hc_evoluciones').select('*').order('fecha_hora',{ascending:false})
+        ]);
+        if(pa.error)throw pa.error;if(pa.completo!==true)throw {code:'PADRON_INCOMPLETO',message:'Lectura del padrón sin confirmar como completa.'};
+        if(re.error)throw re.error;if(ev.error)throw ev.error;
+        aplicarCarga410(pa.data||[],re.data||[],ev.data||[],true);
+        marcarPadronConfirmado410((pa.data||[]).length);quitarAvisoPadron410();
+        console.log(`Capa clínica relacional ${VERSION_CLINICA_410} cargada:`,(pa.data||[]).length,'pacientes,',(re.data||[]).length,'resúmenes,',(ev.data||[]).length,'evoluciones');
+        return true;
+      }catch(e){
+        // Nada parcial se aplicó: sigue lo último confirmado. Sin copia completa en este equipo se avisa (y el refresco automático vuelve a intentar).
+        console.warn('No se pudo cargar la capa clínica relacional:',e?.message||e);
+        if(!hayPadronConfirmado410())mostrarAvisoPadron410();
+        return false;
+      }finally{carga410=null;}
+    })();
+    return carga410;
+  }
+
+  window.cardiolinkClinica410={version:VERSION_CLINICA_410,cargar:cargar410,reaplicarCarga:reaplicarCarga410,leerEvolucion:leerEvolucion410,guardarEvolucionConfirmada:guardarEvolucionConfirmada410,guardarResumenConfirmado:guardarResumenConfirmado410,sincronizarPacienteCompleto:sincronizarPacienteCompleto410,sincronizarFichaBasica:sincronizarFichaPacienteBasica410,asegurarPacienteSinConflictoDni:asegurarPacienteSinConflictoDni410,reconciliarDniDuplicado:reconciliarDniDuplicado410,reintentarFichas:reintentarFichas410,aplicarResultadoFicha:aplicarResultadoFicha410,idRelacional:idRelacional410,persistirSync:persistirSync410,resolverDivergencia:resolverDivergencia410};
 
   // Carga inicial: espera a que Supabase Auth haya terminado el login.
   let intentos=0;

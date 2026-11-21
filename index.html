@@ -1108,7 +1108,9 @@ if("serviceWorker" in navigator){window.addEventListener("load",()=>{navigator.s
 <!-- Solicitudes de turno se carga antes de app.js: app.js conecta el cliente Supabase principal, igual que con Finanzas 5. -->
 <script src="cardiolink-solicitudes-turno.js?v=solicitudes-turno-2"></script>
 <script src="cardiolink-seguridad-local-v1.js?v=fe-1"></script>
-<script src="app.js?v=40130-hc-multidispositivo"></script>
+<!-- Padrón compartido / Carga paginada V1: lectura completa por páginas (Supabase corta en 1000 filas). Debe cargar antes de app.js. -->
+<script src="cardiolink-carga-paginada-v1.js?v=pag-1"></script>
+<script src="app.js?v=40131-padron-paginado"></script>
 <!-- Seguridad clínica V1 / Bloque 4B: configuración administrativa de Secretaría por RPC. Debe cargar después de app.js y antes del primer login. -->
 <script src="cardiolink-config-secretaria-v1.js?v=fe-1"></script>
 <!-- Persistencia V1 / R2B: motor de fusión de tres vías + integración (Dueño/Admin: UPDATE condicionado por updated_at; avisos de conflicto). Después de app.js. -->

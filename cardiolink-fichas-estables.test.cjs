@@ -170,7 +170,7 @@ test('CONFIGURACIÓN: aceptar las fichas alineadas con la tabla las toma como ba
 });
 
 test('INTEGRACIÓN ESTÁTICA: la carga informa lo adoptado a la configuración (R2B y Secretaría), sin empujes; los pendientes heredados no se reaplican solos y sólo Owner/Admin los ve', () => {
-  const c = tramo(APP, '  async function cargar410(){', '  window.cardiolinkClinica410={');
+  const c = tramo(APP, '  function aplicarCarga410(', '  window.cardiolinkClinica410={');   // aplicarCarga410 (merge + aceptarFichas + reintento) → reaplicarCarga410 → cargar410
   assert.match(c, /window\.cardiolinkConfigR2B\?\.aceptarFichas\?\.\(ids\);window\.cardiolinkConfigSecretariaV1\?\.aceptarFichas\?\.\(ids\)/); assert.doesNotMatch(c, /empujes410/); assert.match(c, /programarReintento410\(\)/);
   assert.match(R2B, /function aceptarFichas\(ids\) \{ if \(!baseVigente\(\)\) return 0; var n = aceptarFichasEnBase\(base, ids\); if \(n\) neutro = normalizar\(base\);/);
   assert.match(fs.readFileSync(path.join(__dirname, 'cardiolink-config-secretaria-v1.js'), 'utf8'), /function aceptarFichas\(ids\) \{ return baseVista \? aceptarFichasEnBase\(baseVista, ids\) : 0; \}/);
