@@ -624,7 +624,7 @@ function armarLector(o) {
   const fila = { id: '__cardiolink_config_v1', payload: { tipoRegistro: 'config', config: { evolucionesClinicas: [{ id: 'x' }], pacientes: [] } } };
   const otra = { id: 'a1', payload: { id: 'a1' } };
   const supabaseClient = { from: () => { const b = { filtro: null, select: () => b, neq: (c, v) => { registro.neq = [c, v]; b.filtro = [c, v]; return b; },
-    order: async () => ({ data: (b.filtro && o.servidorFiltra ? [] : [fila]).concat([otra]), error: null }) }; return b; } };
+    order: async () => { const d = (b.filtro && o.servidorFiltra ? [] : [fila]).concat([otra]); return { data: d, error: null, count: d.length }; } }; return b; } };   // como PostgREST con count:'exact' (la carga sin el módulo paginado exige el conteo)
   const trozo = APP.slice(APP.indexOf('const pideCfgCompleta298='), APP.indexOf('if(cfgRow?.payload?.config){', APP.indexOf('const pideCfgCompleta298=')));
   assert.ok(trozo.length > 100, 'no se encontró el enganche de carga');
   const win = { cardiolinkConfigSecretariaV1: o.modulo };

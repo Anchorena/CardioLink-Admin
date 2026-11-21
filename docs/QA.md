@@ -307,6 +307,6 @@ Hallazgo operativo: el Owner escribe UNA vez la copia de Configuración al ingre
 - Las atenciones se siguen filtrando por profesional en el servidor (médico: sólo las suyas); cargar pacientes no debe escribir en `cardiolink_pacientes`, HC ni atenciones.
 - Al iniciar la sesión el padrón debe estar completo (owner, Secretaría y médicos) sin esperar el refresco de ~30 s, sin consultas ni escrituras extra (se reaplica en memoria la última lectura completa tras la primera carga de configuración).
 - Si una página falla (o el módulo de paginación no está): no se aplica ni se muestra una carga parcial como completa; queda el último padrón completo confirmado; sin copia completa en el equipo aparece «No se pudo completar la carga de pacientes» con «Reintentar»; «Sincronizar ahora» no marca «sincronizado» si esa carga falló.
-- Pruebas con Node 22: `.github/workflows/pruebas-node22.yml` (base vs. PR, falla sólo ante fallas nuevas).
+- Pruebas con Node 22: `docs/propuestas/pruebas-node22.workflow.yml` → `.github/workflows/` (base vs. PR, falla sólo ante fallas nuevas).
 - Detalle y resultados: `docs/propuestas/padron-paginado-v1-QA-y-autoria-evoluciones.md`.
 

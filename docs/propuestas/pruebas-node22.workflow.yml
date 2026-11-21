@@ -1,4 +1,6 @@
 # CardioLink · pruebas estáticas con Node 22 (verificable en cada PR).
+# PARA ACTIVARLO: copiar este archivo a `.github/workflows/pruebas-node22.yml` (el token de la línea de comandos no tiene el permiso `workflow` y GitHub rechaza subir ese archivo desde ahí;
+# se puede agregar desde la web de GitHub o dándole ese permiso al token).
 # Corre TODAS las suites (`*.test.cjs` de la raíz y `tests/*.js`) sobre el PR y sobre `main` (la base), y compara: sólo falla ante una falla NUEVA.
 # Las fallas que ya existían en `main` se informan en el resumen, no se ocultan ni se modifican.
 # Sin secretos, sin red y sin Supabase: las suites leen archivos del repositorio. No despliega nada ni toca Production.

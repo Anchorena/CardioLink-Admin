@@ -12,7 +12,7 @@ Estado: implementado en la rama `fix/padron-paginacion-v1` (PR hacia `main`, SIN
   - **Fallo de la carga (ajuste 2):** no se aplica nada parcial; queda lo último confirmado. Si este equipo nunca confirmó un padrón completo (marca local por proyecto y usuario, se purga al cerrar sesión) se muestra «No se pudo completar la carga de pacientes… Reintentar» y se quita sola al completarse una carga. «Sincronizar ahora» ya no marca «sincronizado» (ni avanza «Última sincronización») si la carga de pacientes falló.
 - `index.html` (tag del módulo antes de `app.js`; versión `40131-padron-paginado`), `sw.js` (misma versión), `cardiolink-cobros-v1.test.cjs` y `cardiolink-hc-resumen-v1.test.cjs` (solo el texto de la versión esperada).
 - `tests/carga-paginada-v1.js` (26 pruebas: el módulo real contra un PostgREST simulado con tope de 1000 + chequeos estáticos de la integración).
-- `tests/ci-suites.sh` y `.github/workflows/pruebas-node22.yml` (ver sección 5): corrida verificable con Node 22 en GitHub Actions, base vs. PR.
+- `tests/ci-suites.sh` y `docs/propuestas/pruebas-node22.workflow.yml` (ver sección 5): corrida verificable con Node 22 en GitHub Actions, base vs. PR.
 No se tocó: Caja/Finanzas, RLS/SQL, el guardado clínico del PR #33, resumen/evoluciones (siguen con su consulta), políticas por profesional (siguen en la RLS del servidor).
 
 ## 2. QA (STAGING, datos sintéticos `qa3e_*`; 1136 pacientes, 1270 atenciones; cuentas owner / médico / Secretaría / médico sin Secretaría)
@@ -55,6 +55,6 @@ Regla: todos los médicos autorizados leen toda la HC; cada profesional crea, ed
 - **A confirmar antes:** que ningún flujo del owner inserte evoluciones a nombre de otro profesional (la importación desde Medicloud no tiene lotes registrados). Ensayo y rollback propios, como p3c.
 
 ## 5. Pruebas con Node 22 (GitHub Actions)
-No hay Node en la Mac de desarrollo, así que la corrida verificable es `.github/workflows/pruebas-node22.yml` (disparo: PR hacia `main` y manual). Usa `tests/ci-suites.sh`:
+No hay Node en la Mac de desarrollo, así que la corrida verificable es `docs/propuestas/pruebas-node22.workflow.yml` (se activa copiándolo a `.github/workflows/pruebas-node22.yml`; disparo: PR hacia `main` y manual). Usa `tests/ci-suites.sh`:
 - Corre TODAS las suites (`*.test.cjs` de la raíz con `node --test`, y `tests/*.js` con `node`) sobre `main` (la base) y sobre el PR, y compara por nombre de prueba: sólo falla ante una falla NUEVA. Las preexistentes (p. ej. las dos aserciones de QR descritas en `tests/LEEME-TESTS.md`) se listan como «preexistentes», sin ocultarlas ni modificarlas.
 - Sin secretos, sin red, sin Supabase, `permissions: contents: read`; no despliega ni toca Production. Los registros completos se guardan como artefacto.
