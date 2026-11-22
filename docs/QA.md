@@ -315,3 +315,11 @@ Hallazgo operativo: el Owner escribe UNA vez la copia de Configuración al ingre
 - Una carga que traiga nombre o DNI VACÍOS para fichas locales que los tienen no los adopta si son 10 o más (vaciado masivo): se conservan los datos locales y se muestra un único aviso simple; las correcciones puntuales (menos de 10) sí se adoptan.
 - Ningún upsert de fila completa pisa un nombre/DNI ya guardado con NULL ni con «Paciente sin nombre»; el reintento de fichas no envía lotes de vaciados.
 - Leer sigue sin escribir (0 escrituras a `cardiolink_pacientes` al cargar). Detalle, evidencia y plan de recuperación: `docs/propuestas/incidente_pacientes_vacios_INFORME_Y_PLAN.md`.
+
+## Facturación mensual V1 · Bloque 1 · Presentaciones a obras sociales (SQL aplicado solo en STAGING)
+- La lista automática arranca el 01/12/2026 (fecha de inicio del control, modificable por Dueño/Administrador). Lo anterior NO se da por facturado: se puede incorporar como EXCEPCIÓN (p. ej. bonos pendientes), con motivo, fecha original de producción y sin duplicados. El SQL (`docs/propuestas/pending_review_facturacion_presentaciones_v1*.sql`) está aplicado y verificado en STAGING y NO en Production: sin las tablas la sección dice «todavía no habilitada» y no escribe nada.
+- Prestación del mes y de meses anteriores (desde el control) realizadas, facturables (no Particular/PAMI, con arancel > 0) y no presentadas se incluyen solas; sin arancel y «terceros» van aparte.
+- Excepciones por mes, prestación, paciente o ID sin tildar de a una; lo excluido sigue pendiente. Confirmación única: dos confirmaciones o dos sesiones no duplican (índice único por atención, todo o nada).
+- Solo se presenta con arancel FIJADO en la atención (el servidor rechaza con PR412; sin arancel queda en incidencias pendientes). El médico ve la fecha de control y sus presentaciones en solo lectura.
+- La producción por fecha de atención (Finanzas V5) y las atenciones no cambian. El médico solo mira lo suyo; Secretaría solo sus médicos asociados.
+- Detalle: `docs/FACTURACION_PRESENTACIONES_V1.md`. Pruebas: `tests/presentaciones-os-v1.js`.
