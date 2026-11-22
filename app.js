@@ -3559,6 +3559,7 @@ function cerrarModalEdicion(){
 function guardarEdicionModal(id){
   const a=atenciones.find(x=>String(x.id)===String(id));
   if(!a)return;
+  const reglaOSPrevia=a.reglaOS, osPrevia=a.obraSocial, profPrevio=a.profesionalId; // Convenios V2: la regla comercial registrada en la atención no se recalcula en una edición común
   const profId=$('m_prof').value;
   const prof=data.profesionales.find(p=>p.id===profId);
   const prest=$('m_prest').value;
@@ -3600,7 +3601,7 @@ function guardarEdicionModal(id){
   a.estudioImpresoFacturacion=$('m_estudioImpresoFacturacion')?.checked||false;
   a.estudioEnviadoMail=$('m_estudioEnviadoMail')?.checked||false;
   a.estudioEnviadoWS=$('m_estudioEnviadoWS')?.checked||false;
-  a.reglaOS=getRegla(a.obraSocial,a.profesionalId);
+  a.reglaOS=(reglaOSPrevia&&String(osPrevia)===String(a.obraSocial)&&String(profPrevio||'')===String(a.profesionalId||''))?reglaOSPrevia:getRegla(a.obraSocial,a.profesionalId);
   try{ if(typeof window.aplicarArancelSnapshot3102Final==='function') window.aplicarArancelSnapshot3102Final(a,true); }catch(e){ console.warn('No se pudo actualizar arancel estimado',e); }
   selloAuditoriaEdicion(a);
   saveAtenciones();
@@ -10276,7 +10277,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   function puedeVerEconomico3102Final(){
     try{return !!(esMatiasDuenio?.()||esAdminComun?.());}catch(e){return false;}
   }
-  function normalizarPrest3102Final(v){return norm3102(v).toLowerCase().replace(/\s+/g,' ');}
+  function normalizarPrest3102Final(v){const k=norm3102(v).toLowerCase().replace(/\s+/g,' ');const cv=window.CardioLinkArancelesV2;return cv&&typeof cv.canonPrest==='function'?cv.canonPrest(k):k;} // ECG = Electrocardiograma (Convenios V2)
   function buscarArancel3102Final(obraSocial,prestacion,fecha,profesionalId='matias'){
     ensureConvenios3102();
     const os=norm3102(obraSocial).toLowerCase(),pr=normalizarPrest3102Final(prestacion),f=fecha||new Date().toISOString().slice(0,10);
@@ -14964,8 +14965,9 @@ function patientInfoTextHC(p,coverage){
   }
   function buscarArancel411F(a){
     if(!a)return null;
-    const pid=a.profesionalId||a.cajaPerfil||'matias',os=norm(a.obraSocial),prest=norm(a.prestacion),f=a.fecha||todayISO();
-    const arr=(data.arancelesPorProfesional?.[pid]||[]).filter(x=>x&&x.activo!==false&&norm(x.obraSocial)===os&&norm(x.prestacion)===prest&&(!x.vigenteDesde||x.vigenteDesde<=f));
+    const cv=window.CardioLinkArancelesV2,cp=s=>cv&&typeof cv.canonPrest==='function'?cv.canonPrest(s):norm(s); // ECG = Electrocardiograma (Convenios V2)
+    const pid=a.profesionalId||a.cajaPerfil||'matias',os=norm(a.obraSocial),prest=cp(a.prestacion),f=a.fecha||todayISO();
+    const arr=(data.arancelesPorProfesional?.[pid]||[]).filter(x=>x&&x.activo!==false&&norm(x.obraSocial)===os&&cp(x.prestacion)===prest&&(!x.vigenteDesde||x.vigenteDesde<=f));
     arr.sort((x,y)=>String(y.vigenteDesde||'').localeCompare(String(x.vigenteDesde||'')));
     return arr[0]||null;
   }
@@ -15391,7 +15393,8 @@ function patientInfoTextHC(p,coverage){
   }
 
   function tariff(pid,os,prest,fecha){
-    const arr=(data.arancelesPorProfesional?.[pid]||[]).filter(a=>a&&a.activo!==false&&normf(a.obraSocial)===normf(os)&&normf(a.prestacion)===normf(prest)&&(!a.vigenteDesde||a.vigenteDesde<=fecha));
+    const cv=window.CardioLinkArancelesV2,cpf=s=>cv&&typeof cv.canonPrest==='function'?cv.canonPrest(s):normf(s); // ECG = Electrocardiograma (Convenios V2)
+    const arr=(data.arancelesPorProfesional?.[pid]||[]).filter(a=>a&&a.activo!==false&&normf(a.obraSocial)===normf(os)&&cpf(a.prestacion)===cpf(prest)&&(!a.vigenteDesde||a.vigenteDesde<=fecha));
     arr.sort((a,b)=>String(b.vigenteDesde||'').localeCompare(String(a.vigenteDesde||'')));
     return arr[0]||null;
   }
