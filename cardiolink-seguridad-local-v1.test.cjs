@@ -165,19 +165,21 @@ test('integración estática: claves por proyecto+uid en app.js, concurrencia y 
   assert.ok(idx.indexOf('cardiolink-seguridad-local-v1.js') > 0 && idx.indexOf('cardiolink-seguridad-local-v1.js') < idx.indexOf('<script src="app.js'), 'el módulo carga ANTES que app.js y que los módulos que leen sus claves');
 });
 
-test('integración estática: ingreso migra por uid antes de aislar la caché; cierre decide el usuario (nunca descarta solo); el automático nunca descarta', () => {
+test('integración estática: ingreso migra por uid antes de aislar la caché; el cierre manual es DIRECTO sin ediciones reales, con UN mensaje si las hay, cifrado automático y sin pedir sellar ni descartar', () => {
   const app = leer('app.js'), glue = leer('cardiolink-outbox-glue-v1.js');
   assert.equal((app.match(/await window\.cardiolinkSeguridadLocalV1\?\.alIniciarSesion\(usuarioSupabase\?\.id\)/g) || []).length, 2);
   assert.ok(app.indexOf('alIniciarSesion(usuarioSupabase?.id)') < app.indexOf('aislarCacheLocalPorUsuarioV1(usuarioSupabase?.id, adminOwner'));
   assert.match(app, /recordarPassword\(password\)/);
   const c = app.slice(app.indexOf('async function cerrarSesionSupabase()'), app.indexOf('function agregarBotonCerrarSesion()'));
-  assert.match(c, /SL\.elegirCierre\(\{n,sinProteger:sinP,noProt:/); assert.match(c, /r==='reintentar'\) continue/); assert.match(c, /r==='cancelar'\) return/);
-  assert.match(c, /if\(r==='descartar'\)\{[\s\S]{0,300}descartarTodoUsuario/, 'el descarte sólo ocurre por elección explícita'); assert.doesNotMatch(c, /descartarTodoUsuario[\s\S]*descartarTodoUsuario/);
-  assert.match(c, /if\(!descartoTodo&&!selladoOk&&!yaLiberada\) await liberarCacheLocalAlCerrarSesionV1\(\)/);
+  assert.doesNotMatch(c, /elegirCierre|sellarConPassword|descartarTodoUsuario/, 'el cierre manual no pide sellar ni descartar');
+  assert.match(c, /Quedan cambios sin guardar\. '\+\(conClave\?'Se conservarán protegidos hasta que vuelvas a ingresar\.':'Se conservarán en este equipo hasta que vuelvas a ingresar\.'\)/, 'no promete protección si no hay clave');
+  assert.match(c, /if\(!limpia\)\{[\s\S]{0,700}window\.confirm\(texto\)/, 'el único mensaje sólo aparece si NO está todo guardado');
+  assert.match(c, /SL\.sellarConSesion\(extra,meta\)/); assert.match(c, /if\(!sel\.ok\)\{ alert\('No se pudieron proteger los cambios[\s\S]{0,160}return; \}/, 'si no se pudo proteger NO se cierra');
+  assert.match(c, /if\(!selladoOk&&!yaLiberada\) await liberarCacheLocalAlCerrarSesionV1\(\)/);
   const l = app.slice(app.indexOf('async function liberarCacheLocalAlCerrarSesionV1(auto)'), app.indexOf('// ---- Identidad profesional'));
   assert.match(l, /registrarCierre\(uidCierre,\{pendientes:Math\.max\(n2,1\)/); assert.match(l, /registrarCierre\(uidCierre,\{pendientes:0/); assert.match(l, /purgarSincronizadas\(uidCierre\)/);
   assert.doesNotMatch(l, /descartarTodoUsuario|\.descartar\(/, 'el cierre automático NUNCA descarta');
-  assert.match(app, /const limpia = await liberarCacheLocalAlCerrarSesionV1\(true\);[\s\S]{0,1400}if \(supabaseClient\) await supabaseClient\.auth\.signOut\(\);/);
+  assert.match(app, /const limpia = await liberarCacheLocalAlCerrarSesionV1\(true\);[\s\S]{0,1800}if \(supabaseClient\) await supabaseClient\.auth\.signOut\(\);/);
   assert.match(glue, /function registrar\(opciones\) \{\s*if \(window\.__cardiolinkDescarteCierre\) return false;/);
 });
 
@@ -263,14 +265,15 @@ test('clave de sesión: sólo existe en memoria tras recordarPassword y se olvid
   assert.ok(!Array.from(e.A.m.values()).join('').includes('"pw"'));
 });
 
-test('integración estática: en equipo compartido NO existe «conservar en claro»; cierre manual y automático sellan o bloquean; nunca quedan datos legibles', () => {
+test('integración estática: sin «conservar en claro» si hay clave; cierre manual y automático sellan solos o bloquean (compartido); en equipo personal el cifrado se aplica cuando hay clave', () => {
   const app = leer('app.js'), mod = leer('cardiolink-seguridad-local-v1.js');
   const c = app.slice(app.indexOf('async function cerrarSesionSupabase()'), app.indexOf('function agregarBotonCerrarSesion()'));
-  assert.doesNotMatch(c, /r==='conservar'/); assert.match(c, /SL\.sellarConPassword\(/); assert.match(c, /if\(!sel\.ok\)[\s\S]{0,260}continue;/, 'si no se pudo sellar NO se cierra');
-  assert.match(c, /purgarClaves\(uidSalida/);
+  assert.match(c, /const conClave=!!\(SL&&SL\.webcryptoDisponible&&SL\.webcryptoDisponible\(\)&&SL\.hayMaterial&&SL\.hayMaterial\(\)\)/); assert.match(c, /if\(conClave\)\{/);
   assert.doesNotMatch(mod, /data-r="conservar"/);
   const a = app.slice(app.indexOf('async function cerrarPorInactividad()'), app.indexOf('async function cerrarSesionSupabase()'));
-  assert.match(a, /SL\.equipoCompartido\(\)/); assert.match(a, /sellarConSesion\(extraAuto, \{ noProt:/); assert.match(a, /if \(!sel\.ok\) \{ bloquearPorInactividadV1\(\); return; \}/, 'sin clave o con fallo: se BLOQUEA, no se cierra en claro');
+  assert.match(a, /if \(!limpia && SL\) \{/); assert.match(a, /const conClave = SL\.webcryptoDisponible\(\) && SL\.hayMaterial\(\);/);
+  assert.match(a, /else if \(SL\.equipoCompartido\(\)\) \{ bloquearPorInactividadV1\(\); return; \}/, 'compartido sin clave o con fallo: se BLOQUEA, no se cierra en claro');
+  assert.match(a, /sellarConSesion\(extraAuto, \{ noProt:/, 'también en equipo personal se cifra cuando hay clave (el modo personal no reduce la protección)');
   assert.match(app, /function bloquearPorInactividadV1\(\)/); assert.match(app, /SL\.desbloquear\(\); cerrarPorInactividad\(\)/);
 });
 
@@ -326,9 +329,9 @@ test('datos heredados SIN dueño: custodia cifrada con la contraseña de quien d
 test('integración estática: reanudar una sesión sin contraseña en equipo compartido bloquea la interfaz (declarado NO criptográfico); la decisión sobre datos sin dueño es explícita; el diálogo de cierre advierte los cambios no protegidos', () => {
   const mod = leer('cardiolink-seguridad-local-v1.js'), app = leer('app.js');
   assert.match(mod, /S\.equipoCompartido\(\) && hayTokenLocal\(\)\) w\.setTimeout\(/); assert.doesNotMatch(mod, /getItem\('cardiolink_sesion_validada'\) !== '1'/, 'la clave sólo vive en memoria: tras recargar se pide la contraseña SIEMPRE'); assert.match(mod, /Hay una sesión abierta en este equipo/);
-  assert.match(mod, /no cifra los datos guardados en este navegador/); assert.match(mod, /BLOQUEO DE INTERFAZ \(NO es protección criptográfica/);
+  assert.match(mod, /Por seguridad, ingresá tu contraseña/); assert.match(mod, /BLOQUEO DE INTERFAZ \(NO es protección criptográfica/);
   assert.match(mod, /data-sc="1"[\s\S]{0,260}Sellar en mi custodia/); assert.match(mod, /Sin decisión quedan en claro/); assert.doesNotMatch(mod.replace(/\/\/.*$/gm, ''), /sellarSinDueno\([^)]*\);\s*\}\s*\}\s*catch/, 'nunca se sella solo');
-  assert.match(app, /SL\.elegirCierre\(\{n,sinProteger:sinP,noProt:np\}\)/);
+  assert.doesNotMatch(app.slice(app.indexOf('async function cerrarSesionSupabase()'), app.indexOf('function agregarBotonCerrarSesion()')), /elegirCierre/);
   assert.equal((app.match(/cachesRestauradas>0\)\{ data=loadConfig\(\); atenciones=loadAtenciones\(\); \}/g) || []).length, 2);
 });
 
@@ -347,15 +350,12 @@ test('heredados de OTROS usuarios: custodia cifrada (owner/admin), sin descartar
   assert.equal(JSON.parse(e.A.getItem('cardiolink_atenciones_rechazos_v1')).length, 2); assert.equal(await e.S.contarCustodia(), 0, 'el paquete se retira recién tras devolver');
 });
 
-test('integración estática: «pendiente» al cerrar incluye lo que no viaja en la cola; cerrar una sesión ajena sincroniza y purga o pide reintentar/descartar (nunca deja legible); sólo owner/admin custodian lo de otros', () => {
+test('integración estática: «pendiente» al cerrar = ediciones reales; cerrar una sesión ajena sincroniza y purga o pide reintentar (descartar sólo Owner/Admin); sólo Owner/Admin custodian lo de otros', () => {
   const app = leer('app.js'), mod = leer('cardiolink-seguridad-local-v1.js'), glue = leer('cardiolink-outbox-glue-v1.js');
-  const c = app.slice(app.indexOf('async function cerrarSesionSupabase()'), app.indexOf('function agregarBotonCerrarSesion()'));
-  assert.match(c, /const limpia=await liberarCacheLocalAlCerrarSesionV1\(\); yaLiberada=true;\s*if\(limpia\) break;\s*const r=await SL\.elegirCierre\(/, 'la decisión de «hay pendientes» es la de liberarCache…, no sólo la cola');
-  assert.match(c, /sellarConPassword\(\[\.\.\.clavesCacheLocalV1\(\),CACHE_OWNER_KEY_V1\],\{noProt:ob\.noProtegidos/);
-  assert.match(glue, /noProtegidos: function \(\) \{ try \{ var c = puente\.configPendiente\(\); return c && c\.noProt/);
+  assert.match(app, /const ob=window\.cardiolinkOutboxR2D, r1=[\s\S]{0,260}ob\.reales&&ob\.reales\(\)>0/); assert.match(glue, /noProtegidos: function \(\) \{ try \{ var c = puente\.configPendiente\(\); return c && c\.noProt/);
   const a = app.slice(app.indexOf('window.cerrarSesionAjenaV1 = async function'), app.indexOf('async function cerrarPorInactividad()'));
   assert.match(a, /sinClave: true/); assert.match(a, /if \(await liberarCacheLocalAlCerrarSesionV1\(\)\) break;/); assert.match(a, /r === 'cancelar'\) return 'cancelada'/); assert.doesNotMatch(a, /conservar/);
-  assert.match(mod, /w\.cerrarSesionAjenaV1\(\)/); assert.doesNotMatch(mod, /Sus datos locales NO se pueden cifrar \(no tenés su contraseña\) y quedan en este navegador/);
+  assert.match(mod, /admin \? '<button data-r="descartar"/, 'descartar sólo para Owner/Admin'); assert.match(mod, /w\.cerrarSesionAjenaV1\(\)/);
   assert.match(mod, /S\.esAdminSesion\(\) && S\.recolectarAjenos\(uid\)\.n/); assert.match(mod, /esAdmin: function \(\) \{ try \{ return typeof backendEsAdminOwner !== 'undefined' && backendEsAdminOwner === true;/);
   assert.match(app, /sellarConSesion\(extraAuto, \{ noProt: window\.cardiolinkOutboxR2D\?\.noProtegidos\?\.\(\) \|\| \[\] \}\)/);
 });
@@ -365,7 +365,7 @@ test('cerrar sesión NO purga la caché como «todo confirmado» si hay cambios 
   assert.match(l, /const pendiente=\(typeof window\.hayPendientesSync298==='function'\?window\.hayPendientesSync298\(\):true\)\|\|otrosPendientesCierreV1\(\);/);
   assert.match(l, /r1\.configPendiente&&typeof gcfg==='function'\) await Promise\.race/, 'antes de decidir se intenta guardar la configuración pendiente');
   const f = app.slice(app.indexOf('function otrosPendientesCierreV1()'), app.indexOf('async function liberarCacheLocalAlCerrarSesionV1(auto)'));
-  assert.match(f, /ob\.resumen\(\)\.length>0/); assert.match(f, /ob\.noProtegidos\(\)\.length>0/); assert.match(f, /r1\.configPendiente\|\|r1\.guardando>0/); assert.match(f, /catch\(e\)\{ return true; \}/, 'ante la duda se conserva');
+  assert.match(f, /ob\.reales&&ob\.reales\(\)>0/); assert.match(f, /ob\.noProtegidos\(\)\.length>0/); assert.match(f, /r1\.configPendiente\|\|r1\.guardando>0/); assert.match(f, /catch\(e\)\{ return true; \}/, 'ante la duda se conserva');
   assert.ok(l.indexOf('if(pendiente){') !== -1 && l.indexOf('if(pendiente){') < l.indexOf('removeItem(k)'));
 });
 

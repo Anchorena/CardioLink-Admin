@@ -512,6 +512,13 @@ function salvarDocumentosDeCacheV1(uid,rawConfig){
     localStorage.setItem(claveSegV1('cardiolink_docs_pendientes_v1',uid),JSON.stringify({docs:unirDocsPorIdV1(leerOutboxDocsV1(uid),docs),fecha:new Date().toISOString()}));
   }catch(e){ console.warn('No se pudieron resguardar los documentos de la caché anterior:',e); }
 }
+// Todo lo que se cifra o se purga al cerrar sesión: cachés, dueño de la caché y las marcas de sincronización de fichas (ids y huellas de ESTE usuario).
+function clavesCierreV1(){
+  const k=[...clavesCacheLocalV1(),CACHE_OWNER_KEY_V1];
+  try{ k.push('cardiolink_ficha_sync_v1:'+new URL(SUPABASE_URL).hostname.split('.')[0]+':'+usuarioSupabase.id); }catch(e){}
+  try{ k.push('cardiolink_padron_completo_v1:'+new URL(SUPABASE_URL).hostname.split('.')[0]+':'+usuarioSupabase.id); }catch(e){}   // marca «hay un padrón completo confirmado en este equipo»
+  return k;
+}
 function clavesCacheLocalV1(){ return [storageConfig,storageAtenciones,storageValoresColocacion,'cl_last_sync_382']; }
 function aislarCacheLocalPorUsuarioV1(uid,privilegiado){
   try{
@@ -535,8 +542,10 @@ function aislarCacheLocalPorUsuarioV1(uid,privilegiado){
 // Se llama con la sesión todavía válida (antes de signOut). Devuelve true si la caché se eliminó (nada pendiente).
 function otrosPendientesCierreV1(){
   try{
+    // «Pendiente» = ediciones REALES sin guardar (atenciones, fichas editadas por la persona, configuración editada), lo que la cola no protege y una configuración todavía sin guardar.
+    // Los restos heredados y las revisiones técnicas no cuentan: no deben bloquear ni ensuciar el cierre.
     const ob=window.cardiolinkOutboxR2D, r1=window.cardiolinkPersistenciaR1&&window.cardiolinkPersistenciaR1.estado?window.cardiolinkPersistenciaR1.estado():null;
-    return !!((ob&&ob.resumen&&ob.resumen().length>0)||(ob&&ob.noProtegidos&&ob.noProtegidos().length>0)||(r1&&(r1.configPendiente||r1.guardando>0)));
+    return !!((ob&&ob.reales&&ob.reales()>0)||(ob&&ob.noProtegidos&&ob.noProtegidos().length>0)||(r1&&(r1.configPendiente||r1.guardando>0)));
   }catch(e){ return true; }    // ante la duda se conserva (nunca se purga una caché que podría ser la única copia)
 }
 async function liberarCacheLocalAlCerrarSesionV1(auto){
@@ -568,8 +577,7 @@ async function liberarCacheLocalAlCerrarSesionV1(auto){
     }
     // Hay documentos clínicos cuyo respaldo no se pudo confirmar (o resguardar): la caché se conserva, asociada a su dueño.
     if(!docsSeguros){ try{ if(SLc&&uidCierre) SLc.registrarCierre(uidCierre,{pendientes:1,protegido:false,auto:!!auto}); }catch(e){} return false; }
-    clavesCacheLocalV1().forEach(k=>localStorage.removeItem(k));
-    localStorage.removeItem(CACHE_OWNER_KEY_V1);
+    clavesCierreV1().forEach(k=>localStorage.removeItem(k));
     try{ if(SLc&&uidCierre){ SLc.registrarCierre(uidCierre,{pendientes:0,protegido:true,auto:!!auto}); if(SLc.equipoCompartido()) SLc.purgarSincronizadas(uidCierre); } }catch(e){}   // todo confirmado: se purgan las copias ya sincronizadas
     return true;
   }catch(e){ console.warn('No se pudo liberar la caché local al cerrar sesión:',e); return false; }
@@ -1248,7 +1256,7 @@ function bloquearPorInactividadV1() {
     if (!SL.bloqueada()) { clearInterval(t); return; }
     try { await sincronizarAtencionesSupabase(false); } catch (e) { /* sin red */ }
     const ob = window.cardiolinkOutboxR2D; try { ob && ob.registrar(); } catch (e) { /* */ }
-    const pend = ob && ob.resumen ? ob.resumen().length : (typeof window.hayPendientesSync298 === 'function' && window.hayPendientesSync298() ? 1 : 0);
+    const pend = ob && ob.reales ? ob.reales() : (typeof window.hayPendientesSync298 === 'function' && window.hayPendientesSync298() ? 1 : 0);
     if (pend === 0) { clearInterval(t); SL.desbloquear(); cerrarPorInactividad(); }
   }, 20000);
 }
@@ -1267,14 +1275,14 @@ window.cerrarSesionAjenaV1 = async function () {
     try { await Promise.race([sincronizarAtencionesSupabase(false), new Promise(r => setTimeout(r, 6000))]); } catch (e) { /* sin red */ }
     try { ob && ob.registrar && ob.registrar(); } catch (e) { /* */ }
     if (await liberarCacheLocalAlCerrarSesionV1()) break;
-    const r = await SL.elegirCierre({ n: ob && ob.resumen ? ob.resumen().length : 0, sinProteger: ob && ob.sinProteccion ? ob.sinProteccion() : 0, noProt: (ob && ob.noProtegidos ? ob.noProtegidos() : []).length, sinClave: true });
+    const r = await SL.elegirCierre({ n: ob && ob.reales ? ob.reales() : 0, sinProteger: ob && ob.sinProteccion ? ob.sinProteccion() : 0, noProt: (ob && ob.noProtegidos ? ob.noProtegidos() : []).length, sinClave: true });
     if (r === 'reintentar') continue;
     if (r === 'cancelar') return 'cancelada';
-    if (r === 'descartar') { window.__cardiolinkDescarteCierre = true; SL.descartarTodoUsuario(uid, [...clavesCacheLocalV1(), CACHE_OWNER_KEY_V1]); descarto = true; break; }
+    if (r === 'descartar') { window.__cardiolinkDescarteCierre = true; SL.descartarTodoUsuario(uid, clavesCierreV1()); descarto = true; break; }
   }
   try { await supabaseClient.auth.signOut(); } catch (e) { /* */ }
   await signOutLocalGarantizadoV1();
-  if (descarto) { try { SL.purgarClaves(uid, [...clavesCacheLocalV1(), CACHE_OWNER_KEY_V1]); } catch (e) { /* */ } }
+  if (descarto) { try { SL.purgarClaves(uid, clavesCierreV1()); } catch (e) { /* */ } }
   try { SL.olvidarMaterial(); sessionStorage.removeItem('cardiolink_paciente_actual_411b'); sessionStorage.removeItem('cardiolink_bloqueo_v1'); } catch (e) { /* */ }
   location.reload(); return 'cerrada';
 };
@@ -1282,14 +1290,18 @@ async function cerrarPorInactividad() {
   try {
     if (window.cardioLinkRefreshInterval) clearInterval(window.cardioLinkRefreshInterval);
     const limpia = await liberarCacheLocalAlCerrarSesionV1(true);
-    const SL = window.cardiolinkSeguridadLocalV1, uidAuto = usuarioSupabase?.id, extraAuto = [...clavesCacheLocalV1(), CACHE_OWNER_KEY_V1];
+    const SL = window.cardiolinkSeguridadLocalV1, uidAuto = usuarioSupabase?.id, extraAuto = clavesCierreV1();
     let selladoAuto = false;
-    if (!limpia && SL && SL.equipoCompartido()) {
-      // Equipo compartido: con cambios sin sincronizar NUNCA se cierra dejando datos clínicos legibles. Se sellan con la clave de la sesión; sin ella (sesión reanudada sin contraseña) o si falla, se BLOQUEA la sesión.
-      const sel = await SL.sellarConSesion(extraAuto, { noProt: window.cardiolinkOutboxR2D?.noProtegidos?.() || [] });
-      if (!sel.ok) { bloquearPorInactividadV1(); return; }
-      window.__cardiolinkDescarteCierre = true; selladoAuto = true;
-      try { SL.registrarCierre(uidAuto, { pendientes: Math.max((window.cardiolinkOutboxR2D?.resumen?.().length) || 0, 1), protegido: true, sellado: true, auto: true }); } catch (e) { /* */ }
+    if (!limpia && SL) {
+      // Con cambios sin guardar: se cifran con la clave de la sesión (en equipo personal o compartido). Sin clave: en equipo compartido NUNCA se cierra dejando datos legibles → se BLOQUEA la sesión y se
+      // reintenta guardar; en equipo personal se conservan como siempre (sin cifrar), sin interrumpir.
+      const conClave = SL.webcryptoDisponible() && SL.hayMaterial();
+      let sel = { ok: false };
+      if (conClave) sel = await SL.sellarConSesion(extraAuto, { noProt: window.cardiolinkOutboxR2D?.noProtegidos?.() || [] });
+      if (sel.ok) {
+        window.__cardiolinkDescarteCierre = true; selladoAuto = true;
+        try { SL.registrarCierre(uidAuto, { pendientes: Math.max((window.cardiolinkOutboxR2D?.reales?.()) || 0, 1), protegido: true, sellado: true, auto: true }); } catch (e) { /* */ }
+      } else if (SL.equipoCompartido()) { bloquearPorInactividadV1(); return; }
     }
     if (supabaseClient) await supabaseClient.auth.signOut();
     if (supabaseClient) await signOutLocalGarantizadoV1();
@@ -1310,49 +1322,44 @@ async function cerrarPorInactividad() {
 
 async function cerrarSesionSupabase() {
   if (!supabaseClient) return;
-  // R2D + Seguridad local V1: con cambios sin sincronizar el usuario DECIDE (nada se descarta solo ni se pierde en silencio). En «Equipo compartido» (por defecto) hay tres salidas explícitas:
-  // reintentar sincronizar, cerrar conservando (sin cifrar, y se dice), o descartar con confirmación (sólo este usuario). Lo conservado NO está protegido por el UID: localStorage no se cifra.
-  let descartoTodo=false, selladoOk=false, yaLiberada=false;
+  // CERRAR SESIÓN sin carteles: si todo está guardado se cierra directo. Sólo si quedan ediciones REALES sin guardar hay UN mensaje; la protección es automática (cifrado con la clave de la sesión).
+  // Lo heredado de versiones anteriores y las revisiones técnicas no interrumpen: quedan protegidos en la cola sin aplicarse solos.
+  let selladoOk=false, yaLiberada=false;
+  const SL=window.cardiolinkSeguridadLocalV1, ob=window.cardiolinkOutboxR2D;
   try{
-    const ob=window.cardiolinkOutboxR2D, SL=window.cardiolinkSeguridadLocalV1;
-    const compartido=!!(SL&&SL.equipoCompartido()&&ob&&typeof ob.resumen==='function');
-    for(;;){
+    for(let intento=0;intento<2;intento++){
       try{ await Promise.race([sincronizarAtencionesSupabase(false),new Promise(r=>setTimeout(r,6000))]); }catch(e){}
       try{ ob&&ob.registrar&&ob.registrar(); }catch(e){}
-      const n=ob&&ob.resumen?ob.resumen().length:0, sinP=ob&&ob.sinProteccion?ob.sinProteccion():0, np=(ob&&ob.noProtegidos?ob.noProtegidos():[]).length;
-      if(compartido){
-        // «Pendiente» = lo que decide liberarCacheLocalAlCerrarSesionV1 (cola R2D, filas nuevas, documentos sin respaldo y cambios de configuración que NO viajan en la cola), no sólo la cola.
-        const limpia=await liberarCacheLocalAlCerrarSesionV1(); yaLiberada=true;
-        if(limpia) break;
-        const r=await SL.elegirCierre({n,sinProteger:sinP,noProt:np});
-        if(r==='reintentar') continue;
-        if(r==='cancelar') return;
-        if(r==='descartar'){
-          window.__cardiolinkDescarteCierre=true;     // la cola y la caché de este usuario se descartan: el cierre de página no las vuelve a escribir
-          SL.descartarTodoUsuario(usuarioSupabase?.id,[...clavesCacheLocalV1(),CACHE_OWNER_KEY_V1]); descartoTodo=true; break;
-        }
-        // PROTECCIÓN REAL: se cifra todo lo sensible del usuario con su contraseña (no guardada) y el texto plano se retira sólo tras verificar el paquete.
-        const sel=await SL.sellarConPassword([...clavesCacheLocalV1(),CACHE_OWNER_KEY_V1],{noProt:ob.noProtegidos?ob.noProtegidos():[]});
-        if(!sel.ok){ if(sel.error!=='cancelado') alert('No se pudo sellar los cambios con tu contraseña ('+sel.error+'). NO se cierra la sesión para no dejar datos clínicos legibles en este equipo: reintentá, sincronizá o descartá.'); continue; }
-        window.__cardiolinkDescarteCierre=true; selladoOk=true;
-        try{ SL.registrarCierre(usuarioSupabase?.id,{pendientes:Math.max(n,1),protegido:true,sellado:true}); }catch(e){}
-        break;
-      }
-      if(n>0&&!window.confirm((sinP>0?'ATENCIÓN: '+sinP+' de esos cambios NO están protegidos en este equipo (almacenamiento lleno o no disponible) y SE PERDERÁN si cerrás sesión.\n\n':'')+'Hay '+n+' cambio'+(n===1?'':'s')+' sin sincronizar.\n\nSi cerrás sesión quedan guardados en ESTE equipo SIN CIFRAR: otra persona con acceso a este navegador podría leerlos (separarlos por usuario no los protege). Se recuperan cuando vuelvas a entrar.\n\n¿Cerrar sesión igual?')) return;
-      break;
+      try{ if(window.cardiolinkClinica410?.reintentarFichas) await Promise.race([window.cardiolinkClinica410.reintentarFichas(false),new Promise(r=>setTimeout(r,6000))]); }catch(e){}
+      if(!(ob&&ob.reales&&ob.reales()>0)) break;
     }
-  }catch(e){ console.warn('R2D:',e); }
+    const limpia=await liberarCacheLocalAlCerrarSesionV1(); yaLiberada=true;
+    const conClave=!!(SL&&SL.webcryptoDisponible&&SL.webcryptoDisponible()&&SL.hayMaterial&&SL.hayMaterial());
+    const extra=clavesCierreV1(), meta={noProt:ob&&ob.noProtegidos?ob.noProtegidos():[]};
+    if(!limpia){
+      const sinP=ob&&ob.sinProteccion?ob.sinProteccion():0;
+      const texto=(sinP>0?'Atención: algunos cambios no se pudieron guardar en este equipo y se perderán si cerrás. ':'')+'Quedan cambios sin guardar. '+(conClave?'Se conservarán protegidos hasta que vuelvas a ingresar.':'Se conservarán en este equipo hasta que vuelvas a ingresar.')+'\n\n¿Cerrar sesión?';
+      if(!window.confirm(texto)) return;
+      if(conClave){
+        const sel=await SL.sellarConSesion(extra,meta);
+        if(!sel.ok){ alert('No se pudieron proteger los cambios que quedan sin guardar, por eso no se cerró la sesión. Revisá la conexión e intentá de nuevo.'); return; }
+        window.__cardiolinkDescarteCierre=true; selladoOk=true;
+        try{ SL.registrarCierre(usuarioSupabase?.id,{pendientes:Math.max(ob&&ob.reales?ob.reales():1,1),protegido:true,sellado:true}); }catch(e){}
+      }
+    }else if(conClave&&ob&&ob.resumen&&ob.resumen().length>0){
+      // sólo restos protegidos (heredados/revisiones): se cifran en silencio, sin preguntar
+      const sel=await SL.sellarConSesion(extra,meta); if(sel.ok){ window.__cardiolinkDescarteCierre=true; selladoOk=true; }
+    }
+  }catch(e){ console.warn('Cierre de sesión:',e); }
 
-  if(!descartoTodo&&!selladoOk&&!yaLiberada) await liberarCacheLocalAlCerrarSesionV1();
+  if(!selladoOk&&!yaLiberada) await liberarCacheLocalAlCerrarSesionV1();
   const uidSalida=usuarioSupabase?.id;
   await supabaseClient.auth.signOut();
   await signOutLocalGarantizadoV1();
-  if(descartoTodo||selladoOk){ try{ window.cardiolinkSeguridadLocalV1?.purgarClaves(uidSalida,[...clavesCacheLocalV1(),CACHE_OWNER_KEY_V1]); }catch(e){} }   // ninguna escritura tardía deja texto plano
+  if(selladoOk){ try{ window.cardiolinkSeguridadLocalV1?.purgarClaves(uidSalida,clavesCierreV1()); }catch(e){} }   // ninguna escritura tardía deja texto plano
   try{ window.cardiolinkSeguridadLocalV1?.olvidarMaterial(); }catch(e){}
   localStorage.removeItem("sb-session");
-  // UI Interna V1 (iteración 2) - mismo motivo que cerrarPorInactividad():
-  // evitar que el próximo login en esta pestaña herede el paciente activo
-  // de la sesión que se está cerrando.
+  // evita que el próximo login en esta pestaña herede el paciente activo de la sesión que se cierra
   try { sessionStorage.removeItem('cardiolink_paciente_actual_411b'); } catch (e) {}
 
   location.reload();
@@ -1387,9 +1394,7 @@ function agregarBotonCerrarSesion() {
   btn.style.marginTop = "10px";
 
   btn.addEventListener("click", async () => {
-    if (confirm("¿Cerrar sesión en CardioLink?")) {
-      await cerrarSesionSupabase();
-    }
+    await cerrarSesionSupabase();   // directo si todo está guardado; con ediciones sin guardar, cerrarSesionSupabase muestra UN solo mensaje
   });
 
   document.body.appendChild(btn);
@@ -2872,6 +2877,7 @@ function buscarPacienteDesdeCarga(){const q=($('buscarPaciente')?.value||'').tri
 function buscarPacientePorDniSiExiste(){const dni=$('dni')?.value||'';if(String(dni).replace(/\D/g,'').length>=6){const r=buscarPacientes(dni);if(r.length)renderResultadosPacientes(r);}}
 function usarPaciente(id){
  const p=todosPacientes().find(x=>x.id===id);if(!p)return;
+ try{window.cardiolinkFichaV1?.fijarVistaEdicion(p.id,p);}catch(e){}   // base de la edición: lo que se muestra ahora
  $('pacienteId').value=p.id;
  $('paciente').value=p.nombreCompleto||'';
  $('dni').value=p.dni||'';
@@ -4886,6 +4892,7 @@ function seleccionarPacientePanel(id){
 }
 function editarPacientePanel(id){
   const p=buscarPacientePanelPorId(id); if(!p)return;
+  try{window.cardiolinkFichaV1?.fijarVistaEdicion(p.id,p);}catch(e){}   // base de la edición: lo que se muestra ahora
   const detalle=$('pacienteDetalle'); if(!detalle)return;
   detalle.innerHTML=`
     <h3>Editar ficha administrativa</h3>
@@ -4998,7 +5005,7 @@ async function guardarPacientePanel(id){
   let okRel=null;
   try{ okRel=await window.cardiolinkClinica410?.sincronizarFichaBasica?.(p); }catch(e){ console.warn('No se pudo sincronizar la capa clínica relacional:',e); okRel=false; }
   // v3: la ficha "guardada" se muestra recién con la confirmación del servidor; si no se confirma, se avisa antes de mostrarla como guardada.
-  try{ const okCfgPanel=await confirmarConfigAdministrativaV1(); if(okCfgPanel===false) avisarConfigNoConfirmadaV1('La ficha del paciente',okRel===true); else if(okRel===false) avisarConfigNoConfirmadaV1('La ficha del paciente (tabla de pacientes)'); }catch(e){ console.warn(e); }
+  try{ const okCfgPanel=await confirmarConfigAdministrativaV1(); if(okCfgPanel===false) avisarConfigNoConfirmadaV1('La ficha del paciente',okRel===true); else if(okRel===false) avisarConfigNoConfirmadaV1('La ficha del paciente'); }catch(e){ console.warn(e); }
   pacienteSeleccionadoPanelId=p.id;
   renderPacientesPanel($('pacientesBuscar')?.value||'',false);
   seleccionarPacientePanel(p.id);
@@ -6840,9 +6847,10 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
         instalarConfig:(baseRaw,ver,localCfg)=>{ const r=window.cardiolinkConfigR2B; if(!r||!r.instalarRecuperacion(baseRaw,ver,localCfg)) return; marcarConfigPendiente298(); setTimeout(()=>{ guardarConfigEnSupabase298().catch(e=>console.warn('Guardado de configuración recuperada falló:',e)); },1500); },
         fichasPendientes:()=>{ try{ return window.cardiolinkFichaV1?window.cardiolinkFichaV1.listarPendientes():[]; }catch(e){ return []; } },
         fichaDesc:id=>{ const p=(data&&data.pacientes||[]).find(x=>String(x.id)===String(id)); return 'Ficha de '+((p&&p.nombreCompleto)||id); },
-        recuperarFicha:op=>{ const F=window.cardiolinkFichaV1; if(!F) return; F.marcarPendiente(op.id,op.cambios); const p=(data.pacientes||[]).find(x=>String(x.id)===String(op.id)); if(p){ Object.keys(op.cambios).forEach(k=>{ const d=op.cambios[k].d; p[k]=d==null?'':d; }); try{ localStorage.setItem(storageConfig,JSON.stringify(data)); }catch(e){} } setTimeout(()=>{ window.cardiolinkClinica410?.reintentarFichas?.(); },2500); },
+        recuperarFicha:op=>{ const F=window.cardiolinkFichaV1; if(!F) return; const real=op.origen==='usuario'; F.marcarPendiente(op.id,op.cambios,real?'usuario':'heredado'); if(real){ const p=(data.pacientes||[]).find(x=>String(x.id)===String(op.id)); if(p){ Object.keys(op.cambios).forEach(k=>{ const d=op.cambios[k].d; p[k]=d==null?'':d; }); try{ localStorage.setItem(storageConfig,JSON.stringify(data)); }catch(e){} } setTimeout(()=>{ window.cardiolinkClinica410?.reintentarFichas?.(); },2500); } },   // lo heredado queda protegido en la cola SIN aplicarse (puede traer datos viejos)
+        guardarAhora:async op=>{ try{ if(op.k==='ficha'){ const r=await window.cardiolinkClinica410?.reintentarFichas?.(true); return {ok:!!(r&&r.ok),mensaje:r&&r.mensaje||''}; } if(op.k==='config'){ const ok=await guardarConfigEnSupabase298(); return {ok:ok===true,mensaje:ok===true?'':'No se pudo guardar la configuración por ahora. Se vuelve a intentar solo.'}; } await sincronizarAtencionesSupabase(false); return {ok:true,mensaje:''}; }catch(e){ return {ok:false,mensaje:'No se pudo guardar por ahora. Se vuelve a intentar solo.'}; } },
         descartarFicha:id=>{ const F=window.cardiolinkFichaV1; if(!F) return; const pend=F.listarPendientes().find(x=>x.id===String(id)); if(!pend) return; const p=(data.pacientes||[]).find(x=>String(x.id)===String(id)); if(p) Object.keys(pend.cambios).forEach(k=>{ const a=pend.cambios[k].a; p[k]=a==null?'':a; }); F.liberarCampos(id,Object.keys(pend.cambios)); try{ localStorage.setItem(storageConfig,JSON.stringify(data)); }catch(e){} },
-        reintentarFichas:()=>{ try{ return window.cardiolinkClinica410?.reintentarFichas?.(); }catch(e){} },
+        reintentarFichas:()=>{ try{ return window.cardiolinkClinica410?.reintentarFichas?.(true); }catch(e){} },
         divergencias:()=>{ try{ return window.cardiolinkFichaV1?window.cardiolinkFichaV1.listarDivergencias():[]; }catch(e){ return []; } },
         recuperarDivergencia:op=>{ const F=window.cardiolinkFichaV1; if(F) F.registrarDivergencias(op.id,op.campos); },
         resolverDivergencia:(id,campo,uso)=>{ try{ return window.cardiolinkClinica410?.resolverDivergencia?.(id,campo,uso); }catch(e){} },
@@ -7049,6 +7057,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     if(!p.nombreCompleto && !p.dni && !p.telefono){alert('Cargá al menos nombre, DNI o teléfono.');return;}
     const ex=pacienteExistente298(p);
     if(ex && !confirm('Ya existe un paciente probable. ¿Actualizar la ficha existente?')) return;
+    try{ if(ex) window.cardiolinkFichaV1?.fijarVistaEdicion(ex.id,ex); }catch(e){}   // lo que la ficha mostraba antes de aplicar lo tipeado
     let r=aplicarPaciente298(p,ex);
     // ALTA DE PACIENTE V1 - mismo punto único de validación que Carga de
     // turno (datosPacienteObligatoriosFaltantes): se valida sobre
@@ -7221,11 +7230,11 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
   window.confirmarConfigAdministrativaV1=confirmarConfigAdministrativaV1;
   window.avisarConfigNoConfirmadaV1=function(que,fichaRelacionalConfirmada){
     if(fichaRelacionalConfirmada===true){   // R3: la tabla de pacientes (fuente principal) confirmó: la ficha ESTÁ guardada; sólo la copia de configuración queda pendiente
-      const m=(que||'El cambio')+': guardada en el servidor (tabla de pacientes). Sólo la copia de configuración quedó pendiente de sincronización y se reintenta.';
+      const m=(que||'El cambio')+': se guardó correctamente. Un dato secundario se termina de guardar solo.';
       try{ if(window.cardiolinkConfigR2B&&window.cardiolinkConfigR2B.avisoTransitorio) window.cardiolinkConfigR2B.avisoTransitorio(m); else console.warn(m); }catch(e){ console.warn(m); }
       return;
     }
-    alert((que||'El cambio')+': el cambio quedó guardado SOLO en este equipo; NO se pudo confirmar con el servidor. No se pierde, pero nadie más lo verá hasta que se sincronice. Revisá la conexión y repetí el guardado (si aparece un aviso rojo, usá «Reintentar» ahí).');
+    alert((que||'El cambio')+': se guardó en este equipo y todavía no se pudo enviar. No se pierde y se vuelve a intentar solo; no hace falta repetirlo.');
   };
   window.guardarConfigEnSupabase298=guardarConfigEnSupabase298;
   // R1: envoltorio que registra el guardado en curso y sólo da por saldado el pendiente cuando el servidor lo confirma (sin otro pedido en el medio).
@@ -7255,9 +7264,20 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       const sigClavesInicio298=sigClaves298(data), inicioCarga298=Date.now();   // R1: `data` y reloj local al pedir esta carga
       // v3: con el rol sin confirmar o sin permiso sobre la fila completa (Secretaría, owner/admin no confirmado) la fila de configuración ni siquiera se pide.
       const pideCfgCompleta298=configCompletaPermitidaV1() || (backendRolCargado===true && esMedicoBackendV1());
-      let consulta298=supabaseClient.from('cardiolink_atenciones').select('id,payload,updated_at');
-      if(!pideCfgCompleta298) consulta298=consulta298.neq('id',CONFIG_ROW_ID);
-      const { data: rows, error } = await consulta298.order('updated_at',{ascending:false});
+      // Lectura COMPLETA por páginas (el tope del servidor es 1000 filas por consulta): orden y cursor por id, sólo lectura; el orden final «más reciente primero» (updated_at) se conserva.
+      // Si el módulo no cargó se hace una consulta única con conteo exacto que sólo vale si trajo todo. Las restricciones por profesional las sigue aplicando la RLS del servidor sobre cada página.
+      const cp298=window.cardiolinkCargaPaginadaV1;
+      let rows, error;
+      if(cp298){
+        const lec298=await cp298.leerTodo({sb:supabaseClient,tabla:'cardiolink_atenciones',columnas:'id,payload,updated_at',clave:'id',filtro:pideCfgCompleta298?null:(q=>q.neq('id',CONFIG_ROW_ID)),ordenar:cp298.masRecientePrimero('updated_at','id'),dedup:'atenciones|'+(pideCfgCompleta298?'cfg':'sincfg')});
+        rows=lec298.data; error=lec298.error;
+      }else{
+        // Sin el módulo: consulta única con conteo exacto; sólo vale si trajo TODAS las filas (nunca una lista truncada por el tope del servidor presentada como completa).
+        let consulta298=supabaseClient.from('cardiolink_atenciones').select('id,payload,updated_at',{count:'exact'});
+        if(!pideCfgCompleta298) consulta298=consulta298.neq('id',CONFIG_ROW_ID);
+        let cnt298; ({ data: rows, error, count: cnt298 } = await consulta298.order('updated_at',{ascending:false}));
+        if(!error&&(typeof cnt298!=='number'||(rows||[]).length<cnt298)){ rows=null; error={code:'CARGA_INCOMPLETA',message:'no se pudo completar la carga'}; }
+      }
       if(error){ console.error(error); alert('No se pudieron cargar las atenciones desde Supabase: '+error.message); throw error; }
       let cfgRow=(rows||[]).find(r=>r.id===CONFIG_ROW_ID || r.payload?.tipoRegistro==='config');
       // Bloque 4B v3: rol SIN confirmar → nunca se toma la fila completa. Rol confirmado que no es owner/admin ni médico (Secretaría) → RPC administrativa; si falla,
@@ -7370,6 +7390,14 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       primeraCargaAplicada298=true;
       if(mezcla298&&mezcla298.protegidas.size) syncDiferidoPorCarga=true;
       liberarSyncDiferidoPorCargaV1();
+    };
+    // Padrón completo al arrancar: en la PRIMERA carga de la sesión la configuración descargada reemplaza `data`; si la capa relacional (pacientes, resúmenes, evoluciones) ya había terminado,
+    // sus filas quedaban fuera hasta el refresco siguiente (~30 s). Se reaplica la última lectura completa en memoria: sin consultas nuevas ni escrituras al servidor.
+    const cargarPadron298=cargarAtencionesDesdeSupabase;
+    window.cargarAtencionesDesdeSupabase = cargarAtencionesDesdeSupabase = async function(){
+      const eraPrimera298=!window.cardiolinkPersistenciaR1?.estado?.().primeraCarga;
+      try{ return await cargarPadron298.apply(this,arguments); }
+      finally{ if(eraPrimera298){ try{ window.cardiolinkClinica410?.reaplicarCarga?.(); }catch(e){ console.warn(e); } } }
     };
   }
   if(typeof sincronizarAtencionesSupabase==='function'){
@@ -8453,6 +8481,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     if(!p && dni)p=data.pacientes.find(x=>dniClean(x.dni)===dni);
     let esNuevoLocal=false;
     if(!p){p={id:'pac_'+Date.now()+Math.floor(Math.random()*10000),historialCoberturas:[]};data.pacientes.push(p);esNuevoLocal=true;}
+    else{ try{ window.cardiolinkFichaV1?.fijarVistaEdicion(p.id,p); }catch(e){} }   // lo que la ficha mostraba antes de aplicar lo tipeado
     p.nombreCompleto=($id('gPacNombre')?.value||'').trim();
     p.dni=($id('gPacDni')?.value||'').trim();
     p.fechaNacimiento=$id('gPacNacimiento')?.value||'';
@@ -9108,6 +9137,7 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
     // 2) esperar confirmación; 3) traer lo remoto ya confirmado; 4) reconciliar
     // la capa clínica relacional (mismo cargar410() que reutiliza C).
     const btn=$('btnSyncNow382');if(btn){btn.disabled=true;btn.textContent='Sincronizando…';}
+    const ultimaSync382=(()=>{try{return localStorage.getItem('cl_last_sync_382');}catch(e){return null;}})();
     try{
       let ok=true;
       if(typeof sincronizarAtencionesSupabase==='function'){
@@ -9127,8 +9157,17 @@ try{Object.assign(window,{editarAtencion,eliminarAtencion,guardarEdicion,cancela
       if(typeof cargarAtencionesDesdeSupabase==='function'){
         await cargarAtencionesDesdeSupabase();
       }
-      try{ await window.cardiolinkClinica410?.cargar?.(); }
-      catch(e){ console.warn('Sincronizar ahora: reconciliación clínica relacional falló (se continúa):', e); }
+      let okRel382=true;
+      try{ okRel382=await window.cardiolinkClinica410?.cargar?.(); }
+      catch(e){ okRel382=false; console.warn('Sincronizar ahora: reconciliación clínica relacional falló:', e); }
+      // Sin mensajes falsos: si no se pudo completar la carga de pacientes NO se marca «sincronizado».
+      if(okRel382===false){
+        try{ if(ultimaSync382===null)localStorage.removeItem('cl_last_sync_382'); else localStorage.setItem('cl_last_sync_382',ultimaSync382); }catch(e){}   // la «última sincronización» no avanza si la carga de pacientes no se completó
+        try{ renderTabla?.(); renderStats?.(); }catch(e){}
+        alert('No se pudo completar la carga de pacientes. Tus datos no se modificaron. Esperá unos segundos y volvé a tocar "Sincronizar ahora".');
+        renderHealth382();
+        return;
+      }
       try{ renderTabla?.(); renderStats?.(); }catch(e){}
       localStorage.setItem('cl_last_sync_382',String(Date.now()));
       renderHealth382();
@@ -11114,7 +11153,11 @@ function patientInfoTextHC(p,coverage){
       overlay.querySelectorAll('[data-hc-copyfield411]').forEach(x=>x.checked=false);
     });
 
-    if(existing)overlay.dataset.evoBaseV1=String(existing.actualizadoEn||'');   // versión con la que se abrió (control de edición concurrente)
+    if(existing){
+      overlay.dataset.evoBaseV1=String(existing.actualizadoEn||'');   // versión con la que se abrió
+      // Guardado clínico multidispositivo: LÍNEA BASE de los campos tal como se vieron al abrir (el guardado sube sólo lo que la persona cambió).
+      overlay.dataset.evoBaselineV1=JSON.stringify({motivo:existing.motivo??'',evolucion:existing.evolucion??'',diagnostico:existing.diagnostico??'',conducta:existing.conducta??'',pesoKg:existing.pesoKg??null,tallaCm:existing.tallaCm??null,taSistolica:existing.taSistolica??null,taDiastolica:existing.taDiastolica??null,frecuenciaCardiaca:existing.frecuenciaCardiaca??null,sato2:existing.sato2??null});
+    }
     $hc('hcGuardarEvolucion').onclick=()=>saveEvolutionHC(p,existing,linked);
     // FASE 8 UI Interna V1 (Hoja de evolución) - "Eliminar" reutiliza 100%
     // la lógica ya existente (permiso + clave de administrador + borrado
@@ -11148,7 +11191,6 @@ function patientInfoTextHC(p,coverage){
     // si el servidor confirmó la persistencia; (5) ante un error el modal queda abierto con el texto intacto; (6) un reintento reutiliza el mismo id.
     const modalEl=$hc('hcEvolutionModal'),btnGuardar=$hc('hcGuardarEvolucion');
     const conectado=!!(typeof supabaseClient!=='undefined'&&supabaseClient&&typeof usuarioSupabase!=='undefined'&&usuarioSupabase);
-    const baseVersion=modalEl?.dataset.evoBaseV1||'';
     const campos={motivo,evolucion,diagnostico,conducta,pesoKg,tallaCm,imc,taSistolica,taDiastolica,frecuenciaCardiaca,sato2,actualizadoEn:now,actualizadoPor:prof.nombre};
     const falloGuardado=(msg)=>{mostrarErrorGuardadoEvolucionV1(msg);};
     if(window.__hcGuardandoEvolucionV1)return;               // doble clic / reentrada
@@ -11157,6 +11199,8 @@ function patientInfoTextHC(p,coverage){
     if(btnGuardar){btnGuardar.disabled=true;btnGuardar.textContent='Guardando…';}
     quitarErrorGuardadoEvolucionV1();
     let evolutionIdFinal='',previoLive=null,pushedNow=false,previoResumen=null;
+    let omitidosResumen=[];   // etiquetas de los datos que la persona decidió NO reemplazar (se conservó lo guardado)
+    const resolucionRes={},omitirRes=[];   // decisiones de la única pregunta (valores guardados confirmados para reemplazar / datos a conservar)
     const revertirLocal=()=>{
       try{
         if(previoLive){const i=(data.evolucionesClinicas||[]).findIndex(x=>String(x.id)===String(previoLive.id));if(i>=0)data.evolucionesClinicas[i]=previoLive;}
@@ -11175,17 +11219,14 @@ function patientInfoTextHC(p,coverage){
         // El estado actual ya no tiene la evolución (p. ej. reemplazado por un refresco): NO se recrea sin comprobar el servidor.
         let srv=conectado&&window.cardiolinkClinica410?.leerEvolucion?await window.cardiolinkClinica410.leerEvolucion(editId):{existe:conectado?null:true};
         if(!live){
-          if(srv.existe===false){falloGuardado('Esta evolución ya no existe en el servidor (fue eliminada). No se recreó. Tu texto sigue en pantalla: copialo si lo necesitás.');return;}
+          if(srv.existe===false){falloGuardado('Esta evolución fue eliminada desde otro dispositivo. No se volvió a crear. Tu texto sigue en pantalla: copialo si lo necesitás.');return;}
           if(srv.existe!==true){falloGuardado('No se pudo comprobar la evolución en el servidor. Tu texto sigue acá: revisá la conexión y volvé a pulsar Guardar.');return;}
           try{await window.cardiolinkClinica410?.cargar?.();}catch(e){}
           live=(data.evolucionesClinicas||[]).find(x=>String(x.id)===editId);
           if(!live){falloGuardado('No se pudo recuperar la evolución desde el servidor. Tu texto sigue acá: volvé a pulsar Guardar.');return;}
         }
-        // Control de versión: no pisar una edición de otra sesión posterior a la que se abrió.
-        const vServ=Date.parse(srv.editadoEn||0)||0,vBase=Date.parse(baseVersion||0)||0;
-        if(srv.existe===true&&vServ>vBase+1000){
-          falloGuardado('Esta evolución fue modificada desde otra sesión después de abrirla. No se sobrescribió. Copiá tu texto, cerrá y volvé a abrir la evolución.');return;
-        }
+        // Guardado clínico multidispositivo: ya no se bloquea por «otra edición posterior». El guardado sube sólo los campos cambiados con UPDATE condicionado (cardiolink-hc-evolucion-v1.js);
+        // los campos que otro dispositivo cambió y esta persona no tocó se conservan, y sólo se pregunta si se va a reemplazar un dato que otro dispositivo cambió.
         previoLive=JSON.parse(JSON.stringify(live));
         Object.assign(live,campos);
         evolutionIdFinal=String(live.id);
@@ -11200,7 +11241,24 @@ function patientInfoTextHC(p,coverage){
       if(summaryChanged){previoResumen=data.resumenesClinicos[key]?JSON.parse(JSON.stringify(data.resumenesClinicos[key])):null;data.resumenesClinicos[key]={...resumenHC(p),...summaryNow,actualizadoEn:now,actualizadoPor:prof.nombre};}
       // Confirmación de persistencia: sólo se cierra si el servidor tiene EXACTAMENTE esta versión (lectura posterior al upsert).
       if(conectado&&window.cardiolinkClinica410?.guardarEvolucionConfirmada){
-        const r=await window.cardiolinkClinica410.guardarEvolucionConfirmada(p,evolutionIdFinal,{resumen:summaryChanged});
+        // Guardado clínico multidispositivo: el resumen sube sólo lo que cambió (base = lo que se vio al abrir). Si otro dispositivo cambió ESE mismo dato, se pregunta UNA vez.
+        // Evolución EXISTENTE: sólo los campos cambiados (línea base = lo que se vio al abrir). Una única pregunta cubre resumen y evolución.
+        let ecamEvo=null,etiquetasOmitidas=[];
+        if(existing){
+          let baseEvo=null;try{baseEvo=JSON.parse(modalEl?.dataset.evoBaselineV1||'null');}catch(e){}
+          if(!baseEvo||!window.cardiolinkHcEvolucionV1){revertirLocal();falloGuardado('No se pudo guardar por ahora. Tu texto sigue acá: volvé a pulsar Guardar.');return;}
+          ecamEvo={base:baseEvo,nuevo:{motivo,evolucion,diagnostico,conducta,pesoKg,tallaCm,taSistolica,taDiastolica,frecuenciaCardiaca,sato2},resolucion:resolucionRes,omitir:omitirRes};
+        }
+        const guardarConResumen=()=>window.cardiolinkClinica410.guardarEvolucionConfirmada(p,evolutionIdFinal,{resumen:summaryChanged,resumenCambios:{base:summaryBefore,nuevo:{...summaryNow,alertas:(summaryBefore.alertas??summaryNow.alertas)},resolucion:resolucionRes,omitir:omitirRes},evolucionCambios:ecamEvo});
+        let r=await guardarConResumen();
+        for(let vuelta=0;!r.ok&&r.conflicto&&vuelta<3;vuelta++){
+          const dec=await window.cardiolinkHcResumenV1.preguntarReemplazo(r.conflicto.campos);
+          r.conflicto.campos.forEach(c=>{if(dec==='mio')resolucionRes[c.campo]=c.remoto;else{omitirRes.push(c.campo);etiquetasOmitidas.push(c.etiqueta);}});
+          r=await guardarConResumen();
+        }
+        if(!r.ok&&r.conflicto){revertirLocal();falloGuardado('Ese dato cambió otra vez mientras se guardaba. Tu texto sigue acá: volvé a pulsar Guardar.');return;}
+        omitidosResumen=etiquetasOmitidas;
+        if(!r.ok&&r.ausente){revertirLocal();falloGuardado(r.error);return;}
         if(!r.ok){
           revertirLocal();   // el estado local NO queda con una edición que el servidor no tiene (así no parece guardada tras un refresco)
           falloGuardado('No se pudo confirmar el guardado en el servidor ('+(r.error||'error de conexión')+'). Tu texto sigue acá y no se perdió: volvé a pulsar Guardar. No se crea una evolución duplicada.');return;
@@ -11233,6 +11291,18 @@ function patientInfoTextHC(p,coverage){
         }
       }catch(e){console.warn('La evolución se guardó, pero no se pudo marcar el turno como atendido.',e);}
     }
+    // Si se conservó lo guardado en un dato, la ventana NO se cierra: el texto de la persona sigue escrito (no se pierde nada).
+    if(omitidosResumen.length){
+      // Los datos YA guardados pasan a ser la nueva línea base; los que se conservaron mantienen la anterior (si se vuelve a pulsar Guardar, se vuelve a preguntar).
+      try{
+        const mb=$hc('hcEvolutionModal');
+        if(mb){
+          const sb2=JSON.parse(mb.dataset.summaryBaseline409||'{}');['antecedentes','alergias','medicacion'].forEach(k=>{if(!omitirRes.includes(k))sb2[k]=summaryNow[k];});mb.dataset.summaryBaseline409=JSON.stringify(sb2);
+          if(existing){const eb=JSON.parse(mb.dataset.evoBaselineV1||'{}');const nv={motivo,evolucion,diagnostico,conducta,pesoKg,tallaCm,taSistolica,taDiastolica,frecuenciaCardiaca,sato2};Object.keys(nv).forEach(k=>{if(!omitirRes.includes(k))eb[k]=nv[k];});mb.dataset.evoBaselineV1=JSON.stringify(eb);}
+        }
+      }catch(e){}
+      window.cardiolinkHcResumenV1?.avisarConservado($hc('hcEvolutionModal'),omitidosResumen);renderDetailHC(key);return;
+    }
     $hc('hcEvolutionModal')?.remove();renderDetailHC(key);
     if(!hasEvolution&&summaryChanged)setTimeout(()=>alert('Resumen clínico actualizado. No se creó una evolución en blanco.'),30);
     }finally{
@@ -11256,7 +11326,29 @@ function patientInfoTextHC(p,coverage){
   function quitarErrorGuardadoEvolucionV1(){$hc('hcEvolutionModal')?.querySelector('#hcErrorGuardadoV1')?.remove();}
   function editSummaryHC(key){
     if(!requireClinicalHC())return;
-    const p=patientByKeyHC(key);if(!p)return;const s=resumenHC(p),o=document.createElement('div');o.id='hcSummaryModal';o.className='hc-modal-overlay';o.innerHTML=`<div class="hc-modal-card"><div class="hc-modal-head"><div><h2>Resumen clínico</h2><p class="muted">${escHC(nombrePacientePanel?.(p)||p.nombreCompleto||'')}</p></div><button class="modal-close" data-hc-close-summary>×</button></div><div class="hc-modal-grid"><div><div class="cl-voice-label4094"><label for="hcSumAntecedentes">Antecedentes</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAntecedentes" aria-label="Dictar antecedentes">🎤 Dictar</button></div><textarea id="hcSumAntecedentes">${escHC(s.antecedentes||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcSumAlergias">Alergias</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAlergias" aria-label="Dictar alergias">🎤 Dictar</button></div><textarea id="hcSumAlergias">${escHC(s.alergias||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcSumMedicacion">Medicación habitual</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumMedicacion" aria-label="Dictar medicación habitual">🎤 Dictar</button></div><textarea id="hcSumMedicacion">${escHC(s.medicacion||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcSumAlertas">Alertas clínicas</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAlertas" aria-label="Dictar alertas clínicas">🎤 Dictar</button></div><textarea id="hcSumAlertas">${escHC(s.alertas||'')}</textarea></div></div><div class="hc-modal-actions"><button class="secondary" data-hc-close-summary>Cancelar</button><button class="primary" id="hcSaveSummary">Guardar resumen</button></div></div>`;document.body.appendChild(o);$hc('hcSaveSummary').onclick=()=>{ensureHC();data.resumenesClinicos[patientKeyHC(p)]={antecedentes:$hc('hcSumAntecedentes').value.trim(),alergias:$hc('hcSumAlergias').value.trim(),medicacion:$hc('hcSumMedicacion').value.trim(),alertas:$hc('hcSumAlertas').value.trim(),actualizadoEn:new Date().toISOString()};saveConfig();try{programarSyncSupabase?.();}catch(e){}try{window.cardiolinkClinica410?.sincronizarPacienteCompleto?.(p);}catch(e){console.warn('No se pudo sincronizar el resumen clínico relacional:',e);}o.remove();renderDetailHC(patientKeyHC(p));};
+    const p=patientByKeyHC(key);if(!p)return;const s=resumenHC(p),o=document.createElement('div');o.id='hcSummaryModal';o.className='hc-modal-overlay';o.innerHTML=`<div class="hc-modal-card"><div class="hc-modal-head"><div><h2>Resumen clínico</h2><p class="muted">${escHC(nombrePacientePanel?.(p)||p.nombreCompleto||'')}</p></div><button class="modal-close" data-hc-close-summary>×</button></div><div class="hc-modal-grid"><div><div class="cl-voice-label4094"><label for="hcSumAntecedentes">Antecedentes</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAntecedentes" aria-label="Dictar antecedentes">🎤 Dictar</button></div><textarea id="hcSumAntecedentes">${escHC(s.antecedentes||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcSumAlergias">Alergias</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAlergias" aria-label="Dictar alergias">🎤 Dictar</button></div><textarea id="hcSumAlergias">${escHC(s.alergias||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcSumMedicacion">Medicación habitual</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumMedicacion" aria-label="Dictar medicación habitual">🎤 Dictar</button></div><textarea id="hcSumMedicacion">${escHC(s.medicacion||'')}</textarea></div><div><div class="cl-voice-label4094"><label for="hcSumAlertas">Alertas clínicas</label><button class="cl-voice-btn4094" type="button" data-cl-voice-target4094="hcSumAlertas" aria-label="Dictar alertas clínicas">🎤 Dictar</button></div><textarea id="hcSumAlertas">${escHC(s.alertas||'')}</textarea></div></div><div class="hc-modal-actions"><button class="secondary" data-hc-close-summary>Cancelar</button><button class="primary" id="hcSaveSummary">Guardar resumen</button></div></div>`;document.body.appendChild(o);$hc('hcSaveSummary').onclick=async()=>{
+      // Guardado clínico multidispositivo: sólo el resumen (no la ficha ni las evoluciones), sólo los datos cambiados, con UPDATE condicionado y confirmación real.
+      const R=window.cardiolinkHcResumenV1,C=window.cardiolinkClinica410,btn=$hc('hcSaveSummary'),modal=$hc('hcSummaryModal');
+      if(window.__hcGuardandoResumenV1)return;
+      ensureHC();const key=patientKeyHC(p);
+      const base={antecedentes:s.antecedentes||'',alergias:s.alergias||'',medicacion:s.medicacion||'',alertas:s.alertas||''};
+      const nuevo={antecedentes:$hc('hcSumAntecedentes').value.trim(),alergias:$hc('hcSumAlergias').value.trim(),medicacion:$hc('hcSumMedicacion').value.trim(),alertas:$hc('hcSumAlertas').value.trim()};
+      if(!R||!C?.guardarResumenConfirmado){R?.avisar(modal,'No se pudo guardar por ahora. Tu texto sigue acá: volvé a pulsar Guardar.','error');return;}
+      window.__hcGuardandoResumenV1=true;const txt=btn.textContent;btn.disabled=true;btn.textContent='Guardando…';R.quitarAviso(modal);
+      try{
+        const resolucion={},omitir=[];
+        let r=await C.guardarResumenConfirmado(p,base,nuevo,{resolucion,omitir});
+        for(let vuelta=0;!r.ok&&r.conflicto&&vuelta<3;vuelta++){
+          const dec=await R.preguntarReemplazo(r.conflicto.campos);
+          r.conflicto.campos.forEach(c=>{if(dec==='mio')resolucion[c.campo]=c.remoto;else omitir.push(c.campo);});
+          r=await C.guardarResumenConfirmado(p,base,nuevo,{resolucion,omitir});
+        }
+        if(!r.ok){R.avisar(modal,r.conflicto?'Ese dato cambió otra vez mientras se guardaba. Tu texto sigue acá: volvé a pulsar Guardar.':'No se pudo confirmar el guardado ('+(r.error||'error de conexión')+'). Tu texto sigue acá y no se perdió: volvé a pulsar Guardar.','error');return;}
+        if(!r.sinCambios){saveConfig();try{programarSyncSupabase?.();}catch(e){}}
+        if(r.omitidos&&r.omitidos.length){R.avisarConservado(modal,r.omitidos);renderDetailHC(key);return;}
+        modal?.remove();renderDetailHC(key);
+      }finally{window.__hcGuardandoResumenV1=false;btn.disabled=false;btn.textContent=txt;}
+    };
   }
   // Fase 6, Bloque 6C: printHC() (historia clínica, versión vieja de este
   // bloque) se eliminó por estar comprobadamente muerta, no por sospecha.
@@ -13637,21 +13729,24 @@ function patientInfoTextHC(p,coverage){
   async function sincronizarFichaPacienteBasica410(p){
     if(!listo410()||!p)return false;
     try{
-      // R3: con una lectura relacional previa (base) sólo se escriben los campos que cambiaron, con fusión de 3 vías y UPDATE condicionado (no se pisa a otra sesión).
+      // Se escribe EXCLUSIVAMENTE lo que la persona cambió respecto de lo que vio al abrir el formulario (o, sin ese dato, respecto de la fila relacional leída). Una ficha sin cambios no escribe nada.
+      // Con la fila ausente se crea (alta); con la fila presente la fusión de tres vías conserva lo que otra sesión haya cambiado (nunca se pisa a ciegas).
       const FICHA=window.cardiolinkFichaV1;
-      if(FICHA){
-        const idF=await idRelacional410(p),baseF=FICHA.vistaDe(idF);
-        if(baseF){
-          const rF=await FICHA.guardarEdicion({sb:supabaseClient,id:idF,base:baseF,nuevo:{...p,id:idF},alMarcar:registrarCola410});
-          aplicarResultadoFicha410(p,rF);
-          if(rF.estado==='dni_duplicado'){console.warn('No se sincronizó la ficha: el DNI ya pertenece a otro paciente.');return false;}
-          return rF.estado==='confirmada';
-        }
+      if(!FICHA)return false;
+      const idF=await idRelacional410(p),visto=FICHA.vistaEdicionDe(idF)||FICHA.vistaEdicionDe(p.id);
+      if(!visto){
+        // Sin saber qué vio la persona no se puede distinguir su edición de una copia vieja: una ficha que YA existe en la tabla NO se escribe (nunca se pisa a ciegas). Sólo se crea si todavía no existe (alta).
+        const lec=await FICHA.leerFila(supabaseClient,idF);
+        if(lec.error)return false;
+        if(lec.fila){FICHA.registrarVista(lec.fila);return true;}
       }
-      const prow=pacienteRow410(p);prow.id=await idRelacional410(p);   // ficha con alias: se escribe en SU fila relacional (nunca una fila nueva con el mismo DNI)
-      const {error:pe}=await supabaseClient.from('cardiolink_pacientes').upsert([prow],{onConflict:'id'});
-      if(pe)throw pe;
-      return true;
+      const base=visto||{};
+      const rF=await FICHA.guardarEdicion({sb:supabaseClient,id:idF,base,nuevo:{...p,id:idF},alMarcar:registrarCola410});
+      FICHA.olvidarVistaEdicion(idF);FICHA.olvidarVistaEdicion(p.id);
+      aplicarResultadoFicha410(p,rF);
+      if(rF.estado==='dni_duplicado'){console.warn('No se sincronizó la ficha: el DNI ya pertenece a otro paciente.');return false;}
+      if(rF.estado==='error'&&!FICHA.esErrorPermanente(rF))programarReintento410();
+      return rF.estado==='confirmada';
     }catch(e){
       console.warn('No se pudo sincronizar la ficha del paciente a la capa relacional:',e?.message||e);
       return false;
@@ -13761,7 +13856,7 @@ function patientInfoTextHC(p,coverage){
         if(reconciliadoPreventivo)return reconciliadoPreventivo;
       }
       const prow=pacienteRow410(p);
-      const {error:pe}=await supabaseClient.from('cardiolink_pacientes').upsert([prow],{onConflict:'id'});
+      const {error:pe}=await supabaseClient.from('cardiolink_pacientes').upsert([sinVaciosIdentidad410(prow)],{onConflict:'id'});
       if(!pe)return true;
       if(pe.code!=='23505'){
         console.warn('No se pudo sincronizar la ficha del paciente a la capa relacional:',pe.message||pe);
@@ -13779,7 +13874,7 @@ function patientInfoTextHC(p,coverage){
     if(!listo410()||!p)return false;
     try{
       const prow=pacienteRow410(p);
-      const {error:pe}=await supabaseClient.from('cardiolink_pacientes').upsert([prow],{onConflict:'id'});
+      const {error:pe}=await supabaseClient.from('cardiolink_pacientes').upsert([sinVaciosIdentidad410(prow)],{onConflict:'id'});
       if(pe)throw pe;
 
       const s=resumenLocal410(p);
@@ -13819,38 +13914,49 @@ function patientInfoTextHC(p,coverage){
   // si el servidor la rechaza por no existir todavía (FK), y (4) devuelve {ok,error}, nunca falla en silencio.
   async function guardarEvolucionConfirmada410(p,evolutionId,opts){
     if(!listo410()||!p)return {ok:false,error:'sin conexión con el servidor'};
-    let prow=null,srow=null,erow=null;
+    let prow=null,rcam=null,ecam=null,erow=null,resumenConf=null,evolucionConf=null,conflictosTotal=[];
     try{
       prow=pacienteRow410(p);
-      if(opts&&opts.resumen){const s=resumenLocal410(p);if(s)srow=resumenRow410(p,s);}
-      if(evolutionId){
+      // Guardado clínico multidispositivo: el resumen se escribe SÓLO con los campos que la persona cambió (base = lo que vio al abrir), con UPDATE condicionado (cardiolink-hc-resumen-v1.js).
+      if(opts&&opts.resumen){rcam=opts.resumenCambios||null;if(!rcam||!window.cardiolinkHcResumenV1)return {ok:false,error:'no se pudo preparar el guardado del resumen clínico'};}
+      ecam=(opts&&opts.evolucionCambios)||null;   // evolución EXISTENTE: sólo los campos cambiados, con UPDATE condicionado a editado_en (cardiolink-hc-evolucion-v1.js)
+      if(ecam&&!window.cardiolinkHcEvolucionV1)return {ok:false,error:'no se pudo preparar el guardado de la evolución'};
+      if(evolutionId&&!ecam){
         const ev=evolucionesLocal410(p).find(x=>String(x.id)===String(evolutionId));
         if(!ev)return {ok:false,error:'la evolución no está en el estado local'};
         erow=evolucionRow410(ev,p);
       }
     }catch(e){return {ok:false,error:String(e?.message||e)};}
     const intentar=async()=>{
-      if(srow){const r=await supabaseClient.from('cardiolink_hc_resumen').upsert([srow],{onConflict:'paciente_id'});if(r.error)return r.error;}
-      if(erow){const r=await supabaseClient.from('cardiolink_hc_evoluciones').upsert([erow],{onConflict:'id'});if(r.error)return r.error;}
+      conflictosTotal=[];
+      if(rcam){
+        const r=await window.cardiolinkHcResumenV1.guardarResumen({sb:supabaseClient,id:key410(p),base:rcam.base,nuevo:rcam.nuevo,usuario:usuarioResumen410(),resolucion:rcam.resolucion,omitir:rcam.omitir});
+        if(r.estado==='error')return r.error||{message:'error al guardar el resumen clínico'};
+        resumenConf=r;if(r.estado==='conflicto')conflictosTotal.push(...r.conflictos);
+      }
+      if(ecam){
+        const r=await window.cardiolinkHcEvolucionV1.guardarEvolucion({sb:supabaseClient,id:String(evolutionId),base:ecam.base,nuevo:ecam.nuevo,usuario:usuarioResumen410(),resolucion:ecam.resolucion,omitir:ecam.omitir,imc:imc410});
+        if(r.estado==='error')return r.error||{message:'error al guardar la evolución'};
+        if(r.estado==='ausente')return {ausente:true,message:'Esta evolución fue eliminada desde otro dispositivo. No se volvió a crear. Tu texto sigue en pantalla: copialo si lo necesitás.'};
+        evolucionConf=r;if(r.estado==='conflicto')conflictosTotal.push(...r.conflictos);
+      }
+      if(conflictosTotal.length)return null;                   // hay que preguntar ANTES de seguir: lo que no tenía conflicto ya quedó guardado
+      if(erow&&!ecam){const r=await supabaseClient.from('cardiolink_hc_evoluciones').upsert([erow],{onConflict:'id'});if(r.error)return r.error;}
       return null;
     };
     try{
       let err=await intentar();
       if(err&&(err.code==='23503'||/foreign key/i.test(String(err.message||'')))){
-        const {error:pe}=await supabaseClient.from('cardiolink_pacientes').upsert([prow],{onConflict:'id'});
+        const {error:pe}=await supabaseClient.from('cardiolink_pacientes').upsert([sinVaciosIdentidad410(prow)],{onConflict:'id'});
         if(pe)return {ok:false,error:pe.message||String(pe)};
         err=await intentar();
       }
+      if(err&&err.ausente)return {ok:false,ausente:true,error:err.message};   // evolución eliminada desde otro dispositivo: mensaje propio, sin jerga
       if(err)return {ok:false,error:err.message||String(err)};
-      if(srow){
-        const {data:resumen,error:re}=await supabaseClient.from('cardiolink_hc_resumen')
-          .select('antecedentes,alergias,medicacion_habitual,alertas').eq('paciente_id',srow.paciente_id).limit(1);
-        const fila=Array.isArray(resumen)?resumen[0]:resumen;
-        const claves=['antecedentes','alergias','medicacion_habitual','alertas'];
-        if(re||!fila||!claves.every(k=>String(fila[k]??'')===String(srow[k]??'')))
-          return {ok:false,error:'no se pudo confirmar el resumen clínico en el servidor'};
-      }
-      if(erow){
+      if(conflictosTotal.length)return {ok:false,conflicto:{campos:conflictosTotal}};   // lo que no tenía conflicto ya quedó guardado; la persona decide el resto
+      if(resumenConf&&resumenConf.fila)aplicarResumenConfirmado410(resumenConf.fila);   // el estado local pasa a ser EXACTAMENTE lo confirmado por la base (incluye lo que se conservó de otro dispositivo)
+      if(evolucionConf&&evolucionConf.fila)mergeEvolucion410(evolucionConf.fila,true);
+      if(erow&&!ecam){
         const l=await leerEvolucion410(erow.id);
         const mismoEditado=(Date.parse(l.editadoEn||0)||0)===(Date.parse(erow.editado_en||0)||0);
         const claves=['motivo','evolucion','diagnostico','conducta','peso_kg','talla_cm','imc','ta_sistolica','ta_diastolica','frecuencia_cardiaca','sato2','temperatura'];
@@ -13867,12 +13973,41 @@ function patientInfoTextHC(p,coverage){
         });
         if(l.existe!==true||!iguales||!mismoEditado)return {ok:false,error:'el servidor no devolvió todos los campos de la versión guardada'};
       }
-      return {ok:true};
+      return {ok:true,omitidos:[...((resumenConf&&resumenConf.omitidos)||[]),...((evolucionConf&&evolucionConf.omitidos)||[])]};
+    }catch(e){return {ok:false,error:String(e?.message||e)};}
+  }
+
+  // Guardado clínico multidispositivo - el estado local del resumen pasa a ser lo que la base CONFIRMÓ (misma forma que mergeResumen410).
+  // IMC derivado (misma fórmula que imcHC del módulo de HC, que vive en otro bloque): peso kg / talla m² con un decimal; null si falta alguno.
+  function imc410(peso,talla){const p=Number(String(peso??'').replace(',','.')),t=Number(String(talla??'').replace(',','.'));if(!(p>0)||!(t>0))return null;return Math.round((p/Math.pow(t/100,2))*10)/10;}
+  function usuarioResumen410(){try{return nombreUsuarioAuditoria?.()||usuarioSupabase?.email||'';}catch(e){return usuarioSupabase?.email||'';}}
+  function aplicarResumenConfirmado410(f){
+    if(!f?.paciente_id)return;
+    if(!data.resumenesClinicos||typeof data.resumenesClinicos!=='object')data.resumenesClinicos={};
+    data.resumenesClinicos[f.paciente_id]={antecedentes:f.antecedentes||'',alergias:f.alergias||'',medicacion:f.medicacion_habitual||'',alertas:f.alertas||'',actualizadoEn:f.actualizado_en||'',actualizadoPor:f.actualizado_por||''};
+  }
+  // Guarda SÓLO el resumen clínico (botón «Editar» del resumen). No toca la ficha del paciente ni las evoluciones.
+  // Devuelve {ok:true,sinCambios?,omitidos[]} | {ok:false,conflicto:{campos[]}} | {ok:false,error}.
+  async function guardarResumenConfirmado410(p,base,nuevo,opts){
+    const R=window.cardiolinkHcResumenV1;
+    if(!listo410()||!p||!R)return {ok:false,error:'sin conexión con el servidor'};
+    const ejecutar=()=>R.guardarResumen({sb:supabaseClient,id:key410(p),base,nuevo,usuario:usuarioResumen410(),resolucion:opts?.resolucion,omitir:opts?.omitir});
+    try{
+      let r=await ejecutar();
+      if(r.estado==='error'&&(r.error?.code==='23503'||/foreign key/i.test(String(r.error?.message||'')))){
+        const {error:pe}=await supabaseClient.from('cardiolink_pacientes').upsert([sinVaciosIdentidad410(pacienteRow410(p))],{onConflict:'id'});   // sólo si la ficha todavía no existe (FK), igual que el guardado de evoluciones
+        if(pe)return {ok:false,error:pe.message||String(pe)};
+        r=await ejecutar();
+      }
+      if(r.estado==='error')return {ok:false,error:r.error?.message||String(r.error)};
+      if(r.fila)aplicarResumenConfirmado410(r.fila);
+      if(r.estado==='conflicto')return {ok:false,conflicto:{campos:r.conflictos}};
+      return {ok:true,sinCambios:r.estado==='sin_cambios',omitidos:r.omitidos||[]};
     }catch(e){return {ok:false,error:String(e?.message||e)};}
   }
 
   // R3 - empujes y reintentos de la ficha por el camino seguro (diferencias + 3 vías + UPDATE condicionado). Un campo en conflicto adopta el valor del servidor.
-  const empujes410=[];
+  const adoptados410=[];   // fichas locales alineadas con la tabla relacional en esta carga (la copia de configuración las toma como base: no son ediciones)
   // Alias id de la ficha (configuración) → id de su fila en cardiolink_pacientes cuando difieren (p. ej. ids huérfanos o filas del backfill). La identidad del paciente (id de la
   // configuración, vínculo con atenciones e historia clínica) NO cambia: sólo las operaciones sobre la tabla relacional usan el id relacional.
   const alias410=new Map();
@@ -13906,7 +14041,7 @@ function patientInfoTextHC(p,coverage){
       (r.conflictos||[]).forEach(c=>{p[c.campo]=c.remoto==null?'':c.remoto;});
       if(r.estado==='confirmada'&&r.fila&&window.cardiolinkFichaV1){const fr=window.cardiolinkFichaV1.desdeFila(r.fila);Object.keys(fr).forEach(k=>{p[k]=fr[k]==null?'':fr[k];});if(r.fila.actualizado_en)p.actualizadoEn=r.fila.actualizado_en;}
       if((r.conflictos||[]).length){
-        try{window.cardiolinkConfigR2B?.avisoTransitorio?.('Otra sesión modificó datos de '+(p.nombreCompleto||'un paciente')+' (' +r.conflictos.map(c=>c.campo).join(', ')+'): se conservó el valor del servidor.');}catch(e){}
+        try{window.cardiolinkConfigR2B?.avisoTransitorio?.('Otra persona modificó datos de '+(p.nombreCompleto||'un paciente')+' mientras los editabas. Se mantuvo lo que ya estaba guardado; revisá la ficha.');}catch(e){}
       }
       if(r.estado==='confirmada'&&r.fila&&window.cardiolinkFichaV1){window.cardiolinkFichaV1.marcarSync(r.fila.id,r.fila,p);persistirSync410();}
       if(r.estado==='ausente'){
@@ -13915,23 +14050,45 @@ function patientInfoTextHC(p,coverage){
       try{localStorage.setItem(storageConfig,JSON.stringify(data));}catch(e){}
     }catch(e){console.warn(e)}
   }
-  let reintentandoFichas410=false;
-  async function reintentarFichas410(){
+  let reintentandoFichas410=false,intentoAuto410=0,timerAuto410=null,timerPend410=false;
+  const ESPERAS410=[15000,60000,180000,600000,1800000];   // 15 s, 1, 3, 10 y 30 min; después se detiene (se retoma con una edición nueva, «Guardar ahora» o al volver a ingresar)
+  function programarReintento410(){
+    if(timerPend410)return;   // ya hay un reintento esperando: un refresco NO lo cancela ni gasta intentos (si no, con refrescos cada 30 s el reintento nunca llegaría a ejecutarse)
+    const F=window.cardiolinkFichaV1;
+    const hay=!!F&&F.listarPendientes().some(x=>x.origen==='usuario'&&!x.rechazo);
+    if(!hay){intentoAuto410=0;return;}
+    if(intentoAuto410>=ESPERAS410.length)return;
+    timerPend410=true;
+    timerAuto410=setTimeout(async()=>{timerPend410=false;const r=await reintentarFichas410(false);if(r&&r.guardadas&&!r.transitorios)intentoAuto410=0;programarReintento410();},ESPERAS410[intentoAuto410++]);
+  }
+  window.addEventListener('online',()=>{clearTimeout(timerAuto410);timerPend410=false;intentoAuto410=0;programarReintento410();});
+  async function reintentarFichas410(manual){
     const FICHA=window.cardiolinkFichaV1;
-    if(!FICHA||reintentandoFichas410||!listo410())return false;
+    const res={ok:false,guardadas:0,transitorios:0,rechazadas:0,conflictos:0,mensaje:''};
+    if(!FICHA||!listo410())return res;
+    if(reintentandoFichas410){res.mensaje='Ya se está guardando.';return res;}
     reintentandoFichas410=true;
     try{
-      const lista=[...empujes410.splice(0).map(e=>({id:e.id,cambios:e.cambios})),...FICHA.listarPendientes().map(x=>({id:x.id,cambios:x.cambios}))];
-      const vistos=new Set();
+      // Sólo las ediciones REALES de la persona. Lo heredado de versiones anteriores NO se reenvía solo (puede traer datos viejos) y lo rechazado de forma permanente no se reintenta.
+      const lista=FICHA.listarPendientes().filter(x=>x.origen==='usuario'&&!x.rechazo);
+      // Nunca se envía un lote de vaciados de nombre/DNI (ver UMBRAL_VACIADO410): una edición real vacía una ficha, no cientos.
+      const vacia=x=>!!x.cambios&&['nombreCompleto','dni'].some(k=>x.cambios[k]&&(x.cambios[k].d==null||x.cambios[k].d===''));
+      const bloquearVacias=lista.filter(vacia).length>=UMBRAL_VACIADO410;
+      if(bloquearVacias)console.warn('Protección de identidad: se retuvo un lote de cambios que vacían nombre o DNI de muchas fichas; no se enviaron.');
       for(const f of lista){
-        if(vistos.has(f.id))continue;vistos.add(f.id);
+        if(bloquearVacias&&vacia(f)){res.rechazadas++;res.mensaje='Se retuvo un cambio masivo que vaciaba nombres o DNI. Avisá al administrador.';continue;}
         const p=(data.pacientes||[]).find(x=>String(x.id)===String(f.id)||alias410.get(String(x.id))===String(f.id));
         const r=await FICHA.guardarCambiosPendientes({sb:supabaseClient,id:f.id,cambios:f.cambios,nuevo:p?{...p}:undefined,creacionPermitida:!FICHA.existiaAntes(f.id),alMarcar:registrarCola410});
         aplicarResultadoFicha410(p,r);
+        if((r.conflictos||[]).length)res.conflictos++;
+        if(r.estado==='confirmada')res.guardadas++;
+        else if(r.estado==='error'&&!FICHA.esErrorPermanente(r)){res.transitorios++;const m=String(r.error?.message||'');res.mensaje=/failed to fetch|network|timeout/i.test(m)?'No hay respuesta del servidor por ahora (revisá la conexión).':'El servidor no pudo guardar el cambio por ahora.';}
+        else{res.rechazadas++;res.mensaje=r.estado==='dni_duplicado'?'No se pudo guardar: el DNI ya pertenece a otro paciente.':r.permiso?'Tu usuario no tiene permiso para guardar este cambio.':r.estado==='ausente'?'La ficha ya no existe en el servidor.':'Alguno de los datos no es válido para guardarlo.';}
       }
       registrarCola410();
-      return true;
-    }catch(e){console.warn('No se pudieron reintentar las fichas pendientes:',e?.message||e);return false;}
+      res.ok=res.transitorios===0&&res.rechazadas===0;
+      return res;
+    }catch(e){console.warn('No se pudieron reintentar las fichas pendientes:',e?.message||e);res.mensaje='No se pudo guardar por ahora.';return res;}
     finally{reintentandoFichas410=false;}
   }
   async function resolverDivergencia410(id,campo,uso){
@@ -13950,6 +14107,18 @@ function patientInfoTextHC(p,coverage){
     if(!F.listarDivergencias().some(d=>d.id===String(id)))setTimeout(()=>{cargar410();},100);   // sin más divergencias: se vuelve a sincronizar la marca
     return true;
   }
+  // PROTECCIÓN CONTRA VACIADO DE IDENTIDAD (incidente del 19/11/2026: 1001 fichas quedaron sin nombre ni DNI y cada equipo que abría la app adoptaba esos vacíos).
+  // Una carga que traiga nombre/DNI vacíos para fichas locales que los tienen NO los adopta si son UMBRAL_VACIADO410 o más (vaciado masivo); las correcciones puntuales (menos que el umbral) sí.
+  const UMBRAL_VACIADO410=10;
+  const NOMBRE_SUSTITUTO410='Paciente sin nombre';   // lo que muestra la interfaz cuando una ficha no tiene nombre (nombrePacientePanel): NO es un nombre real y no debe guardarse
+  let vaciadoIdentidadPermitido410=true,avisoVaciado410=false;
+  function sinVaciosIdentidad410(row){const o={...row};if(o.nombre_completo==null||String(o.nombre_completo).trim()===''||o.nombre_completo===NOMBRE_SUSTITUTO410)delete o.nombre_completo;if(o.dni==null)delete o.dni;return o;}   // un upsert de fila completa nunca pisa un nombre/DNI ya guardado con NULL ni con el texto sustituto «Paciente sin nombre»
+  function contarVaciadosIdentidad410(pa){
+    const F=window.cardiolinkFichaV1;if(!F)return 0;
+    const porId=new Map((data.pacientes||[]).map(p=>[String(p.id||''),p]));let n=0;
+    for(const row of pa){const p=porId.get(String(row?.id||''));if(!p)continue;const rec=F.reconciliarCarga(p,row,undefined);if(rec.vaciadosIdentidad&&Object.keys(rec.vaciadosIdentidad).length)n++;}
+    return n;
+  }
   function mergePaciente410(row){
     if(!row?.id)return;
     if(!Array.isArray(data.pacientes))data.pacientes=[];
@@ -13959,17 +14128,14 @@ function patientInfoTextHC(p,coverage){
     const fill=(k,v)=>{if((p[k]===undefined||p[k]===null||p[k]==='') && v!==undefined&&v!==null&&v!=='')p[k]=v;};
     const FICHA=window.cardiolinkFichaV1;
     if(FICHA){
-      // R3: la tabla relacional es la fuente principal de los datos demográficos. Se adopta su valor salvo una edición local SIN confirmar (se conserva) o una divergencia
-      // anterior a R3 en la que lo local es más reciente (se EMPUJA por el camino seguro, con fusión de 3 vías y UPDATE condicionado; nunca se pisa a ciegas).
+      // FUENTE DE VERDAD: la tabla relacional manda. Se adopta su valor (también un dato vaciado a propósito) salvo una edición REAL de la persona todavía sin guardar. Leer o refrescar NUNCA escribe
+      // ni abre pendientes: una diferencia entre la copia local y la tabla no es una edición.
       FICHA.registrarVista(row);
       if(String(p.id)!==String(row.id))alias410.set(String(p.id),String(row.id));   // la ficha local y la fila relacional se emparejaron por DNI con ids distintos
-      const relId=String(row.id),pend=FICHA.listarPendientes().find(x=>x.id===relId),rec=FICHA.reconciliarCarga(p,row,pend),mismoId=true;
+      const relId=String(row.id),pend=FICHA.listarPendientes().find(x=>x.id===relId),rec=FICHA.reconciliarCarga(p,row,pend);
       Object.keys(rec.adoptar).forEach(k=>{p[k]=rec.adoptar[k]==null?'':rec.adoptar[k];});
-      const dupDuplicado=!!digits410(row.dni)&&String(p.id)===relId&&data.pacientes.some(x=>x!==p&&String(x.id)!==relId&&digits410(x.dni)===digits410(row.dni));
-      if(mismoId&&!dupDuplicado&&Object.keys(rec.divergencias).length)FICHA.registrarDivergencias(relId,rec.divergencias);     // sin base confiable: se conservan las dos versiones para revisión
-      // Con OTRA ficha local de mismo DNI y distinto id (duplicado por la incidencia de Production), la marca de sincronización pertenece a la ficha editada: este duplicado NO empuja, no marca ni registra divergencias (revertiría la edición).
-      if(Object.keys(rec.empujar).length&&mismoId&&!dupDuplicado)empujes410.push({id:relId,cambios:rec.empujar});       // con base verificable: por la fusión de 3 vías
-      if(mismoId&&!dupDuplicado&&!pend&&!Object.keys(rec.empujar).length&&!Object.keys(rec.divergencias).length){FICHA.marcarSync(row.id,row,p);if(row.actualizado_en)p.actualizadoEn=row.actualizado_en;}
+      if(vaciadoIdentidadPermitido410&&rec.vaciadosIdentidad)Object.keys(rec.vaciadosIdentidad).forEach(k=>{p[k]='';});   // corrección puntual (por debajo del umbral): se adopta
+      if(!(pend&&pend.origen==='usuario')){FICHA.marcarSync(row.id,row,p);if(row.actualizado_en)p.actualizadoEn=row.actualizado_en;adoptados410.push(String(p.id));}
     }else{
       // Sin el módulo de R3: comportamiento anterior (la ficha local vigente tiene prioridad; la relacional sólo completa vacíos).
       fill('nombreCompleto',row.nombre_completo);fill('dni',row.dni);fill('telefono',row.telefono);fill('email',row.email);
@@ -13988,42 +14154,104 @@ function patientInfoTextHC(p,coverage){
       data.resumenesClinicos[row.paciente_id]={antecedentes:row.antecedentes||'',alergias:row.alergias||'',medicacion:row.medicacion_habitual||'',alertas:row.alertas||'',actualizadoEn:row.actualizado_en||'',actualizadoPor:row.actualizado_por||''};
     }
   }
-  function mergeEvolucion410(row){
+  function mergeEvolucion410(row,forzar){
     if(!row?.id)return;
     if(!Array.isArray(data.evolucionesClinicas))data.evolucionesClinicas=[];
     const incoming={id:String(row.id),pacienteId:String(row.paciente_id||''),atencionId:row.atencion_id?String(row.atencion_id):'',fechaHora:row.fecha_hora||row.creado_en||'',profesionalId:row.profesional_id||'',profesionalNombre:row.profesional_nombre||'',motivo:row.motivo||'',evolucion:row.evolucion||'',diagnostico:row.diagnostico||'',conducta:row.conducta||'',pesoKg:row.peso_kg??null,tallaCm:row.talla_cm??null,imc:row.imc??null,taSistolica:row.ta_sistolica??null,taDiastolica:row.ta_diastolica??null,frecuenciaCardiaca:row.frecuencia_cardiaca??null,sato2:row.sato2??null,temperatura:row.temperatura??null,creadoEn:row.creado_en||'',creadoPor:row.creado_por||'',actualizadoEn:row.editado_en||'',actualizadoPor:row.editado_por||''};
     const i=data.evolucionesClinicas.findIndex(x=>String(x.id||'')===String(row.id));
     if(i<0){data.evolucionesClinicas.push(incoming);return;}
     const local=data.evolucionesClinicas[i],rt=Date.parse(row.editado_en||row.creado_en||row.fecha_hora||0)||0,lt=Date.parse(local.actualizadoEn||local.creadoEn||local.fechaHora||0)||0;
-    if(rt>=lt)data.evolucionesClinicas[i]={...local,...incoming};
+    if(forzar||rt>=lt)data.evolucionesClinicas[i]={...local,...incoming};
   }
 
-  let cargando410=false;
-  async function cargar410(){
-    if(!listo410()||cargando410)return false;
-    cargando410=true;
+  // ---- Padrón compartido · lectura completa y aplicación ------------------------------------------------------------------------------------------------------------------
+  // Supabase devuelve como máximo 1000 filas por consulta y el padrón ya supera ese tope: se lee TODO por páginas (sólo lectura, orden y cursor por id) con cardiolink-carga-paginada-v1.js.
+  // Una lectura que no se pudo completar (página con error o módulo ausente con padrón truncado) NO se aplica ni se presenta como completa: queda lo último confirmado y, si no hay copia
+  // completa en este equipo, se avisa en términos simples con «Reintentar».
+  async function leerPadron410(){
+    const cp=window.cardiolinkCargaPaginadaV1;
+    if(cp)return cp.leerTodo({sb:supabaseClient,tabla:'cardiolink_pacientes',columnas:'*',clave:'id',dedup:'pacientes'});
+    // Sin el módulo: una sola consulta con conteo exacto; sólo vale si trajo TODAS las filas (nunca un padrón truncado por el tope del servidor).
+    const r=await supabaseClient.from('cardiolink_pacientes').select('*',{count:'exact'});
+    if(r.error)return {data:null,error:r.error,completo:false};
+    if(typeof r.count!=='number'||(r.data||[]).length<r.count)return {data:null,error:{code:'PADRON_INCOMPLETO',message:'El servidor devolvió sólo una parte del padrón.'},completo:false};
+    return {data:r.data||[],error:null,completo:true};
+  }
+  function clavePadron410(){try{return 'cardiolink_padron_completo_v1:'+new URL(SUPABASE_URL).hostname.split('.')[0]+':'+usuarioSupabase.id;}catch(e){return null;}}
+  function hayPadronConfirmado410(){try{const k=clavePadron410();return !!(k&&JSON.parse(localStorage.getItem(k)||'null')?.n>0);}catch(e){return false;}}
+  function marcarPadronConfirmado410(n){try{const k=clavePadron410();if(k)localStorage.setItem(k,JSON.stringify({n,t:Date.now()}));}catch(e){}}
+  function quitarAvisoPadron410(){try{document.getElementById('avisoPadronIncompletoV1')?.remove();}catch(e){}}
+  function mostrarAvisoPadron410(){
     try{
-      const [pa,re,ev]=await Promise.all([
-        supabaseClient.from('cardiolink_pacientes').select('*'),
-        supabaseClient.from('cardiolink_hc_resumen').select('*'),
-        supabaseClient.from('cardiolink_hc_evoluciones').select('*').order('fecha_hora',{ascending:false})
-      ]);
-      if(pa.error)throw pa.error;if(re.error)throw re.error;if(ev.error)throw ev.error;
-      cargarSync410();
-      (pa.data||[]).forEach(mergePaciente410);(re.data||[]).forEach(mergeResumen410);(ev.data||[]).forEach(mergeEvolucion410);
-      // R3: una ficha que ya se había sincronizado y ya no viene de la tabla (eliminada o acceso revocado) deja de mostrarse como paciente activo. Se omite si la lectura pudo quedar
-      // truncada por el límite de filas del servidor (1000).
-      try{const FA=window.cardiolinkFichaV1;if(FA&&(pa.data||[]).length<1000){const idsRel=new Set((pa.data||[]).map(r=>String(r.id)));FA.idsSincronizados().forEach(id=>{if(idsRel.has(id))FA.limpiarAusente(id);else FA.marcarAusente(id);});}}catch(e){console.warn(e)}
-      persistirSync410();
-      try{localStorage.setItem(storageConfig,JSON.stringify(data));}catch(e){}
-      if(empujes410.length||(window.cardiolinkFichaV1?.listarPendientes?.().length))setTimeout(()=>{reintentarFichas410();},300);   // R3: divergencias previas y cambios pendientes por el camino seguro
-      console.log(`Capa clínica relacional ${VERSION_CLINICA_410} cargada:`,(pa.data||[]).length,'pacientes,',(re.data||[]).length,'resúmenes,',(ev.data||[]).length,'evoluciones');
+      if(!document.body||document.getElementById('avisoPadronIncompletoV1'))return;
+      const d=document.createElement('div');d.id='avisoPadronIncompletoV1';d.setAttribute('role','alert');
+      d.style.cssText='position:fixed;left:12px;right:12px;bottom:12px;z-index:99996;background:#fef3c7;color:#78350f;border:1px solid #f59e0b;border-radius:12px;padding:12px 14px;box-shadow:0 6px 24px rgba(0,0,0,.2);font:600 14px/1.4 system-ui,Arial,sans-serif;display:flex;gap:12px;align-items:center;flex-wrap:wrap';
+      d.innerHTML='<span><strong>No se pudo completar la carga de pacientes.</strong> Puede que falten algunos en la lista. Se vuelve a intentar sola; también podés reintentar ahora.</span><button type="button" class="primary">Reintentar</button>';
+      d.querySelector('button').onclick=async()=>{const b=d.querySelector('button');b.disabled=true;b.textContent='Cargando…';try{await cargar410();}catch(e){console.warn(e);}finally{b.disabled=false;b.textContent='Reintentar';}};
+      document.body.appendChild(d);
+    }catch(e){}
+  }
+  // Última lectura COMPLETA aplicada (sólo en memoria). Si la configuración descargada reemplaza `data` después (carrera de arranque), se vuelve a aplicar SIN consultar de nuevo.
+  let cacheCarga410=null;
+  function aplicarCarga410(pa,re,ev,conAusentes){
+    cargarSync410();
+    const nVaciados=contarVaciadosIdentidad410(pa);
+    vaciadoIdentidadPermitido410=nVaciados<UMBRAL_VACIADO410;
+    if(!vaciadoIdentidadPermitido410){
+      console.warn('Protección de identidad: la tabla trae '+nVaciados+' fichas sin nombre o DNI donde este equipo los tiene; NO se adoptaron.');
+      if(!avisoVaciado410){avisoVaciado410=true;try{window.cardiolinkConfigR2B?.avisoTransitorio?.('Se detectaron muchas fichas de pacientes con nombre o DNI vacíos en el servidor. No se aplicaron en este equipo para no perder datos. Avisá al administrador.');}catch(e){}}
+    }
+    pa.forEach(mergePaciente410);re.forEach(mergeResumen410);ev.forEach(mergeEvolucion410);
+    // R3: una ficha que ya se había sincronizado y ya no viene de la tabla (eliminada o acceso revocado) deja de mostrarse como paciente activo. Sólo con una lectura DEMOSTRADA completa y reciente
+    // (se omite al reaplicar una copia en memoria: un alta posterior a esa lectura no debe quedar como ausente).
+    if(conAusentes){try{const FA=window.cardiolinkFichaV1;if(FA){const idsRel=new Set(pa.map(r=>String(r.id)));FA.idsSincronizados().forEach(id=>{if(idsRel.has(id))FA.limpiarAusente(id);else FA.marcarAusente(id);});}}catch(e){console.warn(e)}}
+    persistirSync410();
+    try{localStorage.setItem(storageConfig,JSON.stringify(data));}catch(e){}
+    try{const ids=adoptados410.splice(0);if(ids.length){window.cardiolinkConfigR2B?.aceptarFichas?.(ids);window.cardiolinkConfigSecretariaV1?.aceptarFichas?.(ids);}}catch(e){console.warn(e);}   // adoptar lo de la tabla no es una edición de la configuración
+    programarReintento410();   // sólo ediciones reales no guardadas, con espera creciente y tope
+    cacheCarga410={uid:String(usuarioSupabase.id),pa,re,ev,dataRef:data,pacRef:data.pacientes,resRef:data.resumenesClinicos,evoRef:data.evolucionesClinicas};
+  }
+  // Carrera de arranque: si la configuración se descargó DESPUÉS de la capa relacional y reemplazó `data`, los pacientes, resúmenes y evoluciones de la tabla quedaban fuera hasta el refresco
+  // siguiente. Se reaplica la última lectura completa (cero consultas, cero escrituras al servidor). No hace nada si `data` no cambió.
+  function reaplicarCarga410(){
+    try{
+      const c=cacheCarga410;
+      if(!c||!listo410()||c.uid!==String(usuarioSupabase.id))return false;
+      if(c.dataRef===data&&c.pacRef===data.pacientes&&c.resRef===data.resumenesClinicos&&c.evoRef===data.evolucionesClinicas)return false;
+      aplicarCarga410(c.pa,c.re,c.ev,false);
+      console.log('Capa clínica relacional: se reaplicó la última lectura completa sobre la configuración recién descargada ('+c.pa.length+' pacientes).');
       return true;
-    }catch(e){console.warn('No se pudo cargar la capa clínica relacional:',e?.message||e);return false;}
-    finally{cargando410=false;}
+    }catch(e){console.warn('No se pudo reaplicar la capa clínica relacional:',e?.message||e);return false;}
   }
 
-  window.cardiolinkClinica410={version:VERSION_CLINICA_410,cargar:cargar410,leerEvolucion:leerEvolucion410,guardarEvolucionConfirmada:guardarEvolucionConfirmada410,sincronizarPacienteCompleto:sincronizarPacienteCompleto410,sincronizarFichaBasica:sincronizarFichaPacienteBasica410,asegurarPacienteSinConflictoDni:asegurarPacienteSinConflictoDni410,reconciliarDniDuplicado:reconciliarDniDuplicado410,reintentarFichas:reintentarFichas410,aplicarResultadoFicha:aplicarResultadoFicha410,idRelacional:idRelacional410,persistirSync:persistirSync410,resolverDivergencia:resolverDivergencia410};
+  let carga410=null;
+  function cargar410(){
+    if(!listo410())return Promise.resolve(false);
+    if(carga410)return carga410;   // una sola lectura en curso: quien llega mientras tanto comparte el resultado (sin consultas duplicadas)
+    carga410=(async()=>{
+      try{
+        const [pa,re,ev]=await Promise.all([
+          leerPadron410(),
+          supabaseClient.from('cardiolink_hc_resumen').select('*'),
+          supabaseClient.from('cardiolink_hc_evoluciones').select('*').order('fecha_hora',{ascending:false})
+        ]);
+        if(pa.error)throw pa.error;if(pa.completo!==true)throw {code:'PADRON_INCOMPLETO',message:'Lectura del padrón sin confirmar como completa.'};
+        if(re.error)throw re.error;if(ev.error)throw ev.error;
+        aplicarCarga410(pa.data||[],re.data||[],ev.data||[],true);
+        marcarPadronConfirmado410((pa.data||[]).length);quitarAvisoPadron410();
+        console.log(`Capa clínica relacional ${VERSION_CLINICA_410} cargada:`,(pa.data||[]).length,'pacientes,',(re.data||[]).length,'resúmenes,',(ev.data||[]).length,'evoluciones');
+        return true;
+      }catch(e){
+        // Nada parcial se aplicó: sigue lo último confirmado. Sin copia completa en este equipo se avisa (y el refresco automático vuelve a intentar).
+        console.warn('No se pudo cargar la capa clínica relacional:',e?.message||e);
+        if(!hayPadronConfirmado410())mostrarAvisoPadron410();
+        return false;
+      }finally{carga410=null;}
+    })();
+    return carga410;
+  }
+
+  window.cardiolinkClinica410={version:VERSION_CLINICA_410,cargar:cargar410,reaplicarCarga:reaplicarCarga410,leerEvolucion:leerEvolucion410,guardarEvolucionConfirmada:guardarEvolucionConfirmada410,guardarResumenConfirmado:guardarResumenConfirmado410,sincronizarPacienteCompleto:sincronizarPacienteCompleto410,sincronizarFichaBasica:sincronizarFichaPacienteBasica410,asegurarPacienteSinConflictoDni:asegurarPacienteSinConflictoDni410,reconciliarDniDuplicado:reconciliarDniDuplicado410,reintentarFichas:reintentarFichas410,aplicarResultadoFicha:aplicarResultadoFicha410,idRelacional:idRelacional410,persistirSync:persistirSync410,resolverDivergencia:resolverDivergencia410};
 
   // Carga inicial: espera a que Supabase Auth haya terminado el login.
   let intentos=0;

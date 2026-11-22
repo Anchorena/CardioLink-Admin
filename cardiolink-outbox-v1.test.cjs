@@ -345,7 +345,7 @@ test('cambios SIN protección se identifican antes de cerrar: sinProteccion() y 
   const ok = app(); ok.atenciones.push(att({ id: 'n1' })); ok.O.registrar(); assert.equal(ok.O.sinProteccion(), 0);
   const glue = fs.readFileSync(path.join(__dirname, 'cardiolink-outbox-glue-v1.js'), 'utf8'), appjs = fs.readFileSync(path.join(__dirname, 'app.js'), 'utf8');
   assert.match(glue, /addEventListener\('beforeunload'[\s\S]{0,120}!proteccion\.ok/);
-  assert.match(appjs, /NO están protegidos en este equipo/);
+  assert.match(appjs, /no se pudieron guardar en este equipo y se perderán si cerrás/);
 });
 
 test('R3: fichas del paciente pendientes viajan como diferencias {antes, después} (sin datos de más), se recuperan y se descartan sólo con confirmación', () => {
@@ -391,6 +391,6 @@ test('R3: guardarPacientePanel no reescribe snapshots, espera la confirmación r
   const f = appjs.slice(a, b); assert.ok(a > 0 && b > a);
   assert.doesNotMatch(f, /a\.paciente=|a\.dni=|a\.telefono=|a\.email=|a\.fechaNacimiento=/, 'no se reescribe ningún snapshot');
   assert.match(f, /okRel=await window\.cardiolinkClinica410\?\.sincronizarFichaBasica/); assert.match(f, /avisarConfigNoConfirmadaV1\('La ficha del paciente',okRel===true\)/);
-  assert.match(appjs, /fichaRelacionalConfirmada===true[\s\S]{0,200}guardada en el servidor \(tabla de pacientes\)/);
+  assert.match(appjs, /fichaRelacionalConfirmada===true[\s\S]{0,200}se guardó correctamente/);
   assert.match(appjs, /function pacienteActivoPanel\(p\)\{return p && p\.estado!=='fusionado' && !\(window\.cardiolinkFichaV1/);
 });

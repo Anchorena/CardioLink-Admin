@@ -140,14 +140,30 @@
   var pendientes = new Map();     // id → { cambios:{campo:{a,d}}, ts }
   function registrarVista(row) { if (row && row.id != null) vista.set(String(row.id), desdeFila(row)); }
   function vistaDe(id) { var v = vista.get(String(id)); return v ? Object.assign({}, v) : null; }
-  function marcarPendiente(id, cambios) {
-    id = String(id); var p = pendientes.get(id) || { cambios: {}, ts: new Date().toISOString() };
+  // origen: 'usuario' = edición real hecha por una persona en esta sesión (se reintenta sola); 'heredado' = pendiente creado antes de esta corrección (no se aplica sola: puede traer datos viejos).
+  function marcarPendiente(id, cambios, origen) {
+    id = String(id); var p = pendientes.get(id) || { cambios: {}, ts: new Date().toISOString(), origen: origen || 'usuario' };
+    if (origen === 'usuario') p.origen = 'usuario';                                  // una edición nueva de la persona prevalece sobre el origen anterior
+    delete p.rechazo;                                                                // si vuelve a editar, se vuelve a intentar
     Object.keys(cambios).forEach(function (k) { var prev = p.cambios[k]; p.cambios[k] = { a: prev ? prev.a : cambios[k].a, d: cambios[k].d }; if (p.cambios[k].a === p.cambios[k].d) delete p.cambios[k]; });
     if (Object.keys(p.cambios).length) pendientes.set(id, p); else pendientes.delete(id);
   }
+  // Error permanente (permisos, DNI repetido, validación de la base): NO se reintenta solo y NO se descarta: la edición se conserva con su motivo para que se informe a la persona.
+  function rechazarPendiente(id, tipo, detalle) { var p = pendientes.get(String(id)); if (p) p.rechazo = { tipo: tipo, detalle: detalle || '', ts: new Date().toISOString() }; }
+  function esErrorPermanente(r) {
+    if (!r || r.estado !== 'error') return false;
+    if (r.permiso) return true; var c = r.error && r.error.code ? String(r.error.code) : '';
+    return /^(22|23|42)/.test(c) && c !== '23505';                                   // datos inválidos / restricciones / permisos: reintentar no cambia el resultado
+  }
   function liberarCampos(id, campos) { id = String(id); var p = pendientes.get(id); if (!p) return; campos.forEach(function (k) { delete p.cambios[k]; }); if (!Object.keys(p.cambios).length) pendientes.delete(id); }
-  function listarPendientes() { var o = []; pendientes.forEach(function (p, id) { o.push({ id: id, cambios: JSON.parse(JSON.stringify(p.cambios)), ts: p.ts }); }); return o; }
-  function limpiarEstado() { vista.clear(); pendientes.clear(); sync.clear(); divergencias.clear(); ausentes.clear(); }
+  function listarPendientes() { var o = []; pendientes.forEach(function (p, id) { o.push({ id: id, cambios: JSON.parse(JSON.stringify(p.cambios)), ts: p.ts, origen: p.origen || 'heredado', rechazo: p.rechazo ? JSON.parse(JSON.stringify(p.rechazo)) : null }); }); return o; }
+  // Lo que la persona vio al abrir el formulario (base de su edición). La comparación se hace contra esto y no contra el estado actual: así lo que no tocó no se escribe y un cambio hecho por otra sesión
+  // mientras tanto se detecta como conflicto en vez de pisarse.
+  var vistasEdicion = new Map();
+  function fijarVistaEdicion(id, obj) { vistasEdicion.set(String(id), { v: normalizarApp(obj), t: Date.now() }); }
+  function vistaEdicionDe(id, maxMs) { var x = vistasEdicion.get(String(id)); if (!x || Date.now() - x.t > (maxMs || 7200000)) return null; return Object.assign({}, x.v); }
+  function olvidarVistaEdicion(id) { vistasEdicion.delete(String(id)); }
+  function limpiarEstado() { vistasEdicion.clear(); vista.clear(); pendientes.clear(); sync.clear(); divergencias.clear(); ausentes.clear(); }
 
   // Guarda lo que el usuario editó: calcula las diferencias contra `base` (lo que vio), las deja pendientes (la cola R2D las persiste ANTES de la red),
   // escribe y, con la confirmación, libera. Los campos en conflicto NO se escriben ni quedan pendientes: el llamador adopta el valor del servidor.
@@ -158,15 +174,17 @@
     if (r.estado === 'confirmada') {
       liberarCampos(opc.id, Object.keys(cambios));                  // aplicados, ya aplicados y en conflicto dejan de estar pendientes
       if (r.fila) registrarVista(r.fila);
-    } else if (r.estado === 'dni_duplicado' || (r.estado === 'error' && r.permiso)) {
-      liberarCampos(opc.id, Object.keys(cambios));                  // rechazo definitivo: no se reintenta solo
+    } else if (r.estado === 'dni_duplicado') {
+      rechazarPendiente(opc.id, 'dni_duplicado', r.dni);              // rechazo definitivo: no se reintenta solo y NO se descarta (la persona lo ve y puede corregirlo)
+    } else if (esErrorPermanente(r)) {
+      rechazarPendiente(opc.id, r.permiso ? 'permiso' : 'invalido', r.error && r.error.message);
     }
     return r;
   }
   async function guardarEdicion(opc) {
     var cambios = diferencias(opc.base, opc.nuevo);
     if (!Object.keys(cambios).length) return { estado: 'confirmada', aplicados: [], ya: [], conflictos: [], sinCambios: true, cambios: cambios };
-    marcarPendiente(opc.id, cambios);
+    marcarPendiente(opc.id, cambios, 'usuario');
     if (opc.alMarcar) { try { opc.alMarcar(); } catch (e) { /* */ } }
     return ejecutarCambios(opc, cambios);
   }
@@ -174,7 +192,7 @@
   async function guardarCambiosPendientes(opc) {
     var cambios = opc.cambios || {};
     if (!Object.keys(cambios).length) return { estado: 'confirmada', aplicados: [], ya: [], conflictos: [], sinCambios: true, cambios: cambios };
-    marcarPendiente(opc.id, cambios);
+    marcarPendiente(opc.id, cambios, opc.origen);
     if (opc.alMarcar) { try { opc.alMarcar(); } catch (e) { /* */ } }
     return ejecutarCambios(opc, cambios);
   }
@@ -204,23 +222,21 @@
   //   · local sin cambios desde la última sincronización → se adopta lo relacional;
   //   · local cambiado y relacional SIN cambios desde la última sincronización → la base (= la relacional actual) es verificable: se EMPUJA por la fusión de 3 vías;
   //   · sin marca, o cambiaron los dos lados → no hay base confiable: se rellenan vacíos sin perder nada y lo demás queda como DIVERGENCIA (ninguna de las dos versiones se pisa).
+  var IDENTIDAD = { nombreCompleto: true, dni: true };
   function reconciliarCarga(local, row, pend) {
-    var r = desdeFila(row), l = normalizarApp(local), adoptar = {}, empujar = {}, div = {}, m = syncDe(row && row.id);
-    var tl = Date.parse(local && local.actualizadoEn || 0) || 0, tr = Date.parse(row && row.actualizado_en || 0) || 0;
-    var localSinCambios = !!m && m.h === huella(local), relSinCambios = !!m && String(row.actualizado_en) === m.v;
+    var r = desdeFila(row), l = normalizarApp(local), adoptar = {}, vaciadosIdentidad = {};
     CAMPOS.forEach(function (c) {
       var k = c[0];
-      if (pend && pend.cambios && pend.cambios[k]) return;          // edición local sin confirmar: se conserva
+      if (pend && pend.origen === 'usuario' && pend.cambios && pend.cambios[k]) return;       // edición real de la persona todavía sin guardar: se conserva
       if (r[k] === l[k]) return;
-      if (localSinCambios) { adoptar[k] = r[k]; return; }
-      if (m && relSinCambios) { empujar[k] = { a: r[k], d: l[k] }; return; }
-      if (l[k] == null) { adoptar[k] = r[k]; return; }               // el local no tenía el dato: se completa (no se pierde nada)
-      // la relacional no tiene el dato: se escribe en el VACÍO (nada que sobrescribir; UPDATE condicionado), salvo que alguien haya tocado la fila relacional DESPUÉS de la última edición
-      // local (podría haberlo borrado a propósito): la marca de tiempo sólo se usa como VETO, nunca como autorización.
-      if (r[k] == null && !m && !(tr > tl)) { empujar[k] = { a: null, d: l[k] }; return; }
-      div[k] = { local: l[k], remoto: r[k] };                        // sin base confiable: se conserva para revisión
+      // PROTECCIÓN DE IDENTIDAD: que la tabla venga SIN nombre o SIN DNI cuando la copia local los tiene NO se adopta de inmediato (puede ser un vaciado accidental, como el del 19/11/2026):
+      // se informa aparte y quien llama decide (se aceptan correcciones puntuales; un vaciado masivo se bloquea). Cualquier otro cambio sigue a la tabla como siempre.
+      if (IDENTIDAD[k] && r[k] == null && l[k] != null) { vaciadosIdentidad[k] = l[k]; return; }
+      adoptar[k] = r[k];                                                                         // la copia local sigue a la tabla (incluye datos vaciados a propósito)
     });
-    return { adoptar: adoptar, empujar: empujar, divergencias: div };
+    var res = { adoptar: adoptar, empujar: {}, divergencias: {} };                                // sin empujes ni divergencias: leer o refrescar nunca escribe
+    if (Object.keys(vaciadosIdentidad).length) res.vaciadosIdentidad = vaciadosIdentidad;           // sólo cuando hay un vaciado de nombre/DNI que NO se adoptó (la forma de siempre no cambia)
+    return res;
   }
 
   // ---------- divergencias para revisión ----------
@@ -241,10 +257,10 @@
   }
 
   return {
-    VERSION: 'r3-ficha-1', CAMPOS: CAMPOS, norm: norm, digitos: digitos, isoFecha: isoFecha, normalizarApp: normalizarApp, desdeFila: desdeFila, diferencias: diferencias, planificar: planificar,
+    VERSION: 'fichas-estables-1', CAMPOS: CAMPOS, norm: norm, digitos: digitos, isoFecha: isoFecha, normalizarApp: normalizarApp, desdeFila: desdeFila, diferencias: diferencias, planificar: planificar,
     filaDesdeCambios: filaDesdeCambios, guardarCambios: guardarCambios, guardarEdicion: guardarEdicion, guardarCambiosPendientes: guardarCambiosPendientes, buscarDniOtro: buscarDniOtro, leerFila: leerFila, reconciliarCarga: reconciliarCarga,
     huella: huella, marcarSync: marcarSync, syncDe: syncDe, existiaAntes: existiaAntes, exportarSync: exportarSync, importarSync: importarSync, esAusente: esAusente, marcarAusente: marcarAusente, limpiarAusente: limpiarAusente, idsSincronizados: idsSincronizados,
     registrarDivergencias: registrarDivergencias, listarDivergencias: listarDivergencias, liberarDivergencia: liberarDivergencia, planResolucion: planResolucion,
-    registrarVista: registrarVista, vistaDe: vistaDe, marcarPendiente: marcarPendiente, liberarCampos: liberarCampos, listarPendientes: listarPendientes, limpiarEstado: limpiarEstado
+    registrarVista: registrarVista, vistaDe: vistaDe, marcarPendiente: marcarPendiente, rechazarPendiente: rechazarPendiente, esErrorPermanente: esErrorPermanente, fijarVistaEdicion: fijarVistaEdicion, vistaEdicionDe: vistaEdicionDe, olvidarVistaEdicion: olvidarVistaEdicion, liberarCampos: liberarCampos, listarPendientes: listarPendientes, limpiarEstado: limpiarEstado
   };
 });

@@ -16,7 +16,7 @@
   var limpiados = new Set();        // ids cuyo último intento NO llegó al servidor (fallo de red limpio o rechazo definitivo): se ignora la marca guardada
   var enviados = new Map();         // id → contenido (estable) del último intento de envío de una atención nueva
   var proteccion = { ok: true, error: null, dañada: false };
-  var ultimaFirma = '', ultimoLatido = 0, recuperada = false, estadoUI = { abierto: false };
+  var ultimaFirma = '', ultimoLatido = 0, recuperada = false, estadoUI = { abierto: false }, mensajesUI = {};
 
   function ahora() { return Date.now(); }
   function iso() { return new Date().toISOString(); }
@@ -51,13 +51,13 @@
       propias[key] = op;
     });
     var cfg = null; try { cfg = puente.configPendiente(); } catch (e) { cfg = null; }
-    if (cfg && cfg.ops && cfg.ops.length) { var kc = t + '|c', pc = st.ops[kc]; propias[kc] = { k: 'config', baseVer: cfg.baseVer, ops: cfg.ops, noProt: cfg.noProt || [], rol: puente.rol(), ts: (pc && pc.ts) || cuando, tab: t }; }
+    if (cfg && cfg.ops && cfg.ops.length) { var kc = t + '|c', pc = st.ops[kc]; propias[kc] = { k: 'config', origen: 'usuario', baseVer: cfg.baseVer, ops: cfg.ops, noProt: cfg.noProt || [], rol: puente.rol(), ts: (pc && pc.ts) || cuando, tab: t }; }
     // R3: fichas demográficas del paciente editadas y todavía sin confirmar en cardiolink_pacientes (sólo diferencias {antes, después} y la versión de lo que se vio)
     var fichas = []; try { fichas = puente.fichasPendientes ? puente.fichasPendientes() : []; } catch (e) { fichas = []; }
     fichas.forEach(function (f) {
       if (!f || !f.cambios || !Object.keys(f.cambios).length) return;
       var kf = t + '|f:' + f.id, pf = st.ops[kf];
-      propias[kf] = { k: 'ficha', id: String(f.id), cambios: f.cambios, rol: puente.rol(), ts: (pf && pf.ts) || f.ts || cuando, tab: t };
+      propias[kf] = { k: 'ficha', id: String(f.id), cambios: f.cambios, origen: f.origen || 'heredado', rechazo: f.rechazo || null, rol: puente.rol(), ts: (pf && pf.ts) || f.ts || cuando, tab: t };
     });
     // R3: divergencias de la ficha del paciente (sin base confiable: se conservan los DOS valores hasta que el usuario decida)
     var divs = []; try { divs = puente.divergencias ? puente.divergencias() : []; } catch (e) { divs = []; }
@@ -118,6 +118,7 @@
           if (op.k === 'incompleta' || op.k === 'revision' || op.k === 'ambigua' || op.k === 'eliminada_remota' || op.k === 'no_autorizada') { especiales.set(t + '|a:' + (op.id || 'x'), Object.assign({}, op, { tab: t })); res.retenidas++; return; }
           if (op.k === 'nueva') return recuperarNueva(op, remotas, res);
           if (op.k === 'mod') return recuperarMod(op, remotas, res);
+          if (op.k === 'config' && op.origen !== 'usuario') { especiales.set(t + '|c', Object.assign({}, op, { tab: t, k: 'heredada', motivo: 'Cambios de configuración guardados por una versión anterior: no se aplican solos porque pueden traer datos viejos.' })); res.retenidas++; return; }
           if (op.k === 'config') return recuperarConfig(op, ctx.cfgRemota, res);
           if (op.k === 'divergencia') { puente.recuperarDivergencia && puente.recuperarDivergencia(op); res.recuperadas++; return; }
           if (op.k === 'ficha') { puente.recuperarFicha && puente.recuperarFicha(op); res.recuperadas++; return; }   // R3: se reaplica y se reintenta por el camino seguro (3 vías)
@@ -231,6 +232,7 @@
       else if (op.k === 'revision') { tipo = 'revision'; det = op.motivo; }
       else if (op.k === 'ambigua') { tipo = 'revision'; det = op.motivo; }
       else if (op.k === 'eliminada_remota') { tipo = 'conflicto'; det = op.motivo + ' Campos: ' + Object.keys(op.cambios || {}).slice(0, 5).join(', '); }
+      else if (op.k === 'heredada') { tipo = 'revision'; det = op.motivo; }
       else if (op.k === 'no_autorizada') { tipo = 'rechazada'; det = op.motivo || 'No autorizada.'; }
       var viva = op.id != null ? (puente.atenciones() || []).find(function (a) { return a && String(a.id) === String(op.id); }) : null;
       items.push({ key: key, op: op, tipo: tipo, det: det, desc: op.desc || ((op.k === 'ficha' || op.k === 'divergencia') && puente.fichaDesc ? puente.fichaDesc(op.id) : viva ? nombreAtencion(viva) : (op.row ? nombreAtencion(op.row) : (op.k === 'config' ? 'Configuración' : String(op.id || '')))), dias: P.antiguedadDias(op, n) });
@@ -240,52 +242,88 @@
       if (items.some(function (i) { return String(i.op.id) === id; })) return;
       items.push({ key: 'r2c|' + id, op: { k: 'eliminada_r2c', id: id }, tipo: 'conflicto', det: 'Otra sesión eliminó esta atención y tenías cambios. Se resuelve en el aviso de turnos.', desc: 'Atención ' + id, dias: 0 });
     });
+    items.forEach(function (it) { clasificar(it); });
     return items;
   }
+  // Lo que la persona ve: sólo EDICIONES REALES sin guardar y problemas auténticos, en lenguaje operativo. Lo heredado, las revisiones técnicas y los restos de versiones anteriores quedan protegidos
+  // en la cola, sin aplicarse solos, y sólo los ve Owner/Admin (herramientas de recuperación).
+  function esAdminUI() { try { return !!(puente && puente.configPermitida && puente.configPermitida()); } catch (e) { return false; } }
+  function clasificar(it) {
+    var op = it.op, k = op.k, seg = Math.max(0, Math.round((ahora() - Date.parse(op.ts || 0)) / 1000)); it.edadSeg = seg;
+    var nombre = ''; try { nombre = (k === 'ficha' || k === 'divergencia') && puente.fichaDesc ? String(puente.fichaDesc(op.id)).replace(/^Ficha de /, '') : ''; } catch (e) { nombre = ''; }
+    it.real = (k === 'mod' || k === 'nueva') && it.tipo === 'pendiente' || (k === 'ficha' && op.origen === 'usuario' && !op.rechazo) || (k === 'config' && op.origen === 'usuario' && it.tipo === 'pendiente');
+    it.problema = (k === 'ficha' && op.origen === 'usuario' && !!op.rechazo) || it.tipo === 'conflicto' || it.tipo === 'rechazada' || k === 'incompleta' || k === 'revision' || k === 'ambigua';
+    it.tecnico = k === 'divergencia' || k === 'heredada' || (k === 'ficha' && op.origen !== 'usuario') || k === 'eliminada_r2c' && false;
+    var MOT = { dni_duplicado: 'el DNI ya pertenece a otro paciente', permiso: 'tu usuario no tiene permiso para guardar este dato', invalido: 'alguno de los datos no es válido' };
+    if (k === 'ficha' && op.origen === 'usuario' && op.rechazo) it.etiqueta = 'No guardado';
+    if (k === 'ficha' && op.origen === 'usuario') it.detUsuario = op.rechazo ? 'No se pudo guardar la ficha de ' + (nombre || 'un paciente') + ': ' + (MOT[op.rechazo.tipo] || 'el servidor no lo aceptó') + '. Corregí el dato y guardá de nuevo.' : 'Cambios en la ficha de ' + (nombre || 'un paciente') + ' todavía sin guardar. Se reintenta solo.';
+    else if (k === 'config') it.detUsuario = 'Cambios en la configuración todavía sin guardar. Se reintenta solo.';
+    else if (k === 'mod') it.detUsuario = 'Cambios en una atención todavía sin guardar. Se reintenta solo.';
+    else if (k === 'nueva') it.detUsuario = 'Atención nueva todavía sin guardar. Se reintenta sola.';
+    it.visible = (esAdminUI() && estadoUI.tecnicos && it.tecnico) ? true : (it.real || it.problema) && (!it.real || seg >= UMBRAL_AVISO_SEG || it.dias >= 1);   // lo técnico/heredado sólo se muestra a Owner/Admin cuando pide revisarlo
+  }
+  var UMBRAL_AVISO_SEG = 120;     // una edición real que se guarda sola en menos de 2 minutos no muestra ningún cartel
+  function reales() { return resumen().filter(function (i) { return i.real || i.problema && i.op.k !== 'divergencia'; }).length; }
   function aviso(texto) { try { if (window.cardiolinkConfigR2B && window.cardiolinkConfigR2B.avisoTransitorio) window.cardiolinkConfigR2B.avisoTransitorio(texto); else alert(texto); } catch (e) { /* */ } }
   function crear(tag, css, txt) { var e = document.createElement(tag); if (css) e.style.cssText = css; if (txt != null) e.textContent = txt; return e; }
   function pintar() {
     try {
       if (!document.body) return;
-      var items = resumen(), sinProtec = !proteccion.ok, malo = items.some(function (i) { return i.tipo === 'conflicto' || i.tipo === 'rechazada' || i.tipo === 'revision'; }) || sinProtec;
-      var firma = JSON.stringify([items.map(function (i) { return [i.key, i.tipo, i.dias >= P.DIAS_AVISO]; }), proteccion.ok, proteccion.dañada, estadoUI.abierto]);
+      var items = resumen().filter(function (i) { return i.visible; }), sinProtec = !proteccion.ok, malo = items.some(function (i) { return i.tipo === 'conflicto' || i.tipo === 'rechazada' || i.tipo === 'revision'; }) || sinProtec;
+      var firma = JSON.stringify([items.map(function (i) { return [i.key, i.tipo, i.dias >= P.DIAS_AVISO, i.op.rechazo && i.op.rechazo.tipo]; }), proteccion.ok, proteccion.dañada, estadoUI.abierto]);
       if (firma === ultimaFirma) return; ultimaFirma = firma;
       var ins = document.getElementById(ID_INSIGNIA), panel = document.getElementById(ID_PANEL);
       if (!items.length && !sinProtec && !proteccion.dañada) { if (ins) ins.remove(); if (panel) panel.remove(); return; }
       if (!ins) { ins = crear('button', ''); ins.id = ID_INSIGNIA; ins.type = 'button'; ins.addEventListener('click', function () { estadoUI.abierto = !estadoUI.abierto; ultimaFirma = ''; pintar(); }); document.body.appendChild(ins); }
       ins.style.cssText = 'position:fixed;left:12px;bottom:12px;z-index:99995;border:0;border-radius:999px;padding:8px 14px;font:700 13px system-ui,Arial,sans-serif;cursor:pointer;box-shadow:0 4px 18px rgba(0,0,0,.25);color:#fff;background:' + (malo ? '#b91c1c' : '#b45309');
-      var n = items.length; ins.textContent = sinProtec ? '⚠ ' + n + ' cambio' + (n === 1 ? '' : 's') + ' SIN protección local' : n + ' cambio' + (n === 1 ? '' : 's') + ' pendiente' + (n === 1 ? '' : 's') + ' de sincronización';
+      var n = items.length; ins.textContent = sinProtec ? '⚠ ' + n + ' cambio' + (n === 1 ? '' : 's') + ' sin guardar y sin protección en este equipo' : n + ' cambio' + (n === 1 ? '' : 's') + ' sin guardar';
       if (panel) panel.remove();
       if (!estadoUI.abierto) return;
       panel = crear('div', 'position:fixed;left:12px;bottom:56px;z-index:99995;max-width:min(560px,calc(100vw - 24px));max-height:60vh;overflow:auto;background:#fff;color:#1f2937;border:2px solid ' + (malo ? '#b91c1c' : '#b45309') + ';border-radius:12px;padding:12px 14px;font:13px/1.4 system-ui,Arial,sans-serif;box-shadow:0 10px 32px rgba(0,0,0,.35)');
       panel.id = ID_PANEL; panel.setAttribute('role', 'dialog');
-      panel.appendChild(crear('div', 'font-weight:800;margin-bottom:6px', 'Cambios pendientes de sincronización'));
+      panel.appendChild(crear('div', 'font-weight:800;margin-bottom:6px', 'Cambios sin guardar'));
       if (sinProtec) panel.appendChild(crear('div', 'background:#fee2e2;border:1px solid #b91c1c;border-radius:8px;padding:6px 8px;margin:6px 0;font-weight:700', '⚠ Estos cambios NO están protegidos contra una recarga: no se pudo guardar la copia local (' + (proteccion.error || 'almacenamiento lleno o no disponible') + '). Evitá cerrar o recargar hasta que se sincronicen.'));
       if (proteccion.dañada) panel.appendChild(crear('div', 'background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:6px 8px;margin:6px 0', 'La cola local guardada estaba dañada; se conservó una copia aparte sin borrarla y se empezó una nueva.'));
       if (proteccion.grande) panel.appendChild(crear('div', 'margin:6px 0;color:#92400e', 'La cola local es grande: sincronizá pronto para no agotar el almacenamiento del equipo.'));
-      if (items.some(function (i) { return i.dias >= P.DIAS_AVISO; })) panel.appendChild(crear('div', 'background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:6px 8px;margin:6px 0;font-weight:700', 'Hay cambios con más de ' + P.DIAS_AVISO + ' días sin sincronizar. No se borran solos: revisá si siguen vigentes.'));
+      if (esAdminUI() && items.some(function (i) { return i.dias >= P.DIAS_AVISO; })) panel.appendChild(crear('div', 'background:#fef3c7;border:1px solid #f59e0b;border-radius:8px;padding:6px 8px;margin:6px 0;font-weight:700', 'Hay cambios con más de ' + P.DIAS_AVISO + ' días sin sincronizar. No se borran solos: revisá si siguen vigentes.'));
       var ROT = { pendiente: 'Pendiente', conflicto: 'Conflicto', rechazada: 'Rechazada', incompleta: 'Incompleta', revision: 'Requiere revisión' };
       items.forEach(function (it) {
         var f = crear('div', 'border:1px solid #e5e7eb;border-radius:8px;padding:6px 8px;margin:6px 0');
         var cab = crear('div', 'display:flex;gap:8px;align-items:baseline;flex-wrap:wrap');
-        cab.appendChild(crear('span', 'font-size:11px;font-weight:800;border-radius:6px;padding:1px 6px;color:#fff;background:' + ({ pendiente: '#b45309', conflicto: '#b91c1c', rechazada: '#7f1d1d', incompleta: '#4338ca', revision: '#9a3412' }[it.tipo] || '#555'), ROT[it.tipo] || it.tipo));
+        cab.appendChild(crear('span', 'font-size:11px;font-weight:800;border-radius:6px;padding:1px 6px;color:#fff;background:' + (it.etiqueta ? '#7f1d1d' : ({ pendiente: '#b45309', conflicto: '#b91c1c', rechazada: '#7f1d1d', incompleta: '#4338ca', revision: '#9a3412' }[it.tipo] || '#555')), it.etiqueta || ROT[it.tipo] || it.tipo));
         cab.appendChild(crear('strong', '', it.desc)); cab.appendChild(crear('span', 'color:#6b7280;font-size:12px', it.dias >= 1 ? 'hace ' + it.dias + ' día' + (it.dias === 1 ? '' : 's') : 'hoy'));
-        f.appendChild(cab); if (it.det) f.appendChild(crear('div', 'color:#4b5563;font-size:12px', it.det));
+        var det = it.detUsuario || it.det; /* texto operativo para todos; el técnico sólo si no hay uno (restos que sólo ve Owner/Admin) */ f.appendChild(cab); if (det) f.appendChild(crear('div', 'color:#4b5563;font-size:12px', det)); var resultado = crear('div', 'font-size:12px;font-weight:700;margin-top:2px'); f.appendChild(resultado); var mu = mensajesUI[it.key]; if (mu && Date.now() - mu.t < 20000) { resultado.style.color = mu.ok ? '#166534' : '#b91c1c'; resultado.textContent = mu.texto; }
         var acc = crear('div', 'display:flex;gap:6px;flex-wrap:wrap;margin-top:4px');
         function b(txt, fn, peligro) { var x = crear('button', 'padding:4px 10px;border-radius:7px;border:1px solid ' + (peligro ? '#b91c1c' : '#9ca3af') + ';background:#fff;color:' + (peligro ? '#b91c1c' : '#111') + ';font-weight:700;cursor:pointer', txt); x.type = 'button'; x.addEventListener('click', fn); acc.appendChild(x); }
-        if (it.tipo === 'pendiente') b('Reintentar', function () { puente.sincronizarYa(); if (it.op.k === 'config') puente.guardarConfigYa(); if (it.op.k === 'ficha') puente.reintentarFichas(); });
+        if (it.tipo === 'pendiente' && (it.real || esAdminUI())) botonGuardarAhora(it, acc, resultado);
         if (it.tipo === 'conflicto') b('Resolver conflicto', function () { try { if (it.op.k === 'config') window.cardiolinkConfigR2B.abrirPanel(); else window.cardiolinkAtencionesR2C.abrirPanel(); } catch (e) { console.warn(e); } });
         if (it.tipo === 'rechazada' && it.op.k !== 'config' && it.op.k !== 'no_autorizada') b('Reintentar', function () { try { window.cardiolinkAtencionesR2C.liberar(it.op.id); puente.sincronizarYa(); } catch (e) { console.warn(e); } });
         if (it.tipo === 'rechazada' && it.op.k === 'no_autorizada') b('Reintentar', function () { aviso('Se vuelve a validar al iniciar sesión.'); });
         if (it.op.k === 'divergencia') Object.keys(it.op.campos).forEach(function (c) { b('Usar el del servidor (' + c + ')', function () { puente.resolverDivergencia(it.op.id, c, 'servidor'); }); b('Usar el mío (' + c + ')', function () { puente.resolverDivergencia(it.op.id, c, 'mio'); }); });
         if (it.op.k === 'incompleta') b('Completar', function () { mostrarCompletar(it, f); });
         if (it.op.k === 'revision' || it.op.k === 'ambigua') b('Revisar y reenviar', function () { reenviar(it.key); });
-        if (it.op.k !== 'eliminada_r2c' && it.op.k !== 'divergencia') b('Descartar', function () { descartar(it.key); }, true);
+        if (esAdminUI() && it.op.k !== 'eliminada_r2c' && it.op.k !== 'divergencia') b('Descartar', function () { descartar(it.key); }, true);
         f.appendChild(acc); panel.appendChild(f);
       });
-      var pie = crear('div', 'margin-top:6px;font-size:11px;color:#6b7280', 'Se guardan sólo diferencias y filas nuevas, en este equipo y para este usuario. No es un respaldo cifrado: en un equipo compartido cerrá sesión y descartá lo que no quieras dejar.');
-      panel.appendChild(pie); document.body.appendChild(panel);
+      if (esAdminUI()) panel.appendChild(crear('div', 'margin-top:6px;font-size:11px;color:#6b7280', 'Administración: se guardan sólo diferencias y filas nuevas, en este equipo y para este usuario. Lo heredado de versiones anteriores no se aplica solo.')); document.body.appendChild(panel);
     } catch (e) { console.warn('R2D: no se pudo mostrar la cola:', e); }
+  }
+  // «Guardar ahora»: muestra que está trabajando, confirma el resultado REAL (leyendo si el pendiente desapareció) y explica el motivo si no se pudo. Nunca informa éxito sin confirmación.
+  function botonGuardarAhora(it, contenedor, resultado) {
+    var x = crear('button', 'padding:4px 10px;border-radius:7px;border:1px solid #166534;background:#fff;color:#166534;font-weight:700;cursor:pointer', 'Guardar ahora'); x.type = 'button';
+    x.addEventListener('click', async function () {
+      if (x.disabled) return; x.disabled = true; x.textContent = 'Guardando…'; resultado.style.color = '#4b5563'; resultado.textContent = '';
+      var msg = '', ok = false;
+      try {
+        if (typeof puente.guardarAhora === 'function') { var r = await puente.guardarAhora(it.op); ok = !!(r && r.ok); msg = (r && r.mensaje) || ''; }
+        else { puente.sincronizarYa(); }
+        registrar(); var sigue = resumen().some(function (i) { return i.key === it.key; });
+        if (ok && !sigue) { resultado.style.color = '#166534'; resultado.textContent = '✓ Guardado'; mensajesUI[it.key] = { ok: true, texto: '✓ Guardado', t: Date.now() }; }
+        else { var tx = msg || 'Todavía no se pudo guardar. El cambio se conserva y se vuelve a intentar solo.'; resultado.style.color = '#b91c1c'; resultado.textContent = tx; mensajesUI[it.key] = { ok: false, texto: tx, t: Date.now() }; }
+      } catch (e) { resultado.style.color = '#b91c1c'; resultado.textContent = 'No se pudo guardar por ahora. El cambio se conserva y se vuelve a intentar solo.'; mensajesUI[it.key] = { ok: false, texto: resultado.textContent, t: Date.now() }; }
+      x.disabled = false; x.textContent = 'Guardar ahora'; ultimaFirma = ''; setTimeout(pintar, 2500);
+    });
+    contenedor.appendChild(x);
   }
   function mostrarCompletar(it, contenedor) {
     var r = it.op.row || {}, form = crear('div', 'margin-top:6px;border-top:1px dashed #d1d5db;padding-top:6px'), vals = {};
@@ -313,9 +351,9 @@
     window.addEventListener('storage', function (ev) { if (ev && ev.key && ev.key.indexOf('cardiolink_outbox_r2d_v1:') === 0) { try { var ab = P.abrir(localStorage, clave || ev.key); estadoCola = ab.estado; ultimaFirma = ''; pintar(); } catch (e) { /* */ } } });
   }
   window.cardiolinkOutboxR2D = {
-    conectar: conectar, registrar: registrar, recuperar: recuperar, marcarEnvio: marcarEnvio, limpiarEnvio: limpiarEnvio, cuarentena: cuarentena, hayPendientes: hayPendientes, idsGestionados: idsGestionados,
+    conectar: conectar, registrar: registrar, recuperar: recuperar, marcarEnvio: marcarEnvio, limpiarEnvio: limpiarEnvio, cuarentena: cuarentena, hayPendientes: hayPendientes, reales: reales, tecnicos: function () { return resumen().filter(function (i) { return i.tecnico; }).length; }, verRecuperacion: function () { if (!esAdminUI()) return false; estadoUI.tecnicos = true; estadoUI.abierto = true; ultimaFirma = ''; pintar(); return true; }, idsGestionados: idsGestionados,
     noProtegidos: function () { try { var c = puente.configPendiente(); return c && c.noProt ? c.noProt.slice() : []; } catch (e) { return []; } },   // cambios de configuración (claves clínicas, imágenes) que NO viajan en la cola, aunque no haya operaciones
-    protegido: function () { return proteccion.ok; }, sinProteccion: function () { return proteccion.ok ? 0 : resumen().length; }, resumen: function () { return resumen().map(function (i) { return { key: i.key, k: i.op.k, tipo: i.tipo, id: i.op.id || null, dias: i.dias }; }); },
+    protegido: function () { return proteccion.ok; }, sinProteccion: function () { return proteccion.ok ? 0 : resumen().length; }, resumen: function () { return resumen().map(function (i) { return { key: i.key, k: i.op.k, tipo: i.tipo, id: i.op.id || null, dias: i.dias, real: !!i.real, problema: !!i.problema, tecnico: !!i.tecnico, visible: !!i.visible, origen: i.op.origen || null }; }); },
     completar: completar, descartar: descartar, reenviar: reenviar, estado: function () { return { proteccion: Object.assign({}, proteccion), tab: tabId, especiales: Array.from(especiales.keys()), clave: clave, items: resumen().length }; },
     abrir: function () { estadoUI.abierto = true; ultimaFirma = ''; pintar(); }, SENTINELA: SENTINELA, VERSION: P.VERSION
   };

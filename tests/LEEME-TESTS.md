@@ -27,3 +27,6 @@ Cada suite también corre sola: `node documentos-seguridad-4c1.js`.
 Los SQL (`docs/propuestas/pending_review_documentos_seguridad_4c1*.sql`) **no se ejecutan acá**: las pruebas JS son revisión estática. Su validación real es el ensayo reversible en STAGING (`…_ensayo_reversible.sql`).
 
 - Seguridad clínica V1 · publicación (sin p3): `node prerrequisitos-seguridad-clinica-v1.js` (9 pruebas estáticas: p1/p2/p3, rollback, ensayos, alcance sin p3).
+
+## Corrida automática con Node 22 (GitHub Actions)
+`docs/propuestas/pruebas-node22.workflow.yml` (copiarlo a `.github/workflows/` para activarlo) corre TODAS las suites (`*.test.cjs` de la raíz y `tests/*.js`) sobre `main` y sobre el PR con `sh tests/ci-suites.sh`, y falla sólo ante fallas NUEVAS (las preexistentes se informan como tales). Sin secretos ni red. Local: `sh tests/ci-suites.sh run /tmp/head.tsv` y `sh tests/ci-suites.sh comparar base.tsv head.tsv`.

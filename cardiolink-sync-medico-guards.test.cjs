@@ -141,7 +141,7 @@ test('caché local por usuario: se aparta sin borrar, se limpia al cerrar sólo 
   assert.match(l,/sincronizarAtencionesSupabase\(false\)/);
   assert.ok(l.indexOf('if(pendiente){')!==-1&&l.indexOf('if(pendiente){')<l.indexOf('removeItem(k)'));
   assert.match(src,/const limpia = await liberarCacheLocalAlCerrarSesionV1\(true\);[\s\S]{0,1400}if \(supabaseClient\) await supabaseClient\.auth\.signOut\(\);/);   // inactividad
-  assert.match(src,/if\(!descartoTodo&&!selladoOk&&!yaLiberada\) await liberarCacheLocalAlCerrarSesionV1\(\);\s*const uidSalida=usuarioSupabase\?\.id;\s*await supabaseClient\.auth\.signOut\(\);/);        // cierre manual
+  assert.match(src,/if\(!selladoOk&&!yaLiberada\) await liberarCacheLocalAlCerrarSesionV1\(\);\s*const uidSalida=usuarioSupabase\?\.id;\s*await supabaseClient\.auth\.signOut\(\);/);        // cierre manual
   assert.match(src,/window\.hayPendientesSync298=function\(\)\{/);
 });
 
@@ -170,10 +170,11 @@ test('evoluciones: guardado confiable (por id, refresco pausado, confirmación d
   assert.doesNotMatch(f,/Object\.assign\(existing,/);
   // evolución ausente del estado: se comprueba el servidor antes de recrear; si no existe en el servidor NO se recrea
   assert.match(f,/srv\.existe===false\)\{falloGuardado\(/);
-  // control de versión contra una edición posterior de otra sesión
-  assert.match(f,/vServ>vBase\+1000/);
+  // guardado clínico multidispositivo: el control contra una edición posterior de otro dispositivo es ahora POR CAMPO y atómico (UPDATE condicionado a editado_en), no un bloqueo global
+  assert.doesNotMatch(f,/vServ>vBase\+1000/);
+  assert.match(f,/evolucionCambios:ecamEvo/);
   // (3) los datos se arman antes de cualquier await; (4) se confirma antes de cerrar y (5) se revierte el estado local si falla
-  assert.match(f,/guardarEvolucionConfirmada\(p,evolutionIdFinal,\{resumen:summaryChanged\}\)/);
+  assert.match(f,/guardarEvolucionConfirmada\(p,evolutionIdFinal,\{resumen:summaryChanged,resumenCambios:\{base:summaryBefore,/);   // guardado clínico multidispositivo: el resumen sube sólo lo cambiado
   assert.ok(f.indexOf('if(!r.ok){')!==-1&&f.indexOf('revertirLocal();')<f.indexOf("$hc('hcEvolutionModal')?.remove()"));
   assert.ok(f.indexOf('guardarEvolucionConfirmada(')<f.indexOf("$hc('hcEvolutionModal')?.remove()"));   // el modal se cierra DESPUÉS de confirmar
   // (6) id estable por modal y bloqueo de reentrada

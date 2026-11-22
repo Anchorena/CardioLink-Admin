@@ -281,6 +281,41 @@ un usuario guarde un cambio (p. ej. cerrar un pendiente), la sincronización det
 pierde sin aviso. Ocurre igual con el botón existente de cada pendiente. En Copias el chip «Copia impresa · cerrar pendiente» permite reintentar.
 Mejora futura: avisar el conflicto y reaplicar el cambio sobre la versión remota.
 
+## Fichas estables y cierre de sesión simple (rama `fix/fichas-sincronizacion-estable`, sin publicar)
+Tests: `node --test cardiolink-fichas-estables.test.cjs` (+ `cardiolink-pacientes-ficha-v1`, `cardiolink-outbox-v1`, `cardiolink-seguridad-local-v1`, `tests/config-secretaria-v1.js`).
+STAGING con cuentas y pacientes sintéticos (Owner/Secretaría/Médico QA, login real, creadas y borradas fuera del repo): refrescos sin escrituras
+(la tabla `cardiolink_pacientes` es la fuente; la copia de Configuración no la pisa ni resucita campos borrados); edición real escribe sólo los campos
+cambiados; registrar una atención sin tocar la ficha no escribe datos del paciente; caída de red → la edición se conserva, se reintenta sola y el cartel
+aparece recién tras 2 min; cierre sin pendientes = sin diálogos, con pendientes = un único mensaje y sellado automático; reingreso recupera y guarda;
+cambio de contraseña → aviso operativo y nada se aplica (con la contraseña original se recupera); otro usuario en el mismo equipo no ve ni lee nada
+de la sesión anterior (paquete cifrado). Pendientes heredados: se conservan protegidos, no se aplican solos y sólo Owner/Admin los ve.
+
+**Deuda de seguridad registrada:** si el navegador se cierra de golpe (sin «Cerrar sesión»), las ediciones sin guardar quedan sin cifrar hasta el siguiente
+ingreso. La marca de sincronización `cardiolink_ficha_sync_v1` (ids y huellas, sin valores) sigue en claro mientras la sesión está abierta.
+Hallazgo operativo: el Owner escribe UNA vez la copia de Configuración al ingresar si otros usuarios cambiaron fichas (convergencia; no se repite).
+
+## Guardado clínico multidispositivo — resumen clínico (versión `40130-hc-multidispositivo`)
+- `cardiolink-hc-resumen-v1.js`: el resumen (antecedentes, alergias, medicación habitual, alertas) se guarda enviando SOLO los campos que la persona cambió (línea base = lo que vio al abrir) y con UPDATE condicionado a `actualizado_en` (compare-and-swap atómico, sin SQL nuevo). Abrir o guardar sin cambios no escribe.
+- Datos distintos en dos dispositivos se conservan ambos sin aviso. Si otro dispositivo cambió ESE mismo dato desde que se abrió el formulario, se pregunta una vez («Conservar lo guardado» / «Guardar mi modificación»); con «Conservar» el texto de la persona sigue en pantalla.
+- El botón «Editar» del resumen ya NO llama a `sincronizarPacienteCompleto410` (que reescribía ficha + resumen + todas las evoluciones desde la copia local).
+- Verificado en STAGING (cuentas y pacientes sintéticos, ya eliminados): 0 escrituras al abrir/guardar sin cambios y en reposo; campos distintos (secuencial y con carrera real: el primer PATCH afecta 0 filas y reintenta); mismo campo → pregunta; reemplazo confirmado persiste; conservar no escribe; evolución + resumen + turno de Secretaría simultáneos.
+- Evoluciones EXISTENTES (`cardiolink-hc-evolucion-v1.js`): mismo criterio. Sube sólo los campos cambiados (línea base = lo que se vio al abrir, `evoBaselineV1`), UPDATE condicionado a `editado_en` (0 filas = otro dispositivo escribió en medio → se relee y se fusiona), el IMC se recalcula con los valores finales, una evolución eliminada desde otro dispositivo no se recrea y las evoluciones nuevas conservan el guardado normal. Ya no existe el bloqueo «modificada desde otra sesión… copiá, cerrá y volvé a abrir». Una única pregunta cubre resumen y evolución. Verificado en STAGING: PC+iPad campos distintos (ambos persisten), mismo campo (pregunta; reemplazo persiste; conservar no escribe y deja el texto en pantalla), carrera real (primer PATCH 0 filas + reintento), fila legada con `editado_en` nulo, IMC con peso y talla de dispositivos distintos, evolución nueva + turno de Secretaría simultáneos, recarga, guardar sin cambios = 0 escrituras.
+- Pendiente de seguridad (fuera de alcance, SIN aplicar): en Production las políticas de `cardiolink_hc_resumen`/`cardiolink_hc_evoluciones` son `USING (true)` para cualquier usuario autenticado (Secretaría puede leer y escribir HC); STAGING usa las políticas por acceso clínico. El SQL ya versionado `docs/propuestas/pending_review_seguridad_clinica_v1_p3_hc_rls.sql` (+ rollback) cierra la brecha; sus precondiciones se cumplen en Production. Antes de aplicarlo: Production tiene 0 vínculos manuales médico–paciente y Rogelio vería 2 de 204 pacientes con HC (acceso por atención propia, evolución propia o vínculo).
+
+## Padrón compartido · carga paginada (versión `40131-padron-paginado`)
+- Con más de 1000 pacientes (o atenciones) visibles, cada perfil (owner, médico, médico sin Secretaría, Secretaría) debe listar el mismo padrón completo, sin repetidos; un paciente recién creado o editado por cualquiera debe aparecer para los demás (el primer refresco automático es a los ~30 s).
+- Las atenciones se siguen filtrando por profesional en el servidor (médico: sólo las suyas); cargar pacientes no debe escribir en `cardiolink_pacientes`, HC ni atenciones.
+- Al iniciar la sesión el padrón debe estar completo (owner, Secretaría y médicos) sin esperar el refresco de ~30 s, sin consultas ni escrituras extra (se reaplica en memoria la última lectura completa tras la primera carga de configuración).
+- Si una página falla (o el módulo de paginación no está): no se aplica ni se muestra una carga parcial como completa; queda el último padrón completo confirmado; sin copia completa en el equipo aparece «No se pudo completar la carga de pacientes» con «Reintentar»; «Sincronizar ahora» no marca «sincronizado» si esa carga falló.
+- Pruebas con Node 22: `docs/propuestas/pruebas-node22.workflow.yml` → `.github/workflows/` (base vs. PR, falla sólo ante fallas nuevas).
+- Detalle y resultados: `docs/propuestas/padron-paginado-v1-QA-y-autoria-evoluciones.md`.
+
+
+## Protección de identidad de pacientes (versión `40132-identidad-protegida`, hotfix del incidente del 19/11/2026)
+- Una carga que traiga nombre o DNI VACÍOS para fichas locales que los tienen no los adopta si son 10 o más (vaciado masivo): se conservan los datos locales y se muestra un único aviso simple; las correcciones puntuales (menos de 10) sí se adoptan.
+- Ningún upsert de fila completa pisa un nombre/DNI ya guardado con NULL ni con «Paciente sin nombre»; el reintento de fichas no envía lotes de vaciados.
+- Leer sigue sin escribir (0 escrituras a `cardiolink_pacientes` al cargar). Detalle, evidencia y plan de recuperación: `docs/propuestas/incidente_pacientes_vacios_INFORME_Y_PLAN.md`.
+
 ## Convenios y Aranceles V2 — Paso 1 (grilla editable)
 Tests: `node tests/aranceles-v2.js` (24 pruebas: núcleo puro, snapshots en sandbox, cableado). Sin SQL; módulos `cardiolink-aranceles-v2-core.js` y `cardiolink-aranceles-v2.js`.
 

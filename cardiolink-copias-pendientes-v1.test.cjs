@@ -45,6 +45,6 @@ test('la caché de Pendientes se invalida al subir, eliminar y marcar impreso',(
 test('app.js, SQL, Cobros, Caja y Finanzas no se tocan; versiones nuevas publicadas',()=>{
   assert.match(leer('index.html'),/cardiolink-copias-facturacion-v1\.js\?v=2-pendientes/);
   assert.match(leer('index.html'),/cardiolink-copias-facturacion-v1\.css\?v=2-pendientes/);
-  assert.match(leer('sw.js'),/const CACHE='cardiolink-v4\.1\.0-convenios-v2'/);
+  assert.match(leer('sw.js'),/const CACHE='cardiolink-v4\.1\.0-persistencia-r4'/);
   assert.match(leer('cardiolink-copias-facturacion-v1.css'),/\.p-copia-subida/);
 });
