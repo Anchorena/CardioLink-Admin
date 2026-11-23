@@ -369,8 +369,103 @@
     return { ok: true, regla: copia.regla, reglaGlobalHeredada: globalHeredada };
   }
 
+  /* ---------------- Configuración de convenio: editar y «dejar sin configurar» ---------------- */
+  // Reglas comerciales ofrecidas por el editor de convenios de Configuración (misma lista que app.js ruleOpts402). Si el convenio ya tiene otra, se conserva y se acepta.
+  var REGLAS_CONVENIO = ['SIN_REGLA', 'GENERAL_CONSULTA_EXTRA', 'IOMA_OSPRERA', 'OSDE', 'SANCOR_PREVENCION', 'INTEGRAL', 'TODO_MATIAS', 'COBERTURA_COBRA_PARTICULAR'];
+  var CAMPOS_TEXTO_CONVENIO = ['destinoConsulta', 'destinoEstudio', 'facturadorConsulta', 'facturadorEstudio'];
+  var CAMPOS_BOOL_CONVENIO = ['bonoConsulta', 'bonoEstudio', 'firmaRequerida', 'copiaRequerida', 'incluirFacturaRogelio'];
+  function entradaConvenio(config, pid, os) {
+    var m = config && config.conveniosPorProfesional, arr = m && Array.isArray(m[pid]) ? m[pid] : null;
+    return arr ? (arr.filter(function (c) { return c && norm(c.obraSocial) === norm(os); })[0] || null) : null;
+  }
+  function espejoConvenios(config, pid) {
+    if (pid === 'matias') config.conveniosFacturacion = clonar(config.conveniosPorProfesional.matias);   // espejo de compatibilidad, como el editor de convenios
+  }
+  // Edita SOLO las condiciones operativas de un convenio YA configurado de ese profesional. No cambia nombre, estado (activo/archivado), catálogo, aranceles ni atenciones.
+  // cambios: { regla?, destinoConsulta?, destinoEstudio?, facturadorConsulta?, facturadorEstudio?, bonoConsulta?, bonoEstudio?, firmaRequerida?, copiaRequerida?, incluirFacturaRogelio? } (sólo se aplican los presentes).
+  function editarConfiguracionConvenio(config, pid, os, cambios) {
+    var c = entradaConvenio(config, pid, os);
+    if (!c) return { ok: false, error: 'Este convenio no tiene configuración para este profesional: se crea con «Configurar igual que…».' };
+    cambios = cambios && typeof cambios === 'object' ? cambios : {};
+    var aplicar = [], ya = {};
+    if (Object.prototype.hasOwnProperty.call(cambios, 'regla')) {
+      var r = typeof cambios.regla === 'string' ? cambios.regla.trim() : '';
+      if (!r || !(REGLAS_CONVENIO.indexOf(r) >= 0 || r === c.regla)) return { ok: false, error: 'Regla de facturación inválida.' };
+      aplicar.push(['regla', r]);
+    }
+    for (var i = 0; i < CAMPOS_TEXTO_CONVENIO.length; i++) {
+      var k = CAMPOS_TEXTO_CONVENIO[i];
+      if (!Object.prototype.hasOwnProperty.call(cambios, k)) continue;
+      var t = typeof cambios[k] === 'string' ? cambios[k].trim() : '';
+      if (!t) return { ok: false, error: 'Falta el valor de «' + k + '».' };
+      aplicar.push([k, t]);
+    }
+    for (var j = 0; j < CAMPOS_BOOL_CONVENIO.length; j++) {
+      var b = CAMPOS_BOOL_CONVENIO[j];
+      if (!Object.prototype.hasOwnProperty.call(cambios, b)) continue;
+      if (typeof cambios[b] !== 'boolean') return { ok: false, error: 'Valor inválido en «' + b + '».' };
+      aplicar.push([b, cambios[b]]);
+    }
+    var detalle = [];
+    aplicar.forEach(function (par) {
+      if (ya[par[0]]) return; ya[par[0]] = 1;
+      if (c[par[0]] === par[1]) return;
+      detalle.push({ campo: par[0], antes: c[par[0]] === undefined ? null : c[par[0]], despues: par[1] });
+      c[par[0]] = par[1];
+    });
+    if (detalle.length) espejoConvenios(config, pid);
+    // La regla GLOBAL de la cobertura (reglasOS) acompaña a la del convenio sólo si la venía acompañando (mismo valor) y ningún otro profesional tiene la cobertura:
+    // así «dejar sin configurar» después no deja una regla global huérfana. Si no se cumple, no se toca.
+    var rg = { sincronizada: false };
+    var cr = detalle.filter(function (x) { return x.campo === 'regla'; })[0];
+    if (cr && config.reglasOS && typeof config.reglasOS === 'object') {
+      var k0 = Object.keys(config.reglasOS).filter(function (k) { return norm(k) === norm(os); })[0];
+      var otros = Object.keys(config.conveniosPorProfesional).some(function (p) {
+        return p !== pid && Array.isArray(config.conveniosPorProfesional[p]) && config.conveniosPorProfesional[p].some(function (x) { return x && norm(x.obraSocial) === norm(os); });
+      });
+      if (k0 !== undefined && !otros && config.reglasOS[k0] === cr.antes) {
+        if (cr.despues === 'SIN_REGLA') delete config.reglasOS[k0]; else config.reglasOS[k0] = cr.despues;
+        rg = { sincronizada: true };
+      }
+    }
+    return { ok: true, sinCambios: !detalle.length, cambios: detalle, reglaGlobal: rg };
+  }
+  // «Dejar sin configurar»: quita ÚNICAMENTE la configuración operativa del convenio para ese profesional (regla, destinos, facturantes, bonos, firma, copia, Factura Rogelio).
+  // No toca el catálogo de coberturas, los aranceles (ni su historial), las atenciones ni la configuración de OTROS profesionales.
+  // La regla GLOBAL de la cobertura (reglasOS) se quita sólo si es seguro: la heredó esta misma configuración (mismo valor), ningún otro profesional tiene la cobertura y no es una regla de fábrica (protegidas).
+  // «Particular» no se puede dejar sin configurar: la app la recrea siempre.
+  function quitarConfiguracionConvenio(config, pid, os, protegidas) {
+    if (norm(os) === 'particular') return { ok: false, error: '«Particular» siempre tiene configuración: no se puede dejar sin configurar.' };
+    var arr = config && config.conveniosPorProfesional && Array.isArray(config.conveniosPorProfesional[pid]) ? config.conveniosPorProfesional[pid] : null;
+    var c = entradaConvenio(config, pid, os);
+    if (!arr || !c) return { ok: false, error: 'Este convenio ya está sin configurar para este profesional.' };
+    var idx = arr.indexOf(c), quitada = clonar(c);
+    arr.splice(idx, 1);
+    espejoConvenios(config, pid);
+    var reglaGlobal = { quitada: false, motivo: 'sin regla global' };
+    if (config.reglasOS && typeof config.reglasOS === 'object') {
+      var claves = Object.keys(config.reglasOS).filter(function (k) { return norm(k) === norm(os); });
+      if (claves.length) {
+        var k0 = claves[0], otros = Object.keys(config.conveniosPorProfesional).some(function (p) {
+          return p !== pid && Array.isArray(config.conveniosPorProfesional[p]) && config.conveniosPorProfesional[p].some(function (x) { return x && norm(x.obraSocial) === norm(os); });
+        });
+        var prot = protegidas && typeof protegidas === 'object' ? Object.keys(protegidas).some(function (k) { return norm(k) === norm(os); }) : null;
+        if (prot === null) reglaGlobal.motivo = 'no se pudo comprobar si es una regla de fábrica: se conserva';
+        else if (prot) reglaGlobal.motivo = 'es una regla de fábrica: se conserva';
+        else if (otros) reglaGlobal.motivo = 'otro profesional tiene esta cobertura: se conserva';
+        else if (config.reglasOS[k0] !== quitada.regla) reglaGlobal.motivo = 'no coincide con la regla del convenio: se conserva';
+        else { delete config.reglasOS[k0]; reglaGlobal = { quitada: true, motivo: 'la había heredado esta configuración' }; }
+      }
+    }
+    // Si la cobertura sólo existía por esta configuración (no está en el catálogo), se conserva su nombre en el catálogo para no hacerla desaparecer.
+    var cat = Array.isArray(config.obrasSociales) ? config.obrasSociales : null, catalogoRepuesto = false;
+    if (cat && !cat.some(function (x) { return norm(typeof x === 'string' ? x : (x && (x.nombre || x.label)) || '') === norm(os); })) { cat.push(quitada.obraSocial || String(os).trim()); catalogoRepuesto = true; }
+    return { ok: true, quitada: quitada, reglaGlobal: reglaGlobal, catalogoRepuesto: catalogoRepuesto };
+  }
+
   return {
     canonPrest: canonPrest, nombrePrest: nombrePrest, copiarConfiguracionConvenio: copiarConfiguracionConvenio,
+    editarConfiguracionConvenio: editarConfiguracionConvenio, quitarConfiguracionConvenio: quitarConfiguracionConvenio, REGLAS_CONVENIO: REGLAS_CONVENIO,
     norm: norm, esFecha: esFecha, parsearFecha: parsearFecha, parsearMonto: parsearMonto, parsearTabla: parsearTabla,
     vigente: vigente, serie: serie, filaExacta: filaExacta, historial: historial, valorNum: valorNum,
     planificar: planificar, aplicar: aplicar, archivarSerie: archivarSerie,

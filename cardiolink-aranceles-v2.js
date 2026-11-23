@@ -211,6 +211,8 @@
       }).join('');
       var acc = '<button type="button" class="secondary" data-ar2="hist" data-os="' + esc(os) + '">Historial</button>' +
         (e === 'sin' ? '<button type="button" class="secondary" data-ar2="igual" data-os="' + esc(os) + '" title="Copia regla, destinos y facturantes de otro convenio de este profesional">Configurar igual que…</button>' : '') +
+        (e !== 'sin' ? '<button type="button" class="secondary" data-ar2="editar" data-os="' + esc(os) + '" title="Cambia la regla, los destinos, los facturantes y las condiciones de este convenio para este profesional">Editar convenio</button>' : '') +
+        (e !== 'sin' && norm(os) !== 'particular' ? '<button type="button" class="secondary" data-ar2="sinconf" data-os="' + esc(os) + '" title="Quita sólo la configuración de este convenio para este profesional (no borra aranceles ni atenciones)">Dejar sin configurar</button>' : '') +
         (e === 'archivado' ? '<button type="button" class="secondary" data-ar2="rest" data-os="' + esc(os) + '">Restaurar</button>' : '<button type="button" class="secondary" data-ar2="arch" data-os="' + esc(os) + '">Archivar</button>');
       var nota = norm(os) === 'particular' ? '<span class="ar2-badge" title="Para Particular, el formulario de nueva atención propone este arancel como importe a cobrar (comportamiento existente de Caja).">precarga Caja</span>' : '';
       return '<tr data-os="' + esc(os) + '"><th class="ar2-sticky">' + esc(os) + badge + nota + '</th>' + celdas + '<td class="ar2-acc">' + acc + '</td></tr>';
@@ -313,6 +315,64 @@
     var ok = null; try { ok = await persistirConfigVisibleV1('La configuración del convenio'); } catch (e) { ok = false; }
     try { if (typeof programarSyncSupabase === 'function') programarSyncSupabase(); } catch (e) { /* sin efecto */ }
     cerrarModal(); render(); aviso(ok === false ? 'err' : 'ok', '«' + os + '» quedó configurado igual que «' + origen + '» (regla ' + r.regla + ')' + (ok === false ? '. Sólo en este equipo: el servidor no lo confirmó.' : '. Editable desde Configuración.'));
+  }
+
+  /* ---- editar un convenio configurado y «dejar sin configurar» ---- */
+  function destinosConvenio(actuales) {
+    var x = ['Particular', 'No aplica', 'A definir'];
+    profesionales().forEach(function (p) { x.push(p.nombre); });
+    (actuales || []).forEach(function (v) { if (v) x.push(v); });
+    return x.filter(function (v, i, a) { return v && a.indexOf(v) === i; });
+  }
+  function opciones(lista, valor) { return lista.map(function (v) { return '<option value="' + esc(v) + '"' + (String(v) === String(valor) ? ' selected' : '') + '>' + esc(v) + '</option>'; }).join(''); }
+  function abrirEditar(os) {
+    var p = profDe(S.pid), c = convenioDe(S.pid, os);
+    if (!c) { window.alert('Este convenio no tiene configuración para este profesional: se crea con «Configurar igual que…».'); return; }
+    var dest = destinosConvenio([c.destinoConsulta, c.destinoEstudio, c.facturadorConsulta, c.facturadorEstudio]);
+    var reglas = C.REGLAS_CONVENIO.concat(c.regla && C.REGLAS_CONVENIO.indexOf(c.regla) < 0 ? [c.regla] : []);
+    function chk(id, v, txt) { return '<label style="flex-direction:row;align-items:center;gap:6px"><input type="checkbox" id="' + id + '"' + (v ? ' checked' : '') + '> ' + txt + '</label>'; }
+    abrirModal('<h3>Editar convenio «' + esc(os) + '»</h3>' +
+      '<p class="muted">Profesional: <strong>' + esc(p ? p.nombre : S.pid) + '</strong>. Sólo se modifica la configuración de este convenio para este profesional. No se tocan aranceles, atenciones ya registradas ni los convenios de otros profesionales: las atenciones históricas conservan los datos con los que se registraron.</p>' +
+      '<div class="ar2-row"><label>Regla de facturación<select id="ar2EdRegla">' + opciones(reglas, c.regla || 'SIN_REGLA') + '</select></label></div>' +
+      '<div class="ar2-row"><label>Destino de consulta<select id="ar2EdDestC">' + opciones(dest, c.destinoConsulta) + '</select></label>' +
+      '<label>Destino de estudio<select id="ar2EdDestE">' + opciones(dest, c.destinoEstudio) + '</select></label></div>' +
+      '<div class="ar2-row"><label>Profesional facturante de consulta<select id="ar2EdFactC">' + opciones(dest, c.facturadorConsulta) + '</select></label>' +
+      '<label>Profesional facturante de estudio<select id="ar2EdFactE">' + opciones(dest, c.facturadorEstudio) + '</select></label></div>' +
+      '<div class="ar2-row">' + chk('ar2EdBonoC', c.bonoConsulta, 'Bono en consulta') + chk('ar2EdBonoE', c.bonoEstudio, 'Bono en estudio') + chk('ar2EdFirma', c.firmaRequerida, 'Requiere firma') + chk('ar2EdCopia', c.copiaRequerida, 'Requiere copia') + chk('ar2EdRog', c.incluirFacturaRogelio, 'Incluir en «Factura Rogelio»') + '</div>' +
+      '<div class="ar2-row"><button class="primary" type="button" data-ar2="editarOk" data-os="' + esc(os) + '">Guardar convenio</button><button class="secondary" type="button" data-ar2="cerrar">Cancelar</button></div>');
+  }
+  var ETIQ = { regla: 'Regla', destinoConsulta: 'Destino de consulta', destinoEstudio: 'Destino de estudio', facturadorConsulta: 'Facturante de consulta', facturadorEstudio: 'Facturante de estudio', bonoConsulta: 'Bono en consulta', bonoEstudio: 'Bono en estudio', firmaRequerida: 'Requiere firma', copiaRequerida: 'Requiere copia', incluirFacturaRogelio: 'Incluir en «Factura Rogelio»' };
+  function vTxt(v) { return v === true ? 'sí' : (v === false ? 'no' : (v === null || v === undefined || v === '' ? '—' : String(v))); }
+  async function guardarEdicion(os) {
+    if (typeof exigirConfigComercial === 'function' && !exigirConfigComercial('Tu perfil no puede modificar convenios.')) return;
+    var p = profDe(S.pid), c = convenioDe(S.pid, os);
+    if (!c) { window.alert('Este convenio ya no tiene configuración para este profesional.'); cerrarModal(); render(); return; }
+    var v = function (id) { var el = $(id); return el ? el.value : undefined; }, b = function (id) { var el = $(id); return el ? !!el.checked : undefined; };
+    var cambios = { regla: v('ar2EdRegla'), destinoConsulta: v('ar2EdDestC'), destinoEstudio: v('ar2EdDestE'), facturadorConsulta: v('ar2EdFactC'), facturadorEstudio: v('ar2EdFactE'), bonoConsulta: b('ar2EdBonoC'), bonoEstudio: b('ar2EdBonoE'), firmaRequerida: b('ar2EdFirma'), copiaRequerida: b('ar2EdCopia'), incluirFacturaRogelio: b('ar2EdRog') };
+    var copia = JSON.parse(JSON.stringify({ x: cfg().conveniosPorProfesional }));   // simulación: cuenta los cambios sin aplicarlos
+    var prueba = { conveniosPorProfesional: copia.x }, sim = C.editarConfiguracionConvenio(prueba, S.pid, os, cambios);
+    if (!sim.ok) { window.alert(sim.error); return; }
+    if (sim.sinCambios) { cerrarModal(); aviso('', 'No hay cambios para guardar en «' + os + '».'); return; }
+    var lista = sim.cambios.map(function (x) { return '· ' + (ETIQ[x.campo] || x.campo) + ': ' + vTxt(x.antes) + ' → ' + vTxt(x.despues); }).join('\n');
+    if (!window.confirm('¿Guardar los cambios de «' + os + '» para ' + (p ? p.nombre : S.pid) + '?\n' + lista + '\n\nNo se modifican aranceles ni atenciones ya registradas; los históricos conservan sus datos.')) return;
+    var r = C.editarConfiguracionConvenio(cfg(), S.pid, os, cambios);
+    if (!r.ok) { window.alert(r.error); return; }
+    var ok = null; try { ok = await persistirConfigVisibleV1('La edición del convenio'); } catch (e) { ok = false; }
+    try { if (typeof programarSyncSupabase === 'function') programarSyncSupabase(); } catch (e) { /* sin efecto */ }
+    cerrarModal(); render(); aviso(ok === false ? 'err' : 'ok', '«' + os + '» actualizado (' + r.cambios.length + ' cambio(s))' + (ok === false ? '. Sólo en este equipo: el servidor no lo confirmó.' : '.'));
+  }
+  async function dejarSinConfigurar(os) {
+    if (typeof exigirConfigComercial === 'function' && !exigirConfigComercial('Tu perfil no puede modificar convenios.')) return;
+    var p = profDe(S.pid), c = convenioDe(S.pid, os);
+    if (!c) { aviso('', '«' + os + '» ya está sin configurar para este profesional.'); render(); return; }
+    var resumen = (c.regla || 'SIN_REGLA') + ' · consulta: ' + (c.facturadorConsulta || '—') + ' · estudios: ' + (c.facturadorEstudio || '—');
+    if (!window.confirm('¿Dejar «' + os + '» SIN CONFIGURAR para ' + (p ? p.nombre : S.pid) + '?\n\nSe quita sólo su configuración actual (' + resumen + ').\nNO se borran: la cobertura del catálogo, sus aranceles ni su historial, las atenciones registradas ni los convenios de otros profesionales.\nLas atenciones históricas conservan sus datos. Después se puede volver a configurar (por ejemplo con «Configurar igual que…»).')) return;
+    var protegidas = null; try { protegidas = typeof defaults !== 'undefined' && defaults && defaults.reglasOS ? defaults.reglasOS : null; } catch (e) { protegidas = null; }
+    var r = C.quitarConfiguracionConvenio(cfg(), S.pid, os, protegidas);
+    if (!r.ok) { window.alert(r.error); return; }
+    var ok = null; try { ok = await persistirConfigVisibleV1('El cambio del convenio a «sin configurar»'); } catch (e) { ok = false; }
+    try { if (typeof programarSyncSupabase === 'function') programarSyncSupabase(); } catch (e) { /* sin efecto */ }
+    render(); aviso(ok === false ? 'err' : 'ok', '«' + os + '» quedó sin configurar para ' + (p ? p.nombre : S.pid) + '. Aranceles y atenciones intactos' + (r.reglaGlobal.quitada ? '; se quitó también la regla global que había heredado.' : (r.reglaGlobal.motivo && r.reglaGlobal.motivo !== 'sin regla global' ? '. La regla global de la cobertura se conservó (' + r.reglaGlobal.motivo + ').' : '.')) + (ok === false ? ' Sólo en este equipo: el servidor no lo confirmó.' : ''));
   }
 
   /* ---- ventanas: historial e importación ---- */
@@ -439,6 +499,9 @@
     else if (a === 'archSerie') archivarSerie(b.dataset.os, b.dataset.prest);
     else if (a === 'igual') abrirIgual(b.dataset.os);
     else if (a === 'igualOk') aplicarIgual(b.dataset.os);
+    else if (a === 'editar') abrirEditar(b.dataset.os);
+    else if (a === 'editarOk') guardarEdicion(b.dataset.os);
+    else if (a === 'sinconf') dejarSinConfigurar(b.dataset.os);
     else if (a === 'cerrar') cerrarModal();
     else if (a === 'impPrev') vistaPrevia();
     else if (a === 'impOk') confirmarImportacion();
