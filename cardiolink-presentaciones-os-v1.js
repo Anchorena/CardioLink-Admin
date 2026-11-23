@@ -15,7 +15,7 @@
   if (!Core) { try { console.warn('Presentaciones a obras sociales: falta el núcleo; la sección no se habilita.'); } catch (e) { /* sin consola */ } return; }
 
   const SECCION = 'presentacionesOS';
-  const T_ITEMS = 'cardiolink_presentaciones_os_items_v1', T_PRES = 'cardiolink_presentaciones_os_v1', T_CONTROL = 'cardiolink_presentaciones_os_control_v1';
+  const T_ITEMS = 'cardiolink_presentaciones_os_items_v1', T_PRES = 'cardiolink_presentaciones_os_v1', T_CONTROL = 'cardiolink_presentaciones_os_control_v1', T_DELEG = 'cardiolink_presentaciones_os_delegaciones_v1';
 
   // ---------------------------------------------------------------- utilidades
   const g = (name) => {
@@ -105,6 +105,8 @@
   }
   const almacenSupabase = {
     async leerControl() { const r = await sb().from(T_CONTROL).select('fecha_inicio').maybeSingle(); if (r.error) throw r.error; return r.data ? r.data.fecha_inicio : null; },
+    // Delegaciones de facturación (SQL complementario _terceros). null = la base todavía no las tiene: la pantalla funciona como en la V1 (lo que factura otro queda aparte).
+    async leerDelegaciones() { const r = await sb().from(T_DELEG).select('realiza_professional_id,destino_norm,facturante_professional_id,activa'); if (r.error) { if (noHabilitada(r.error)) return null; throw r.error; } return r.data || []; },
     async guardarControl(fecha) { const r = await sb().rpc('cardiolink_presentacion_os_control_v1', { p_fecha: fecha }); if (r.error) throw r.error; return r.data; },
     async leerPresentados() { return (await leerTodoItems()).map((x) => String(x.atencion_id)); },
     async leerHistorial() { const r = await sb().from(T_PRES).select('id,cobertura,professional_id,periodo,cantidad,total_importe,presentado_en,presentado_por_email,presentado_por_rol').order('presentado_en', { ascending: false }).limit(60); if (r.error) throw r.error; return r.data || []; },
@@ -114,14 +116,20 @@
   const noHabilitada = (e) => !!e && (e.code === '42P01' || e.code === 'PGRST205' || /does not exist|could not find the table|schema cache/i.test(String(e.message || '')));
 
   // ---------------------------------------------------------------- estado y pantalla
-  const st = { mes: hoyIso().slice(0, 7), cobertura: '', profesional: '', control: undefined, presentados: [], historial: [], permitidos: null, resultado: null, extras: new Map(), ant: { desdeFecha: '', hastaFecha: '', texto: '', motivo: '', res: null, abierto: false, msg: '' }, reglas: { meses: new Set(), prestaciones: new Set(), pacientes: new Set(), ids: new Set() }, abierto: '', cargando: false, habilitada: true, msg: '' };
+  const st = { mes: hoyIso().slice(0, 7), cobertura: '', profesional: '', control: undefined, presentados: [], historial: [], delegaciones: null, permitidos: null, resultado: null, extras: new Map(), ant: { desdeFecha: '', hastaFecha: '', texto: '', motivo: '', res: null, abierto: false, msg: '' }, reglas: { meses: new Set(), prestaciones: new Set(), pacientes: new Set(), ids: new Set() }, abierto: '', cargando: false, habilitada: true, msg: '' };
   let contenedor = null;
 
   let proveedorAtenciones = null;                                  // solo QA: lista sintética en lugar de las atenciones reales
   function atencionesLocales() { const a = proveedorAtenciones ? proveedorAtenciones() : g('atenciones'); return Array.isArray(a) ? a : []; }
+  // Opciones comunes de clasificación. Con delegaciones cargadas (SQL complementario aplicado) el facturante sale de la delegación explícita; sin ellas, comportamiento V1.
+  function opcionesClasificar(extra) {
+    const o = Object.assign({ atenciones: atencionesLocales(), presentados: st.presentados, desde: st.control, cobertura: st.cobertura || undefined, profesionales: st.permitidos, obtenerArancel: arancelDe, esFacturaTercero, incluirTerceros: false }, extra || {});
+    if (Array.isArray(st.delegaciones)) o.facturanteDe = Core.crearResolvedorFacturante(st.delegaciones);
+    return o;
+  }
   function recalcular() {
     if (!st.control) { st.resultado = null; return; }
-    st.resultado = Core.calcularPendientes({ atenciones: atencionesLocales(), presentados: st.presentados, desde: st.control, hastaMes: st.mes, cobertura: st.cobertura || undefined, profesionales: st.permitidos, obtenerArancel: arancelDe, esFacturaTercero, incluirTerceros: false });
+    st.resultado = Core.calcularPendientes(opcionesClasificar({ hastaMes: st.mes }));
   }
   async function cargar() {
     if (!contenedor || st.cargando) return;
@@ -131,6 +139,7 @@
       st.control = await almacen.leerControl();
       st.presentados = st.control ? await almacen.leerPresentados() : [];
       st.historial = await almacen.leerHistorial();
+      st.delegaciones = typeof almacen.leerDelegaciones === 'function' ? await almacen.leerDelegaciones() : null;
       st.habilitada = true;
       const ya = new Set(st.presentados.map(String));
       Array.from(st.extras.keys()).forEach((id) => { if (ya.has(id)) st.extras.delete(id); });          // lo que otra persona ya presentó sale de las excepciones
@@ -186,8 +195,15 @@
     const out = [];
     if (r.sinArancel.length) out.push(el('details', { className: 'pres-os-aparte' }, [el('summary', { text: r.sinArancel.length + ' prestaciones sin arancel válido fijado (incidencias pendientes: no se pueden presentar hasta que tengan arancel)' }),
       ...r.sinArancel.slice(0, 80).map((x) => el('div', { text: fmtFecha(x.fecha) + ' · ' + x.cobertura + ' · ' + x.prestacion + ' · ' + nombreProfesional(x.profesionalId) }))]));
-    if (r.terceros.length) out.push(el('details', { className: 'pres-os-aparte' }, [el('summary', { text: r.terceros.length + ' prestaciones que factura otro profesional (no se incluyen en este lote)' }),
+    if (r.terceros.length && !Array.isArray(st.delegaciones)) out.push(el('details', { className: 'pres-os-aparte' }, [el('summary', { text: r.terceros.length + ' prestaciones que factura otro profesional (no se incluyen en este lote)' }),
       ...r.terceros.slice(0, 80).map((x) => el('div', { text: fmtFecha(x.fecha) + ' · ' + x.cobertura + ' · ' + x.prestacion + ' · ' + nombreProfesional(x.profesionalId) }))]));
+    if (r.terceros.length && Array.isArray(st.delegaciones)) {
+      const deleg = r.terceros.filter((x) => x.delegada), sinDef = r.terceros.filter((x) => !x.delegada);
+      if (deleg.length) out.push(el('details', { className: 'pres-os-aparte', id: 'presOsDelegadas' }, [el('summary', { text: deleg.length + ' prestaciones realizadas por ' + [...new Set(deleg.map((x) => nombreProfesional(x.realizadoPor)))].join(', ') + ' que presenta otro profesional (solo informativo: las presenta su facturante)' }),
+        ...deleg.slice(0, 80).map((x) => el('div', { text: fmtFecha(x.fecha) + ' · ' + x.cobertura + ' · ' + x.prestacion + ' · realizó ' + nombreProfesional(x.realizadoPor) + ' · lo presenta ' + nombreProfesional(x.facturante) }))]));
+      if (sinDef.length) out.push(el('details', { className: 'pres-os-aparte', id: 'presOsSinFacturante' }, [el('summary', { text: sinDef.length + ' prestaciones que factura otro profesional sin facturante definido (incidencias: no se presentan hasta que el Dueño cargue la delegación)' }),
+        ...sinDef.slice(0, 80).map((x) => el('div', { text: fmtFecha(x.fecha) + ' · ' + x.cobertura + ' · ' + x.prestacion + ' · ' + nombreProfesional(x.realizadoPor || x.profesionalId) }))]));
+    }
     return out;
   }
 
@@ -220,14 +236,15 @@
     if (puedeConfirmar()) out.push(renderAnteriores());
 
     // Lotes (cobertura + profesional)
-    out.push(el('div', { className: 'pres-os-lotes' }, lotes.map((l) => { const ne = l.items.filter((x) => x.excepcional).length; return el('div', { className: 'pres-os-lote' }, [
-      el('strong', { text: l.cobertura }), ' · ' + nombreProfesional(l.profesionalId) + ' · ' + l.cantidad + ' prestaciones · ' + money(l.total) + (ne ? ' · ' + ne + ' anteriores al inicio del control (excepción)' : '')]); })));
+    out.push(el('div', { className: 'pres-os-lotes' }, lotes.map((l) => { const ne = l.items.filter((x) => x.excepcional).length, nd = l.items.filter((x) => x.delegada).length; return el('div', { className: 'pres-os-lote' }, [
+      el('strong', { text: l.cobertura }), ' · Factura ' + nombreProfesional(l.profesionalId) + ' · ' + l.cantidad + ' prestaciones · ' + money(l.total) + (nd ? ' · ' + nd + ' realizadas por otro profesional' : '') + (ne ? ' · ' + ne + ' anteriores al inicio del control (excepción)' : '')]); })));
     // Detalle con excepción puntual (solo para las pocas que se quieran dejar afuera)
     if (r.listos.length) {
+      const hayDeleg = r.listos.some((x) => x.delegada);
       const det = el('details', { className: 'pres-os-detalle' }, [el('summary', { text: 'Ver el detalle y dejar afuera alguna en particular (' + r.listos.length + ')' }),
-        el('table', { className: 'pres-os-tabla' }, [el('thead', {}, el('tr', {}, ['Fecha', 'Cobertura', 'Prestación', 'Paciente', 'Profesional', 'Importe', 'Dejar afuera'].map((h) => el('th', { text: h })))),
+        el('table', { className: 'pres-os-tabla' }, [el('thead', {}, el('tr', {}, ['Fecha', 'Cobertura', 'Prestación', 'Paciente', hayDeleg ? 'Factura' : 'Profesional', ...(hayDeleg ? ['Realizó'] : []), 'Importe', 'Dejar afuera'].map((h) => el('th', { text: h })))),
           el('tbody', {}, r.listos.slice(0, 400).map((x) => el('tr', { className: (st.reglas.ids.has(x.id) || st.reglas.meses.has(x.mes) || excluidos.indexOf(x) >= 0) ? 'pres-os-fuera' : '' }, [
-            el('td', { text: fmtFecha(x.fecha) }), el('td', { text: x.cobertura }), el('td', { text: x.prestacion }), el('td', { text: x.paciente }), el('td', { text: nombreProfesional(x.profesionalId) }), el('td', { text: money(x.importe) }),
+            el('td', { text: fmtFecha(x.fecha) }), el('td', { text: x.cobertura }), el('td', { text: x.prestacion }), el('td', { text: x.paciente }), el('td', { text: nombreProfesional(x.profesionalId) }), ...(hayDeleg ? [el('td', { text: x.delegada ? nombreProfesional(x.realizadoPor) : '' })] : []), el('td', { text: money(x.importe) }),
             el('td', {}, el('input', { type: 'checkbox', checked: st.reglas.ids.has(x.id), 'data-id': x.id, onchange: (ev) => { if (ev.target.checked) st.reglas.ids.add(x.id); else st.reglas.ids.delete(x.id); render(); } }))])))])]);
       out.push(det);
       if (r.listos.length > 400) out.push(el('p', { className: 'muted', text: 'Se muestran las primeras 400 en el detalle; el lote incluye todas las que no dejaste afuera.' }));
@@ -246,8 +263,7 @@
   function buscarAnteriores() {
     const a = st.ant; a.msg = ''; a.abierto = true;
     if (!a.desdeFecha && !a.hastaFecha && !a.texto.trim()) { a.res = null; a.msg = 'Acotá la búsqueda por fechas o por paciente/prestación.'; return; }
-    a.res = Core.calcularAnteriores({ atenciones: atencionesLocales(), presentados: st.presentados, desde: st.control, desdeFecha: a.desdeFecha || undefined, hastaFecha: a.hastaFecha || undefined, texto: a.texto.trim() || undefined,
-      cobertura: st.cobertura || undefined, profesionales: st.permitidos, obtenerArancel: arancelDe, esFacturaTercero, incluirTerceros: false });
+    a.res = Core.calcularAnteriores(opcionesClasificar({ desdeFecha: a.desdeFecha || undefined, hastaFecha: a.hastaFecha || undefined, texto: a.texto.trim() || undefined }));
   }
   function agregarExcepcionales(filas) {
     const a = st.ant, motivo = a.motivo.trim(); a.abierto = true;
@@ -345,6 +361,6 @@
     // Solo para pruebas y QA sin base de datos: reemplaza el acceso a datos por uno en memoria.
     _usarAlmacen: (a) => { almacen = a || almacenSupabase; },
     _usarAtenciones: (fn) => { proveedorAtenciones = typeof fn === 'function' ? fn : null; },
-    _estado: st, _test: { arancelDe, esFacturaTercero, render, recalcular, cargar, buscarAnteriores }
+    _estado: st, _test: { arancelDe, esFacturaTercero, opcionesClasificar, render, recalcular, cargar, buscarAnteriores }
   };
 })();

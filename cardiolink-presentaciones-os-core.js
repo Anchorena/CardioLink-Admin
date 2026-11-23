@@ -14,6 +14,10 @@
  *   · La fecha de producción (`fecha` de la atención) NO se modifica nunca: este módulo no escribe atenciones; guarda una COPIA de la fecha en cada ítem presentado.
  *   · «Terceros» (la facturación la hace otro profesional/destino): por defecto NO se incluyen en el lote; se informan aparte (decisión de negocio pendiente).
  *   · Sin arancel fijado: no se pueden presentar (importe 0); quedan aparte como incidencias pendientes. El importe nunca lo define el cliente.
+ * FACTURACIÓN POR TERCEROS (bloque complementario; requiere el SQL _terceros): un estudio realizado por un profesional puede facturarlo OTRO. El facturante NO se deduce del convenio ni de lo que «coincida»:
+ *   sale de una DELEGACIÓN EXPLÍCITA y aprobada (tabla cardiolink_presentaciones_os_delegaciones_v1: «los estudios de X con destino Y los factura Z»). Se lee `prestacionA` de la propia atención (no cambia si cambia el convenio).
+ *   Cada ítem guarda quién realizó y quién factura; el lote es por (cobertura, FACTURANTE); el servidor revalida la delegación y el permiso sobre el facturante; el índice único por atención sigue impidiendo duplicados.
+ *   Sin delegaciones cargadas (SQL no aplicado) el comportamiento es el de la V1: lo que factura otro queda aparte.
  * UMD: Node (pruebas) y navegador (window.CardioLinkPresentacionesCoreV1). */
 (function (raiz, fabrica) {
   'use strict';
@@ -49,6 +53,7 @@
     var cob = o.cobertura ? norm(o.cobertura) : '', txt = o.texto ? norm(o.texto) : '';
     var arancel = typeof o.obtenerArancel === 'function' ? o.obtenerArancel : function () { return 0; };
     var tercero = typeof o.esFacturaTercero === 'function' ? o.esFacturaTercero : function () { return false; };
+    var resolver = typeof o.facturanteDe === 'function' ? o.facturanteDe : null;          // facturación por terceros: devuelve { facturante, realiza, delegada, destino }
     var estado = typeof o.obtenerEstado === 'function' ? o.obtenerEstado : estadoDe;
     var r = { listos: [], sinArancel: [], terceros: [], yaPresentadas: 0, resumenPorMes: [], total: 0 };
     (Array.isArray(o.atenciones) ? o.atenciones : []).forEach(function (a) {
@@ -58,13 +63,19 @@
       if (['ausente', 'cancelado'].indexOf(String(estado(a) || '').toLowerCase()) >= 0) return;                  // no realizada
       if (!cobertura || COBERTURAS_NO_FACTURABLES.indexOf(norm(cobertura)) >= 0) return;                         // particular / PAMI: no se presenta
       if (cob && norm(cobertura) !== cob) return;
-      if (permitidos && !permitidos.has(pid)) return;                                                              // permisos por profesional
+      var info = resolver ? resolver(a) : null, fact = info && info.facturante ? String(info.facturante) : pid, soloInforme = false;
+      if (permitidos) {
+        if (!resolver) { if (!permitidos.has(pid)) return; }                                                         // permisos por profesional (V1)
+        else if (!permitidos.has(fact)) { if (fact !== pid && permitidos.has(pid)) soloInforme = true; else return; }  // con facturante explícito el permiso es el del que FACTURA; quien realizó solo ve un aviso
+      }
       if (txt && norm(String(a.paciente || '') + ' ' + String(a.prestacion || '')).indexOf(txt) < 0) return;
       if (presentados.has(id)) { r.yaPresentadas++; return; }
       var importe = redondear(arancel(a));
-      var fila = { id: id, fecha: f, mes: mesDe(f), profesionalId: pid, cobertura: cobertura, prestacion: String(a.prestacion || ''), pacienteId: String(a.pacienteId || ''), paciente: String(a.paciente || ''), importe: importe, arancelId: String(a.arancelId || '') };
+      var fila = { id: id, fecha: f, mes: mesDe(f), profesionalId: resolver ? fact : pid, cobertura: cobertura, prestacion: String(a.prestacion || ''), pacienteId: String(a.pacienteId || ''), paciente: String(a.paciente || ''), importe: importe, arancelId: String(a.arancelId || '') };
+      if (resolver) { fila.realizadoPor = pid; fila.facturante = fact; fila.delegada = fact !== pid; fila.destino = String((info && info.destino) || ''); }
+      if (soloInforme) { r.terceros.push(fila); return; }                                                         // lo presenta su facturante: aquí solo se informa
       if (!(importe > 0)) { r.sinArancel.push(fila); return; }
-      if (tercero(a, pid) && !o.incluirTerceros) { r.terceros.push(fila); return; }
+      if ((!resolver || !fila.delegada) && tercero(a, pid) && !o.incluirTerceros) { r.terceros.push(fila); return; }   // sin delegación explícita, lo que factura otro NO se presenta (nunca se asume)
       r.listos.push(fila);
     });
     var orden = function (x, y) { return x.fecha < y.fecha ? -1 : x.fecha > y.fecha ? 1 : (x.paciente < y.paciente ? -1 : x.paciente > y.paciente ? 1 : (x.id < y.id ? -1 : 1)); };
@@ -72,6 +83,22 @@
     r.resumenPorMes = resumenPorMes(r.listos);
     r.total = redondear(r.listos.reduce(function (s, x) { return s + x.importe; }, 0));
     return r;
+  }
+
+  /** Resolvedor del PROFESIONAL FACTURANTE a partir de DELEGACIONES EXPLÍCITAS [{ realiza_professional_id, destino_norm, facturante_professional_id, activa }].
+   *  Solo reencamina un ESTUDIO (no una consulta) cuando existe una delegación activa para (profesional que realizó, destino escrito en `prestacionA`); en cualquier otro caso factura quien realizó (como en la V1).
+   *  No usa la configuración de convenios: un cambio posterior del convenio no altera la asignación de lo ya registrado. Misma normalización y misma regla «consulta» que el servidor. */
+  function esConsultaTexto(p) { return /consulta/i.test(String(p == null ? '' : p)); }
+  function crearResolvedorFacturante(delegaciones) {
+    var mapa = {};
+    (Array.isArray(delegaciones) ? delegaciones : []).forEach(function (d) {
+      if (d && d.activa !== false && d.realiza_professional_id && d.facturante_professional_id && d.destino_norm) mapa[String(d.realiza_professional_id) + '\u0000' + norm(d.destino_norm)] = String(d.facturante_professional_id);
+    });
+    return function (a) {
+      var realiza = profesionalDe(a), destino = String((a && a.prestacionA) || '').trim();
+      var f = (!esConsultaTexto(a && a.prestacion) && destino) ? mapa[realiza + '\u0000' + norm(destino)] : undefined;
+      return { realiza: realiza, facturante: (f && f !== realiza) ? f : realiza, delegada: !!f && f !== realiza, destino: destino };
+    };
   }
 
   /** Lista AUTOMÁTICA: lo realizado, facturable y no presentado desde el inicio del control (`desde`) hasta el último día de `hastaMes` (incluye meses anteriores sin presentar). */
@@ -142,6 +169,7 @@
         else if (ya.has(x.id)) errores.push('La prestación ' + x.id + ' ya fue presentada.');
         vistos.add(x.id);
         if (!(x.importe > 0)) errores.push('Importe inválido en la prestación ' + x.id + '.');
+        if (x.facturante && String(x.facturante) !== String(l.profesionalId)) errores.push('La prestación ' + x.id + ' debe presentarse por su profesional facturante.');
         if (esFecha(desde) && esFecha(x.fecha) && String(x.fecha).slice(0, 10) < String(desde).slice(0, 10) && !(x.excepcional === true && String(x.motivo || '').trim()))
           errores.push('La prestación ' + x.id + ' es anterior al inicio del control: solo se puede incorporar como excepción, con un motivo.');
       });
@@ -157,7 +185,7 @@
       p_lotes: lotes.map(function (l) {
         return {
           cobertura: l.cobertura, professional_id: l.profesionalId,
-          items: l.items.map(function (x) { return { atencion_id: x.id, fecha_atencion: x.fecha, cobertura: x.cobertura, prestacion: x.prestacion, importe_presentado: x.importe, arancel_id: x.arancelId || null, patient_id: x.pacienteId || null, patient_name: x.paciente || null, excepcional: x.excepcional === true, motivo_excepcion: x.excepcional === true ? (String(x.motivo || '').trim() || null) : null }; })
+          items: l.items.map(function (x) { return { atencion_id: x.id, fecha_atencion: x.fecha, cobertura: x.cobertura, prestacion: x.prestacion, importe_presentado: x.importe, arancel_id: x.arancelId || null, realizado_por_professional_id: x.realizadoPor || null, facturante_professional_id: x.facturante || null, patient_id: x.pacienteId || null, patient_name: x.paciente || null, excepcional: x.excepcional === true, motivo_excepcion: x.excepcional === true ? (String(x.motivo || '').trim() || null) : null }; })
         };
       })
     };
@@ -181,8 +209,10 @@
     var usuario = cfg.usuario || { id: 'u1', email: 'prueba@cardiolink.test', rol: 'owner' };
     var puede = typeof cfg.puedeConfirmar === 'function' ? cfg.puedeConfirmar : function (rol) { return ['owner', 'admin', 'secretaria'].indexOf(rol) >= 0; };
     var atenciones = cfg.atenciones || [];
+    var resolverSrv = Array.isArray(cfg.delegaciones) ? crearResolvedorFacturante(cfg.delegaciones) : null;      // con delegaciones, el servidor deriva el facturante de la atención
     return {
       _estado: st,
+      leerDelegaciones: function () { return Promise.resolve(Array.isArray(cfg.delegaciones) ? cfg.delegaciones.slice() : null); },
       leerControl: function () { return Promise.resolve(st.control); },
       guardarControl: function (fecha) { if (['owner', 'admin'].indexOf(usuario.rol) < 0) return Promise.reject({ code: '42501', message: 'sin permiso' }); st.control = fecha; return Promise.resolve(fecha); },
       leerPresentados: function () { return Promise.resolve(st.items.map(function (i) { return i.atencion_id; })); },
@@ -199,18 +229,20 @@
           for (var ii = 0; ii < l.items.length; ii++) {
             var it = l.items[ii], a = atenciones.filter(function (x) { return String(x.id) === String(it.atencion_id); })[0];
             if (!a) return Promise.reject({ message: 'PR404 la atención no existe' });
-            if (profesionalDe(a) !== l.professional_id || norm(coberturaDe(a)) !== norm(it.cobertura) || String(a.fecha).slice(0, 10) !== it.fecha_atencion) return Promise.reject({ message: 'PR409 no coincide con la atención' });
+            var infoSrv = resolverSrv ? resolverSrv(a) : null, factSrv = infoSrv ? infoSrv.facturante : profesionalDe(a);
+            if (factSrv !== l.professional_id || norm(coberturaDe(a)) !== norm(it.cobertura) || String(a.fecha).slice(0, 10) !== it.fecha_atencion) return Promise.reject({ message: 'PR409 no coincide con la atención' });
+            if (resolverSrv && ((it.facturante_professional_id && it.facturante_professional_id !== factSrv) || (it.realizado_por_professional_id && it.realizado_por_professional_id !== profesionalDe(a)))) return Promise.reject({ message: 'PR409 el facturante o quien realizó no coincide con la atención' });
             if (it.fecha_atencion > fin) return Promise.reject({ message: 'PR409 fuera del período' });
             if (it.fecha_atencion < st.control && !(it.excepcional === true && String(it.motivo_excepcion || '').trim())) return Promise.reject({ message: 'PR411 anterior al inicio del control: solo como excepción con motivo' });
             if (vistos.has(String(it.atencion_id))) return Promise.reject({ code: '23505', message: 'duplicate key value violates unique constraint' });
             vistos.add(String(it.atencion_id)); total = redondear(total + it.importe_presentado);
-            nuevos.push({ presentacion: li, atencion_id: String(it.atencion_id), fecha_atencion: it.fecha_atencion, importe_presentado: it.importe_presentado, excepcional: it.fecha_atencion < st.control, motivo_excepcion: it.fecha_atencion < st.control ? String(it.motivo_excepcion).trim() : null });
+            nuevos.push({ presentacion: li, atencion_id: String(it.atencion_id), realizado_por: profesionalDe(a), facturante: factSrv, destino_texto: String(a.prestacionA || '').trim() || null, fecha_atencion: it.fecha_atencion, importe_presentado: it.importe_presentado, excepcional: it.fecha_atencion < st.control, motivo_excepcion: it.fecha_atencion < st.control ? String(it.motivo_excepcion).trim() : null });
           }
           lotes.push({ id: 'lote-' + (st.lotes.length + li + 1), cobertura: l.cobertura, professional_id: l.professional_id, periodo: payload.p_periodo, cantidad: l.items.length, total_importe: total, presentado_en: st.ahora(), presentado_por: usuario.id, presentado_por_email: usuario.email, presentado_por_rol: usuario.rol });
         }
         // atomicidad: recién acá se confirma (todo o nada)
         lotes.forEach(function (l) { st.lotes.push(l); });
-        nuevos.forEach(function (n) { st.items.push({ presentacion_id: lotes[n.presentacion].id, atencion_id: n.atencion_id, fecha_atencion: n.fecha_atencion, importe_presentado: n.importe_presentado, excepcional: n.excepcional, motivo_excepcion: n.motivo_excepcion }); });
+        nuevos.forEach(function (n) { st.items.push({ presentacion_id: lotes[n.presentacion].id, atencion_id: n.atencion_id, realizado_por_professional_id: n.realizado_por, facturante_professional_id: n.facturante, destino_texto: n.destino_texto, fecha_atencion: n.fecha_atencion, importe_presentado: n.importe_presentado, excepcional: n.excepcional, motivo_excepcion: n.motivo_excepcion }); });
         return Promise.resolve({ presentaciones: lotes.length, items: nuevos.length, total: redondear(lotes.reduce(function (s, l) { return s + l.total_importe; }, 0)) });
       }
     };
@@ -218,7 +250,7 @@
 
   return {
     MAX_ITEMS_POR_CONFIRMACION: MAX_ITEMS_POR_CONFIRMACION, norm: norm, redondear: redondear, esMes: esMes, finDeMes: finDeMes, idPrestacion: idPrestacion, profesionalDe: profesionalDe, coberturaDe: coberturaDe,
-    calcularPendientes: calcularPendientes, calcularAnteriores: calcularAnteriores, marcarExcepcionales: marcarExcepcionales, resumenPorMes: resumenPorMes, aplicarExclusiones: aplicarExclusiones, armarLotes: armarLotes, validarLotes: validarLotes, payloadConfirmar: payloadConfirmar,
+    crearResolvedorFacturante: crearResolvedorFacturante, esConsultaTexto: esConsultaTexto, calcularPendientes: calcularPendientes, calcularAnteriores: calcularAnteriores, marcarExcepcionales: marcarExcepcionales, resumenPorMes: resumenPorMes, aplicarExclusiones: aplicarExclusiones, armarLotes: armarLotes, validarLotes: validarLotes, payloadConfirmar: payloadConfirmar,
     mapearError: mapearError, crearAlmacenMemoria: crearAlmacenMemoria
   };
 });
