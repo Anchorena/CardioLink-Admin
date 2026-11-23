@@ -191,6 +191,17 @@ Debe contemplarse:
 - copago si corresponde;
 - vigencia por fecha.
 
+Reglas de Convenios y Aranceles V2 (Paso 1):
+- **Sin informar ≠ cero:** un valor desconocido queda sin informar (no se inventa); 0 es un valor cero explícito. Un vacío (celda o importación) nunca sobrescribe un valor existente.
+- **Vigencia histórica:** cada valor rige desde su fecha; un valor nuevo agrega una fila y no modifica las anteriores. Misma combinación profesional + convenio + prestación + vigencia = una sola fila.
+- **Archivar no es eliminar:** archiva desde una fecha, conserva el historial y no reactiva valores anteriores.
+- **Arancel de convenio ≠ copago:** el arancel es lo que paga la cobertura (base de la producción a facturar). El copago del arancel es opcional y **no es solo informativo**: si es mayor que 0, el formulario de nueva atención (código existente de Finanzas 411F) lo propone en lugar del copago de «Valores del profesional» para esa cobertura y prestación; no recalcula atenciones ya registradas. La importación masiva escribe solo el arancel y deja el copago intacto. `copagoDePrestacion` no se modifica.
+- **Equivalencias de prestación:** ECG = Electrocardiograma (se reconocen ambas al buscar aranceles, también históricos). ECO es solo la abreviatura de la planilla de origen de «Ecocardiograma Doppler» y no existe como prestación propia.
+- **Configuración de convenio sin nombres fijos:** una cobertura nueva puede configurarse «igual que» otra desde la grilla (regla, destinos y facturantes de consulta y estudio, bonos, firma, copia y Factura Rogelio) y después sigue editable desde Configuración; cambiar quién factura no modifica el código ni los históricos.
+- **Regla comercial registrada en la atención (`reglaOS`):** una edición común no la recalcula; solo si cambia la cobertura o el profesional. Dar de baja una cobertura del catálogo no elimina aranceles, configuración de convenio ni atenciones.
+- **Atenciones ya registradas:** conservan su arancel (snapshot); una edición común no lo recalcula, sólo un cambio explícito de cobertura, prestación o profesional, y nunca con un cobro confirmado.
+- El profesional que realiza la prestación no siempre es quien factura: los destinos y facturantes del convenio no se modifican desde la grilla, y los aranceles se cargan por profesional (sin copiarlos a otros).
+
 Para particulares puede existir valor específico por prestación.
 
 ## Médico solicitante / derivador
