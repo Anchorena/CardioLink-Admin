@@ -449,6 +449,112 @@ t('X8 · TERCEROS: compatibilidad V1 — sin delegaciones (SQL complementario si
   assert.match(sinCom, /translate\(lower\(coalesce\(p, ''\)\), 'áàäâéèëêíìïîóòöôúùüûñ', 'aaaaeeeeiiiioooouuuun'\)/);
 });
 
+// ===== CIERRE DEL CÍRCULO MÉDICO (día 25): período 26→25, corte manual, fecha efectiva de presentación =====
+const fx = (id, fecha, extra) => Object.assign({ id, fecha, obraSocial: 'OSDE', prestacion: 'Holter', profesionalId: 'matias', paciente: 'P ' + id, pacienteId: 'p_' + id, estadoTurno: 'atendido', valorArancelEstimado: 1000, arancelId: 'ar_' + id, prestacionA: '' }, extra || {});
+const LISTA_C = () => [fx('c1', '2026-12-05'), fx('c2', '2026-12-20'), fx('c3', '2026-12-25'), fx('c4', '2026-12-26'), fx('c5', '2027-01-10'), fx('c6', '2027-01-24'), fx('c7', '2027-01-25'), fx('c8', '2027-01-26'), fx('c9', '2027-01-31'),
+  fx('o1', '2026-12-10', { obraSocial: 'Galeno' }), fx('r1', '2027-01-12', { profesionalId: 'rogelio', obraSocial: 'Galeno' })];
+const calcC = (mes, extra) => C.calcularPendientes(Object.assign({ atenciones: LISTA_C(), presentados: [], desde: '2026-12-01', hastaMes: mes, hastaFecha: C.corteHabitual(mes), obtenerArancel: fijado }, extra || {}));
+
+t('CZ1 · CIERRE: corte habitual el 25, período del 26 del mes anterior al 25 inclusive (también en enero), y control de fechas', () => {
+  assert.equal(C.DIA_CIERRE, 25); assert.equal(C.corteHabitual('2027-01'), '2027-01-25'); assert.equal(C.inicioPeriodo('2027-01'), '2026-12-26'); assert.equal(C.inicioPeriodo('2026-12'), '2026-11-26'); assert.equal(C.mesAnterior('2027-01'), '2026-12');
+  const v = (o) => C.validarCierre(Object.assign({ periodo: '2027-01', corte: '2027-01-25', presentacion: '2027-01-26', hoy: '2027-01-26', ultimaAtencion: '2027-01-25' }, o));
+  assert.deepEqual(v({}), []); assert.deepEqual(v({ corte: '2027-01-23' }), []); assert.deepEqual(v({ corte: '2027-01-31' }), []);
+  assert.ok(v({ corte: '2027-02-01' }).length, 'corte fuera del mes del período'); assert.ok(v({ corte: '2027-02-30' }).length); assert.ok(v({ corte: 'x' }).length);
+  assert.ok(v({ presentacion: '2027-01-27' }).length, 'presentación futura'); assert.ok(v({ presentacion: '2027-01-24' }).length, 'presentación anterior a la última atención incluida'); assert.ok(v({ presentacion: '' }).length);
+  assert.deepEqual(v({ presentacion: '2027-01-25' }), [], 'el mismo día de la última atención es válido');
+});
+
+t('CZ2 · CIERRE: la lista entra hasta el corte INCLUSIVE; con corte manual (23, 24, 26) cambia solo ese límite; lo de períodos anteriores sigue apareciendo solo', () => {
+  const ids = (r) => r.listos.map((x) => x.id).sort().join(',');
+  const r25 = calcC('2027-01'); assert.equal(ids(r25), 'c1,c2,c3,c4,c5,c6,c7,o1,r1'.split(',').sort().join(','), 'hasta el 25/01 inclusive (c8 y c9 quedan para el próximo período)');
+  assert.equal(r25.periodo.desde, '2026-12-26'); assert.equal(r25.periodo.corte, '2027-01-25'); assert.equal(r25.periodo.corteHabitual, '2027-01-25');
+  const por = (r, id) => r.listos.find((x) => x.id === id);
+  assert.equal(por(r25, 'c1').anterior, true, 'del 05/12: pendiente de un período anterior'); assert.equal(por(r25, 'c3').anterior, true); assert.equal(por(r25, 'c4').anterior, false, '26/12: primer día del período'); assert.equal(por(r25, 'c7').anterior, false);
+  assert.equal(r25.anteriores, 4, 'c1, c2, c3 y o1');
+  assert.equal(ids(calcC('2027-01', { hastaFecha: '2027-01-24' })), 'c1,c2,c3,c4,c5,c6,o1,r1'.split(',').sort().join(','), 'corte 24: la del 25 pasa al período siguiente');
+  assert.equal(ids(calcC('2027-01', { hastaFecha: '2027-01-23' })), 'c1,c2,c3,c4,c5,o1,r1'.split(',').sort().join(','));
+  assert.equal(ids(calcC('2027-01', { hastaFecha: '2027-01-26' })), 'c1,c2,c3,c4,c5,c6,c7,c8,o1,r1'.split(',').sort().join(','), 'corte 26: entra la del 26');
+  // la regla no depende de «mes calendario»: sin hastaFecha se mantiene el comportamiento anterior (fin de mes)
+  assert.equal(ids(C.calcularPendientes({ atenciones: LISTA_C(), presentados: [], desde: '2026-12-01', hastaMes: '2027-01', obtenerArancel: fijado })).includes('c9'), true);
+  // lo presentado nunca reaparece y lo no presentado de un período anterior sigue ahí en el siguiente
+  const presentadas = ['c1', 'c4', 'c5'];
+  const sig = C.calcularPendientes({ atenciones: LISTA_C(), presentados: presentadas, desde: '2026-12-01', hastaMes: '2027-02', hastaFecha: '2027-02-25', obtenerArancel: fijado });
+  assert.ok(!sig.listos.some((x) => presentadas.includes(x.id)), 'lo presentado no se ofrece'); ['c2', 'c3', 'c6', 'c7', 'c8', 'c9'].forEach((id) => assert.ok(sig.listos.some((x) => x.id === id), 'sigue pendiente: ' + id));
+  assert.equal(sig.listos.find((x) => x.id === 'c7').anterior, true, 'el 25/01 pertenece al período de enero: en febrero es anterior'); assert.equal(sig.listos.find((x) => x.id === 'c8').anterior, false, 'el 26/01 es el primer día del período de febrero');
+});
+
+t('CZ3 · CIERRE: tres fechas separadas, importes por cobertura y facturante, y NUNCA duplica (servidor simulado)', async () => {
+  const atenciones = LISTA_C();
+  const al = C.crearAlmacenMemoria({ control: '2026-12-01', atenciones, ahora: () => '2027-01-27T15:00:00.000Z' });
+  const r = C.calcularPendientes({ atenciones, presentados: [], desde: '2026-12-01', hastaMes: '2027-01', hastaFecha: '2027-01-25', obtenerArancel: fijado });
+  const lotes = C.armarLotes(r.listos);
+  const m = lotes.find((l) => l.cobertura === 'OSDE' && l.profesionalId === 'matias'), g = lotes.find((l) => l.cobertura === 'Galeno' && l.profesionalId === 'matias'), gr = lotes.find((l) => l.cobertura === 'Galeno' && l.profesionalId === 'rogelio');
+  assert.equal(lotes.length, 3, 'un lote por (cobertura, profesional facturante)');
+  assert.equal(m.cantidad, 7); assert.equal(m.total, 7000); assert.equal(m.anteriores.cantidad, 3); assert.equal(m.anteriores.total, 3000); assert.equal(m.delPeriodo.cantidad, 4); assert.equal(m.delPeriodo.total, 4000);
+  assert.equal(g.cantidad, 1); assert.equal(g.anteriores.cantidad, 1); assert.equal(g.delPeriodo.cantidad, 0); assert.equal(gr.cantidad, 1); assert.equal(gr.delPeriodo.total, 1000);
+  assert.equal(C.redondear(lotes.reduce((s, l) => s + l.total, 0)), r.total, 'el total por lotes coincide con el de la lista');
+  const p = C.payloadConfirmar('2027-01', lotes, { corte: '2027-01-25', presentacion: '2027-01-27' });
+  assert.equal(p.p_fecha_corte, '2027-01-25'); assert.equal(p.p_fecha_presentacion, '2027-01-27'); assert.equal(p.p_periodo, '2027-01');
+  assert.deepEqual(Object.keys(C.payloadConfirmar('2027-01', lotes)).sort(), ['p_lotes', 'p_periodo'], 'sin cierre: el payload es el de siempre (compatible)'); assert.deepEqual(Object.keys(C.payloadConfirmar('2027-01', lotes, 0)).sort(), ['p_lotes', 'p_periodo']);
+  const res = await al.confirmar(p); assert.equal(res.items, 9);
+  const hist = await al.leerHistorial(true); assert.ok(hist.length === 3 && hist.every((h) => h.periodo === '2027-01' && h.fecha_corte === '2027-01-25' && h.fecha_presentacion === '2027-01-27'), 'período, corte y presentación quedan por separado');
+  assert.deepEqual(al._estado.items.map((i) => i.fecha_atencion).sort()[0], '2026-12-05', 'cada ítem conserva su fecha de atención');
+  await assert.rejects(al.confirmar(p), (e) => e.code === '23505', 'repetir no duplica'); assert.equal(al._estado.items.length, 9);
+  const otra = C.armarLotes(C.calcularPendientes({ atenciones, presentados: await al.leerPresentados(), desde: '2026-12-01', hastaMes: '2027-02', hastaFecha: '2027-02-25', obtenerArancel: fijado }).listos);
+  assert.equal(otra.reduce((s, l) => s + l.cantidad, 0), 2, 'solo quedan c8 y c9 para el período siguiente');
+});
+
+t('CZ4 · CIERRE: el servidor rechaza corte fuera del mes (PR413), presentación futura o anterior a una prestación (PR414) y prestaciones posteriores al corte; no guarda nada', async () => {
+  const atenciones = LISTA_C();
+  const mk = () => C.crearAlmacenMemoria({ control: '2026-12-01', atenciones, ahora: () => '2027-01-27T15:00:00.000Z' });
+  const lotesDe = (ids) => C.armarLotes(C.calcularPendientes({ atenciones, presentados: [], desde: '2026-12-01', hastaMes: '2027-01', hastaFecha: '2027-01-31', obtenerArancel: fijado }).listos.filter((x) => ids.includes(x.id)));
+  const L = lotesDe(['c1', 'c6']);
+  let al = mk();
+  await assert.rejects(al.confirmar(C.payloadConfirmar('2027-01', L, { corte: '2027-02-01', presentacion: '2027-01-27' })), (e) => /PR413/.test(e.message));
+  await assert.rejects(al.confirmar(C.payloadConfirmar('2027-01', L, { corte: '2027-01-25', presentacion: '2027-01-28' })), (e) => /PR414/.test(e.message), 'futura');
+  await assert.rejects(al.confirmar(C.payloadConfirmar('2027-01', L, { corte: '2027-01-25', presentacion: '2027-01-20' })), (e) => /PR414/.test(e.message), 'anterior a c6 (24/01)');
+  await assert.rejects(al.confirmar(C.payloadConfirmar('2027-01', lotesDe(['c8']), { corte: '2027-01-25', presentacion: '2027-01-27' })), (e) => /PR409/.test(e.message), 'c8 (26/01) es posterior al corte');
+  assert.equal(al._estado.items.length, 0, 'nada guardado'); assert.equal(al._estado.lotes.length, 0);
+  assert.equal(C.mapearError({ message: 'PR413 x' }).tipo, 'corte'); assert.equal(C.mapearError({ message: 'PR414 x' }).tipo, 'fecha');
+  const viejo = await al.confirmar(C.payloadConfirmar('2027-01', L)); assert.equal(viejo.items, 2, 'una llamada sin las fechas nuevas (cliente viejo) se comporta como antes');
+  const h = (await al.leerHistorial(true))[0]; assert.equal(h.fecha_corte, '2027-01-31', 'corte = fin de mes'); assert.equal(h.fecha_presentacion, '2027-01-27', 'presentación = hoy');
+});
+
+t('CZ5 · CIERRE: la pantalla detecta si el SQL del cierre está aplicado (sin él funciona como antes), arma el período, el corte editable y la fecha de presentación, y no toca Caja/HC/Aranceles', () => {
+  const UI = leer('cardiolink-presentaciones-os-v1.js'), CORE = leer('cardiolink-presentaciones-os-core.js');
+  assert.match(UI, /async cierreDisponible\(\)[\s\S]{0,400}42703/, 'sin las columnas nuevas (42703) → modo anterior');
+  assert.match(UI, /st\.cierre = typeof almacen\.cierreDisponible === 'function'/); assert.match(UI, /leerHistorial\(st\.cierre\)/);
+  assert.match(UI, /\.select\('id,cobertura,[^']*' \+ \(conCierre \? ',fecha_corte,fecha_presentacion' : ''\)\)/, 'solo pide las columnas nuevas si existen');
+  assert.match(UI, /hastaFecha: corteEfectivo\(\)/); assert.match(UI, /id: 'presOsCorte'/); assert.match(UI, /id: 'presOsFechaPres'/); assert.match(UI, /Volver al corte habitual \(25\)/);
+  assert.match(UI, /Core\.payloadConfirmar\(st\.mes, lotes, cierre\)/); assert.match(UI, /Core\.validarCierre\(/); assert.match(UI, /cierre = null;/, 'sin cierre disponible no se envían las fechas nuevas');
+  assert.match(UI, /del período ' \+ l\.delPeriodo\.cantidad/, 'cantidades e importes por lote separando el período de lo anterior');
+  assert.match(UI, /x\.anterior \? 'Anterior' : 'Del período'/); assert.match(UI, /Presentada el/);
+  assert.match(CORE, /function inicioPeriodo/); assert.match(CORE, /DIA_CIERRE = 25/);
+  const src = (UI + CORE).replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  assert.ok(!/copagoDePrestacion|calcularIngresosCanonicos|guardarAtencion|saveAtenciones|colocador|evolucion/i.test(src), 'no toca Caja, HC, aranceles ni colocaciones');
+});
+
+t('CZ6 · CIERRE: SQL propuesto — columnas nullable sin tocar históricos, RPC de 4 argumentos compatible con la de 2, PR413/PR414, mismos permisos y mismas reglas, rollback y ensayo', () => {
+  const f = 'docs/propuestas/pending_review_presentaciones_os_cierre_25_v1';
+  [f + '.sql', f + '_rollback.sql', f + '_checks.sql', f + '_ensayo_pruebas.sql', f + '_ensayo_reversible.sql', f + '_generar_ensayo.sh'].forEach((x) => assert.ok(fs.existsSync(path.join(root, x)), x));
+  const sql = leer(f + '.sql'), s = sql.replace(/--.*$/gm, '');
+  assert.match(s, /ADD COLUMN fecha_corte date NULL, ADD COLUMN fecha_presentacion date NULL/); assert.ok(!/ADD COLUMN[^;]*NOT NULL|ADD COLUMN[^;]*DEFAULT/i.test(s.match(/ALTER TABLE[^;]*ADD COLUMN[^;]*;/)[0].replace(/NULL,/g, ',').replace(/ NULL;/, ';').replace(/\bNULL\b/g, '')) , 'nullable y sin valor por defecto: no se inventan fechas históricas');
+  assert.ok(!/UPDATE\s+public\.cardiolink_presentaciones_os|DELETE\s+FROM\s+public\.cardiolink_presentaciones_os|UPDATE\s+public\.cardiolink_atenciones|INSERT\s+INTO\s+public\.cardiolink_atenciones/i.test(s), 'no modifica históricos ni atenciones');
+  assert.match(s, /p_fecha_corte date DEFAULT NULL, p_fecha_presentacion date DEFAULT NULL/); assert.match(s, /DROP FUNCTION public\.cardiolink_presentacion_os_confirmar_v1\(text, jsonb\)/);
+  assert.match(s, /PR413/); assert.match(s, /PR414/); assert.match(s, /to_char\(p_fecha_corte, 'YYYY-MM'\) <> p_periodo/); assert.match(s, /p_fecha_presentacion > current_date/); assert.match(s, /v_f > v_fpres/);
+  ['PR403', 'PR409', 'PR411', 'PR412', 'delegaciones_v1', 'cardiolink_presentacion_os_confirmar_permitido_v1', 'presentado_por_rol'].forEach((k) => assert.ok(s.includes(k), 'conserva ' + k));
+  assert.match(s, /REVOKE ALL ON FUNCTION public\.cardiolink_presentacion_os_confirmar_v1\(text, jsonb, date, date\) FROM PUBLIC, anon/); assert.match(s, /GRANT EXECUTE ON FUNCTION[^;]*TO authenticated/);
+  assert.ok(!/DROP\s+(INDEX|TABLE|POLICY)|CREATE\s+(UNIQUE\s+)?INDEX|ALTER\s+TABLE\s+public\.cardiolink_presentaciones_os_items_v1|DISABLE|GRANT\s+(INSERT|UPDATE|DELETE)/i.test(s), 'no toca índices, ítems, políticas ni grants de tablas');
+  assert.ok(!/finance|cobro|caja|colocacion|hc_|cardiolink_patient/i.test(s.replace(/'[^']*'/g, "''")), 'no toca Caja, Finanzas, Colocaciones ni HC');
+  // la RPC nueva es idéntica a la del complemento de terceros salvo las líneas del cierre (misma lógica de facturante, permisos y arancel)
+  const cuerpo = (x) => x.split('BEGIN\n  IF v_uid IS NULL')[1].split('$f$;')[0];
+  const nuevo = cuerpo(s).split('\n').filter((l) => !/p_fecha|v_corte|v_fpres|PR413|PR414|fecha_corte|ELSE v_corte|END IF;\s*$/.test(l) || /RAISE|IF /.test(l) && false);
+  const viejo = cuerpo(leer('docs/propuestas/pending_review_facturacion_presentaciones_v1_terceros.sql').replace(/--.*$/gm, ''));
+  ['v_fact <> v_prof', 'NOT LIKE \'%consulta%\'', 'd.activa', 'PR412', 'v_exc := v_f < v_ctrl', 'abs(v_val - v_importe) > 0.01'].forEach((k) => assert.ok(cuerpo(s).includes(k) && viejo.includes(k), 'misma regla: ' + k));
+  const rb = leer(f + '_rollback.sql').replace(/--.*$/gm, ''); assert.match(rb, /DROP COLUMN IF EXISTS fecha_corte, DROP COLUMN IF EXISTS fecha_presentacion/); assert.match(rb, /delegaciones_v1/); assert.match(rb, /PR412/);
+  assert.ok(!/p_fecha_corte/.test(rb.split('CREATE OR REPLACE FUNCTION')[1]), 'el rollback restaura la RPC de 2 argumentos');
+});
+
 (async () => {
   for (const [nombre, fn] of pendientes) { try { await fn(); ok++; console.log('  OK  ' + nombre); } catch (e) { fail++; console.log('FALLA ' + nombre + '\n      ' + (e && e.message || e)); } }
   console.log('\npresentaciones-os-v1: ' + ok + '/' + (ok + fail) + ' pruebas OK');
