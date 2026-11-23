@@ -10,6 +10,7 @@
     "test:bloque3": "node run-bloque4c1.js --solo bloque3",
     "test:qr": "node run-bloque4c1.js --solo qr",
     "test:documentos": "node run-bloque4c1.js --solo documentos",
-    "test:copias": "node copias-facturacion-v1.js"
+    "test:copias": "node copias-facturacion-v1.js",
+    "test:presentaciones": "node presentaciones-os-v1.js"
   }
 }
