@@ -7,6 +7,8 @@
  *
  * Persistencia (docs/propuestas/pending_review_facturacion_presentaciones_v1.sql, NO aplicada todavía): tablas cardiolink_presentaciones_os_v1 / _items_v1 / _control_v1 y RPC
  * cardiolink_presentacion_os_confirmar_v1 / _control_v1. Sin esas tablas la sección avisa que la función todavía no está habilitada y no ofrece ninguna acción.
+ * CIERRE DEL CÍRCULO MÉDICO (SQL docs/propuestas/pending_review_presentaciones_os_cierre_25_v1.sql): corte habitual el 25 (período = del 26 del mes anterior al 25 del mes), corte editable, fecha EFECTIVA de presentación elegida por quien confirma y
+ * tres fechas siempre separadas (atención / período / presentación). Sin ese SQL la pantalla funciona como antes. Lo pendiente de períodos anteriores sigue apareciendo solo. Nunca duplica (índice único por atención).
  * La autorización REAL vive en el servidor (RLS por profesional + asociaciones de Secretaría + RPC). Lo que decide la pantalla solo evita ofrecer lo que el servidor rechazaría. */
 (function () {
   'use strict';
@@ -109,14 +111,16 @@
     async leerDelegaciones() { const r = await sb().from(T_DELEG).select('realiza_professional_id,destino_norm,facturante_professional_id,activa'); if (r.error) { if (noHabilitada(r.error)) return null; throw r.error; } return r.data || []; },
     async guardarControl(fecha) { const r = await sb().rpc('cardiolink_presentacion_os_control_v1', { p_fecha: fecha }); if (r.error) throw r.error; return r.data; },
     async leerPresentados() { return (await leerTodoItems()).map((x) => String(x.atencion_id)); },
-    async leerHistorial() { const r = await sb().from(T_PRES).select('id,cobertura,professional_id,periodo,cantidad,total_importe,presentado_en,presentado_por_email,presentado_por_rol').order('presentado_en', { ascending: false }).limit(60); if (r.error) throw r.error; return r.data || []; },
+    // Cierre del Círculo (SQL _cierre_25): columnas fecha_corte / fecha_presentacion. Sin ellas la pantalla funciona como antes (cierre = último día del mes, sin fecha de presentación elegida).
+    async cierreDisponible() { const r = await sb().from(T_PRES).select('fecha_corte,fecha_presentacion').limit(1); if (r.error) { if (r.error.code === '42703' || /fecha_corte|fecha_presentacion|does not exist/i.test(String(r.error.message || ''))) return false; throw r.error; } return true; },
+    async leerHistorial(conCierre) { const r = await sb().from(T_PRES).select('id,cobertura,professional_id,periodo,cantidad,total_importe,presentado_en,presentado_por_email,presentado_por_rol' + (conCierre ? ',fecha_corte,fecha_presentacion' : '')).order('presentado_en', { ascending: false }).limit(60); if (r.error) throw r.error; return r.data || []; },
     async confirmar(payload) { const r = await sb().rpc('cardiolink_presentacion_os_confirmar_v1', payload); if (r.error) throw r.error; return r.data; }
   };
   let almacen = almacenSupabase;
   const noHabilitada = (e) => !!e && (e.code === '42P01' || e.code === 'PGRST205' || /does not exist|could not find the table|schema cache/i.test(String(e.message || '')));
 
   // ---------------------------------------------------------------- estado y pantalla
-  const st = { mes: hoyIso().slice(0, 7), cobertura: '', profesional: '', control: undefined, presentados: [], historial: [], delegaciones: null, permitidos: null, resultado: null, extras: new Map(), ant: { desdeFecha: '', hastaFecha: '', texto: '', motivo: '', res: null, abierto: false, msg: '' }, reglas: { meses: new Set(), prestaciones: new Set(), pacientes: new Set(), ids: new Set() }, abierto: '', cargando: false, habilitada: true, msg: '' };
+  const st = { mes: hoyIso().slice(0, 7), corte: '', fechaPres: '', cierre: false, cobertura: '', profesional: '', control: undefined, presentados: [], historial: [], delegaciones: null, permitidos: null, resultado: null, extras: new Map(), ant: { desdeFecha: '', hastaFecha: '', texto: '', motivo: '', res: null, abierto: false, msg: '' }, reglas: { meses: new Set(), prestaciones: new Set(), pacientes: new Set(), ids: new Set() }, abierto: '', cargando: false, habilitada: true, msg: '' };
   let contenedor = null;
 
   let proveedorAtenciones = null;                                  // solo QA: lista sintética en lugar de las atenciones reales
@@ -129,8 +133,11 @@
   }
   function recalcular() {
     if (!st.control) { st.resultado = null; return; }
-    st.resultado = Core.calcularPendientes(opcionesClasificar({ hastaMes: st.mes }));
+    st.resultado = Core.calcularPendientes(opcionesClasificar(Object.assign({ hastaMes: st.mes }, st.cierre ? { hastaFecha: corteEfectivo() } : {})));
   }
+  // Cierre del Círculo: corte habitual el 25 del mes seleccionado; se puede cambiar a mano (dentro del mes). La fecha de presentación es otra cosa: por defecto hoy.
+  const corteEfectivo = () => (st.corte && Core.esFechaExacta(st.corte) && st.corte.slice(0, 7) === st.mes) ? st.corte : Core.corteHabitual(st.mes);
+  const presentacionEfectiva = () => (st.fechaPres && Core.esFechaExacta(st.fechaPres)) ? st.fechaPres : hoyIso();
   async function cargar() {
     if (!contenedor || st.cargando) return;
     st.cargando = true; st.msg = '';
@@ -138,7 +145,9 @@
       st.permitidos = await profesionalesPermitidos();
       st.control = await almacen.leerControl();
       st.presentados = st.control ? await almacen.leerPresentados() : [];
-      st.historial = await almacen.leerHistorial();
+      st.cierre = typeof almacen.cierreDisponible === 'function' ? !!(await almacen.cierreDisponible()) : false;
+      if (!st.cierre) { st.corte = ''; st.fechaPres = ''; }
+      st.historial = await almacen.leerHistorial(st.cierre);
       st.delegaciones = typeof almacen.leerDelegaciones === 'function' ? await almacen.leerDelegaciones() : null;
       st.habilitada = true;
       const ya = new Set(st.presentados.map(String));
@@ -177,15 +186,27 @@
 
     // Filtros
     const inMes = el('input', { type: 'month', id: 'presOsMes', value: st.mes });
-    inMes.addEventListener('change', () => { if (Core.esMes(inMes.value)) { st.mes = inMes.value; limpiarReglas(); recalcular(); render(); } });
+    inMes.addEventListener('change', () => { if (Core.esMes(inMes.value)) { st.mes = inMes.value; st.corte = ''; limpiarReglas(); recalcular(); render(); } });
     const coberturas = Array.from(new Set(atencionesLocales().map(Core.coberturaDe).filter((c) => c && !['particular', 'pami'].includes(norm(c))))).sort((a, b) => a.localeCompare(b, 'es'));
     const selCob = el('select', { id: 'presOsCobertura' }, [el('option', { value: '', text: 'Todas las coberturas' })].concat(coberturas.map((c) => el('option', { value: c, text: c, selected: c === st.cobertura }))));
     selCob.addEventListener('change', () => { st.cobertura = selCob.value; limpiarReglas(); recalcular(); render(); });
-    contenedor.append(el('div', { className: 'pres-os-filtros' }, [el('label', {}, ['Mes de presentación ', inMes]), el('label', {}, ['Cobertura ', selCob])]));
+    const filtros = [el('label', {}, ['Mes de presentación ', inMes]), el('label', {}, ['Cobertura ', selCob])];
+    if (st.cierre) {
+      const inCorte = el('input', { type: 'date', id: 'presOsCorte', value: corteEfectivo(), min: st.mes + '-01', max: Core.finDeMes(st.mes) });
+      inCorte.addEventListener('change', () => { st.corte = inCorte.value && Core.esFechaExacta(inCorte.value) && inCorte.value.slice(0, 7) === st.mes ? inCorte.value : ''; limpiarReglas(); recalcular(); render(); });
+      const inPres = el('input', { type: 'date', id: 'presOsFechaPres', value: presentacionEfectiva(), max: hoyIso() });
+      inPres.addEventListener('change', () => { st.fechaPres = inPres.value || ''; render(); });
+      filtros.push(el('label', {}, ['Fecha de corte ', inCorte]), el('label', {}, ['Fecha efectiva de presentación ', inPres]));
+      if (st.corte && st.corte !== Core.corteHabitual(st.mes)) filtros.push(el('button', { type: 'button', className: 'secondary', id: 'presOsCorteHabitual', text: 'Volver al corte habitual (25)', onclick: () => { st.corte = ''; limpiarReglas(); recalcular(); render(); } }));
+    }
+    contenedor.append(el('div', { className: 'pres-os-filtros' }, filtros));
 
     const r = st.resultado;
     if (!r) return;
-    contenedor.append(el('p', { className: 'muted', text: 'Incluye todo lo realizado hasta el último día de ' + fmtMes(st.mes) + ' que no figura como presentado.' + (r.yaPresentadas ? ' Ya presentadas (no se ofrecen): ' + r.yaPresentadas + '.' : '') }));
+    if (st.cierre && r.periodo) {
+      const manual = r.periodo.corte !== r.periodo.corteHabitual;
+      contenedor.append(el('p', { className: 'muted', id: 'presOsPeriodo', text: 'Período de ' + fmtMes(st.mes) + ': del ' + fmtFecha(r.periodo.desde) + ' al ' + fmtFecha(r.periodo.corte) + ' inclusive' + (manual ? ' (corte manual; el habitual es el ' + fmtFecha(r.periodo.corteHabitual) + ')' : ' (cierre habitual el 25)') + '. Se suman las pendientes de períodos anteriores' + (r.anteriores ? ' (' + r.anteriores + ' en esta lista)' : '') + ' hasta que se presenten.' + (r.yaPresentadas ? ' Ya presentadas (no se ofrecen): ' + r.yaPresentadas + '.' : '') }));
+    } else contenedor.append(el('p', { className: 'muted', text: 'Incluye todo lo realizado hasta el último día de ' + fmtMes(st.mes) + ' que no figura como presentado.' + (r.yaPresentadas ? ' Ya presentadas (no se ofrecen): ' + r.yaPresentadas + '.' : '') }));
     contenedor.append(...avisosAparte(r));
     contenedor.append(...renderResumen(r));
     contenedor.append(renderHistorial());
@@ -237,14 +258,14 @@
 
     // Lotes (cobertura + profesional)
     out.push(el('div', { className: 'pres-os-lotes' }, lotes.map((l) => { const ne = l.items.filter((x) => x.excepcional).length, nd = l.items.filter((x) => x.delegada).length; return el('div', { className: 'pres-os-lote' }, [
-      el('strong', { text: l.cobertura }), ' · Factura ' + nombreProfesional(l.profesionalId) + ' · ' + l.cantidad + ' prestaciones · ' + money(l.total) + (nd ? ' · ' + nd + ' realizadas por otro profesional' : '') + (ne ? ' · ' + ne + ' anteriores al inicio del control (excepción)' : '')]); })));
+      el('strong', { text: l.cobertura }), ' · Factura ' + nombreProfesional(l.profesionalId) + ' · ' + l.cantidad + ' prestaciones · ' + money(l.total) + (st.cierre && l.anteriores && l.anteriores.cantidad ? ' (del período ' + l.delPeriodo.cantidad + ' · ' + money(l.delPeriodo.total) + '; de períodos anteriores ' + l.anteriores.cantidad + ' · ' + money(l.anteriores.total) + ')' : '') + (nd ? ' · ' + nd + ' realizadas por otro profesional' : '') + (ne ? ' · ' + ne + ' anteriores al inicio del control (excepción)' : '')]); })));
     // Detalle con excepción puntual (solo para las pocas que se quieran dejar afuera)
     if (r.listos.length) {
       const hayDeleg = r.listos.some((x) => x.delegada);
       const det = el('details', { className: 'pres-os-detalle' }, [el('summary', { text: 'Ver el detalle y dejar afuera alguna en particular (' + r.listos.length + ')' }),
-        el('table', { className: 'pres-os-tabla' }, [el('thead', {}, el('tr', {}, ['Fecha', 'Cobertura', 'Prestación', 'Paciente', hayDeleg ? 'Factura' : 'Profesional', ...(hayDeleg ? ['Realizó'] : []), 'Importe', 'Dejar afuera'].map((h) => el('th', { text: h })))),
+        el('table', { className: 'pres-os-tabla' }, [el('thead', {}, el('tr', {}, ['Fecha', ...(st.cierre ? ['Período'] : []), 'Cobertura', 'Prestación', 'Paciente', hayDeleg ? 'Factura' : 'Profesional', ...(hayDeleg ? ['Realizó'] : []), 'Importe', 'Dejar afuera'].map((h) => el('th', { text: h })))),
           el('tbody', {}, r.listos.slice(0, 400).map((x) => el('tr', { className: (st.reglas.ids.has(x.id) || st.reglas.meses.has(x.mes) || excluidos.indexOf(x) >= 0) ? 'pres-os-fuera' : '' }, [
-            el('td', { text: fmtFecha(x.fecha) }), el('td', { text: x.cobertura }), el('td', { text: x.prestacion }), el('td', { text: x.paciente }), el('td', { text: nombreProfesional(x.profesionalId) }), ...(hayDeleg ? [el('td', { text: x.delegada ? nombreProfesional(x.realizadoPor) : '' })] : []), el('td', { text: money(x.importe) }),
+            el('td', { text: fmtFecha(x.fecha) }), ...(st.cierre ? [el('td', { text: x.anterior ? 'Anterior' : 'Del período' })] : []), el('td', { text: x.cobertura }), el('td', { text: x.prestacion }), el('td', { text: x.paciente }), el('td', { text: nombreProfesional(x.profesionalId) }), ...(hayDeleg ? [el('td', { text: x.delegada ? nombreProfesional(x.realizadoPor) : '' })] : []), el('td', { text: money(x.importe) }),
             el('td', {}, el('input', { type: 'checkbox', checked: st.reglas.ids.has(x.id), 'data-id': x.id, onchange: (ev) => { if (ev.target.checked) st.reglas.ids.add(x.id); else st.reglas.ids.delete(x.id); render(); } }))])))])]);
       out.push(det);
       if (r.listos.length > 400) out.push(el('p', { className: 'muted', text: 'Se muestran las primeras 400 en el detalle; el lote incluye todas las que no dejaste afuera.' }));
@@ -307,10 +328,17 @@
     if (confirmando || !puedeConfirmar() || !incluidos.length) return;
     const errores = Core.validarLotes(lotes, st.presentados, st.control);
     if (errores.length) { st.msg = errores[0]; render(); return; }
-    if (!confirm('Vas a presentar ' + incluidos.length + ' prestaciones por ' + money(total) + ' (' + lotes.length + ' lote/s)' + (incluidos.some((x) => x.excepcional) ? ', incluidas ' + incluidos.filter((x) => x.excepcional).length + ' anteriores al inicio del control como excepción' : '') + '. Quedan registradas con tu usuario y la fecha de hoy y no se pueden volver a presentar. ¿Confirmar?')) return;
+    let cierre = null;
+    if (st.cierre) {
+      const ultima = incluidos.reduce((m, x) => (x.fecha > m ? x.fecha : m), '');
+      cierre = { corte: corteEfectivo(), presentacion: presentacionEfectiva() };
+      const eCierre = Core.validarCierre({ periodo: st.mes, corte: cierre.corte, presentacion: cierre.presentacion, hoy: hoyIso(), ultimaAtencion: ultima });
+      if (eCierre.length) { st.msg = eCierre[0]; render(); return; }
+    }
+    if (!confirm('Vas a presentar ' + incluidos.length + ' prestaciones por ' + money(total) + ' (' + lotes.length + ' lote/s)' + (incluidos.some((x) => x.excepcional) ? ', incluidas ' + incluidos.filter((x) => x.excepcional).length + ' anteriores al inicio del control como excepción' : '') + '. ' + (cierre ? 'Período de ' + fmtMes(st.mes) + ' con corte el ' + fmtFecha(cierre.corte) + '; fecha de presentación ' + fmtFecha(cierre.presentacion) + '. Quedan registradas con tu usuario' : 'Quedan registradas con tu usuario y la fecha de hoy') + ' y no se pueden volver a presentar. ¿Confirmar?')) return;
     confirmando = true; btn.disabled = true; btn.textContent = 'Confirmando…';
     try {
-      const res = await almacen.confirmar(Core.payloadConfirmar(st.mes, lotes));
+      const res = await almacen.confirmar(Core.payloadConfirmar(st.mes, lotes, cierre));
       st.msg = ''; limpiarReglas(); st.extras.clear();
       await cargar();
       contenedor.prepend(el('p', { className: 'pres-os-ok', role: 'status', text: '✓ Presentación confirmada: ' + (res && res.items != null ? res.items : incluidos.length) + ' prestaciones por ' + money(res && res.total != null ? res.total : total) + '.' }));
@@ -324,8 +352,8 @@
   function renderHistorial() {
     const filas = st.historial || [];
     return el('details', { className: 'pres-os-historial' }, [el('summary', { text: 'Presentaciones registradas (' + filas.length + ')' }),
-      filas.length ? el('table', { className: 'pres-os-tabla' }, [el('thead', {}, el('tr', {}, ['Fecha', 'Período', 'Cobertura', 'Profesional', 'Prestaciones', 'Importe', 'Quién'].map((h) => el('th', { text: h })))),
-        el('tbody', {}, filas.map((f) => el('tr', {}, [el('td', { text: fmtFechaHora(f.presentado_en) }), el('td', { text: fmtMes(f.periodo) }), el('td', { text: f.cobertura }), el('td', { text: nombreProfesional(f.professional_id) }),
+      filas.length ? el('table', { className: 'pres-os-tabla' }, [el('thead', {}, el('tr', {}, [st.cierre ? 'Presentada el' : 'Fecha', 'Período', ...(st.cierre ? ['Corte'] : []), 'Cobertura', 'Profesional', 'Prestaciones', 'Importe', 'Quién'].map((h) => el('th', { text: h })))),
+        el('tbody', {}, filas.map((f) => el('tr', {}, [el('td', { text: st.cierre && f.fecha_presentacion ? fmtFecha(f.fecha_presentacion) : fmtFechaHora(f.presentado_en) }), el('td', { text: fmtMes(f.periodo) }), ...(st.cierre ? [el('td', { text: f.fecha_corte ? fmtFecha(f.fecha_corte) : '—' })] : []), el('td', { text: f.cobertura }), el('td', { text: nombreProfesional(f.professional_id) }),
           el('td', { text: String(f.cantidad) }), el('td', { text: money(f.total_importe) }), el('td', { text: f.presentado_por_email || '' })])))]) : el('p', { className: 'muted', text: 'Todavía no hay presentaciones registradas.' })]);
   }
 

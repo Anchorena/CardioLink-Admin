@@ -10,7 +10,11 @@
  *   · Control desde `desde` (fecha de inicio del control de presentaciones; 01/12/2026): la lista AUTOMÁTICA arranca ahí. Lo anterior NO se considera presentado ni facturado: simplemente no se ofrece solo.
  *   · INCORPORACIÓN EXCEPCIONAL: una prestación realizada y facturable ANTERIOR al inicio del control, que no figure presentada en el sistema (p. ej. con bono pendiente de presentación), se puede sumar a mano
  *     a un lote, con un motivo. Conserva su fecha original de producción, queda marcada como excepcional y el índice único por atención sigue evitando duplicados.
- *   · Período de presentación `hastaMes` (AAAA-MM): entra todo lo realizado hasta el último día de ese mes (incluye meses anteriores sin presentar).
+ *   · CIERRE DEL CÍRCULO MÉDICO (requiere el SQL _cierre_25): el cierre habitual es el día 25. Período normal del mes AAAA-MM = del 26 del mes anterior al 25 de AAAA-MM, inclusive. La FECHA DE CORTE se puede cambiar a mano (23, 24, 26 u otra
+ *     dentro de ese mes). La lista automática entra hasta la fecha de corte inclusive y SIEMPRE incluye lo pendiente de períodos anteriores (lo realizado, facturable y no presentado desde el inicio del control): lo anterior al 26 del mes anterior se marca
+ *     `anterior`. Se mantienen separadas TRES fechas: la de la atención (no se modifica), el período de presentación (mes) y la fecha EFECTIVA de presentación (la elige quien confirma; no puede ser futura ni anterior a la última atención incluida).
+ *     Sin ese SQL se usa el comportamiento anterior: entra todo lo realizado hasta el último día del mes (`hastaMes`).
+ *   · Período de presentación `hastaMes` (AAAA-MM): entra todo lo realizado hasta el último día de ese mes (incluye meses anteriores sin presentar), salvo que se indique `hastaFecha` (fecha de corte).
  *   · La fecha de producción (`fecha` de la atención) NO se modifica nunca: este módulo no escribe atenciones; guarda una COPIA de la fecha en cada ítem presentado.
  *   · «Terceros» (la facturación la hace otro profesional/destino): por defecto NO se incluyen en el lote; se informan aparte (decisión de negocio pendiente).
  *   · Sin arancel fijado: no se pueden presentar (importe 0); quedan aparte como incidencias pendientes. El importe nunca lo define el cliente.
@@ -38,6 +42,26 @@
   function finDeMes(ym) {
     var p = String(ym).split('-'), y = Number(p[0]), m = Number(p[1]);
     return ym + '-' + String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, '0');
+  }
+  var DIA_CIERRE = 25;
+  function esFechaExacta(f) { var m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(f || '')); if (!m) return false; var d = new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])); return d.getUTCFullYear() === +m[1] && d.getUTCMonth() === +m[2] - 1 && d.getUTCDate() === +m[3]; }
+  function mesAnterior(ym) { var p = String(ym).split('-'), y = Number(p[0]), m = Number(p[1]) - 1; if (m < 1) { m = 12; y--; } return y + '-' + String(m).padStart(2, '0'); }
+  /** Fecha de corte habitual del período AAAA-MM: el día 25. */
+  function corteHabitual(ym) { return ym + '-' + String(DIA_CIERRE).padStart(2, '0'); }
+  /** Primer día del período normal de AAAA-MM: el 26 del mes anterior. */
+  function inicioPeriodo(ym) { return mesAnterior(ym) + '-' + String(DIA_CIERRE + 1).padStart(2, '0'); }
+  /** Controles de las fechas del cierre. corte: dentro del mes del período; presentación: no futura (hoy) y no anterior a la última atención incluida (`ultimaAtencion`). Devuelve la lista de errores (vacía = válido). */
+  function validarCierre(o) {
+    o = o || {}; var e = [], f = function (x) { return String(x).slice(8, 10) + '/' + String(x).slice(5, 7) + '/' + String(x).slice(0, 4); };
+    if (!esMes(o.periodo)) { e.push('Período de presentación inválido.'); return e; }
+    if (!esFechaExacta(o.corte)) e.push('La fecha de corte no es válida.');
+    else if (mesDe(o.corte) !== o.periodo) e.push('La fecha de corte debe estar dentro del mes del período (' + o.periodo.slice(5) + '/' + o.periodo.slice(0, 4) + ').');
+    if (!esFechaExacta(o.presentacion)) e.push('La fecha de presentación no es válida.');
+    else {
+      if (esFechaExacta(o.hoy) && o.presentacion > o.hoy) e.push('La fecha de presentación no puede ser futura.');
+      if (esFechaExacta(o.ultimaAtencion) && o.presentacion < o.ultimaAtencion) e.push('La fecha de presentación no puede ser anterior a la última prestación incluida (' + f(o.ultimaAtencion) + ').');
+    }
+    return e;
   }
   function idPrestacion(a) { return a && a.id != null && String(a.id) !== '' ? String(a.id) : ''; }
   function profesionalDe(a) { return String((a && (a.profesionalId || a.cajaPerfil)) || 'matias'); }
@@ -106,8 +130,14 @@
     o = o || {};
     if (!esFecha(o.desde)) throw new Error('Falta la fecha de inicio del control de presentaciones.');
     if (!esMes(o.hastaMes)) throw new Error('Período de presentación inválido (se espera AAAA-MM).');
-    var hasta = finDeMes(o.hastaMes), desde = String(o.desde).slice(0, 10);
-    return clasificar(o, function (f) { return f >= desde && f <= hasta; });
+    var hasta = esFecha(o.hastaFecha) ? String(o.hastaFecha).slice(0, 10) : finDeMes(o.hastaMes), desde = String(o.desde).slice(0, 10);
+    var r = clasificar(o, function (f) { return f >= desde && f <= hasta; });
+    // Cierre del Círculo: lo realizado antes del 26 del mes anterior es «de períodos anteriores» (sigue apareciendo solo hasta que se presente).
+    var ini = inicioPeriodo(o.hastaMes);
+    r.periodo = { mes: o.hastaMes, desde: ini, corte: hasta, corteHabitual: corteHabitual(o.hastaMes) };
+    [r.listos, r.sinArancel, r.terceros].forEach(function (l) { l.forEach(function (x) { x.anterior = x.fecha < ini; }); });
+    r.anteriores = r.listos.filter(function (x) { return x.anterior; }).length;
+    return r;
   }
 
   /** Candidatas a INCORPORACIÓN EXCEPCIONAL: realizadas y facturables ANTERIORES al inicio del control que no figuran presentadas en el sistema. Nunca se ofrecen solas:
@@ -152,7 +182,13 @@
       if (!m[k]) m[k] = { cobertura: x.cobertura, profesionalId: x.profesionalId, items: [], cantidad: 0, total: 0 };
       m[k].items.push(x); m[k].cantidad++; m[k].total = redondear(m[k].total + x.importe);
     });
-    return Object.keys(m).sort().map(function (k) { return m[k]; });
+    // Cantidades e importes por lote (cobertura + facturante), separando lo del período de lo pendiente de períodos anteriores.
+    return Object.keys(m).sort().map(function (k) {
+      var l = m[k], ant = l.items.filter(function (x) { return x.anterior === true; });
+      l.anteriores = { cantidad: ant.length, total: redondear(ant.reduce(function (s, x) { return s + x.importe; }, 0)) };
+      l.delPeriodo = { cantidad: l.cantidad - ant.length, total: redondear(l.total - l.anteriores.total) };
+      return l;
+    });
   }
 
   /** Controles previos a confirmar: nada vacío, sin repetidos dentro del lote ni contra lo ya presentado, sin importes inválidos, tope de tamaño.
@@ -179,8 +215,10 @@
   }
 
   /** Cuerpo para el servidor. El servidor NO confía en esto: revalida contra la atención, el profesional, la cobertura, la fecha y el permiso, y fija fecha y usuario. */
-  function payloadConfirmar(periodo, lotes) {
-    return {
+  function payloadConfirmar(periodo, lotes, cierre) {
+    var extra = {};
+    if (cierre && typeof cierre === 'object') { if (cierre.corte) extra.p_fecha_corte = cierre.corte; if (cierre.presentacion) extra.p_fecha_presentacion = cierre.presentacion; }   // solo con el SQL _cierre_25
+    return Object.assign({
       p_periodo: periodo,
       p_lotes: lotes.map(function (l) {
         return {
@@ -188,13 +226,15 @@
           items: l.items.map(function (x) { return { atencion_id: x.id, fecha_atencion: x.fecha, cobertura: x.cobertura, prestacion: x.prestacion, importe_presentado: x.importe, arancel_id: x.arancelId || null, realizado_por_professional_id: x.realizadoPor || null, facturante_professional_id: x.facturante || null, patient_id: x.pacienteId || null, patient_name: x.paciente || null, excepcional: x.excepcional === true, motivo_excepcion: x.excepcional === true ? (String(x.motivo || '').trim() || null) : null }; })
         };
       })
-    };
+    }, extra);
   }
 
   function mapearError(e) {
     var m = String((e && (e.message || e.details)) || e || ''), c = e && e.code;
     if (c === '23505' || /duplicate key|ya fue presentada|PR409/i.test(m) && /duplic|ya/i.test(m)) return { tipo: 'duplicada', texto: 'Alguna de estas prestaciones ya fue presentada (otra persona confirmó antes). No se guardó nada: se actualizó la lista.' };
     if (c === '42501' || /sin permiso|permission denied|row-level security/i.test(m)) return { tipo: 'permiso', texto: 'No tenés permiso para presentar prestaciones de este profesional. Si corresponde, pedile al administrador que revise tus asociaciones.' };
+    if (/PR413/i.test(m)) return { tipo: 'corte', texto: 'La fecha de corte no es válida para ese período (debe estar dentro del mes). No se guardó nada.' };
+    if (/PR414/i.test(m)) return { tipo: 'fecha', texto: 'La fecha de presentación no es válida: no puede ser futura ni anterior a la última prestación incluida. No se guardó nada.' };
     if (/PR010|fecha de control/i.test(m)) return { tipo: 'control', texto: 'Falta definir desde qué fecha se controlan las presentaciones (lo define el Dueño o un Administrador).' };
     if (/PR412/i.test(m)) return { tipo: 'arancel', texto: 'Alguna prestación no tiene un arancel válido fijado, por eso no se puede presentar. No se guardó nada: se actualizó la lista.' };
     if (/PR411|excepci/i.test(m)) return { tipo: 'excepcion', texto: 'Una prestación anterior al inicio del control solo se puede presentar como excepción, indicando el motivo. No se guardó nada.' };
@@ -217,11 +257,14 @@
       guardarControl: function (fecha) { if (['owner', 'admin'].indexOf(usuario.rol) < 0) return Promise.reject({ code: '42501', message: 'sin permiso' }); st.control = fecha; return Promise.resolve(fecha); },
       leerPresentados: function () { return Promise.resolve(st.items.map(function (i) { return i.atencion_id; })); },
       leerHistorial: function () { return Promise.resolve(st.lotes.slice()); },
+      cierreDisponible: function () { return Promise.resolve(cfg.cierre !== false); },       // SQL _cierre_25 aplicado (por defecto sí en el almacén de pruebas)
       confirmar: function (payload) {
         if (!puede(usuario.rol, null)) return Promise.reject({ code: '42501', message: 'sin permiso' });
         if (!st.control) return Promise.reject({ message: 'PR010 falta fecha de control' });
         var nuevos = [], vistos = new Set(st.items.map(function (i) { return i.atencion_id; })), lotes = [];
-        var fin = finDeMes(payload.p_periodo);
+        var hoyA = String(st.ahora()).slice(0, 10), fin = finDeMes(payload.p_periodo), fcorte = null, fpres = hoyA;
+        if (payload.p_fecha_corte != null) { if (!esFechaExacta(payload.p_fecha_corte) || mesDe(payload.p_fecha_corte) !== payload.p_periodo) return Promise.reject({ message: 'PR413 fecha de corte fuera del mes del período' }); fcorte = payload.p_fecha_corte; fin = fcorte; }
+        if (payload.p_fecha_presentacion != null) { if (!esFechaExacta(payload.p_fecha_presentacion) || payload.p_fecha_presentacion > hoyA) return Promise.reject({ message: 'PR414 fecha de presentación inválida' }); fpres = payload.p_fecha_presentacion; }
         for (var li = 0; li < payload.p_lotes.length; li++) {
           var l = payload.p_lotes[li];
           if (!puede(usuario.rol, l.professional_id)) return Promise.reject({ code: '42501', message: 'sin permiso' });
@@ -233,12 +276,13 @@
             if (factSrv !== l.professional_id || norm(coberturaDe(a)) !== norm(it.cobertura) || String(a.fecha).slice(0, 10) !== it.fecha_atencion) return Promise.reject({ message: 'PR409 no coincide con la atención' });
             if (resolverSrv && ((it.facturante_professional_id && it.facturante_professional_id !== factSrv) || (it.realizado_por_professional_id && it.realizado_por_professional_id !== profesionalDe(a)))) return Promise.reject({ message: 'PR409 el facturante o quien realizó no coincide con la atención' });
             if (it.fecha_atencion > fin) return Promise.reject({ message: 'PR409 fuera del período' });
+            if (payload.p_fecha_presentacion != null && it.fecha_atencion > fpres) return Promise.reject({ message: 'PR414 la prestación es posterior a la fecha de presentación' });
             if (it.fecha_atencion < st.control && !(it.excepcional === true && String(it.motivo_excepcion || '').trim())) return Promise.reject({ message: 'PR411 anterior al inicio del control: solo como excepción con motivo' });
             if (vistos.has(String(it.atencion_id))) return Promise.reject({ code: '23505', message: 'duplicate key value violates unique constraint' });
             vistos.add(String(it.atencion_id)); total = redondear(total + it.importe_presentado);
             nuevos.push({ presentacion: li, atencion_id: String(it.atencion_id), realizado_por: profesionalDe(a), facturante: factSrv, destino_texto: String(a.prestacionA || '').trim() || null, fecha_atencion: it.fecha_atencion, importe_presentado: it.importe_presentado, excepcional: it.fecha_atencion < st.control, motivo_excepcion: it.fecha_atencion < st.control ? String(it.motivo_excepcion).trim() : null });
           }
-          lotes.push({ id: 'lote-' + (st.lotes.length + li + 1), cobertura: l.cobertura, professional_id: l.professional_id, periodo: payload.p_periodo, cantidad: l.items.length, total_importe: total, presentado_en: st.ahora(), presentado_por: usuario.id, presentado_por_email: usuario.email, presentado_por_rol: usuario.rol });
+          lotes.push({ id: 'lote-' + (st.lotes.length + li + 1), cobertura: l.cobertura, professional_id: l.professional_id, periodo: payload.p_periodo, fecha_corte: fcorte || fin, fecha_presentacion: fpres, cantidad: l.items.length, total_importe: total, presentado_en: st.ahora(), presentado_por: usuario.id, presentado_por_email: usuario.email, presentado_por_rol: usuario.rol });
         }
         // atomicidad: recién acá se confirma (todo o nada)
         lotes.forEach(function (l) { st.lotes.push(l); });
@@ -251,6 +295,7 @@
   return {
     MAX_ITEMS_POR_CONFIRMACION: MAX_ITEMS_POR_CONFIRMACION, norm: norm, redondear: redondear, esMes: esMes, finDeMes: finDeMes, idPrestacion: idPrestacion, profesionalDe: profesionalDe, coberturaDe: coberturaDe,
     crearResolvedorFacturante: crearResolvedorFacturante, esConsultaTexto: esConsultaTexto, calcularPendientes: calcularPendientes, calcularAnteriores: calcularAnteriores, marcarExcepcionales: marcarExcepcionales, resumenPorMes: resumenPorMes, aplicarExclusiones: aplicarExclusiones, armarLotes: armarLotes, validarLotes: validarLotes, payloadConfirmar: payloadConfirmar,
+    DIA_CIERRE: DIA_CIERRE, corteHabitual: corteHabitual, inicioPeriodo: inicioPeriodo, mesAnterior: mesAnterior, esFechaExacta: esFechaExacta, validarCierre: validarCierre,
     mapearError: mapearError, crearAlmacenMemoria: crearAlmacenMemoria
   };
 });
