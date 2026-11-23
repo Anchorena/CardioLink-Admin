@@ -348,6 +348,112 @@ prueba('R1 reglaOS: la edición común conserva la regla registrada en la atenci
   assert.ok(!/\n\s*a\.reglaOS=getRegla\(a\.obraSocial,a\.profesionalId\);/.test(APP), 'ya no se recalcula incondicionalmente');
 });
 
+// ---- Editar convenio / Dejar sin configurar (corrección CMP) ----
+const convBase = (os, extra) => Object.assign({ obraSocial: os, activo: true, regla: 'SANCOR_PREVENCION', destinoConsulta: 'Matías', destinoEstudio: 'Rogelio', facturadorConsulta: 'Matías', facturadorEstudio: 'Rogelio', bonoConsulta: true, bonoEstudio: false, firmaRequerida: true, copiaRequerida: false, incluirFacturaRogelio: true }, extra || {});
+const cfgCMP = () => {
+  const c = cfg();
+  c.obrasSociales = ['IOMA', 'OSDE', 'PAMI', 'CMP', 'Sancor'];
+  c.reglasOS = { Sancor: 'SANCOR_PREVENCION', CMP: 'SANCOR_PREVENCION', PAMI: 'COBERTURA_COBRA_PARTICULAR' };
+  c.conveniosPorProfesional = { matias: [convBase('Sancor'), convBase('CMP'), convBase('Particular', { regla: 'SIN_REGLA', incluirFacturaRogelio: false })], rogelio: [convBase('Sancor', { destinoConsulta: 'Rogelio', facturadorConsulta: 'Rogelio' })] };
+  c.conveniosFacturacion = JSON.parse(JSON.stringify(c.conveniosPorProfesional.matias));
+  C.aplicar(c, 'matias', [cambio('CMP', 'Consulta', 20000)], V0);
+  C.aplicar(c, 'rogelio', [cambio('CMP', 'Consulta', 21000)], V0);
+  return c;
+};
+
+prueba('EC1 «Dejar sin configurar» quita sólo la configuración de ese profesional: conserva catálogo, aranceles, historial, otros convenios y otros profesionales', () => {
+  const c = cfgCMP(), antes = JSON.parse(JSON.stringify(c));
+  const r = C.quitarConfiguracionConvenio(c, 'matias', 'cmp', { IOMA: 'IOMA_OSPRERA', PAMI: 'COBERTURA_COBRA_PARTICULAR' });
+  assert.equal(r.ok, true); assert.equal(r.quitada.obraSocial, 'CMP');
+  assert.equal(c.conveniosPorProfesional.matias.some(x => x.obraSocial === 'CMP'), false, 'CMP sin configuración operativa para matias');
+  assert.deepEqual(c.conveniosPorProfesional.matias.map(x => x.obraSocial), ['Sancor', 'Particular'], 'los demás convenios de matias quedan intactos y en orden');
+  assert.deepEqual(c.conveniosPorProfesional.matias[0], antes.conveniosPorProfesional.matias[0]);
+  assert.deepEqual(c.conveniosPorProfesional.rogelio, antes.conveniosPorProfesional.rogelio, 'otro profesional intacto');
+  assert.deepEqual(c.arancelesPorProfesional, antes.arancelesPorProfesional, 'aranceles e historial intactos (matias y rogelio)');
+  assert.deepEqual(c.obrasSociales, antes.obrasSociales, 'el catálogo no cambia'); assert.equal(r.catalogoRepuesto, false);
+  assert.deepEqual(c.conveniosFacturacion.map(x => x.obraSocial), ['Sancor', 'Particular'], 'espejo legado de matias sincronizado');
+  assert.equal(C.vigente(c, 'matias', 'CMP', 'Consulta', V0).estado, 'valor', 'el arancel de CMP sigue vigente');
+  assert.equal(r.reglaGlobal.quitada, true); assert.equal(c.reglasOS.CMP, undefined, 'la regla global que había heredado se quita');
+  assert.equal(c.reglasOS.Sancor, 'SANCOR_PREVENCION'); assert.equal(c.reglasOS.PAMI, 'COBERTURA_COBRA_PARTICULAR');
+  assert.equal(C.quitarConfiguracionConvenio(c, 'matias', 'CMP').ok, false, 'repetir: ya está sin configurar');
+});
+
+prueba('EC2 regla global: se conserva si es de fábrica, si otro profesional tiene la cobertura, si el valor no coincide o si no se puede comprobar', () => {
+  let c = cfgCMP(); let r = C.quitarConfiguracionConvenio(c, 'matias', 'CMP', { CMP: 'X' });
+  assert.equal(r.reglaGlobal.quitada, false); assert.equal(c.reglasOS.CMP, 'SANCOR_PREVENCION', 'de fábrica');
+  c = cfgCMP(); c.conveniosPorProfesional.rogelio.push(convBase('CMP')); r = C.quitarConfiguracionConvenio(c, 'matias', 'CMP', {});
+  assert.equal(r.reglaGlobal.quitada, false); assert.equal(c.reglasOS.CMP, 'SANCOR_PREVENCION', 'otro profesional la usa'); assert.ok(c.conveniosPorProfesional.rogelio.some(x => x.obraSocial === 'CMP'));
+  c = cfgCMP(); c.reglasOS.CMP = 'OSDE'; r = C.quitarConfiguracionConvenio(c, 'matias', 'CMP', {});
+  assert.equal(r.reglaGlobal.quitada, false); assert.equal(c.reglasOS.CMP, 'OSDE', 'valor distinto: no es el heredado');
+  c = cfgCMP(); r = C.quitarConfiguracionConvenio(c, 'matias', 'CMP'); assert.equal(r.reglaGlobal.quitada, false); assert.equal(c.reglasOS.CMP, 'SANCOR_PREVENCION', 'sin lista de fábrica: no se borra nada global');
+});
+
+prueba('EC3 «Particular» no se puede dejar sin configurar; una cobertura que sólo existía por su configuración conserva su nombre en el catálogo', () => {
+  const c = cfgCMP(); const r = C.quitarConfiguracionConvenio(c, 'matias', 'Particular', {});
+  assert.equal(r.ok, false); assert.ok(c.conveniosPorProfesional.matias.some(x => x.obraSocial === 'Particular'));
+  const d = cfgCMP(); d.obrasSociales = d.obrasSociales.filter(x => x !== 'CMP');
+  const q = C.quitarConfiguracionConvenio(d, 'matias', 'CMP', {}); assert.equal(q.ok, true); assert.equal(q.catalogoRepuesto, true); assert.ok(d.obrasSociales.includes('CMP'));
+});
+
+prueba('EC4 otro profesional sin espejo: quitar a rogelio no toca conveniosFacturacion', () => {
+  const c = cfgCMP(); c.conveniosPorProfesional.rogelio.push(convBase('CMP')); const esp = JSON.stringify(c.conveniosFacturacion);
+  const r = C.quitarConfiguracionConvenio(c, 'rogelio', 'CMP', {}); assert.equal(r.ok, true);
+  assert.equal(JSON.stringify(c.conveniosFacturacion), esp); assert.ok(c.conveniosPorProfesional.matias.some(x => x.obraSocial === 'CMP'));
+});
+
+prueba('EC5 «Editar convenio»: cambia sólo lo pedido, valida, no toca otros convenios, aranceles ni el estado', () => {
+  const c = cfgCMP(), antes = JSON.parse(JSON.stringify(c));
+  const r = C.editarConfiguracionConvenio(c, 'matias', 'cmp', { regla: 'OSDE', destinoEstudio: 'Matías', facturadorEstudio: 'Matías', bonoEstudio: true, incluirFacturaRogelio: false, copiaRequerida: true });
+  assert.equal(r.ok, true); assert.equal(r.sinCambios, false);
+  assert.deepEqual(r.cambios.map(x => x.campo).sort(), ['bonoEstudio', 'copiaRequerida', 'destinoEstudio', 'facturadorEstudio', 'incluirFacturaRogelio', 'regla']);
+  const n = c.conveniosPorProfesional.matias.find(x => x.obraSocial === 'CMP');
+  assert.equal(n.regla, 'OSDE'); assert.equal(n.destinoEstudio, 'Matías'); assert.equal(n.facturadorEstudio, 'Matías'); assert.equal(n.bonoEstudio, true); assert.equal(n.incluirFacturaRogelio, false); assert.equal(n.copiaRequerida, true);
+  assert.equal(n.destinoConsulta, 'Matías'); assert.equal(n.bonoConsulta, true); assert.equal(n.firmaRequerida, true); assert.equal(n.activo, true); assert.equal(n.obraSocial, 'CMP');
+  assert.deepEqual(c.conveniosPorProfesional.matias.filter(x => x.obraSocial !== 'CMP'), antes.conveniosPorProfesional.matias.filter(x => x.obraSocial !== 'CMP'));
+  assert.deepEqual(c.conveniosPorProfesional.rogelio, antes.conveniosPorProfesional.rogelio); assert.deepEqual(c.arancelesPorProfesional, antes.arancelesPorProfesional);
+  assert.equal(r.reglaGlobal.sincronizada, true); assert.equal(c.reglasOS.CMP, 'OSDE', 'la regla global que acompañaba al convenio lo sigue'); assert.deepEqual(Object.assign({}, c.reglasOS, { CMP: 'SANCOR_PREVENCION' }), antes.reglasOS, 'el resto de reglasOS no cambia');
+  const c2 = cfgCMP(); c2.conveniosPorProfesional.rogelio.push(convBase('CMP')); const r2 = C.editarConfiguracionConvenio(c2, 'matias', 'CMP', { regla: 'OSDE' });
+  assert.equal(r2.reglaGlobal.sincronizada, false); assert.equal(c2.reglasOS.CMP, 'SANCOR_PREVENCION', 'si otro profesional tiene la cobertura, la regla global no se toca');
+  const c3 = cfgCMP(); c3.reglasOS.CMP = 'INTEGRAL'; assert.equal(C.editarConfiguracionConvenio(c3, 'matias', 'CMP', { regla: 'OSDE' }).reglaGlobal.sincronizada, false); assert.equal(c3.reglasOS.CMP, 'INTEGRAL', 'una regla global propia (distinta) no se toca');
+  const c4 = cfgCMP(); C.editarConfiguracionConvenio(c4, 'matias', 'CMP', { regla: 'SIN_REGLA' }); assert.equal(c4.reglasOS.CMP, undefined, 'SIN_REGLA quita la global que lo acompañaba');
+  const ce = cfgCMP(); C.editarConfiguracionConvenio(ce, 'matias', 'CMP', { regla: 'OSDE' }); assert.equal(C.quitarConfiguracionConvenio(ce, 'matias', 'CMP', {}).reglaGlobal.quitada, true, 'editar y luego dejar sin configurar no deja regla global huérfana'); assert.equal(ce.reglasOS.CMP, undefined);
+  assert.deepEqual(c.conveniosFacturacion, c.conveniosPorProfesional.matias, 'espejo sincronizado');
+  assert.equal(C.editarConfiguracionConvenio(c, 'matias', 'CMP', { regla: 'OSDE', bonoEstudio: true }).sinCambios, true, 'repetir no cambia nada');
+  const mal = JSON.stringify(c);
+  [{ regla: 'INVENTADA' }, { regla: '' }, { destinoConsulta: '  ' }, { bonoConsulta: 'si' }, { firmaRequerida: 1 }].forEach(x => assert.equal(C.editarConfiguracionConvenio(c, 'matias', 'CMP', x).ok, false, JSON.stringify(x)));
+  assert.equal(JSON.stringify(c), mal, 'un pedido inválido no modifica nada');
+  assert.equal(C.editarConfiguracionConvenio(c, 'matias', 'Inexistente', { regla: 'OSDE' }).ok, false, 'sin configuración: se crea con «igual que», no con editar');
+  c.conveniosPorProfesional.matias.find(x => x.obraSocial === 'CMP').regla = 'REGLA_PROPIA'; assert.equal(C.editarConfiguracionConvenio(c, 'matias', 'CMP', { regla: 'REGLA_PROPIA', bonoEstudio: false }).ok, true, 'una regla existente fuera de la lista se conserva');
+});
+
+prueba('EC6 interfaz: acciones «Editar convenio» y «Dejar sin configurar» con confirmación, persistencia y sync; sin app.js; sin nombres fijos', () => {
+  const U = UI.replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '');
+  assert.match(U, /data-ar2="editar"/); assert.match(U, /data-ar2="sinconf"/);
+  assert.match(U, /e !== 'sin' && norm\(os\) !== 'particular'/, 'Particular no ofrece «Dejar sin configurar»');
+  assert.match(U, /a === 'editar'\) abrirEditar/); assert.match(U, /a === 'editarOk'\) guardarEdicion/); assert.match(U, /a === 'sinconf'\) dejarSinConfigurar/);
+  const g = U.slice(U.indexOf('async function guardarEdicion'), U.indexOf('async function dejarSinConfigurar')), d = U.slice(U.indexOf('async function dejarSinConfigurar'), U.indexOf('/* ---- ventanas'));
+  [g, d].forEach(f => { assert.match(f, /exigirConfigComercial/); assert.match(f, /window\.confirm/); assert.match(f, /persistirConfigVisibleV1/); assert.match(f, /programarSyncSupabase/); assert.match(f, /ok === false \? 'err'/); });
+  assert.match(d, /C\.quitarConfiguracionConvenio\(cfg\(\), S\.pid, os, protegidas\)/); assert.match(g, /C\.editarConfiguracionConvenio\(cfg\(\), S\.pid, os, cambios\)/);
+  assert.ok(!/arancelesPorProfesional/.test(d + g), 'la UI de estas acciones no toca aranceles');
+  assert.ok(!/CMP/.test(U), 'sin nombres de cobertura fijos');
+});
+
+prueba('EC7 sincronización: la baja de la configuración viaja por la fusión de tres vías (no se resucita; frente a una edición ajena es conflicto explícito)', () => {
+  const M = require('../cardiolink-config-merge-v1.js');
+  const base = cfgCMP(), local = JSON.parse(JSON.stringify(base)), remoto = JSON.parse(JSON.stringify(base));
+  C.quitarConfiguracionConvenio(local, 'matias', 'CMP', {});
+  let r = M.fusionar(base, local, remoto);
+  assert.equal(r.ok, true, JSON.stringify(r.conflictos));
+  assert.equal(r.config.conveniosPorProfesional.matias.some(x => x.obraSocial === 'CMP'), false, 'la baja se conserva en la fusión');
+  assert.equal(r.config.reglasOS.CMP, undefined); assert.deepEqual(r.config.arancelesPorProfesional, base.arancelesPorProfesional);
+  const remoto2 = JSON.parse(JSON.stringify(base)); C.aplicar(remoto2, 'matias', [cambio('IOMA', 'Consulta', 5)], V0);          // otro equipo cambió un arancel ajeno
+  r = M.fusionar(base, local, remoto2); assert.equal(r.ok, true); assert.equal(r.config.conveniosPorProfesional.matias.some(x => x.obraSocial === 'CMP'), false); assert.equal(C.vigente(r.config, 'matias', 'IOMA', 'Consulta', V0).estado, 'valor', 'el cambio ajeno se conserva');
+  const remoto3 = JSON.parse(JSON.stringify(base)); C.editarConfiguracionConvenio(remoto3, 'matias', 'CMP', { regla: 'OSDE' });  // otro equipo editó el mismo convenio
+  r = M.fusionar(base, local, remoto3); assert.equal(r.ok, false, 'eliminar frente a modificar = conflicto explícito, no se pisa en silencio');
+  const ed = JSON.parse(JSON.stringify(base)); C.editarConfiguracionConvenio(ed, 'matias', 'CMP', { regla: 'OSDE', bonoEstudio: true });
+  r = M.fusionar(base, ed, JSON.parse(JSON.stringify(base))); assert.equal(r.ok, true); assert.equal(r.config.conveniosPorProfesional.matias.find(x => x.obraSocial === 'CMP').regla, 'OSDE', 'una edición viaja campo a campo');
+});
+
 let falladas = 0;
 pruebas.forEach(p => { try { p.f(); console.log('ok   - ' + p.n); } catch (e) { falladas++; console.log('FAIL - ' + p.n + '\n       ' + (e && e.message || e)); } });
 console.log('\n' + (pruebas.length - falladas) + '/' + pruebas.length + ' pruebas');
