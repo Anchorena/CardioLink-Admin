@@ -1,0 +1,197 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>QA SQL · Bloque 0B · Acceso al padrón con rol activo</title>
+<style>body{font:13px/1.5 system-ui;margin:16px}pre{white-space:pre-wrap}.ok{color:#166534}.fail{color:#b91c1c;font-weight:700}</style></head>
+<body><h2>QA SQL · Bloque 0B · Acceso al padrón sólo con rol activo (PostgreSQL real vía PGlite)</h2><pre id="out">cargando…</pre>
+<script type="module">
+import { PGlite } from 'https://cdn.jsdelivr.net/npm/@electric-sql/pglite@0.2.17/dist/index.js';
+const out = document.getElementById('out');
+const results = []; window.__results = results; window.__done = false;
+const log = (ok, name, extra) => { results.push({ ok, name, extra: extra || '' }); out.innerHTML += `\n<span class="${ok ? 'ok' : 'fail'}">${ok ? 'OK  ' : 'FALLA'}</span> ${name}${extra ? ' — ' + extra : ''}`; };
+const U = { O: '00000000-0000-0000-0000-0000000000a1', A: '00000000-0000-0000-0000-0000000000a2', M: '00000000-0000-0000-0000-0000000000b1', MS: '00000000-0000-0000-0000-0000000000b2',
+            S: '00000000-0000-0000-0000-0000000000c1', MI: '00000000-0000-0000-0000-0000000000d1', SI: '00000000-0000-0000-0000-0000000000d2', N: '00000000-0000-0000-0000-0000000000e1' };
+const PERSONAL = ['O', 'A', 'M', 'MS', 'S'];            // rol ACTIVO: conservan el acceso de hoy
+const SIN_ACCESO = ['MI', 'SI', 'N'];                    // inactivos y cuenta sin fila en cardiolink_user_roles: hoy entran, después no
+let db;
+const text = async (f) => (await fetch(f + '?' + Date.now())).text();
+async function as(uid, fn, role = 'authenticated') {
+  await db.exec(`reset role; select set_config('request.jwt.claims', '${uid ? JSON.stringify({ sub: uid, role }) : ''}', false); set role ${role};`);
+  try { return await fn(); } finally { await db.exec(`reset role; select set_config('request.jwt.claims', '', false);`); }
+}
+const q = (s, p) => db.query(s, p);
+async function err(fn) { try { await fn(); return null; } catch (e) { try { await db.exec('rollback'); } catch (e2) {} return String(e.message || e); } }
+async function t(name, fn) { try { const r = await fn(); if (r === false) log(false, name); else log(true, name, typeof r === 'string' ? r : ''); } catch (e) { log(false, name, 'EXCEPCIÓN: ' + (e.message || e)); } }
+const expectErr = (e, re) => { if (!e) throw new Error('se esperaba un error y no ocurrió'); if (re && !re.test(e)) throw new Error('error distinto: ' + e); return e.slice(0, 100); };
+const RLS = /row-level security|permission denied/;
+
+// Intenta las cuatro operaciones del padrón como la app: leer, upsert (INSERT ... ON CONFLICT DO UPDATE), actualizar y borrar lo propio. Devuelve {sel, ins, upd, del}.
+async function probar(clave, uid, role = 'authenticated') {
+  const id = 'pac_qa_' + clave, r = {};
+  const den = (e) => (/permission denied|row-level security/.test(String(e && e.message || e)) ? 0 : 'ERR');   // "denegado" = RLS o falta de privilegio de tabla (anon no tiene privilegios sobre el padrón)
+  r.sel = await as(uid, async () => (await q(`select count(*)::int n from public.cardiolink_pacientes where id in ('pac_fix_1','pac_fix_2')`)).rows[0].n, role).catch(den);
+  r.ins = (await err(() => as(uid, () => q(`insert into public.cardiolink_pacientes (id, nombre_completo) values ($1, 'QA') on conflict (id) do update set nombre_completo = excluded.nombre_completo`, [id]), role))) ? 'rls' : 'ok';
+  r.upd = await as(uid, async () => (await q(`update public.cardiolink_pacientes set nombre_completo = nombre_completo where id = 'pac_fix_2'`)).affectedRows, role).catch(den);
+  r.del = await as(uid, async () => (await q(`delete from public.cardiolink_pacientes where id = $1`, [id])).affectedRows, role).catch(den);
+  await db.exec(`delete from public.cardiolink_pacientes where id = '${id}'`);   // limpieza como superusuario
+  return r;
+}
+const ABIERTO = { sel: 2, ins: 'ok', upd: 1, del: 1 };       // todo permitido
+const CERRADO = { sel: 0, ins: 'rls', upd: 0, del: 0 };      // nada visible, nada escribible
+const eq = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+async function matriz(fase) {
+  const falla = [];
+  for (const k of PERSONAL) { const r = await probar(k, U[k]); if (!eq(r, ABIERTO)) falla.push(`${k}: ${JSON.stringify(r)}`); }
+  for (const k of SIN_ACCESO) { const r = await probar(k, U[k]); if (!eq(r, fase === 'abierto' ? ABIERTO : CERRADO)) falla.push(`${k}: ${JSON.stringify(r)}`); }
+  const an = await probar('anon', null, 'anon'); if (!eq(an, CERRADO)) falla.push(`anon: ${JSON.stringify(an)}`);
+  const sv = await probar('svc', null, 'service_role'); if (!eq(sv, ABIERTO)) falla.push(`service_role: ${JSON.stringify(sv)}`);
+  if (falla.length) throw new Error(fase + ' → ' + falla.join(' | '));
+  return fase === 'abierto' ? 'personal, inactivos, sin fila: todo permitido; anon: nada; service_role: todo' : 'personal ACTIVO y service_role: todo permitido; inactivos y sin fila: nada; anon: nada';
+}
+const polSnapshot = (excluir) => q(`select tablename, policyname, cmd, permissive, roles::text, qual, with_check from pg_policies where schemaname='public' and tablename <> all ($1) order by 1,2`, [excluir]).then((r) => JSON.stringify(r.rows));
+const grantSnapshot = () => q(`select table_name, grantee, privilege_type from information_schema.role_table_grants where table_schema='public' order by 1,2,3`).then((r) => JSON.stringify(r.rows));
+const policiesDe = (tabla) => q(`select policyname, qual, with_check from pg_policies where schemaname='public' and tablename=$1 order by 1`, [tabla]).then((r) => r.rows);
+
+async function escenario(nombre, conLegacy) {
+  out.innerHTML += `\n\n<b>=== Escenario ${nombre} ===</b>`;
+  db = new PGlite();
+  await db.exec(await text('stubs.sql'));
+  if (conLegacy) await db.exec(await text('stubs_legacy.sql'));
+  const A = await text('../../docs/propuestas/pending_review_padron_acceso_rol_v1_a_pacientes.sql');
+  const AR = await text('../../docs/propuestas/pending_review_padron_acceso_rol_v1_a_pacientes_rollback.sql');
+  const B = await text('../../docs/propuestas/pending_review_padron_acceso_rol_v1_b_legacy.sql');
+  const BR = await text('../../docs/propuestas/pending_review_padron_acceso_rol_v1_b_legacy_rollback.sql');
+  const otras = ['cardiolink_pacientes', 'atenciones', 'medicos', 'obras_sociales', 'pacientes', 'prestaciones'];
+
+  await t('00 ANTES (el problema): el personal y TAMBIÉN inactivos y cuentas sin fila de roles leen y escriben el padrón', () => matriz('abierto'));
+  const polAntes = await polSnapshot(otras), grAntes = await grantSnapshot();
+
+  // ---- precondiciones: aborta sin tocar nada si el estado difiere
+  await t('01 precondición: con una política EXTRA en el padrón, A se rechaza y no cambia nada', async () => {
+    await db.exec(`create policy extra_qa on public.cardiolink_pacientes for select to authenticated using (true)`);
+    const e = expectErr(await err(() => db.exec(A)), /exactamente 1 pol/);
+    const p = (await policiesDe('cardiolink_pacientes')).map((x) => x.policyname).join();
+    await db.exec(`drop policy extra_qa on public.cardiolink_pacientes`);
+    if (p !== 'cardiolink_pacientes_authenticated,extra_qa') throw new Error('cambió algo: ' + p);
+    return e;
+  });
+  await t('02 precondición: si la política abierta ya fue modificada (no es true/true), A se rechaza', async () => {
+    await db.exec(`alter policy cardiolink_pacientes_authenticated on public.cardiolink_pacientes using (id <> 'x')`);
+    const e = expectErr(await err(() => db.exec(A)), /no es la esperada/);
+    await db.exec(`alter policy cardiolink_pacientes_authenticated on public.cardiolink_pacientes using (true)`);
+    return e;
+  });
+  await t('03 precondición: si ctx_rol_v1 fuera ejecutable por anon, A se rechaza', async () => {
+    await db.exec(`grant execute on function public.cardiolink_ctx_rol_v1() to anon`);
+    const e = expectErr(await err(() => db.exec(A)), /privilegios de cardiolink_ctx_rol_v1/);
+    await db.exec(`revoke execute on function public.cardiolink_ctx_rol_v1() from anon`);
+    return e;
+  });
+  await t('04 rollback sin haber aplicado se rechaza ("nada que revertir")', async () => expectErr(await err(() => db.exec(AR)), /no está aplicada/));
+
+  // ---- aplicar A
+  await t('05 aplicar PARTE A (precondiciones + postcondiciones) sobre el estado de Production', async () => { await db.exec(A); });
+  await t('06 re-aplicar A es rechazado ("ya está aplicada")', async () => expectErr(await err(() => db.exec(A)), /ya está aplicada/));
+  await t('07 queda UNA sola política en el padrón: PERMISSIVE, ALL, authenticated, que depende de ctx_rol_v1 y de los 4 roles', async () => {
+    const p = await q(`select polname, polpermissive, polcmd, polroles::regrole[]::text r, pg_get_expr(polqual, polrelid) qual, pg_get_expr(polwithcheck, polrelid) wc from pg_policy where polrelid='public.cardiolink_pacientes'::regclass`);
+    if (p.rows.length !== 1) throw new Error(JSON.stringify(p.rows));
+    const x = p.rows[0]; if (x.polname !== 'cardiolink_pacientes_rol_activo_v1' || !x.polpermissive || x.polcmd !== '*' || x.r !== '{authenticated}') throw new Error(JSON.stringify(x));
+    for (const s of ['cardiolink_ctx_rol_v1', 'owner', 'admin', 'medico', 'secretaria']) if (!x.qual.includes(s) || !x.wc.includes(s)) throw new Error('falta ' + s);
+    return x.qual.slice(0, 80);
+  });
+  await t('08 DESPUÉS: personal activo (owner, admin, médico con y sin professional_id, Secretaría) conserva TODO; inactivos y cuenta sin fila quedan sin acceso; anon nada; service_role todo', () => matriz('cerrado'));
+  await t('09 el padrón compartido se mantiene: médico y Secretaría ven los mismos pacientes que el Dueño', async () => {
+    const n = await Promise.all(['O', 'M', 'MS', 'S', 'A'].map((k) => as(U[k], async () => (await q('select count(*)::int n from public.cardiolink_pacientes')).rows[0].n)));
+    if (new Set(n).size !== 1 || n[0] !== 2) throw new Error(n.join()); return 'todos ven ' + n[0];
+  });
+  await t('10 reactivar una cuenta inactiva le devuelve el acceso de inmediato (y desactivarla se lo quita)', async () => {
+    await db.exec(`update public.cardiolink_user_roles set active = true where user_id = '${U.MI}'`);
+    const a = await probar('MIx', U.MI); await db.exec(`update public.cardiolink_user_roles set active = false where user_id = '${U.MI}'`);
+    const b = await probar('MIy', U.MI);
+    if (!eq(a, ABIERTO) || !eq(b, CERRADO)) throw new Error(JSON.stringify([a, b]));
+  });
+  await t('11 un rol fuera de la lista (p. ej. uno futuro) queda DENEGADO (falla cerrada)', async () => {
+    await db.exec(`alter table public.cardiolink_user_roles drop constraint cardiolink_user_roles_base_role_check`);
+    await db.exec(`update public.cardiolink_user_roles set base_role = 'auditor' where user_id = '${U.SI}'; update public.cardiolink_user_roles set active = true where user_id = '${U.SI}'`);
+    const r = await probar('SIz', U.SI);
+    await db.exec(`update public.cardiolink_user_roles set base_role = 'secretaria', active = false where user_id = '${U.SI}'`);
+    await db.exec(`alter table public.cardiolink_user_roles add constraint cardiolink_user_roles_base_role_check check (base_role in ('owner','admin','medico','secretaria'))`);
+    if (!eq(r, CERRADO)) throw new Error(JSON.stringify(r));
+  });
+  await t('12 las funciones SECURITY DEFINER que consultan el padrón no se afectan (padrón_v1: médico y Dueño true; Secretaría, inactivo y sin fila false)', async () => {
+    const f = (k) => as(U[k], async () => (await q(`select public.cardiolink_paciente_padron_v1('pac_fix_1') v`)).rows[0].v);
+    const r = [await f('M'), await f('O'), await f('A'), await f('S'), await f('MI'), await f('N')].join();
+    if (r !== 'true,true,true,false,false,false') throw new Error(r); return r;
+  });
+  await t('13 la comprobación de FK hacia el padrón sigue funcionando (el hijo se crea con permiso del padrón; no depende de la RLS del padrón)', async () => {
+    await as(U.M, () => q(`insert into public.cardiolink_hc_resumen (paciente_id, resumen) values ('pac_fix_1', 'ok')`));
+    await db.exec(`delete from public.cardiolink_hc_resumen`);
+  });
+  await t('14 NO cambia nada más: ninguna otra política, ningún privilegio de tabla, ninguna función', async () => {
+    const polDesp = await polSnapshot(otras), grDesp = await grantSnapshot();
+    if (polDesp !== polAntes) throw new Error('cambiaron políticas de otras tablas'); if (grDesp !== grAntes) throw new Error('cambiaron privilegios de tabla');
+    const f = await q(`select count(*)::int n from pg_proc where pronamespace='public'::regnamespace`); return 'políticas y privilegios idénticos; funciones: ' + f.rows[0].n;
+  });
+  await t('15 la RLS sigue activa y NO forzada en el padrón; la política usa InitPlan (una evaluación del rol por consulta, no por fila)', async () => {
+    const c = (await q(`select relrowsecurity, relforcerowsecurity from pg_class where oid='public.cardiolink_pacientes'::regclass`)).rows[0];
+    if (!c.relrowsecurity || c.relforcerowsecurity) throw new Error(JSON.stringify(c));
+    const plan = await as(U.O, async () => (await q(`explain (costs off) select * from public.cardiolink_pacientes`)).rows.map((r) => r['QUERY PLAN']).join('\n'));
+    if (!/InitPlan/.test(plan)) throw new Error('sin InitPlan:\n' + plan); return 'InitPlan presente';
+  });
+
+  // ---- PARTE B (tablas heredadas)
+  if (conLegacy) {
+    const legacy = ['atenciones', 'medicos', 'obras_sociales', 'pacientes', 'prestaciones'];
+    const ins = (tabla, uid) => as(uid, () => q(tabla === 'atenciones' ? `insert into public.atenciones (detalle) values ('x')` : tabla === 'pacientes' || tabla === 'medicos' || tabla === 'obras_sociales' || tabla === 'prestaciones' ? `insert into public.${tabla} (nombre) values ('x')` : ''));
+    await t('16 ANTES de B: cualquier sesión (incluso sin fila de roles) escribe en las 5 tablas heredadas', async () => {
+      for (const tb of legacy) { if (await err(() => ins(tb, U.N))) throw new Error('no pudo escribir ' + tb); }
+      await db.exec(`delete from public.atenciones; delete from public.pacientes; delete from public.medicos; delete from public.obras_sociales; delete from public.prestaciones;`);
+    });
+    await t('17 aplicar PARTE B y re-aplicarla es rechazado', async () => { await db.exec(B); return expectErr(await err(() => db.exec(B)), /ya está aplicada/); });
+    await t('18 DESPUÉS de B: owner, admin, médico y Secretaría ACTIVOS siguen escribiendo y leyendo; inactivos, sin fila y anon no; service_role sí', async () => {
+      for (const tb of legacy) {
+        for (const k of ['O', 'A', 'M', 'S']) { if (await err(() => ins(tb, U[k]))) throw new Error(`${k} no pudo escribir ${tb}`); }
+        for (const k of ['MI', 'SI', 'N']) { expectErr(await err(() => ins(tb, U[k])), RLS); }
+        expectErr(await err(() => as(null, () => q(tb === 'atenciones' ? `insert into public.atenciones (detalle) values ('x')` : `insert into public.${tb} (nombre) values ('x')`), 'anon')), RLS);
+        const n = await as(U.S, async () => (await q(`select count(*)::int n from public.${tb}`)).rows[0].n); if (n < 1) throw new Error('Secretaría no lee ' + tb);
+        const m = await as(U.N, async () => (await q(`select count(*)::int n from public.${tb}`)).rows[0].n); if (m !== 0) throw new Error('sin fila lee ' + tb);
+      }
+      await db.exec(`delete from public.atenciones; delete from public.pacientes; delete from public.medicos; delete from public.obras_sociales; delete from public.prestaciones;`);
+      await as(null, () => q(`insert into public.medicos (nombre) values ('svc')`), 'service_role'); await db.exec(`delete from public.medicos`);
+      for (const tb of legacy) { const p = await policiesDe(tb); if (p.length !== 1 || p[0].policyname !== tb + '_rol_activo_v1') throw new Error(tb + ': ' + JSON.stringify(p)); }
+    });
+    await t('19 B no cambia datos ni otras políticas ni privilegios (las 5 tablas siguen vacías y los privilegios idénticos)', async () => {
+      const n = (await q(`select (select count(*) from public.atenciones)+(select count(*) from public.medicos)+(select count(*) from public.obras_sociales)+(select count(*) from public.pacientes)+(select count(*) from public.prestaciones) n`)).rows[0].n;
+      if (Number(n) !== 0) throw new Error('hay filas: ' + n); if ((await grantSnapshot()) !== grAntes) throw new Error('cambiaron privilegios');
+    });
+    await t('20 rollback de B restaura las políticas abiertas originales (nombre y condición) y se rechaza si se repite', async () => {
+      await db.exec(BR);
+      for (const tb of legacy) { const p = await policiesDe(tb); if (p.length !== 1 || p[0].policyname !== 'Usuarios logueados pueden usar ' + tb.replace('_', ' ') || p[0].qual !== 'true' || p[0].with_check !== 'true') throw new Error(tb + ': ' + JSON.stringify(p)); }
+      return expectErr(await err(() => db.exec(BR)), /no está aplicada/);
+    });
+    await t('21 ciclo completo de B: aplicar → rollback → aplicar', async () => { await db.exec(B); });
+  } else {
+    await t('16 STAGING (sin tablas heredadas): la PARTE B no hace nada y no falla; su rollback tampoco', async () => { await db.exec(B); await db.exec(BR); const p = await policiesDe('cardiolink_pacientes'); if (p.length !== 1) throw new Error('B tocó el padrón'); });
+  }
+
+  // ---- rollback de A
+  await t('30 rollback de A restaura EXACTAMENTE la política abierta original (nombre, ALL, authenticated, true/true) y el acceso de hoy', async () => {
+    await db.exec(AR);
+    const p = await q(`select polname, polpermissive, polcmd, polroles::regrole[]::text r, pg_get_expr(polqual, polrelid) qual, pg_get_expr(polwithcheck, polrelid) wc from pg_policy where polrelid='public.cardiolink_pacientes'::regclass`);
+    const x = p.rows[0]; if (p.rows.length !== 1 || x.polname !== 'cardiolink_pacientes_authenticated' || !x.polpermissive || x.polcmd !== '*' || x.r !== '{authenticated}' || x.qual !== 'true' || x.wc !== 'true') throw new Error(JSON.stringify(p.rows));
+    return 'política original restaurada';
+  });
+  await t('31 tras el rollback vuelve el estado ABIERTO (se confirma con la misma matriz del paso 00)', () => matriz('abierto'));
+  await t('32 el rollback de A repetido se rechaza; A se puede volver a aplicar (ciclo completo) y la matriz cerrada vuelve a cumplirse', async () => {
+    expectErr(await err(() => db.exec(AR)), /no está aplicada/); await db.exec(A); await matriz('cerrado');
+  });
+  await t('33 el estado final coincide con el de después de aplicar (políticas de otras tablas y privilegios idénticos a los iniciales)', async () => {
+    if ((await polSnapshot(otras)) !== polAntes || (await grantSnapshot()) !== grAntes) throw new Error('difiere');
+  });
+}
+try {
+  await escenario('PRODUCTION (con las 5 tablas heredadas)', true);
+  await escenario('STAGING (sin tablas heredadas)', false);
+} catch (e) { log(false, 'EXCEPCIÓN GENERAL', e.message || String(e)); }
+const fallas = results.filter((r) => !r.ok).length;
+out.innerHTML += `\n\n<b>${results.length - fallas}/${results.length} OK · ${fallas} falla(s)</b>`;
+window.__done = true;
+</script></body></html>
