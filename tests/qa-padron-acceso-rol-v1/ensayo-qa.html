@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="es"><head><meta charset="utf-8"><title>QA · Ensayo reversible generado · Bloque 0B</title>
+<style>body{font:13px/1.5 system-ui;margin:16px}pre{white-space:pre-wrap}.ok{color:#166534}.fail{color:#b91c1c;font-weight:700}</style></head>
+<body><h2>Ensayo reversible GENERADO (el que se pegaría en el SQL Editor) ejecutado en PostgreSQL real (PGlite) sobre los stubs</h2><pre id="out">cargando…</pre>
+<script type="module">
+import { PGlite } from 'https://cdn.jsdelivr.net/npm/@electric-sql/pglite@0.2.17/dist/index.js';
+const out = document.getElementById('out'); const results = []; window.__results = results; window.__done = false;
+const log = (ok, name, extra) => { results.push({ ok, name, extra: extra || '' }); out.innerHTML += `\n<span class="${ok ? 'ok' : 'fail'}">${ok ? 'OK  ' : 'FALLA'}</span> ${name}${extra ? ' — ' + extra : ''}`; };
+const text = async (f) => (await fetch(f + '?' + Date.now())).text();
+async function correr(nombre, conLegacy, mutar) {
+  const db = new PGlite();
+  await db.exec(await text('stubs.sql')); if (conLegacy) await db.exec(await text('stubs_legacy.sql'));
+  const ENSAYO = await text('../../docs/propuestas/pending_review_padron_acceso_rol_v1_ensayo_reversible.sql');
+  const antes = JSON.stringify((await db.query(`select polname from pg_policy where polrelid='public.cardiolink_pacientes'::regclass`)).rows);
+  if (mutar) await db.exec(mutar);
+  let msg = null; try { await db.exec(ENSAYO); } catch (e) { msg = String(e.message || e); }
+  return { db, msg, antes };
+}
+try {
+  for (const [nombre, legacy] of [['PRODUCTION-like (con tablas heredadas)', true], ['STAGING-like (sin tablas heredadas)', false]]) {
+    const { db, msg, antes } = await correr(nombre, legacy);
+    log(!!msg && /^ENSAYO_0B_OK: \d+ pruebas/.test(msg), `${nombre}: el ensayo termina con ENSAYO_0B_OK`, (msg || 'sin error').slice(0, 160));
+    const desp = JSON.stringify((await db.query(`select polname from pg_policy where polrelid='public.cardiolink_pacientes'::regclass`)).rows);
+    const filas = (await db.query(`select count(*)::int n from public.cardiolink_pacientes where id like 'qa0b%'`)).rows[0].n;
+    const roles = JSON.stringify((await db.query(`select user_id, base_role, active, professional_id from public.cardiolink_user_roles order by 1`)).rows);
+    log(desp === antes && filas === 0, `${nombre}: la base queda como estaba (política original, sin filas qa0b_*)`, desp);
+    log(roles.includes('"base_role":"owner"') && !roles.includes('"base_role":"admin","active":true,"professional_id":"matias"'), `${nombre}: los roles sintéticos temporales se revirtieron`);
+  }
+  // Negativo: si la política abierta ya estuviera corregida (A ya aplicada), el ensayo debe ABORTAR en la precondición de A, no dar éxito
+  { const { msg } = await correr('A ya aplicada', false, `create policy cardiolink_pacientes_rol_activo_v1 on public.cardiolink_pacientes for all to authenticated using (true) with check (true); drop policy cardiolink_pacientes_authenticated on public.cardiolink_pacientes;`);
+    log(!!msg && !/ENSAYO_0B_OK/.test(msg), 'negativo: con A ya aplicada el ensayo NO da éxito', (msg || '').slice(0, 120)); }
+  // Negativo: si la política nueva fuera defectuosa (deja pasar a todos), la suite "cerrado" lo detecta
+  { const db = new PGlite(); await db.exec(await text('stubs.sql'));
+    let E = await text('../../docs/propuestas/pending_review_padron_acceso_rol_v1_ensayo_reversible.sql');
+    E = E.replace(/USING \(\(SELECT public\.cardiolink_ctx_rol_v1\(\)\) = ANY \(ARRAY\['owner', 'admin', 'medico', 'secretaria'\]\)\)\n\s+WITH CHECK \(\(SELECT public\.cardiolink_ctx_rol_v1\(\)\) = ANY \(ARRAY\['owner', 'admin', 'medico', 'secretaria'\]\)\);/, 'USING (true) WITH CHECK (true);');
+    let msg = null; try { await db.exec(E); } catch (e) { msg = String(e.message || e); }
+    log(!!msg && /FALLA|Postcondición/.test(msg), 'negativo: una política que deja pasar a todos es DETECTADA (Postcondición/FALLA)', (msg || '').slice(0, 140)); }
+} catch (e) { log(false, 'EXCEPCIÓN GENERAL', e.message || String(e)); }
+const fallas = results.filter((r) => !r.ok).length;
+out.innerHTML += `\n\n<b>${results.length - fallas}/${results.length} OK · ${fallas} falla(s)</b>`; window.__done = true;
+</script></body></html>
