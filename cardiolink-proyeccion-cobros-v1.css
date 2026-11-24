@@ -1,0 +1,18 @@
+/* Proyección mensual de cobros V1 · estilos propios (no toca otros módulos) */
+#proyeccionCobros { padding: 4px 2px; }
+#proyeccionCobros .pc-aviso { background: #fef3c7; color: #78350f; border: 2px solid #f59e0b; border-radius: 10px; padding: 10px 12px; margin: 10px 0; font-weight: 700; }
+#proyeccionCobros .pc-error { background: #fee2e2; color: #7f1d1d; border: 1px solid #ef4444; border-radius: 10px; padding: 10px 12px; margin: 10px 0; font-weight: 600; }
+#proyeccionCobros .pc-ok { background: #dcfce7; color: #14532d; border: 1px solid #22c55e; border-radius: 10px; padding: 10px 12px; margin: 10px 0; font-weight: 600; }
+#proyeccionCobros .pc-proyectado { display: inline-block; background: #fef3c7; color: #78350f; border: 1px solid #f59e0b; border-radius: 999px; padding: 1px 8px; font-size: 11px; font-weight: 700; margin-left: 6px; text-transform: uppercase; letter-spacing: .03em; }
+#proyeccionCobros .pc-total { font-weight: 700; font-size: 16px; margin: 12px 0; }
+#proyeccionCobros .pc-mes { border: 1px solid #d9e4e8; border-radius: 10px; margin: 10px 0; background: #f8fbfc; padding: 4px 10px; }
+#proyeccionCobros .pc-mes > summary { cursor: pointer; padding: 8px 0; font-weight: 700; }
+#proyeccionCobros .pc-tabla { width: 100%; border-collapse: collapse; font-size: 13px; margin: 8px 0; }
+#proyeccionCobros .pc-tabla th, #proyeccionCobros .pc-tabla td { text-align: left; padding: 5px 8px; border-bottom: 1px solid #e2e8f0; }
+#proyeccionCobros .pc-tabla td.pc-num, #proyeccionCobros .pc-tabla th.pc-num { text-align: right; white-space: nowrap; }
+#proyeccionCobros .pc-pasada { color: #b45309; }
+#proyeccionCobros .pc-plazos { display: grid; gap: 6px; margin: 8px 0; }
+#proyeccionCobros .pc-plazo { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; padding: 6px 8px; border: 1px solid #e2e8f0; border-radius: 8px; }
+#proyeccionCobros .pc-plazo strong { min-width: 160px; }
+#proyeccionCobros .pc-plazo input[type=number] { width: 80px; }
+@media (max-width: 720px) { #proyeccionCobros .pc-tabla { display: block; overflow-x: auto; } }
