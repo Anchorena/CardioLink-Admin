@@ -88,11 +88,12 @@ test('el resumen no expone usuarios cuando el permiso administrativo no fue conc
 });
 
 test('el módulo se carga una sola vez después del editor de prestaciones', () => {
-  const prestationsAt = indexSource.indexOf('<script src="cardiolink-prestaciones-perfil.js?v=1"></script>');
-  const configAt = indexSource.indexOf('<script src="cardiolink-config-v1.js?v=1a"></script>');
+  // La cadena de versión (?v=…) cambia con cada ajuste del módulo: lo que se verifica es el ORDEN de carga y la carga única, no un valor fijo (expectativa desactualizada: ?v=1a).
+  const prestationsAt = indexSource.search(/<script src="cardiolink-prestaciones-perfil\.js(\?[^"]*)?"><\/script>/);
+  const configAt = indexSource.search(/<script src="cardiolink-config-v1\.js(\?[^"]*)?"><\/script>/);
   assert.ok(prestationsAt >= 0);
   assert.ok(configAt > prestationsAt);
-  assert.equal(indexSource.match(/cardiolink-config-v1\.js/g)?.length, 1);
+  assert.equal(indexSource.match(/<script src="cardiolink-config-v1\.js/g)?.length, 1);   // sólo las etiquetas <script>: un comentario del HTML puede nombrar el archivo
   assert.equal(indexSource.match(/cardiolink-config-v1\.css/g)?.length, 1);
 });
 

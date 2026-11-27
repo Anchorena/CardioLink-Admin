@@ -73,5 +73,26 @@ if [ "$modo" = "comparar" ]; then
   exit $?
 fi
 
-echo "uso: sh tests/ci-suites.sh run <salida.tsv> | comparar <base.tsv> <head.tsv>" >&2
+# verificar: barrera contra la NORMALIZACIÓN de fallas. Toda prueba que falla en el head debe estar en el registro explícito (tests/fallas-conocidas.tsv: suite, nombre, clase, deuda, motivo).
+# Complementa a «comparar»: si una regresión llegara a main, un PR posterior la vería como «preexistente»; con el registro sigue siendo una falla NO registrada y el CI la rechaza.
+# Las fallas registradas que ya no fallan se informan como RESUELTAS (hay que retirarlas del registro): el registro sólo puede achicarse con una decisión explícita en un PR.
+if [ "$modo" = "verificar" ]; then
+  head="${2:?falta head.tsv}"; registro="${3:?falta el registro de fallas conocidas}"
+  awk -F'\t' -v SEP=' \\|\\| ' '
+    FNR == NR { if ($0 ~ /^#/ || $0 == "") next; conocida[$1 "\t" $2] = $3; nreg++; next }
+    {
+      s = $1; cod = $2; n = split($5, p, SEP); algun = 0
+      for (i = 1; i <= n; i++) if (p[i] != "") { algun = 1; vistos[s "\t" p[i]] = 1; if ((s "\t" p[i]) in conocida) activas++; else { printf "NO REGISTRADA  %s :: %s\n", s, p[i]; malas++ } }
+      if (cod != 0 && !algun) { clave = s "\t(sin nombre de prueba)"; vistos[clave] = 1; if (clave in conocida) activas++; else { printf "NO REGISTRADA  %s :: la suite termina con código %s sin nombrar la prueba\n", s, cod; malas++ } }
+    }
+    END {
+      for (k in conocida) if (!(k in vistos)) { gsub("\t", " :: ", k); printf "RESUELTA (retirar del registro)  %s\n", k; resueltas++ }
+      printf "\nFallas conocidas activas: %d de %d registradas · resueltas: %d · NO registradas: %d\n", activas + 0, nreg + 0, resueltas + 0, malas + 0
+      if (malas > 0) { print "Hay fallas que no están en el registro: son nuevas o fueron normalizadas. NO se puede aprobar."; exit 1 }
+      print "Todas las fallas están registradas (ninguna nueva ni normalizada)."
+    }' "$registro" "$head"
+  exit $?
+fi
+
+echo "uso: sh tests/ci-suites.sh run <salida.tsv> | comparar <base.tsv> <head.tsv> | verificar <head.tsv> <tests/fallas-conocidas.tsv>" >&2
 exit 2

@@ -3,12 +3,16 @@
 # se puede agregar desde la web de GitHub o dándole ese permiso al token).
 # Corre TODAS las suites (`*.test.cjs` de la raíz y `tests/*.js`) sobre el PR y sobre `main` (la base), y compara: sólo falla ante una falla NUEVA.
 # Las fallas que ya existían en `main` se informan en el resumen, no se ocultan ni se modifican.
+# DOS barreras: (1) «comparar»: ninguna falla NUEVA respecto de la base; (2) «verificar»: toda falla debe estar en el registro explícito `tests/fallas-conocidas.tsv` (impide que una regresión
+# que llegue a main se normalice como «preexistente»). Las pruebas NO se desactivan: se ejecutan y se muestran siempre. Las fallas ya resueltas se informan para retirarlas del registro.
 # Sin secretos, sin red y sin Supabase: las suites leen archivos del repositorio. No despliega nada ni toca Production.
 name: Pruebas (Node 22)
 
 on:
   pull_request:
     branches: [main]
+  push:
+    branches: [main]      # sobre main sólo corre la barrera «verificar» (no hay base contra la cual comparar)
   workflow_dispatch:
 
 permissions:
@@ -71,6 +75,19 @@ jobs:
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"
 
+      - name: Barrera contra la normalización (todas las fallas deben estar en tests/fallas-conocidas.tsv)
+        if: ${{ !cancelled() }}
+        working-directory: head
+        run: |
+          set -o pipefail
+          sh tests/ci-suites.sh verificar "$GITHUB_WORKSPACE/head.tsv" tests/fallas-conocidas.tsv | tee "$GITHUB_WORKSPACE/registro.txt"
+          {
+            echo '### Registro de fallas conocidas'
+            echo '```'
+            cat "$GITHUB_WORKSPACE/registro.txt"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: "Resumen (ejecución manual, sólo informa)"
         if: github.event_name == 'workflow_dispatch'
         run: |
@@ -92,5 +109,6 @@ jobs:
             base.tsv
             head.tsv
             comparacion.txt
+            registro.txt
           if-no-files-found: ignore
           retention-days: 14
